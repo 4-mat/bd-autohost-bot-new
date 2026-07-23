@@ -1,0 +1,500 @@
+{
+  "meta": {
+    "sheet": "Classes",
+    "version": "1.0",
+    "lang": "BD Lang"
+  },
+  "Basic Attack": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "mr": 2,
+    "damage": {
+      "roll": "1d10+2",
+      "type": "Physical or Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+  },
+  "Basic Movement": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "action": "Movement",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends MP to move an equal amount of tiles.\n(For all purposes, Basic Movement is not an ability, but is still an action.)"
+  },
+  "Dash": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "action": "Full",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends MP to move up to x1.5 that amount of tiles (rounded down)."
+  },
+  "Backstep": {
+    "level": "B",
+    "frequency": "Passive",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+  },
+  "Attack of Opportunity": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "mr": 2,
+    "damage": {
+      "roll": "1d10+2",
+      "type": "Physical or Magical"
+    },
+    "action": "Reaction",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)"
+  },
+  "Duet": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Ally"
+    },
+    "range": "Global",
+    "effect": "Apply Duet to one player. Bard abilities also originate from that player and consider them an ally. The user may also use this ability to end their Duet. Effects stack on targets in the overlap; Bard attack targets take an additional hit that uses the same accuracy roll."
+  },
+  "Rising Hope": {
+    "level": "1",
+    "frequency": "Passive",
+    "target": {
+      "count": "AoE",
+      "group": "Self and Allies"
+    },
+    "range": "Burst 1",
+    "effect": "The user and allies within range have +1 ACC and CR. Players can benefit from a maximum of 2 Rising Hopes at a time."
+  },
+  "Dissonance": {
+    "level": "2",
+    "frequency": "EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "2d6+0",
+      "type": "Magical"
+    },
+    "action": "Swift",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Cone 2",
+    "effect": "Inflict 3 Bleed/1. This attack's hits ignore ATK/MAG, half foes' DEF, and outside damage factors. Damage on targets hit twice is increased by 3 for one round."
+  },
+  "Primadonna": {
+    "level": "3",
+    "frequency": "Twice/E3T",
+    "action": "Free",
+    "target": {
+      "count": "AoE",
+      "group": "Self and Allies"
+    },
+    "range": "Star 4",
+    "effect": "If the player this ability originates from has more MAG than ATK, target's gain +4 MAG/1 and -3 MDEF/1; otherwise, targets gain +4 ATK/1 and -3 MDEF/1. Targets whose ATK and MAG are buffed by this also gain +1 damage dice/1, which doubles on critical hits."
+  },
+  "Fantasia": {
+    "level": "4",
+    "frequency": "Thrice/EoT",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Self"
+    },
+    "effect": "Select a bonus: +3 ATK/MAG, +1 ACC/CR, +4 DEF. Until the start of the user's next turn, Rising Hope becomes Star 2 and additionally grants the bonuses selected during this and prior uses of Fantasia. The user may not pick the same bonus more than once."
+  },
+  "Staccato": {
+    "level": "5",
+    "frequency": "Once",
+    "mr": 2,
+    "damage": {
+      "roll": "1d6+0"
+    },
+    "action": "Reaction",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Global",
+    "effect": "This may be used when a foe attacks the user or their Duet ally, after damage is rolled. Apply hits to the target and foes within Star 2 of the user and Duet ally. Each hit inflicts -2 DEF/1 and -1 EVA/1. If the attacker kills the Duet ally, the user gains a permanent +2 MP, ACC and CR. This attack ignores outside damage factors."
+  },
+  "Ironclad": {
+    "level": "1",
+    "frequency": "Passive",
+    "effect": "When an attack deals 40+ damage to the user, the attacker is inflicted with 2 Cripple/1; if 55+ (before this effect), 10% of its damage is nullified, and dealt back to the attacker."
+  },
+  "Mantrap": {
+    "level": "1",
+    "frequency": "Thrice/EoT",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Tile"
+    },
+    "range": "Homing 5",
+    "effect": "When a foe ends their turn within or willingly enters the targeted tile's Star 1, the user may, as a Reaction, inflict them with 3 Cripple/1 and -4 DMG/1, removing this effect."
+  },
+  "Smokescreen": {
+    "level": "2",
+    "frequency": "E3T",
+    "action": "Free",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "Until the start of the user's next turn, all attacks entering the user's Burst 2 have -2 Range and -7 DMG, and attacks used within the user's Burst 2 have -2 Range."
+  },
+  "Tinker's Dam": {
+    "level": "3",
+    "frequency": "Once",
+    "action": "Swift",
+    "target": {
+      "count": 1,
+      "group": "Tile"
+    },
+    "range": "Range 3",
+    "effect": "The user creates a wall of Stone on unoccupied tiles on the target and its Line 2 in a chosen direction, which is removed after 2 rounds, or can be removed on the user's turn as a Free action. Foes ending their turn with any of these Stone tiles in their melee take 5 damage and are Burned 3/1. Stone tiles function like Ice, but take 30 damage to break and have 1 EVA."
+  },
+  "Reforge": {
+    "level": "4",
+    "frequency": "E3T",
+    "action": "Movement",
+    "target": {
+      "count": 1,
+      "group": "Foe or Ally"
+    },
+    "range": "Melee",
+    "effect": "Choose one of the target's base stats, except HP. If the target is a foe, reduce the chosen base stat by 1/3 for one round, and the target cannot receive buffs to that stat while under this effect. If the target is an ally, the chosen base stat is 1.5x for one round."
+  },
+  "Mending Mantel": {
+    "level": "5",
+    "frequency": "Once",
+    "action": "Full",
+    "target": {
+      "count": 1,
+      "group": "Tile"
+    },
+    "range": "Homing 3",
+    "effect": "Place a Hearth tile on the target. Hearth tiles give +5 DEF/1 and 5 HP in healing to the user and allies whenever they end their turn in its Star 3 (ignoring Foe obstructions). Hearth tiles also have the effects of Stone, and are removed when the user dies."
+  },
+  "First Aid": {
+    "level": "1",
+    "frequency": "EoT",
+    "damage": {
+      "roll": "3d4+6"
+    },
+    "action": "Swift",
+    "target": {
+      "count": 1,
+      "group": "Self or Ally"
+    },
+    "range": "Range 3",
+    "effect": "The target is healed the rolled amount. If the target is an ally, this may be used as a Standard action to add the user's ATK or MAG to the roll. This can only be used on a target that has been attacked in the last round."
+  },
+  "Ward": {
+    "level": "2",
+    "frequency": "E3T",
+    "action": "Swift",
+    "target": {
+      "count": "AoE",
+      "group": "Self and Allies"
+    },
+    "range": "Burst 2",
+    "effect": "Targets cannot be inflicted with debuffs or statuses for one round."
+  },
+  "Heaven's Wind": {
+    "level": "3",
+    "frequency": "EoT",
+    "action": "Swift",
+    "target": {
+      "count": 2,
+      "group": "Any"
+    },
+    "range": "Range 4",
+    "effect": "The targets teleport and swap locations."
+  },
+  "Martyrdom": {
+    "level": "4",
+    "frequency": "E3T",
+    "action": "Free",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "For one round, the user's healing is increased by 15% and players who are healed by their moves receive +1 EVA/MP (max +3) until the start of the user's next turn. For each ally that has died, this healing bonus is increased by 15%."
+  },
+  "Vestments": {
+    "level": "5",
+    "frequency": "Twice",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Self or Ally"
+    },
+    "range": "Range 4",
+    "effect": "Choose one primary target and one secondary target (they can be the same player). For one round, the primary target heals 1/4 of the damage taken by the secondary target. The primary target can only be Self if two uses of this move are available; it then uses up two uses. Players can only be the primary target of one Vestments at a time."
+  },
+  "Pas de Deux": {
+    "level": "1",
+    "frequency": "E3T",
+    "action": "Standard or Full",
+    "target": {
+      "count": 1,
+      "group": "Ally"
+    },
+    "range": "Melee",
+    "effect": "The target immediately takes their turn after the user. Then, turn order resumes as normal. The target cannot use Pas de Deux on the given turn. If the target is a Juggernaut, they only have access to one Standard. If this is used as a Standard, the target cannot use their Movement action."
+  },
+  "Emboîté": {
+    "level": "2",
+    "frequency": "Once",
+    "action": "Swift",
+    "target": {
+      "count": "AoE",
+      "group": "Self and Allies"
+    },
+    "range": "Burst 1",
+    "effect": "The targets' abilities that are on cooldown may be used one round earlier.\n(E3T becomes EoT; EoT becomes Every Turn, etc.)"
+  },
+  "Fouetté": {
+    "level": "3",
+    "frequency": "Once",
+    "action": "Swift",
+    "target": {
+      "count": 1,
+      "group": "Self or Ally"
+    },
+    "range": "Range 3",
+    "effect": "Until the start of the user's next turn, the target may use one Once/Twice/Thrice move without expending a Use, even if the move is out of Uses. This cannot be used on Reaction or Trigger actions."
+  },
+  "En Pointe": {
+    "level": "4",
+    "frequency": "Passive",
+    "effect": "The user may use their Class and Item Swift actions as if they are Frees. Whenever the user targets an ally with a Dancer action, they gain a copy of this passive until the end of their next turn."
+  },
+  "Divertissement": {
+    "level": "5",
+    "frequency": "Once",
+    "action": "Swift",
+    "target": {
+      "count": 1,
+      "group": "Self or Ally"
+    },
+    "range": "Range 3",
+    "effect": "The target's next Standard/Full attack on their next turn gains +dice faces equal to the number of actions previously used that turn (except Basic Movement), max +5 dice faces. This ability’s action type is unaffected by En Pointe."
+  },
+  "Qi Force": {
+    "level": "1",
+    "frequency": "Passive",
+    "effect": "After the player uses a non- Free or Swift attack, they gain a Qi stack, max 5. Each Qi stack gives +2 ATK/MAG. The user can gain a maximum of 2 Qi between the start of one of their turns and the start of the next. Whenever an ally dies, the user gains a stack of Qi."
+  },
+  "Soulstep": {
+    "level": "2",
+    "frequency": "Twice/EoT",
+    "mr": 2,
+    "damage": {
+      "roll": "1d6+3",
+      "type": "Magical"
+    },
+    "action": "Movement",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "The user moves up to their MP. Targetting may be done either before or after this movement. This move is immune to outside damage factors, ignores DEF, and does not add ATK/MAG."
+  },
+  "Eightfold Shield": {
+    "level": "3",
+    "frequency": "EoT",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Self or Ally"
+    },
+    "range": "Melee",
+    "effect": "The user spends at least two Qi. For one round, the target gains +1d4+1 DEF per Qi spent."
+  },
+  "Conversion": {
+    "level": "4",
+    "frequency": "Twice",
+    "action": "Free",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends between 1 and 3 Qi. The user's attacks this turn become the opposite damage type and the user's ATK and MAG are swapped. Additionally, for every Qi spent, their attacks ignore 5 DEF and gain +1 Range."
+  },
+  "Nirvana": {
+    "level": "5",
+    "frequency": "Once",
+    "action": "Free",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends any amount of Qi to gain +1 dice and +2 damage on their next attack per Qi spent."
+  },
+  "Aegis": {
+    "level": "1",
+    "frequency": "EoT",
+    "action": "Reaction",
+    "target": {
+      "count": 1,
+      "group": "Ally"
+    },
+    "range": "Homing 4",
+    "effect": "This may be used when an ally in range is damaged by an attack. The user moves as close to the target as possible, and 25% of the attack's damage is redirected to the user. The user is not considered a target of the attack if they were not before Aegis was used."
+  },
+  "Pavise": {
+    "level": "2",
+    "frequency": "E3T",
+    "action": "Free",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "For one round, whenever the user or allies in their Burst 2 are hit by an attack, players damaged by that attack gain +3 DEF/1 per each such damaged player."
+  },
+  "Impasse": {
+    "level": "3",
+    "frequency": "E3T",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Any"
+    },
+    "range": "Melee",
+    "effect": "If used on self or an ally, the target cannot be inflicted with Push/Pull and stat reduction by foes for one round. If used on a foe, the target's buffs are removed."
+  },
+  "Radiance": {
+    "level": "4",
+    "frequency": "Twice",
+    "action": "Swift",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "For one round, the user takes 80% damage from attacks, and Aegis's damage interception is increased to 50%."
+  },
+  "Oathkeeper": {
+    "level": "5",
+    "frequency": "Once",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Ally"
+    },
+    "range": "Global",
+    "effect": "The user and target gain Oath of Mercy. At the start of an affected player's turn, they heal 2 HP and gain +1 ATK/MAG (max +5). This does not stack with multiple uses of the ability. When the user or target dies, Oath of Mercy ends and all ATK/MAG gained is lost."
+  },
+  "Rewind": {
+    "level": "1",
+    "frequency": "EoT",
+    "action": "Reaction",
+    "target": {
+      "count": 1,
+      "group": "Self or Foe"
+    },
+    "range": "Global",
+    "effect": "This may be used when the user or a foe attacking the user rolls damage for an attack. Reroll up to 3 damage dice. Rerolled dice cannot trigger or negate Bomb dice."
+  },
+  "Warp": {
+    "level": "2",
+    "frequency": "Twice/EoT",
+    "action": "Movement",
+    "effect": "The user teleports to a tile in Range 4 (ignoring player obstructions). Inflict -5 DEF/1 on foes in Burst 1 of that tile, and for the rest of the turn, the user's attacks can pass through players."
+  },
+  "Superposition": {
+    "level": "3",
+    "frequency": "Every Turn",
+    "action": "Standard",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "Roll a d20 and store the result (max one stored result). As a Reaction, before the user rolls an accuracy check, they may substitute it with the stored roll. The user may also react to a foe attacking in Range 4 after accuracy. If so, replace that attack's accuracy roll with this one (this cannot make that attack miss)."
+  },
+  "Fractal Division": {
+    "level": "4",
+    "frequency": "Twice/EoT",
+    "action": "Swift",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "This turn, the user's next single-target attack may target 2 foes. The targets must be within Range 4, and the attack loses Splash. (If a secondary effect relies on one target, the user picks which one.)"
+  },
+  "Time's Edge": {
+    "level": "5",
+    "frequency": "Once",
+    "action": "Free",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "This turn, the user uses an additional Standard action which has -3 MR. The next two Standard/Full actions this turn only add 25% ATK/MAG. If the first Standard/Full deals damage, the second Standard ignores outside damage factors and ATK/MAG/DEF. The user can only use Reactions and Triggers between these actions, unless specified otherwise."
+  },
+  "Adrenaline": {
+    "level": "1",
+    "frequency": "Passive",
+    "effect": "The user's Basic Movement only has a -1 MP Backstep penalty, rather than -2. The user may use Basic Movement multiple times per turn (which still spends MP to move)."
+  },
+  "Lightspeed": {
+    "level": "1",
+    "frequency": "EoT",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Self or Ally"
+    },
+    "range": "Range 3",
+    "effect": "If the target uses Dash before the user's next turn, they may use Glide or Rushdown.\nGlide: The user moves up to 2 tiles per MP spent instead of 1.5 (max 12 tiles).\nRushdown: After Dash, the user may immediately use a Standard, which cannot target outside of the user's Melee. Rushdown moves a max of 10 tiles and is immune to AoO."
+  },
+  "Outmaneuver": {
+    "level": "2",
+    "frequency": "EoT",
+    "action": "Free",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends any amount of MP to use this move. Until the start of the user's next turn, the user's attacks used from their maximum range have +1 ACC per 2 MP spent. (Homing takes the shortest possible path.)"
+  },
+  "Quick Thinking": {
+    "level": "3",
+    "frequency": "EoT",
+    "action": "Movement",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "This may be used after the user resolves their last Standard action of their turn. They spend MP to move one tile per two MP spent. This Movement ignores Backstep penalty."
+  },
+  "Tunneling": {
+    "level": "4",
+    "frequency": "Twice/E3T",
+    "action": "Swift",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "This turn, the user moves through all tiles and foes as if they were Normal tiles. (They cannot perform or end actions standing on obstructions or Broken tiles.)"
+  },
+  "Wormhole": {
+    "level": "5",
+    "frequency": "Once",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Tile"
+    },
+    "range": "Range 2",
+    "effect": "The user places a \"Wormhole\" on the target tile. Then, as a Swift action, the user or an ally may spend half of their MP (rounded up) to teleport to it. The Wormhole expires on use, or after two rounds."
+  }
+}

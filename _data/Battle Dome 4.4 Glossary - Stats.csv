@@ -1,0 +1,15 @@
+Term,Description
+Player Stats,
+Player stats cannot go below 0 (except HP).,
+Class Level / Weapon Level,Levels determine which abilities an entity has access to. A move can only be used if the user has the required Level.
+HP,"Health Points starts at the entity's Max HP and is lowered by taking damage. HP cannot exceed Max HP.
+When an entity is at 0 or less HP, they are removed from the game."
+Max HP,"Maximum HP does not change from taking damage, but it can by affected by items and certain effects."
+A / ATK,Attack is added to the damage of physical attacks.
+M / MAG,Magic is added to the damage of magical attacks.
+PD,Physical Defense is subtracted from the damage of incoming physical attacks.
+MD,Magical Defense is subtracted from the damage of incoming magical attacks.
+EVA,Evasion rounds down. An attack misses if its accuracy roll is less than [the attack's MR] + [the target's EVA].
+MP,"Movement Points determine how many tiles an entity's Basic Movement action can move over.
+MP can also be spent on certain effects. They are refreshed at the start of each turn."
+,

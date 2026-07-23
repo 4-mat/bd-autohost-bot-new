@@ -1,0 +1,17 @@
+Term,Description
+Definitions,
+Range Rule,"Abilities of range types that follow Range Rule cannot be used if, when drawing a straight line from the center of the user's to the target's tile, that line intersects with any obstruction."
+Obstructions,"Stop/Bone, Ice, Stone, and Hearth tiles, as well as foes, are considered obstructions. Unless specified otherwise, obstructions may not be moved through or targetted through, and these tiles cannot be moved nor replaced by other tiles."
+Tile-Changing Effects,Tiles that are changed by effects revert to Normal tiles when the effect ends.
+Tiles,
+Air,Ranged attacks that fully pass through Air tiles lose 1 range.
+Forest,"Entities on Forest tiles have +5 Physical Defense, but -1 EVA against Physical attacks."
+Water,"Entities on Water tiles have +5 Magical Defense, but -1 EVA against Magical attacks."
+Stop,"Stop tiles cannot be attacked through nor moved through, and turns cannot be ended on them. They also cannot be moved nor replaced by other tiles."
+Bone,Bone tiles are the same as Stop tiles.
+Broken,"Broken tiles cannot be moved through, and turns cannot be ended on them."
+Ice,"Ice tiles have the properties of Stop tiles. However, they can be targeted by (non-Global) attacks, and break if that attack deals 15+ damage. Ice Clause: Effects do not interact with nor apply to Ice tiles. (Effects outside of the ""Effects"" column still apply, such as ""X"", Multihit, and Splash.)"
+Lava,"Entities take 20 damage when entering Lava tiles, and take 30 damage when they end their turn on Lava."
+Sticky,Sticky tiles take 1 more MP than normal (usually 2) to enter.
+Boost,Boost tiles take 1 less MP than normal (usually 0) to enter. Entities cannot enter Boost tiles if they have 0 MP left.
+,

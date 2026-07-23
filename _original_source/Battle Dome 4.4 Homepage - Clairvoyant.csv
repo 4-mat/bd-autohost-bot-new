@@ -1,0 +1,87 @@
+Name,Lv.,Frequency,MR,Damage,,,Target,,,Effect
+,,,,Roll,Type,Action,Amount,Group,Range,
+Basic Abilities,,,,,,,,,,
+Basic Attack,B,Every Turn,2,1d10+2,Physical or Magical,Standard,1,Foe,Melee,"This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+Basic Movement,B,Every Turn,-,-,-,Movement,-,Self,-,"The user spends MP to move an equal amount of tiles.
+(For all purposes, Basic Movement is not an ability, but is still an action.)"
+Dash,B,Every Turn,-,-,-,Full,-,Self,-,The user spends MP to move up to x1.5 that amount of tiles (rounded down).
+Backstep,B,Passive,-,-,-,-,-,Self,-,"During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+Attack of Opportunity,B,Every Turn,2,1d10+2,Physical or Magical,Reaction,1,Foe,Melee,This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)
+Clairvoyant Abilities,,,,,,,,,,
+,,,,,,,,,,
+Cards (Felucia / beautifications),,,,,,,,,,
+60 HP | 5 ATK | 8 MAG | 4 PDEF | 7 MDEF | 1.1 EVA | 2 MP ,,,,,,"""A high variance weapon that rewards the fortunate.""",,,,
+Card Flip,1,Every Turn,3,3d8+5,Magical,Standard,1,Foe,Range 4,"Roll a d3 after rolling damage. If a 1 is rolled, this move deals 0.8x damage. If a 3 is rolled, this move deals 1.3x damage. Outside factors to damage are also affected by these multipliers."
+Discard,2,EoT,2,3d10+2,Magical,Standard,1,Foe,Range 5,"Roll a d20, on 15+ store a reroll that can be used to reroll any cards effect as a Once/Trigger action."
+Roulette,3,EoT,3,3d8+5,Magical,Standard,1,Foe,Range 4,"Roll a 1d8 to inflict a random status on the opponent, then roll a d3. If the d3 roll is 1, status the user instead. Statuses: 1 = 10 Bleed/1, 2 = 10 Poison/1, 3 = 10 Burn/1, 4 = 6 Cripple/1, 5 = Root/1, 6 = Seal/1, 7 = Stun/1, 8 = Confusion/1."
+Gamble,4,Twice/EoT,3,3d8+3,Magical,Standard,1,Foe,Range 3,Roll d7. 1 = subtract the target's ATK and MAG. 2 = subtract the higher of the target's offensive stats. 3 = subtract the user's ATK. 4 = add the user's ATK. 5 = add the target's higher offense stat. 6 = add the user's MAG again. 7 = add the user's ATK and the target's ATK and MAG. This attack still adds the user's MAG and ignores 10 DEF.
+Double or Nothing,4,Twice/EoT,-,-,-,Trigger,1,Any,Range 4,"The user rolls a d2. On a 1, the target can't use Swift/Free actions until the end of the user's next turn. On a 2, the target gains an extra Swift action (or multiple Free actions) until the start of the user's next turn. If used on Self, this must be used at the start of the user's turn."
+Blackjack,5,Twice/EoT,3,3d8+5,Magical,Standard,1,Foe,Range 3,"On a successful hit, roll 2d10, treating 1s as either 1 or 11 (user’s choice). The user may choose to roll additional 1d10s to add to the roll. If the total is 17-20, this attack gains 1 base dice. On a total of 21, this attack instead gains 3 base dice and activates Jackpot. On a total of 22 or higher, the attack instead loses 2 base dice."
+Craps,6,Twice/E3T,5,5d10-10,Magical,Standard,1,Foe,Range 3,"This attack has Bomb dice. For every Bomb dice that triggers, the user may pick another foe within the target's Splash 1 to target (the same foe cannot be picked more than once). If 5+ bomb dice is triggered, this attack activates Jackpot. This attack is immune to (non-Cards) positive damage factors. On a critical hit, the extra dice from the critical hit do NOT have Bomb dice. "
+Jackpot,7,Passive,-,-,-,-,-,-,-,"When the user rolls the maximum roll on all dice in an accuracy, damage, or effect roll, for a total of at least 8, they gain +7 ATK/MAG, +7 DEF, +1 EVA, +1 ACC, and +2 MP for one round. This does not activate on Hi-Lo rolls, but instead activates when Hi-Lo reaches maximum dice. Repeated activation does not stack, but instead refreshes the duration."
+Slots Spin,8,Once,4,5d8+0,Magical,Standard,1,Foe,Range 4,"Roll 3d4. For every 4 rolled, this attack gains +1 dice. If no 4s are rolled, this attack gains -1 dice. if all dice are 4s, this attack gains an additional +1 dice."
+Hi-Lo,9,Twice/EoT,4,Xd10+5,Magical,Standard,1,Foe,Range 3,"Roll a d10. The user predicts whether the next d10 result will be higher or lower than the previous result, then rolls again. On a correct guess, this attack gains +2 base dice and the user may continue predicting and rolling (max 5 guesses) or choose to stop. On a failed guess, the user stops and the attack loses half of its total base dice. If the roll is the same as the previous, reroll that dice."
+Stacked Deck,10,Once,-,6d8+0,Magical,Standard,1,Foe,Melee,"In place of an accuracy roll, roll a 1d14 for an effect. 
+1. The opponent is healed by the roll, 
+2. The user takes 2x damage from all sources for one round,
+3. The attack misses, 
+4. After damage, the user and target swap their current HP (can overheal, foes with over 200 HP are considered to have 200 HP for this effect), 
+5. For one round, attacks automatically hit the user,
+6. The user and target gain a random position change,
+7. The user and target are both Stunned/1,
+8. 50% of this attack's damage is dealt to a random foe instead,
+9. For one round, the user's attacks automatically hit,
+10. The user gains a 1/Any/Global Once/Reaction: ""Reroll one accuracy roll."",
+11. Cleanse all statuses and numerical debuffs from the user & reset their other moves' frequencies,
+12. Target is Sealed/1, 
+13. Next turn, the user may choose numbers for their cards effects, rather than rolling dice for them,
+14. This attack has unremovable thrice base dice."
+Card Counter,EX1,Every Turn,-,-,-,Reaction,-,Self,-,"Once per turn, the user may choose to reroll their Cards dice effect (for Craps, reroll the damage dice)."
+High Roller,EX2,Every Turn,-,-,-,Trigger,-,Self,-,"The user may choose to roll a 1d5 for each standard action the user has remaining this turn. The standard actions targeting amount becomes equal to the roll-1 (If a one is rolled, the standard is lost)."
+Lunar Rod (Elissem),,,,,,,,,,
+70 HP | 3 ATK | 15 MAG | 0 PDEF | 3 MDEF | 0.7 EVA | 2 MP ,,,,,,"""Count the phases and strike when the Moon shines the brightest.""",,,,
+Lunar Phase,1,Passive,-,-,-,-,-,Self,-,"At the start of their first turn, the user picks a Phase. At the start of each following turn, the user shifts Phases in the following order. This Passive cannot be disabled.
+New Moon (+1 range) -->
+Waxing (+2 dice faces on accuracy and attacks) -->
+Full Moon (-1 dice on attacks targeting the user) -->
+Waning (+1 dice on attacks) --> New Moon, etc."
+Moonblast,1,Every Turn,3,2d8+5,Magical,Standard,1,Foe,Range 3,The user's next Phase effect's value is increased by 1.
+Dark Reflection,2,EoT,4,2d8+9,Magical,Standard,1,Foe,Range 4,"For one round, the target is inflicted with the inverse effect of the user's Phase."
+Holy Light,3,EoT,3,1d8+7,Magical,Standard,1,Foe,Range 6,"If the user has Moonblast's or Celestial Blessing's effect, the target's status effects (except Seal and Stun) are extended by +1 round."
+Lunar Shift,4,E3T,-,-,-,Free,1,Self,-,"The user shifts to their next Lunar Phase. If Moonblast's effect is active, it is transferred to the new Phase."
+Harvest Moon,5,Twice/EoT,3,2d10+6,Magical,Standard,1,Foe,Range 4,"If the user is in New Moon or Full Moon, they heal 1d10+2 HP. Otherwise, they do not shift Phases on their next turn. This may be used as a non-attack Standard."
+Tidal Wave,6,EoT,4,3d8+7,Magical,Standard,AoE,Foes,Burst 1,Targets are inflicted with Confusion/1. New Moon grants +AoE range on this attack.
+Double Tide,7,Twice,4,"2d6+2
+(Double Hit)",Magical,Standard,1,Foe,Range 4,"This attack Critical Hits on 16+. If this attack Critical Hits at least once, the user gains Moonblast's effect."
+Blood Moon,8,EoT,4,2d8+6,Magical ,Standard,2,Foes,Range 3,"If the user is in Waxing or Waning, targets are inflicted with 2d6 Poison/1. Otherwise, targets are inflicted with 3d4 Bleed/1."
+Celestial Blessing,9,Twice/EoT,-,-,-,Free,AoE,Self and Allies,Burst 1,"Until the start of the user's next turn, targets gain the user's next Phase effect. Next turn, the user's Phase effect is disabled."
+Gravity Crash,10,Once,5,2d10+9,Magical,Standard,1,Foe,Melee,"This attack has a different effect based on the user's Phase.
+New Moon: Homing 4. For one round, the target cannot use moves with Usage Limits.
+Waxing: Push 1d6. The target is inflicted with 4 Cripple/2.
+Full Moon: For one round, foes' abilities only deal 75% damage to allies in Range 5.
+Waning: This attack has Bomb dice."
+Far Side of the Moon,EX1,Passive,-,-,-,-,-,Self,-,The user picks another Lunar Phase effect that doesn't shift in any way. This effect is active when their original Phase is not affected by Moonblast or Celestial Blessing. Lunar Rod attacks may use this Phase for effects instead of the original Phase.
+Fatal Moonlight,EX2,Once,5,2d10+10,Magical,Standard,2,Foes,Range 3,"This attack has two effects if the user has two different Phases.
+New Moon: One target at max range is inflicted with Seal/1.
+Waxing: The user permanently gains +2d6 DEF.
+Full Moon: This attack may target +2 foes.
+Waning: This attack ignores negative damage factors."
+Orb (Taistelu),,,,,,,,,,
+60 HP | 9 ATK | 18 MAG | 1 PDEF | 6 MDEF | 0.6 EVA | 1 MP ,,,,,,"""A weapon that delays its own attacks to maximise their impact. Plan ahead and be rewarded.""",,,,
+Future Sight,1,Passive,-,-,-,-,-,-,-,"The user's Delay attacks always land if they hit, even if the user is dead.
+Delay: Delay moves have their damage and effects delayed for a specified number of rounds, landing at the start of the user's turn. Damage is rolled when the move is used, with damage altering effects applied on use."
+Augur,1,Every Turn,3,3d8+0,Magical,Standard,1,Foe,Range 5,"The user may give this move Delay-1 for +5 DMG or +3 CR on this move, or Delay-2 for both."
+Eventide,2,EoT,4,3d6+4,Magical,Standard,1,Foe,Range 7,This ability has Delay-1. The target gains 3 Curse before damage until Eventide lands. The user may choose Delay-2 to increase the -DEF of Eventide's Curse by 2.
+Echo Burst,3,Every Turn,3,2d8+6,Magical,Standard,1,Foe,"Homing 5
+(Splash 1)","The user may give this move Delay-1. If so, it loses Splash, but the user gains +5 DEF until the move lands. This move cannot stack with itself."
+Omen,4,Twice/E3T,-,-,-,Free,1,Self,-,The user's next attack has an extra turn of delay with a doubled delay bonus (does not stack).
+Corruption,5,Twice/EoT,4,3d8+3,Magical,Standard,1,Foe,Homing 5,"On hit, the target takes damage equal to 5% of their max HP (before multipliers) over 100. This ability may be up to Delay-2, increasing the previous percentage by 5*Delay. Until Corruption lands, damaging statuses on the target deal bonus damage equal to half of the on-hit damage."
+Astral Touch,6,Twice,-,-,-,Free,1,Foe,Range 7,"If the target kills the user within one round, then decrease the user's delays on them by 1. If the target dies within one round, then the user may transfer one delay on them to a new target in the original's Range 7."
+Foresight,6,Once,-,-,-,Reaction,1,Foe,-,"This may be used when the user is attacked, after damage is rolled. 10% of the attack's damage on each target is removed and, after damage, added to either 1) their delayed attacks, or 2) the user's HP, multiplied by the number of the user's delayed attacks."
+Dawn Break,7,EoT,3,1d8+9,Magical,Standard,1,Foe,Range 7,"This ability has Delay-2. Until this ability lands, all of the user's attacks on the target have -1 MR. The user may increase the Delay by 1 for an additional -1 MR on the target."
+Oracle,8,Twice/E3T,4,2d6+8,Magical,Standard,1,Foe,Homing 6,The user may choose to add or remove a turn of delay from any number of the users currently delayed attacks. The user may instead use this ability as a self-targetting non-damaging Movement+Swift ability.
+Scry,9,EoT,3,2d8+3,Magical,Standard,AoE,Foes,Cone 2,"The user may give this Delay-1 to extend its Cone by 1. Select one target. Add 10*X% of the user's total delay on that target to this attack, where X = number of targets."
+Prophecy,10,Twice/E3T,5,1d8+4,Magical,Standard,1,Foe,Homing 5,"This attack gains +2.5 ACC and +2 DMG per delayed move that landed at the start of the user's current turn. The user may give this ability Delay-1 or 2. If so, lose the prior bonuses and gain +8 DMG per delayed move that will land at the same time as Prophecy. This bonus damage updates when delays are used."
+Fateweave,EX1,Once,0,3d6+5,Magical,Standard,4,Foes,Global,"Select a Delay between 1 and 5. For every foe who dies on the turn this lands, permenantly gain +2 ACC and +4 CR. After this ability lands, delays with 2 or less immediately land when the user dies. This ability is disabled after it hits, ignores ATK/MAG and outside damage factors and gains another use if it misses."
+Psychic Overlord,EX2,Passive,-,-,-,-,-,-,-,"When a foe dies to Delay damage (including through Oracle's effect), the user heals half of the overkill and gains +4 MAG. The user then selects a foe who has unlanded Delay damage, who is inflicted with -2 EVA/1 and -25% damage/1."
+,,,,,,,,,,

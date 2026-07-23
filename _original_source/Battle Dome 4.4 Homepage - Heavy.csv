@@ -1,0 +1,79 @@
+Name,Lv.,Frequency,MR,Damage,,,Target,,,Effect
+,,,,Roll,Type,Action,Amount,Group,Range,
+Basic Abilities,,,,,,,,,,
+Basic Attack,B,Every Turn,2,1d10+2,Physical or Magical,Standard,1,Foe,Melee,"This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+Basic Movement,B,Every Turn,-,-,-,Movement,-,Self,-,"The user spends MP to move an equal amount of tiles.
+(For all purposes, Basic Movement is not an ability, but is still an action.)"
+Dash,B,Every Turn,-,-,-,Full,-,Self,-,The user spends MP to move up to x1.5 that amount of tiles (rounded down).
+Backstep,B,Passive,-,-,-,-,-,Self,-,"During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+Attack of Opportunity,B,Every Turn,2,1d10+2,Physical or Magical,Reaction,1,Foe,Melee,This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)
+Heavy Abilities,,,,,,,,,,
+,,,,,,,,,,
+Axe (bro torterra),,,,,,,,,,
+70 HP | 24 ATK | 0 MAG | 2 PDEF | 0 MDEF | 0.2 EVA | 1 MP ,,,,,,"""Prioritises colossal damage and ATK over everything else.""",,,,
+Bloodlust,1,Passive,-,-,-,-,-,-,-,"Whenever the user deals or takes 15+ damage from an attack, they gain 1 Rage stack."
+Feral Chop,1,Every Turn,3,2d10+X,Physical,Standard,1,Foe,Melee,X = 2.5 * the user's current Rage.
+Chain Axe,2,Every Turn,4,1d10+2,Physical,Standard,1,Foe,"Range 4
+(Pull 3)","For one round, Bloodlust gives an extra Rage per instance of damage."
+Power Swing,3,EoT,6,3d10+6,Physical,Standard,1,Foe,Melee,The user spends X Rage to give this move -X MR and +2X Crit Range.
+Wide Slash,4,EoT,4,2d10+7,Physical,Standard,AoE,Foes,Cone 1,"Up to 2 times, the user may spend 2 Rage to give this attack +1 range."
+Vindictive,5,Passive,-,-,-,-,-,-,-,The user gains 2 Rage when they kill a foe or miss a Standard/Full attack.
+Knockback,6,EoT,4,2d10+6,Physical,Standard,1,Foe,"Melee
+(Push 1)",This attack inflicts Slow/1. The user may spend a Rage stack to increase this move's Push by 1 and/or instead inflict Cripple 6/1.
+Franciscate,7,Twice ,4,3d10+3,Physical,Standard,1,Self or Foe,Line 6,The user gains +2 MP and is Sealed for one round. The user may spend 1 rage to negate the Seal. This may be used as a non-damaging Standard targeting the user.
+Gash,8,E3T,5,2d10+8,Physical,Standard,1,Foe,Melee,"The user may spend Rage on this attack. The target is inflicted with 5 Bleed/X, where X is the amount of Rage spent."
+Sever,9,Twice/E3T,3,1d10+1,Physical,Standard,1,Foe,Melee,The user may spend Rage on this attack to give it +1 hit and +1 MR per Rage spent.
+Amped Strike,10,Once,5,3d10+6,Physical,Standard,1,Foe,"Melee
+(Splash 1)",This attack has +damage equal to 4 * the user's Rage. The user loses all Rage.
+Swing Cycle,EX1,Passive,-,-,-,-,-,-,-,"At the start of each turn, the user may spend 2 Rage to reset the cooldowns and frequencies of their last two attacks.
+Chain Axe becomes EoT. The user starts the game with 1 Rage."
+Wrath,EX2,EoT,5,1d10+10,Physical,Standard,1,Tile or Foe,Melee,"The user may spend 2 Rage per effect to gain any combination of the following effects: 
++4d10 to the base roll, Splash 2, -3 MR. 
+This cost increases by 1 each time this is used. This has -2 ACC if used on a Tile."
+"Hammer (Methridium, Felucia)",,,,,,,,,,
+70 HP | 18 ATK | 7 MAG | 4 PDEF | 5 MDEF | 0.8 EVA | 1 MP ,,,,,,"""An AoE-heavy weapon that capitalizes on both player and tile obstructions.""",,,,
+Unstoppable Force,1,Passive,-,-,-,-,-,-,-,"If a foe blocks a target from being Pushed the full distance by one of the user's attacks, that foe is hit and targeted by the attack. Foes hit via this ability are pushed towards the tile the target that collided with them would have reached unobstructed, and no further."
+Cyclone Sweep,1,Every Turn,3,1d8+8,Physical,Standard,AoE,Foes,"Cone 1
+(Push 2)",This attack gains +dice equal to the number of targets hit.
+Storm Strike,2,Every Turn,3,2d10+6,Physical,Standard,1,Foe,"Range 5
+(Splash 1)",The user teleports to a chosen tile in the original target's Splash 1. Targets are Slowed/1.
+Seismic Smash,3,EoT,3,3d8+0,Physical,Standard,1,Foe,"Melee
+(Push 4)",Targets are inflicted with 2 Cripple/2.
+Masonry,4,EoT,-,-,-,Free,1,Tile,Melee,"If unoccupied, the targeted tile becomes a Stone tile, which functions like Ice, but with 30 HP and 1 EVA. Stone tiles created by this move are removed after two rounds, and can be Pushed and Pulled, taking no damage from moves that do so."
+Stonemason,4,Passive,-,-,-,-,-,-,-,The user's Hammer abilities' effects ignore Ice Clause on player-created tiles.
+Crush,5,EoT,4,2d10+5,Physical,Standard,1,Foe,"Melee
+(Push 2)","If a target cannot be pushed the full distance, they take an additional 1d10+5 damage."
+Earth Render,6,E3T,4,3d10+2,Physical,Standard,1,Foe,"Line 3
+(Splash 1)","After damage or on miss, within Burst 2 of the original target, the user may choose to replace up to 2 unoccupied tiles with Broken. These Broken tiles last either 2 rounds, until the user dies, or until the user decides to remove them as a Trigger action."
+Lagging Spin,7,E3T,4,1d8+10,Physical,Standard,AoE,Foes,Star 1,"This move ignores 4 DEF per MP the user spent moving away from the tile they started their turn on. If the user spent all of their MP moving away, this move gains +2 dice."
+Gravity Well,8,E3T,-,-,-,Swift,-,-,-,"When the user next attacks this turn, before accuracy, they choose any of the attack's non-Splash, non-Unstoppable Force targets. They may then Pull another entity within that target's Burst 2 to a chosen tile in that target's Burst 1."
+Shockwave Slam,9,Twice/E3T,4,2d10+4,Physical,Standard,1,Foe,"Melee
+(Splash Star 2)","This move's Splash hits foes in the original target's Star, rather than Burst. The original target may be Pushed 2 tiles in a chosen direction. Splash targets are Pushed 2 tiles directly away from the original target."
+Collision Course,10,Once,5,4d10+0,Physical,Full,1,Foe,Melee,"The original target is Pushed to a chosen tile in their Range 5. Subsequent targets are Pushed to a chosen tile in their Range 3. This move can Push the user and allies via Unstoppable Force, dealing no damage. Each target can only be hit and Pushed once. "
+Aftershock,EX1,EoT,-,-,-,Reaction,1,Foe,Global,"This may be used after the user pushes the target with an attack, to move up to the number of tiles they were pushed, in the direction they were pushed. After moving, deal 1d10+6 damage to any foes in the user's Burst 1."
+Fissure,EX2,Once,4,3d10+10,Physical,Standard,1,Foe,"Melee
+(Push 7)","Regardless of hit, the target is pushed, and all unoccupied tiles targets exited while pushed become unremovable, unignorable Broken tiles. Foes entering Burst 1 of any of this move's Broken tiles take 2d8 damage, once per turn per Foe. On their turns, the user may choose any number of these Brokens to remove as a Trigger action."
+"Tomahawk (Kry, God evening, howisthisworking)",,,,,,,,,,
+70 HP | 15 ATK | 5 MAG | 5 PDEF | 3 MDEF | 0.4 EVA | 2 MP ,,,,,,"""A weapon reliant on positioning, benefitting from pushing people away.""",,,,
+Heavy Weapon,1,Passive,-,-,-,-,-,-,-,"The user cannot willingly leave a foe's Melee without teleporting. When a Tomahawk ability targets a player at its maximum listed range, it gains its Apex effect. Apex includes the final row/column of Beam ranges."
+Razor Rust,1,Every Turn,3,2d10+3,Physical,Standard,AoE,Foes,Pierce 4,"For one round, the target only has 3 MP. Apex: Additionally, inflict 5 Cripple/1."
+Tomahawk Toss,2,EoT,3,2d10+6,Physical,Standard,1,Foe,"Line 4
+(Push X)",X = 4 - the range this attack is used at. Apex: This attack has Pull 3 and inflicts Slow/1.
+Plate Crusher,2,Passive,-,-,-,-,-,-,-,"When the user moves a Foe with a non-Apex Tomahawk ability, they take 2 damage for each tile travelled. The user's Apex attacks ignore 5 DEF."
+Kip Up,3,EoT,3,1d10+0,Physical,Movement or Swift,1,Foe,"Line 1
+(Push 1)","This attack Pushes regardless of hit. The user may negate the Push to teleport a tile away from the target. This attack ignores outside damage factors, ATK/MAG, and DEF."
+Repulse Slice,4,Twice / E3T,4,2d10+4,Physical,Standard,1,Foe,"Line 3
+(Push 2)","This move does not push targets in Apex. Apex: For each tile the target moves towards the user on their next turn, the values of the user's next instance of Plate Crusher are increased by 1."
+Continental Crash,5,Twice / EoT,4,3d10+6,Physical,Standard,1,Foe,"Line 2
+(Push 3)","After Push, the user places a Broken tile in the target's Melee lasting for 3 rounds. The user may remove this as a Trigger during their turns. Foes ending their turn in this tile's Melee take 10 damage. Apex: After Push, this attack hits foes in the target's Splash 1."
+Discipline,6,E3T,-,-,-,Free,1,Foe,Line 3,"At the start of the target's next turn, the user gains +3X DEF/1, where X = 3 - the range this move is used at. Apex: If the user's last attack had Apex, the user's next attack applies the effects of that Apex (excluding extra hits)."
+Kinetic Impact,7,E3T,4,3d10+2,Physical,Standard,1,Foe,"Line 5
+(Push 2)","If the target cannot be moved the full distance, this attack has +1 dice. Apex: This attack has -2 Push and +2 dice faces."
+Two Handed,8,Twice,5,3d10+4,Physical,Standard,1,Foe,"Line 2
+(Push 3)","If the user did not push the target during their last turn, this attack gains +2 Push. Apex: If the target cannot be moved the full distance, inflict 7 Bleed/1."
+Elastic Collision,9,Twice / E3T,4,Xd10+2,Physical,Full,1,Foe,"Line 1
+(Push X/2)","Before targeting, the user moves up to their MP value in a straight line (half for diagonals). X = 1 + the number of tiles the user moved with this attack. Apex: This attack has +2 CR."
+Supreme Strikes,10,Once,6,1d10+3,Physical,Standard,AoE,Foes,Pierce 4,"This attack has 1 Push for every successful hit. This attack may target in two directions, or gain a Hit and target in only one direction. Each direction rolls accuracy and checks for Apex independently. Apex: Gain +2 Hits in this direction."
+Fleet Footwork,EX1,Passive,-,-,-,-,-,-,-,"Once per turn, when the user makes an attack with Apex, they may teleport themselves or a target of the attack up to 2 tiles after the attack resolves."
+Line Out,EX2,EoT,-,-,-,Trigger,-,Self,-,"If the user's next attack (ignoring players outside of Apex) can target a foe in Apex, the attack's range may be treated as Pierce instead of Line."
+,,,,,,,,,,
