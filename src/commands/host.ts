@@ -175,15 +175,12 @@ function handleAddPlayer(room: Room, user: User, args: string) {
     );
   }
 
-  // Parse stat strings
-  const lvl = Math.min(level, 7);
-  const hpBase = parseInt(classData.stats.hp.split("+")[0]) || 50;
-  const hpGrowth = parseInt(classData.stats.hp.split("+")[1]) || 5;
-  const maxhp = hpBase + hpGrowth * (lvl - 1);
+  // Parse stat strings (flat values — same at all levels)
+  const lvl = Math.min(level, 10);
+  const maxhp = parseInt(classData.stats.hp) + parseInt(weaponData.stats.hp);
 
   function statVal(statList: string): number {
-    const vals = statList.split(",").map((s) => parseInt(s.trim()));
-    return vals[Math.min(lvl - 1, vals.length - 1)] || 0;
+    return parseFloat(statList) || 0;
   }
 
   // Determine next entity number
@@ -226,6 +223,7 @@ function handleAddPlayer(room: Room, user: User, args: string) {
     dashUsed: false,
     standardUsed: false,
     movementUsed: false,
+    swiftUsed: false,
   };
 
   game.entities.push(entity);

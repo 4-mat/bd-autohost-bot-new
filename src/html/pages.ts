@@ -11,63 +11,52 @@ import {
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
 
-// ── Style Constants ──────────────────────────────────────────────────────────
+// ── Premove Mode Tracking ─────────────────────────────────────────────────────
 
-const C = {
-  bg: "#1a1a2e",
-  bgLight: "#16213e",
-  bgCard: "#0f3460",
-  text: "#e0e0e0",
-  textDim: "#8888aa",
-  accent: "#00aaff",
-  green: "#00cc00",
-  yellow: "#cccc00",
-  red: "#cc0000",
-  gold: "#ffcc00",
-  enemy: "#ff4444",
-  ally: "#4488ff",
-  self: "#44cc44",
-  btnBg: "#2a2a4e",
-  btnBorder: "#00aaff",
-  border: "#333355",
-  headerBg: "#0f3460",
-};
+export const premoveSet = new Set<string>();
 
-const FONT = "font-family:'Courier New',monospace;font-size:11px";
-const FONT_SM = "font-family:'Courier New',monospace;font-size:10px";
-const FONT_XS = "font-family:'Courier New',monospace;font-size:9px";
+// ── BD / PS Style Constants ──────────────────────────────────────────────────
+
+const TILE =
+  "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
+const HEADER_CELL =
+  "width:22px;min-width:22px;padding:0;text-align:center;vertical-align:middle";
+const TABLE_BORDER =
+  'style="border-spacing:0px;border-collapse:collapse;border:1px solid #888;background:rgba(120,120,225,0.10)"';
+const PLAYER_LABEL =
+  "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function btn(value: string, label: string, extra = ""): string {
-  return `<button name="send" value="${value}" style="padding:3px 8px;margin:2px;background:${C.btnBg};color:#fff;border:1px solid ${C.btnBorder};cursor:pointer;font-size:11px;font-family:'Courier New',monospace;${extra}">${label}</button>`;
+  return `<button name="send" value="${value}" style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif;${extra}">${label}</button>`;
 }
 
-function pill(text: string, bg: string): string {
-  return `<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:3px;background:${bg};color:#fff;font-size:10px;font-family:'Courier New',monospace">${text}</span>`;
+function esc(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 // ── Host Page ────────────────────────────────────────────────────────────────
 
 export function buildHostPage(game: Game): string {
   const map = buildMap(game);
-  const pl = buildPlayerList(game);
-  const to = buildTurnOrder(game);
+  const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game);
   const controls = buildControls(game);
 
-  return `<div style="max-width:900px;${FONT};color:${C.text};background:${C.bg};padding:8px;border:1px solid ${C.border}">
-  <div style="background:${C.headerBg};padding:6px 10px;border-radius:4px;margin-bottom:8px;border-left:3px solid ${C.accent}">
-    <b style="color:${C.accent};font-size:13px">Game: ${esc(game.id)}</b>
-    <span style="color:${C.textDim};margin:0 8px">|</span>
-    <span style="color:${C.gold}">${esc(game.mode)}</span>
-    <span style="color:${C.textDim};margin:0 8px">|</span>
-    <span>Round <b style="color:${C.accent}">${game.round}</b></span>
-    <span style="color:${C.textDim};margin:0 8px">|</span>
-    <span style="color:${C.textDim}">Phase: ${game.phase}</span>
-  </div>
+  return `<div style="margin:35px;font-size:12px;font-family:Verdana,sans-serif">
+  <b>Game: ${esc(game.id)}</b> — ${esc(game.mode)} — Round <b>${game.round}</b> — Phase: ${game.phase}
+  <hr>
   ${map}
+  <hr>
   ${pl}
-  ${to}
+  <hr>
   ${log}
+  <hr>
   ${controls}
 </div>`;
 }
@@ -76,234 +65,202 @@ export function buildHostPage(game: Game): string {
 
 export function buildPlayerPage(game: Game, entity: Entity): string {
   const isTurn = game.turnOrder[game.turnIndex] === entity.num;
-  const curEntity = isTurn ? entity : null;
 
   const map = buildMiniMap(game, entity);
   const stats = buildEntityStats(entity);
-  const statusEffects = buildStatusEffects(entity);
 
   let phase = "";
   let actions = "";
 
   if (isTurn) {
-    if (!entity.movementUsed) {
-      phase = `<div style="background:${C.bgCard};padding:4px 8px;border-radius:3px;margin:6px 0;border-left:3px solid ${C.gold}"><b style="color:${C.gold}">MOVEMENT PHASE</b> <span style="color:${C.textDim}">Click a tile to move</span></div>`;
+    const inPremove = premoveSet.has(entity.num);
+
+    if (!entity.movementUsed && inPremove) {
+      phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #00cc00;background:rgba(0,204,0,0.10)"><b style="color:#00cc00">PRE-MOVE ABILITIES</b> <span style="color:#888">Free / Swift / Trigger before movement</span></div>`;
+      actions = buildPreMoveAbilities(game, entity);
+      actions += `<div style="margin-top:6px">${btn("%premove", "Back to Movement")}</div>`;
+    } else if (!entity.movementUsed) {
+      phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move</span></div>`;
       actions = buildMoveButtons(game, entity);
       actions += buildDashButton(entity);
+      actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")}</div>`;
     } else {
-      phase = `<div style="background:${C.bgCard};padding:4px 8px;border-radius:3px;margin:6px 0;border-left:3px solid ${C.accent}"><b style="color:${C.accent}">ACTION PHASE</b> <span style="color:${C.textDim}">Choose an ability</span></div>`;
+      phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
       actions = buildAbilityButtons(game, entity);
     }
-    actions += `<div style="margin-top:6px">${btn("%endturn", "End Turn", "border-color:#cc0000")}</div>`;
+    actions += `<div style="margin-top:6px">${btn("%endturn", "End Turn")}</div>`;
   } else {
     const cur = getCurrentTurnEntity(game);
     const curLabel = cur ? `${cur.num} (${cur.name})` : "...";
-    phase = `<div style="background:${C.bgCard};padding:4px 8px;border-radius:3px;margin:6px 0;border-left:3px solid ${C.textDim}"><i style="color:${C.textDim}">Waiting for your turn...</i> <span style="color:${C.accent}">Current: ${esc(curLabel)}</span></div>`;
+    phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
 
-  return `<div style="max-width:600px;${FONT};color:${C.text};background:${C.bg};padding:8px;border:1px solid ${C.border}">
-  <div style="background:${C.headerBg};padding:6px 10px;border-radius:4px;margin-bottom:6px;border-left:3px solid ${C.self}">
-    <b style="font-size:12px">${esc(entity.num)} ${esc(entity.name)}</b>
-    <span style="color:${C.textDim};margin:0 6px">—</span>
-    <span style="color:${C.accent}">${esc(entity.className)}</span>
-    <span style="color:${C.textDim}">/</span>
-    <span style="color:${C.accent}">${esc(entity.weaponName)}</span>
-    <span style="color:${C.textDim};margin-left:4px">(Lv.${entity.classLevel}/${entity.weaponLevel})</span>
-  </div>
+  return `<div style="margin:35px;font-size:12px;font-family:Verdana,sans-serif">
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> — ${esc(entity.className)}/${esc(entity.weaponName)} (Lv.${entity.classLevel}/${entity.weaponLevel})
+  <hr>
   ${stats}
-  ${statusEffects}
   ${map}
+  <hr>
   ${phase}
   ${actions}
 </div>`;
 }
 
-// ── Map (Host) ───────────────────────────────────────────────────────────────
+// ── Map (Host + Player shared logic) ─────────────────────────────────────────
 
 function buildMap(game: Game): string {
-  const rows = game.map.length;
-  const cols = game.map[0]?.length ?? 0;
-  const curNum = game.turnOrder[game.turnIndex];
-
-  let html = `<div style="margin:6px 0"><b style="color:${C.accent}">Map</b></div>`;
-  html += `<table style="border-collapse:collapse">`;
-
-  // Column headers
-  html += `<tr><td style="width:18px;height:14px"></td>`;
-  for (let c = 0; c < cols; c++) {
-    html += `<td style="width:22px;height:14px;text-align:center;${FONT_XS};color:${C.textDim}">${String.fromCharCode(97 + c)}</td>`;
-  }
-  html += "</tr>";
-
-  for (let r = 0; r < rows; r++) {
-    html += `<tr><td style="width:18px;text-align:center;${FONT_XS};color:${C.textDim}">${r + 1}</td>`;
-    for (let c = 0; c < cols; c++) {
-      const terrain = game.map[r][c];
-      const color = TERRAIN_COLORS[terrain] ?? "#ffffff";
-      const entity = game.entities.find(
-        (e) => e.pos[0] === r && e.pos[1] === c,
-      );
-      const isCur = entity?.num === curNum;
-      const label = entity ? entity.num : "";
-      const bg = entity ? (isCur ? C.gold : "#ff6600") : color;
-      const border = isCur ? `2px solid ${C.gold}` : `1px solid ${C.border}`;
-      const textColor = entity ? "#000" : "#000";
-      html += `<td style="width:22px;height:22px;background:${bg};border:${border};text-align:center;${FONT_XS};font-weight:bold;color:${textColor}" title="${TERRAIN_NAMES[terrain] ?? "Normal"}">${label}</td>`;
-    }
-    html += "</tr>";
-  }
-  html += "</table>";
-  return html;
+  return buildMapTable(game, null);
 }
-
-// ── Mini Map (Player) ────────────────────────────────────────────────────────
 
 function buildMiniMap(game: Game, self: Entity): string {
+  return buildMapTable(game, self);
+}
+
+function buildMapTable(game: Game, self: Entity | null): string {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
+  const curNum = game.turnOrder[game.turnIndex];
 
-  let html = `<div style="margin:6px 0"><b style="color:${C.accent}">Map</b></div>`;
-  html += `<table style="border-collapse:collapse">`;
+  let html = `<b>Map</b>`;
+  html += `<div style="overflow-x:auto">`;
+  html += `<table align="center" ${TABLE_BORDER}>`;
 
-  // Column headers
-  html += `<tr><td style="width:14px;height:12px"></td>`;
+  // Column header row — numbers
+  html += `<tr><td style="${HEADER_CELL}"></td>`;
   for (let c = 0; c < cols; c++) {
-    html += `<td style="width:18px;height:12px;text-align:center;font-size:8px;color:${C.textDim}">${String.fromCharCode(97 + c)}</td>`;
+    html += `<td style="${HEADER_CELL}"><b>${c + 1}</b></td>`;
   }
   html += "</tr>";
 
+  // Data rows — letter labels
   for (let r = 0; r < rows; r++) {
-    html += `<tr><td style="width:14px;text-align:center;font-size:8px;color:${C.textDim}">${r + 1}</td>`;
+    html += `<tr>`;
+    html += `<td style="${HEADER_CELL}"><b>${String.fromCharCode(65 + r)}</b></td>`;
+
     for (let c = 0; c < cols; c++) {
       const terrain = game.map[r][c];
-      const color = TERRAIN_COLORS[terrain] ?? "#ffffff";
+      const color = TERRAIN_COLORS[terrain] ?? "#99E599";
       const entity = game.entities.find(
         (e) => e.pos[0] === r && e.pos[1] === c,
       );
-      const isSelf = entity?.num === self.num;
-      const isAlly =
-        entity && !isSelf && entity.team === self.team && self.team !== 0;
-      const isEnemy = entity && !isSelf && !isAlly;
-      const label = entity ? entity.num : "";
 
-      let bg = color;
-      if (isSelf) bg = C.self;
-      else if (isAlly) bg = C.ally;
-      else if (isEnemy) bg = C.enemy;
-      else if (entity) bg = "#ff6600";
+      let label = "";
+      let title = TERRAIN_NAMES[terrain] ?? "Normal";
+      let highlight = "";
+      let isCur = false;
 
-      html += `<td style="width:18px;height:18px;background:${bg};border:1px solid ${C.border};text-align:center;font-size:8px;font-weight:bold;color:#000" title="${entity ? entity.name : (TERRAIN_NAMES[terrain] ?? "Normal")}">${label}</td>`;
+      if (entity) {
+        label = entity.num;
+        title = entity.name;
+        isCur = entity.num === curNum;
+      }
+
+      if (self && entity) {
+        const isSelf = entity.num === self.num;
+        const isAlly = !isSelf && entity.team === self.team && self.team !== 0;
+        if (isSelf) highlight = "outline:2px solid #0a0;";
+        else if (isAlly) highlight = "outline:2px solid #08c;";
+      } else if (isCur && entity) {
+        highlight = "outline:2px solid #cc0;";
+      }
+
+      html += `<td style="background:${color};${TILE}${highlight}" title="${title}"`;
+      if (entity) {
+        html += `><b style="${PLAYER_LABEL}">${label}</b></td>`;
+      } else {
+        html += `></td>`;
+      }
     }
     html += "</tr>";
   }
-  html += "</table>";
+
+  html += "</table></div>";
   return html;
 }
 
-// ── Player List (Host) ───────────────────────────────────────────────────────
+// ── Player Data Table (Host) ─────────────────────────────────────────────────
 
-function buildPlayerList(game: Game): string {
-  const curNum = game.turnOrder[game.turnIndex];
+function buildPlayerDataTable(game: Game): string {
+  let html = `<b>Player Data</b>`;
+  html += `<div style="overflow-x:auto">`;
+  html += `<table class="bdinfo" align="center" ${TABLE_BORDER} cellpadding="3">`;
+  html += `<col width="22"><col><col><col><col width="22"><col width="22"><col width="22"><col width="22"><col width="22">`;
 
-  let html = `<div style="margin:6px 0"><b style="color:${C.accent}">Players</b></div>`;
-  html += `<table style="border-collapse:collapse;width:100%;${FONT_SM}">`;
-
-  // Header
-  html += `<tr style="background:${C.headerBg}">`;
+  // Header row
+  html += `<tr style="height:22px">`;
   for (const h of [
     "#",
     "Name",
     "Class/Weapon",
     "HP",
-    "ATK",
-    "MAG",
+    "A",
+    "M",
     "PD",
     "MD",
     "EVA",
     "MP",
-    "Pos",
   ]) {
-    html += `<th style="padding:3px 6px;text-align:left;border-bottom:1px solid ${C.border};color:${C.accent};font-size:10px">${h}</th>`;
+    html += `<th style="padding:0px 8px">${h}</th>`;
   }
   html += "</tr>";
 
   for (const e of game.entities) {
-    const isCur = e.num === curNum;
-    const hpPct = Math.max(0, (e.curhp / e.maxhp) * 100);
-    const hpColor = hpPct > 50 ? C.green : hpPct > 25 ? C.yellow : C.red;
-    const rowBg = isCur ? C.bgCard : "transparent";
-    const rowStyle = isCur ? `background:${rowBg}` : "";
-
-    html += `<tr style="${rowStyle}">`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border};${isCur ? `color:${C.gold};font-weight:bold` : ""}">${e.num}</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border}">${esc(e.name)}</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border};color:${C.textDim}">${esc(e.className)}/${esc(e.weaponName)} (${e.classLevel}/${e.weaponLevel})</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border};color:${hpColor};font-weight:bold">${e.curhp}/${e.maxhp}</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border}">${e.atk}</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border}">${e.mag}</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border}">${e.pd}</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border}">${e.md}</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border}">${e.eva}</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border}">${e.mp}</td>`;
-    html += `<td style="padding:2px 6px;border-bottom:1px solid ${C.border};color:${C.accent}">${posToStr(e.pos[0], e.pos[1])}</td>`;
+    html += `<tr style="height:22px">`;
+    html += `<th style="padding:0px 8px" title="${esc(e.className)}, ${esc(e.weaponName)}"><b>${esc(e.num)}</b></th>`;
+    html += `<th style="padding:0px 8px">${esc(e.name)}</th>`;
+    html += `<th style="padding:0px 8px">${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})</th>`;
+    html += `<th style="padding:0px 8px">${e.curhp}/${e.maxhp}</th>`;
+    html += `<th style="padding:0px 8px">${e.atk}</th>`;
+    html += `<th style="padding:0px 8px">${e.mag}</th>`;
+    html += `<th style="padding:0px 8px">${e.pd}</th>`;
+    html += `<th style="padding:0px 8px">${e.md}</th>`;
+    html += `<th style="padding:0px 8px">${e.eva}</th>`;
+    html += `<th style="padding:0px 8px">${e.mp}</th>`;
     html += "</tr>";
   }
-  html += "</table>";
-  return html;
-}
 
-// ── Turn Order ───────────────────────────────────────────────────────────────
-
-function buildTurnOrder(game: Game): string {
-  let html = `<div style="margin:6px 0"><b style="color:${C.accent}">Turn Order:</b> `;
-
-  const parts: string[] = [];
-  for (let i = 0; i < game.turnOrder.length; i++) {
-    const entity = game.entities.find((e) => e.num === game.turnOrder[i]);
-    if (!entity) continue;
-    if (i === game.turnIndex) {
-      parts.push(
-        `<span style="color:${C.gold};font-weight:bold">${entity.num}</span>`,
-      );
-    } else {
-      parts.push(`<span style="color:${C.textDim}">${entity.num}</span>`);
-    }
+  // Turn order row
+  const turnParts: string[] = [];
+  for (const num of game.turnOrder) {
+    const e = game.entities.find((x) => x.num === num);
+    turnParts.push(e ? e.name : num);
   }
-  html += parts.join(` <span style="color:${C.textDim}">→</span> `);
-  html += "</div>";
+  html += `<tr style="min-height:22px"><td colspan="10" style="text-align:center"><b>Turn Order: ${turnParts.join(", ")}</b></td></tr>`;
+
+  html += "</table></div>";
   return html;
 }
 
 // ── Action Log ───────────────────────────────────────────────────────────────
 
 function buildActionLog(game: Game): string {
+  let html = `<b>Action Log</b>`;
   if (game.log.length === 0) {
-    return `<div style="margin:6px 0"><b style="color:${C.accent}">Action Log:</b> <span style="color:${C.textDim}">(empty)</span></div>`;
+    html += `<div style="color:#888"><i>(empty)</i></div>`;
+    return html;
   }
-  const recent = game.log.slice(-12);
-  let html = `<div style="margin:6px 0;max-height:160px;overflow-y:auto;border:1px solid ${C.border};border-radius:3px;padding:4px;background:${C.bgLight}">`;
-  html += `<b style="color:${C.accent}">Action Log</b><br>`;
+
+  const recent = game.log.slice(-15);
+  html += `<table align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">`;
   for (const entry of recent) {
-    html += `<div style="margin:2px 0;padding:2px 0;border-bottom:1px solid ${C.border}"><span style="color:${C.textDim}">[${entry.turn}]</span> ${esc(entry.description)}</div>`;
+    html += `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`;
   }
-  html += "</div>";
+  html += "</table>";
   return html;
 }
 
 // ── Controls (Host) ──────────────────────────────────────────────────────────
 
 function buildControls(game: Game): string {
-  return `<div style="margin:8px 0;padding:6px;background:${C.bgCard};border-radius:4px;border:1px solid ${C.border}">
-  <b style="color:${C.accent}">Controls</b><br>
-  <div style="margin-top:4px">
-    ${btn("%next", "Next ▶", `border-color:${C.green}`)}
-    ${btn("%back", "◀ Back", `border-color:${C.yellow}`)}
-    <span style="color:${C.textDim};margin:0 4px">|</span>
-    ${btn("%r 1d20", "Roll 1d20")}
-    ${btn("%r 2d8+5", "Roll 2d8+5")}
-    ${btn("%r 1d10+2", "Roll 1d10+2")}
-    ${btn("%r 2d6+0", "Roll 2d6")}
-  </div>
+  return `<b>Controls</b><br>
+<div style="margin-top:4px">
+  ${btn("%next", "Next Turn")}
+  ${btn("%back", "Undo")}
+  <span style="color:#888;margin:0 4px">|</span>
+  ${btn("%r 1d20", "1d20")}
+  ${btn("%r 2d8+5", "2d8+5")}
+  ${btn("%r 1d10+2", "1d10+2")}
+  ${btn("%r 2d6+0", "2d6")}
 </div>`;
 }
 
@@ -311,52 +268,32 @@ function buildControls(game: Game): string {
 
 function buildEntityStats(entity: Entity): string {
   const hpPct = Math.max(0, (entity.curhp / entity.maxhp) * 100);
-  const hpColor = hpPct > 50 ? C.green : hpPct > 25 ? C.yellow : C.red;
-  const hpBar = hpPct > 50 ? C.green : hpPct > 25 ? C.yellow : C.red;
+  const hpColor = hpPct > 50 ? "#0c0" : hpPct > 25 ? "#cc0" : "#c00";
 
-  return `<div style="margin:4px 0;padding:6px;background:${C.bgLight};border:1px solid ${C.border};border-radius:3px">
-  <div style="margin-bottom:4px">
-    <b>HP:</b>
-    <span style="color:${hpColor};font-weight:bold">${entity.curhp}/${entity.maxhp}</span>
-    <span style="display:inline-block;width:80px;height:6px;background:#333;border-radius:3px;vertical-align:middle;margin:0 4px">
-      <span style="display:block;width:${hpPct}%;height:100%;background:${hpBar};border-radius:3px"></span>
-    </span>
-  </div>
-  <div style="color:${C.textDim}">
-    ATK: <b style="color:${C.text}">${entity.atk}</b>
-    MAG: <b style="color:${C.text}">${entity.mag}</b>
-    PD: <b style="color:${C.text}">${entity.pd}</b>
-    MD: <b style="color:${C.text}">${entity.md}</b>
-    EVA: <b style="color:${C.text}">${entity.eva}</b>
-    MP: <b style="color:${C.accent}">${entity.mp}</b>
-  </div>
-</div>`;
-}
+  let html = `<div style="margin:4px 0;padding:4px 8px;border:1px solid #888;background:rgba(120,120,225,0.10)">`;
+  html += `<b>HP:</b> <b style="color:${hpColor}">${entity.curhp}/${entity.maxhp}</b>`;
+  html += ` <b>ATK:</b> ${entity.atk}`;
+  html += ` <b>MAG:</b> ${entity.mag}`;
+  html += ` <b>PD:</b> ${entity.pd}`;
+  html += ` <b>MD:</b> ${entity.md}`;
+  html += ` <b>EVA:</b> ${entity.eva}`;
+  html += ` <b>MP:</b> <b style="color:#08c">${entity.mp}</b>`;
 
-// ── Status Effects (Player) ──────────────────────────────────────────────────
-
-function buildStatusEffects(entity: Entity): string {
-  const parts: string[] = [];
-
-  for (const s of entity.statuses) {
-    const isDmg = s.damage > 0;
-    const color = isDmg ? C.red : C.yellow;
-    parts.push(
-      pill(
-        `${s.name} ${s.damage > 0 ? s.damage + "/" : ""}${s.rounds}r`,
-        color,
-      ),
-    );
+  if (entity.statuses.length > 0 || entity.buffs.length > 0) {
+    html += `<br>`;
+    for (const s of entity.statuses) {
+      const color = s.damage > 0 ? "#c00" : "#cc0";
+      html += `<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:3px;background:${color};color:#fff;font-size:10px">${esc(s.name)} ${s.damage > 0 ? s.damage + "/" : ""}${s.rounds}r</span>`;
+    }
+    for (const b of entity.buffs) {
+      const color = b.amount > 0 ? "#0c0" : "#c00";
+      const sign = b.amount > 0 ? "+" : "";
+      html += `<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:3px;background:${color};color:#fff;font-size:10px">${sign}${b.amount} ${esc(b.stat)} (${b.rounds}r)</span>`;
+    }
   }
 
-  for (const b of entity.buffs) {
-    const color = b.amount > 0 ? C.green : C.enemy;
-    const sign = b.amount > 0 ? "+" : "";
-    parts.push(pill(`${sign}${b.amount} ${b.stat} (${b.rounds}r)`, color));
-  }
-
-  if (parts.length === 0) return "";
-  return `<div style="margin:4px 0">${parts.join(" ")}</div>`;
+  html += "</div>";
+  return html;
 }
 
 // ── Move Buttons (Player) ────────────────────────────────────────────────────
@@ -366,18 +303,55 @@ function buildMoveButtons(game: Game, entity: Entity): string {
   const tiles: string[] = [];
 
   for (const [key] of reachable) {
-    tiles.push(btn(`%move ${key}`, key));
+    tiles.push(btn(`%move ${key},${entity.name}`, key));
   }
 
   if (tiles.length === 0) {
-    return `<div style="margin:4px 0;color:${C.textDim}"><i>No valid moves.</i></div>`;
+    return `<div style="margin:4px 0;color:#888"><i>No valid moves.</i></div>`;
   }
   return `<div style="margin:4px 0">${tiles.join(" ")}</div>`;
 }
 
 function buildDashButton(entity: Entity): string {
   if (entity.dashUsed) return "";
-  return `<div style="margin:2px 0">${btn("%dash", "Dash (1.5x MP)", `border-color:${C.yellow}`)}</div>`;
+  return `<div style="margin:2px 0">${btn(`%dash ${entity.name}`, "Dash (1.5x MP)")}</div>`;
+}
+
+// ── Pre-Move Ability Buttons (Player) ────────────────────────────────────────
+
+function buildPreMoveAbilities(game: Game, entity: Entity): string {
+  const available = getPreMoveAbilities(game, entity);
+  if (available.length === 0) {
+    return `<div style="margin:4px 0;color:#888"><i>No pre-move abilities available.</i></div>`;
+  }
+
+  let html = `<div style="margin:4px 0">`;
+  const groups: Record<string, AbilityData[]> = {};
+  for (const ab of available) {
+    const key = ab.actionType;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(ab);
+  }
+
+  const order = ["Trigger", "Swift", "Free"];
+  for (const type of order) {
+    const abs = groups[type];
+    if (!abs || abs.length === 0) continue;
+
+    const typeColor =
+      type === "Swift" ? "#0c0" : type === "Trigger" ? "#cc0" : "#888";
+
+    html += `<div style="margin:4px 0;padding:3px 6px;border-left:2px solid ${typeColor}">`;
+    html += `<span style="color:${typeColor};font-size:10px;font-weight:bold">${type.toUpperCase()}</span><br>`;
+
+    for (const ab of abs) {
+      html += buildAbilityButton(game, entity, ab);
+    }
+    html += "</div>";
+  }
+
+  html += "</div>";
+  return html;
 }
 
 // ── Ability Buttons (Player) ─────────────────────────────────────────────────
@@ -385,12 +359,11 @@ function buildDashButton(entity: Entity): string {
 function buildAbilityButtons(game: Game, entity: Entity): string {
   const available = getAvailableAbilities(game, entity);
   if (available.length === 0) {
-    return `<div style="margin:4px 0;color:${C.textDim}"><i>No abilities available.</i></div>`;
+    return `<div style="margin:4px 0;color:#888"><i>No abilities available.</i></div>`;
   }
 
   let html = `<div style="margin:4px 0">`;
 
-  // Group by action type
   const groups: Record<string, AbilityData[]> = {};
   for (const ab of available) {
     const key = ab.actionType;
@@ -405,14 +378,14 @@ function buildAbilityButtons(game: Game, entity: Entity): string {
 
     const typeColor =
       type === "Standard"
-        ? C.accent
+        ? "#08c"
         : type === "Swift"
-          ? C.green
+          ? "#0c0"
           : type === "Full"
-            ? C.yellow
+            ? "#cc0"
             : type === "Free"
-              ? C.textDim
-              : C.text;
+              ? "#888"
+              : "#333";
 
     html += `<div style="margin:4px 0;padding:3px 6px;border-left:2px solid ${typeColor}">`;
     html += `<span style="color:${typeColor};font-size:10px;font-weight:bold">${type.toUpperCase()}</span><br>`;
@@ -449,43 +422,42 @@ function buildAbilityButton(
     let html = "";
     for (const t of targets) {
       const label = `${ab.name} → ${t.num}`;
-      const cmd = `%attack ${ab.name} @ ${t.num}`;
-      html += btn(cmd, label, `font-size:10px;padding:2px 6px`);
+      const cmd = `%attack ${ab.name} @ ${t.num},${entity.name}`;
+      html += btn(cmd, label, "font-size:11px;padding:2px 6px");
     }
-    // Also add a "no target" button for self-targeting or AoE
     html += `<br>`;
     return html;
   }
 
-  // AoE abilities: single button (no target needed, or targets all in range)
+  // AoE abilities
   if (ab.targetAmount === "AoE" || targets.length <= 1) {
     const label = `${ab.name}${usesStr}${cdStr}`;
     const cmd =
       targets.length === 1
-        ? `%attack ${ab.name} @ ${targets[0].num}`
-        : `%attack ${ab.name}`;
-    return btn(cmd, label, `font-size:10px;padding:2px 6px`);
+        ? `%attack ${ab.name} @ ${targets[0].num},${entity.name}`
+        : `%attack ${ab.name},${entity.name}`;
+    return btn(cmd, label, "font-size:11px;padding:2px 6px");
   }
 
   // Tile targeting
   if (tiles.length > 0) {
-    let html = `<span style="color:${C.textDim};font-size:10px">${ab.name}:</span> `;
+    let html = `<span style="color:#888;font-size:10px">${ab.name}:</span> `;
     for (const t of tiles) {
       html += btn(
-        `%attack ${ab.name} @ ${t}`,
+        `%attack ${ab.name} @ ${t},${entity.name}`,
         t,
-        `font-size:9px;padding:1px 4px`,
+        "font-size:10px;padding:1px 4px",
       );
     }
     html += "<br>";
     return html;
   }
 
-  // Fallback: just the ability name
+  // Fallback
   return btn(
-    `%attack ${ab.name}`,
+    `%attack ${ab.name},${entity.name}`,
     `${ab.name}${usesStr}`,
-    `font-size:10px;padding:2px 6px`,
+    "font-size:11px;padding:2px 6px",
   );
 }
 
@@ -493,7 +465,6 @@ function buildAbilityButton(
 
 function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
   return entity.abilities.filter((ab) => {
-    // Skip passive, reaction, trigger
     if (
       ab.actionType === "Passive" ||
       ab.actionType === "Reaction" ||
@@ -501,30 +472,53 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    // Level requirement: basic abilities (level 0) always available;
-    // higher-level abilities need matching classLevel or weaponLevel
     if (ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
 
-    // Cooldown check
     if (entity.cooldowns[ab.name]) return false;
 
-    // Uses check
     if (ab.maxUses) {
       const used = entity.usesUsed[ab.name] ?? 0;
       if (used >= ab.maxUses) return false;
     }
 
-    // Action type restrictions
     if (ab.actionType === "Standard" && entity.standardUsed) return false;
+    if (ab.actionType === "Swift" && entity.swiftUsed) return false;
     if (ab.actionType === "Movement" && entity.movementUsed) return false;
     if (
       ab.actionType === "Full" &&
       (entity.standardUsed || entity.movementUsed)
     )
       return false;
+
+    return true;
+  });
+}
+
+function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
+  return entity.abilities.filter((ab) => {
+    if (
+      ab.actionType !== "Free" &&
+      ab.actionType !== "Swift" &&
+      ab.actionType !== "Trigger"
+    )
+      return false;
+
+    if (ab.level > 0) {
+      if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
+        return false;
+    }
+
+    if (entity.cooldowns[ab.name]) return false;
+
+    if (ab.maxUses) {
+      const used = entity.usesUsed[ab.name] ?? 0;
+      if (used >= ab.maxUses) return false;
+    }
+
+    if (ab.actionType === "Swift" && entity.swiftUsed) return false;
 
     return true;
   });
@@ -544,11 +538,9 @@ function getValidTargets(
       return false;
     if (e.curhp <= 0) return false;
 
-    // Group filter
     switch (ab.targetGroup) {
       case "Foe":
         if (caster.team === 0) {
-          // FFA: everyone else is a foe
           if (e.num === caster.num) return false;
         } else {
           if (e.team === caster.team) return false;
@@ -565,22 +557,19 @@ function getValidTargets(
       case "Any":
         break;
       case "Foe or Ally":
-        // Can target anyone
         break;
       default:
-        // "Self or Ally", "Self or Foe", etc.
         if (
           ab.targetGroup.includes("Ally") &&
           !ab.targetGroup.includes("Foe")
         ) {
-          if (e.num === caster.num) return true; // self is ok
+          if (e.num === caster.num) return true;
           if (caster.team === 0) return false;
           if (e.team !== caster.team) return false;
         }
         break;
     }
 
-    // Range check
     if (ab.range !== "Global" && ab.range !== "Self") {
       if (!inRange(game, caster.pos, e.pos, ab.range)) return false;
     }
@@ -611,14 +600,4 @@ function getValidTiles(game: Game, ab: AbilityData, caster: Entity): string[] {
 function getCurrentTurnEntity(game: Game): Entity | null {
   const num = game.turnOrder[game.turnIndex];
   return game.entities.find((e) => e.num === num) ?? null;
-}
-
-// ── Utility ──────────────────────────────────────────────────────────────────
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

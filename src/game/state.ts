@@ -20,19 +20,19 @@ export enum Terrain {
 }
 
 export const TERRAIN_COLORS: Record<number, string> = {
-  [Terrain.Normal]: "#b8d0a0",
-  [Terrain.Stop]: "#444444",
-  [Terrain.Water]: "#6688cc",
-  [Terrain.Forest]: "#2d6b22",
-  [Terrain.Ice]: "#a8d8ea",
-  [Terrain.Air]: "#e8e8ff",
-  [Terrain.Sticky]: "#cc9933",
-  [Terrain.Lava]: "#dd3300",
-  [Terrain.Broken]: "#666666",
-  [Terrain.Bone]: "#ccccaa",
+  [Terrain.Normal]: "#99E599",
+  [Terrain.Stop]: "#919191",
+  [Terrain.Water]: "#454FDF",
+  [Terrain.Forest]: "#226622",
+  [Terrain.Ice]: "#99D9EA",
+  [Terrain.Air]: "#CCCCFF",
+  [Terrain.Sticky]: "#CCAA00",
+  [Terrain.Lava]: "#DD2200",
+  [Terrain.Broken]: "#303030",
+  [Terrain.Bone]: "#CCCCAA",
   [Terrain.Stone]: "#888888",
-  [Terrain.Hearth]: "#ff6633",
-  [Terrain.Boost]: "#aaffaa",
+  [Terrain.Hearth]: "#FF6633",
+  [Terrain.Boost]: "#AAFFAA",
 };
 
 export const TERRAIN_NAMES: Record<number, string> = {
@@ -126,6 +126,7 @@ export interface Entity {
   dashUsed: boolean;
   standardUsed: boolean;
   movementUsed: boolean;
+  swiftUsed: boolean;
 }
 
 export interface PendingAction {
@@ -179,6 +180,7 @@ function serializeState(game: Game): string {
       dashUsed: e.dashUsed,
       standardUsed: e.standardUsed,
       movementUsed: e.movementUsed,
+      swiftUsed: e.swiftUsed,
     })),
     turnIndex: game.turnIndex,
     round: game.round,
@@ -207,6 +209,7 @@ export function popSnapshot(game: Game): boolean {
       ent.dashUsed = e.dashUsed;
       ent.standardUsed = e.standardUsed;
       ent.movementUsed = e.movementUsed;
+      ent.swiftUsed = e.swiftUsed;
     }
   }
   game.turnIndex = data.turnIndex;
@@ -317,26 +320,495 @@ export function inRange(
   to: [number, number],
   range: string,
 ): boolean {
-  const rangeStr = range.toLowerCase();
+  const rangeStr = range.toLowerCase().trim();
+
+  if (rangeStr === "" || rangeStr === "varies") return false;
+
+  // Melee: 8 adjacent tiles (Chebyshev distance 1)
   if (rangeStr === "melee") {
-    return dist(from, to) <= 2; // adjacent tiles including diagonal
+    return chebyshev(from, to) <= 1;
   }
+
   if (rangeStr === "global") return true;
 
-  const match = rangeStr.match(/range\s*(\d+)/);
-  if (match) {
-    const r = parseInt(match[1]);
-    const d = manhattan(from, to);
-    return d <= r && hasLineOfSight(game, from, to);
+  // Burst X: square area, X tiles out from each side (Chebyshev <= X)
+  const burstMatch = rangeStr.match(/^burst\s*(\d+)/);
+  if (burstMatch) {
+    const r = parseInt(burstMatch[1]);
+    return chebyshev(from, to) <= r;
   }
 
-  const homing = rangeStr.match(/homing\s*(\d+)/);
-  if (homing) {
-    const r = parseInt(homing[1]);
+  // Star X: all tiles of Range X (Manhattan <= X with LOS)
+  const starMatch = rangeStr.match(/^star\s*(\d+)/);
+  if (starMatch) {
+    const r = parseInt(starMatch[1]);
+    return manhattan(from, to) <= r && hasLineOfSight(game, from, to);
+  }
+
+  // Range X: Manhattan distance with LOS
+  const rangeMatch = rangeStr.match(/^range\s*(\d+)/);
+  if (rangeMatch) {
+    const r = parseInt(rangeMatch[1]);
+    return manhattan(from, to) <= r && hasLineOfSight(game, from, to);
+  }
+
+  // Homing X: Manhattan distance, no LOS needed (curves around)
+  const homingMatch = rangeStr.match(/^homing\s*(\d+)/);
+  if (homingMatch) {
+    const r = parseInt(homingMatch[1]);
     return manhattan(from, to) <= r;
   }
 
+  // Line X: cardinal line or diagonal (X/2 rounded up)
+  const lineMatch = rangeStr.match(/^line\s*(\d+)/);
+  if (lineMatch) {
+    const r = parseInt(lineMatch[1]);
+    return onLine(from, to, r) && hasLineOfSight(game, from, to);
+  }
+
+  // Pierce X: same as Line but AoE along the line
+  const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
+  if (pierceMatch) {
+    const r = parseInt(pierceMatch[1]);
+    return onLine(from, to, r) && hasLineOfSight(game, from, to);
+  }
+
+  // Beam X: 3 tiles wide, X tiles deep
+  const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
+  if (beamMatch) {
+    const r = parseInt(beamMatch[1]);
+    return inBeam(game, from, to, r);
+  }
+
+  // Cone X: triangle area in front in a cardinal direction
+  const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
+  if (coneMatch) {
+    const r = parseInt(coneMatch[1]);
+    return inCone(from, to, r);
+  }
+
   return false;
+}
+
+// Chebyshev distance (max of row diff, col diff) — diagonal counts as 1
+export function chebyshev(a: [number, number], b: [number, number]): number {
+  return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
+}
+
+// Check if target is on a line (cardinal or diagonal) from origin within range
+function onLine(
+  from: [number, number],
+  to: [number, number],
+  range: number,
+): boolean {
+  const dr = to[0] - from[0];
+  const dc = to[1] - from[1];
+
+  // Cardinal: same row or same col
+  if (dr === 0 || dc === 0) {
+    return Math.abs(dr) + Math.abs(dc) <= range;
+  }
+
+  // Diagonal: abs(dr) === abs(dc)
+  if (Math.abs(dr) === Math.abs(dc)) {
+    // Diagonal range = X/2 rounded up per the glossary
+    const diagDist = Math.abs(dr);
+    return diagDist <= Math.ceil(range / 2);
+  }
+
+  return false;
+}
+
+// Check if target is in a Beam (3 tiles wide, X tiles deep)
+function inBeam(
+  game: Game,
+  from: [number, number],
+  to: [number, number],
+  range: number,
+): boolean {
+  const dr = to[0] - from[0];
+  const dc = to[1] - from[1];
+
+  // Beam only works cardinally (up/down/left/right)
+  // 3 tiles wide = perpendicular offset of -1, 0, or +1
+  if (dr === 0) {
+    // Horizontal beam
+    const colDist = Math.abs(dc);
+    if (colDist < 1 || colDist > range) return false;
+    // Check perpendicular (row offset must be 0 or ±1)
+    return Math.abs(dr) <= 0; // already checked dr===0
+  }
+  if (dc === 0) {
+    // Vertical beam
+    const rowDist = Math.abs(dr);
+    if (rowDist < 1 || rowDist > range) return false;
+    return true;
+  }
+
+  // Diagonal beams: treat the diagonal as the center line
+  if (Math.abs(dr) === Math.abs(dc)) {
+    const diagDist = Math.abs(dr);
+    if (diagDist < 1 || diagDist > range) return false;
+    // Beam width perpendicular to diagonal = 1 tile on each side
+    // For a diagonal beam, the "3 wide" means the two adjacent diagonal columns
+    // We check if the target is on the center diagonal or one tile off
+    return true; // on the diagonal center line, within range
+  }
+
+  // Off-diagonal: check if within 1 tile perpendicular of the center line
+  // For cardinal beams, perpendicular offset of ±1 is allowed
+  if (Math.abs(dr) <= range && dc === 0) return Math.abs(dc) <= 0;
+  if (Math.abs(dc) <= range && dr === 0) return Math.abs(dr) <= 0;
+
+  return false;
+}
+
+// Check if target is in a Cone (triangle in front, cardinal direction)
+function inCone(
+  from: [number, number],
+  to: [number, number],
+  range: number,
+): boolean {
+  const dr = to[0] - from[0];
+  const dc = to[1] - from[1];
+
+  if (dr === 0 && dc === 0) return false;
+
+  // Cone X: triangle area in a cardinal direction
+  // Cone 1 = 3 tiles in front (1 tile forward, 3 wide at base)
+  // Cone 2 = Cone 1 + 5 more tiles behind = 2 deep, widening by 1 each row
+  // General: at distance d forward, the width is 2*d+1
+
+  // Determine cardinal direction (pick dominant axis)
+  const absDr = Math.abs(dr);
+  const absDc = Math.abs(dc);
+
+  if (absDr > absDc) {
+    // Vertical cone (up or down)
+    const forward = dr; // positive = down, negative = up
+    const sideways = absDc;
+
+    // Must be in the correct direction
+    if (Math.sign(forward) === 0) return false;
+
+    const d = Math.abs(forward);
+    if (d < 1 || d > range) return false;
+
+    // At distance d, width extends d tiles to each side (Cone X pattern)
+    return sideways <= d;
+  } else if (absDc > absDr) {
+    // Horizontal cone (left or right)
+    const forward = dc;
+    const sideways = absDr;
+
+    const d = Math.abs(forward);
+    if (d < 1 || d > range) return false;
+
+    return sideways <= d;
+  }
+
+  // Pure diagonal — not a cardinal cone
+  return false;
+}
+
+// Get all entity positions in a Burst X pattern from a center
+export function getBurstTiles(
+  center: [number, number],
+  radius: number,
+): [number, number][] {
+  const tiles: [number, number][] = [];
+  for (let dr = -radius; dr <= radius; dr++) {
+    for (let dc = -radius; dc <= radius; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      tiles.push([center[0] + dr, center[1] + dc]);
+    }
+  }
+  return tiles;
+}
+
+// Get all entity positions in a Star X pattern from a center (Manhattan <= X)
+export function getStarTiles(
+  center: [number, number],
+  radius: number,
+): [number, number][] {
+  const tiles: [number, number][] = [];
+  for (let dr = -radius; dr <= radius; dr++) {
+    for (let dc = -radius; dc <= radius; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      if (Math.abs(dr) + Math.abs(dc) <= radius) {
+        tiles.push([center[0] + dr, center[1] + dc]);
+      }
+    }
+  }
+  return tiles;
+}
+
+// Get all entity positions in a Cone from caster in a cardinal direction
+export function getConeTiles(
+  from: [number, number],
+  range: number,
+): [number, number][] {
+  const tiles: [number, number][] = [];
+  const dirs: [number, number][] = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+  ];
+  for (const [dr, dc] of dirs) {
+    for (let d = 1; d <= range; d++) {
+      // At distance d, width extends d tiles perpendicular
+      for (let w = -d; w <= d; w++) {
+        let tr: number, tc: number;
+        if (dr !== 0) {
+          // Vertical cone
+          tr = from[0] + dr * d;
+          tc = from[1] + w;
+        } else {
+          // Horizontal cone
+          tr = from[0] + w;
+          tc = from[1] + dc * d;
+        }
+        tiles.push([tr, tc]);
+      }
+    }
+  }
+  return tiles;
+}
+
+// Get all tiles in a Line from caster in the closest matching direction
+export function getLineTiles(
+  from: [number, number],
+  range: number,
+): [number, number][] {
+  const tiles: [number, number][] = [];
+  const dirs: [number, number][] = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
+  ];
+  for (const [dr, dc] of dirs) {
+    for (let d = 1; d <= range; d++) {
+      if (dr !== 0 && dc !== 0) {
+        // Diagonal: max distance is ceil(range/2)
+        if (d > Math.ceil(range / 2)) break;
+      }
+      tiles.push([from[0] + dr * d, from[1] + dc * d]);
+    }
+  }
+  return tiles;
+}
+
+// Get all tiles in a Pierce from caster (same as Line)
+export function getPierceTiles(
+  from: [number, number],
+  range: number,
+): [number, number][] {
+  return getLineTiles(from, range);
+}
+
+// Get all tiles in a Beam (3 wide, X deep in each cardinal direction)
+export function getBeamTiles(
+  from: [number, number],
+  range: number,
+): [number, number][] {
+  const tiles: [number, number][] = [];
+  const dirs: [number, number][] = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+  ];
+  for (const [dr, dc] of dirs) {
+    for (let d = 1; d <= range; d++) {
+      // 3 wide perpendicular
+      for (let w = -1; w <= 1; w++) {
+        let tr: number, tc: number;
+        if (dr !== 0) {
+          tr = from[0] + dr * d;
+          tc = from[1] + w;
+        } else {
+          tr = from[0] + w;
+          tc = from[1] + dc * d;
+        }
+        tiles.push([tr, tc]);
+      }
+    }
+  }
+  return tiles;
+}
+
+// Get all valid entities in an AoE pattern
+export function getAoETargets(
+  game: Game,
+  caster: Entity,
+  range: string,
+  group: string,
+): Entity[] {
+  const rangeStr = range.toLowerCase().trim();
+  let tiles: [number, number][] = [];
+
+  const burstMatch = rangeStr.match(/^burst\s*(\d+)/);
+  if (burstMatch) {
+    tiles = getBurstTiles(caster.pos, parseInt(burstMatch[1]));
+  }
+
+  const starMatch = rangeStr.match(/^star\s*(\d+)/);
+  if (starMatch) {
+    tiles = getStarTiles(caster.pos, parseInt(starMatch[1]));
+  }
+
+  const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
+  if (coneMatch) {
+    tiles = getConeTiles(caster.pos, parseInt(coneMatch[1]));
+  }
+
+  const lineMatch = rangeStr.match(/^line\s*(\d+)/);
+  if (lineMatch) {
+    tiles = getLineTiles(caster.pos, parseInt(lineMatch[1]));
+  }
+
+  const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
+  if (pierceMatch) {
+    tiles = getPierceTiles(caster.pos, parseInt(pierceMatch[1]));
+  }
+
+  const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
+  if (beamMatch) {
+    tiles = getBeamTiles(caster.pos, parseInt(beamMatch[1]));
+  }
+
+  if (tiles.length === 0) return [];
+
+  const tileSet = new Set(tiles.map(([r, c]) => posToStr(r, c)));
+  const groupLower = group.toLowerCase();
+
+  return game.entities.filter((e) => {
+    if (e.curhp <= 0) return false;
+    if (!isValidGroupTarget(caster, e, groupLower)) return false;
+    return tileSet.has(posToStr(e.pos[0], e.pos[1]));
+  });
+}
+
+// Get Splash targets around a primary target (Burst X from the target)
+export function getSplashTargets(
+  game: Game,
+  caster: Entity,
+  primary: Entity,
+  splashRadius: number,
+  group: string,
+): Entity[] {
+  const tiles = getBurstTiles(primary.pos, splashRadius);
+  const tileSet = new Set(tiles.map(([r, c]) => posToStr(r, c)));
+  const groupLower = group.toLowerCase();
+
+  return game.entities.filter((e) => {
+    if (e.curhp <= 0) return false;
+    if (e.num === primary.num) return false; // primary is already targeted
+    if (!isValidGroupTarget(caster, e, groupLower)) return false;
+    return tileSet.has(posToStr(e.pos[0], e.pos[1]));
+  });
+}
+
+// Check if entity is valid for a target group
+function isValidGroupTarget(
+  caster: Entity,
+  target: Entity,
+  group: string,
+): boolean {
+  if (group === "self") return target.num === caster.num;
+  if (group === "ally")
+    return target.team === caster.team && target.num !== caster.num;
+  if (group === "foe") return target.team !== caster.team;
+  if (group === "any") return true;
+  if (group === "tile") return false;
+  if (group.includes("self and allies")) return target.team === caster.team;
+  if (group.includes("self or ally")) return target.team === caster.team;
+  if (group.includes("self or foe"))
+    return target.team === caster.team || target.team !== caster.team;
+  if (group.includes("foe or ally")) return target.num !== caster.num;
+  if (group.includes("self, foes, allies")) return true;
+  return true;
+}
+
+// Push an entity X tiles away from a source in a straight line
+export function pushEntity(
+  game: Game,
+  target: Entity,
+  source: [number, number],
+  amount: number,
+): { moved: number; path: [number, number][] } {
+  return moveEntityInLine(game, target, source, amount, true);
+}
+
+// Pull an entity X tiles towards a source in a straight line
+export function pullEntity(
+  game: Game,
+  target: Entity,
+  source: [number, number],
+  amount: number,
+): { moved: number; path: [number, number][] } {
+  return moveEntityInLine(game, target, source, amount, false);
+}
+
+function moveEntityInLine(
+  game: Game,
+  target: Entity,
+  source: [number, number],
+  amount: number,
+  away: boolean,
+): { moved: number; path: [number, number][] } {
+  const path: [number, number][] = [];
+  const dr = target.pos[0] - source[0];
+  const dc = target.pos[1] - source[1];
+
+  let dirR = 0;
+  let dirC = 0;
+  if (dr !== 0) dirR = dr > 0 ? 1 : -1;
+  if (dc !== 0) dirC = dc > 0 ? 1 : -1;
+  if (!away) {
+    dirR = -dirR;
+    dirC = -dirC;
+  }
+
+  // For diagonal, normalize to unit diagonal
+  if (dirR !== 0 && dirC !== 0) {
+    // Diagonal: move diagonally
+    let moved = 0;
+    for (let i = 0; i < amount; i++) {
+      const nr = target.pos[0] + dirR;
+      const nc = target.pos[1] + dirC;
+      if (!isPassable(game, nr, nc)) break;
+      target.pos = [nr, nc];
+      path.push([nr, nc]);
+      moved++;
+    }
+    return { moved, path };
+  }
+
+  // Cardinal
+  let moved = 0;
+  for (let i = 0; i < amount; i++) {
+    const nr = target.pos[0] + dirR;
+    const nc = target.pos[1] + dirC;
+    if (!isPassable(game, nr, nc)) break;
+    target.pos = [nr, nc];
+    path.push([nr, nc]);
+    moved++;
+  }
+  return { moved, path };
+}
+
+function isPassable(game: Game, r: number, c: number): boolean {
+  if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length)
+    return false;
+  const t = game.map[r][c];
+  return !isObstruction(t) && t !== Terrain.Lava;
 }
 
 // Roll accuracy check
@@ -510,6 +982,7 @@ export function nextTurn(game: Game): Entity | null {
   entity.dashUsed = false;
   entity.standardUsed = false;
   entity.movementUsed = false;
+  entity.swiftUsed = false;
   entity.pendingAction = null;
 
   processStartOfTurn(game, entity);

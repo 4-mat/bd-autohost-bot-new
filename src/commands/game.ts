@@ -19,7 +19,7 @@ import {
   type Entity,
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
-import { buildHostPage, buildPlayerPage } from "../html/pages.js";
+import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
 import { resolveAction } from "../game/resolve.js";
 
 export function gameCommand(
@@ -32,17 +32,19 @@ export function gameCommand(
 ) {
   const game = room ? findGameForRoom(room.id) : null;
 
+  const full = val ? `${args},${val}` : args;
+
   switch (cmd) {
     case "move":
     case "dash":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handleMove(game, user, cmd, args);
+      handleMove(game, user, cmd, full);
       break;
 
     case "attack":
     case "use":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handleAttack(game, user, cmd, args);
+      handleAttack(game, user, cmd, full);
       break;
 
     case "endturn":
@@ -74,6 +76,11 @@ export function gameCommand(
     case "map":
       if (!game) return sendPm(user.name, "No active game in this room.");
       broadcastPages(game);
+      break;
+
+    case "premove":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handlePremove(game, user);
       break;
 
     case "pl":
@@ -116,47 +123,93 @@ function findGameForRoom(roomid: string): Game | null {
 }
 
 function handleMove(game: Game, user: User, cmd: string, args: string) {
-  const entity = getCurrentEntity(game);
-  if (!entity || toId(entity.name) !== toId(user.name)) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entityName = "";
+  let posStr = args;
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length >= 3) {
+    entityName = parts[parts.length - 1];
+    posStr = parts.slice(0, -1).join(",");
+  } else if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+    entityName = parts[1];
+    posStr = parts[0];
+  }
+
+  let entity: Entity | null = null;
+  if (entityName && isHost) {
+    entity = getEntity(game, entityName);
+    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
+  } else {
+    entity = getCurrentEntity(game);
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
     return sendPm(user.name, "It's not your turn.");
   }
   if (entity.movementUsed && cmd === "move") {
-    return sendPm(user.name, "You already moved this turn.");
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
   }
 
-  const pos = parsePos(args);
+  const pos = parsePos(posStr);
   if (!pos)
-    return sendPm(user.name, "Invalid position. Use: %move letter, number");
+    return sendPm(user.name, "Invalid position. Use: %move e4[,entity]");
 
   const reachable = getReachableTiles(game, entity.pos, entity.mp);
   const key = `${pos[0] + 1},${pos[1] + 1}`;
 
   if (!reachable.has(key)) {
-    return sendPm(
-      user.name,
-      "That tile is not reachable with your remaining MP.",
-    );
+    return sendPm(user.name, "That tile is not reachable with remaining MP.");
   }
 
   pushSnapshot(game);
   entity.pos = pos;
   entity.movementUsed = true;
   if (cmd === "dash") entity.dashUsed = true;
+  premoveSet.delete(entity.num);
 
-  send(game.room, `/me moves to ${key}`);
+  send(game.room, `/me moves ${entity.num} to ${key}`);
   broadcastPages(game);
 }
 
 function handleAttack(game: Game, user: User, cmd: string, args: string) {
-  const entity = getCurrentEntity(game);
-  if (!entity || toId(entity.name) !== toId(user.name)) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entityName = "";
+  let abilityTarget = args;
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length >= 3) {
+    entityName = parts[parts.length - 1];
+    abilityTarget = parts.slice(0, -1).join(",");
+  } else if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+    entityName = parts[1];
+    abilityTarget = parts[0];
+  }
+
+  let entity: Entity | null = null;
+  if (entityName && isHost) {
+    entity = getEntity(game, entityName);
+    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
+  } else {
+    entity = getCurrentEntity(game);
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
     return sendPm(user.name, "It's not your turn.");
   }
 
   // Parse: ability name @ target
-  const atIdx = args.indexOf("@");
-  const abilityName = (atIdx >= 0 ? args.slice(0, atIdx) : args).trim();
-  const targetName = atIdx >= 0 ? args.slice(atIdx + 1).trim() : "";
+  const atIdx = abilityTarget.indexOf("@");
+  const abilityName = (
+    atIdx >= 0 ? abilityTarget.slice(0, atIdx) : abilityTarget
+  ).trim();
+  const targetName = atIdx >= 0 ? abilityTarget.slice(atIdx + 1).trim() : "";
 
   if (!abilityName)
     return sendPm(
@@ -172,6 +225,9 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (ability.actionType === "Standard" && entity.standardUsed) {
     return sendPm(user.name, "You already used your Standard action.");
   }
+  if (ability.actionType === "Swift" && entity.swiftUsed) {
+    return sendPm(user.name, "You already used your Swift action this turn.");
+  }
   if (
     ability.actionType === "Full" &&
     (entity.standardUsed || entity.movementUsed)
@@ -184,6 +240,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 
   pushSnapshot(game);
   if (ability.actionType === "Standard") entity.standardUsed = true;
+  if (ability.actionType === "Swift") entity.swiftUsed = true;
   if (ability.actionType === "Full") {
     entity.standardUsed = true;
     entity.movementUsed = true;
@@ -202,8 +259,9 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 }
 
 function handleEndTurn(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity || toId(entity.name) !== toId(user.name)) {
+  if (!entity || (!isHost && toId(entity.name) !== toId(user.name))) {
     return sendPm(user.name, "It's not your turn.");
   }
 
@@ -278,6 +336,34 @@ function handleRoll(target: string, args: string) {
   const detail = result.rolls.join("+");
   const msg = `🎲 ${formula}: **${result.total}** (${detail})`;
   send(target, msg);
+}
+
+function handlePremove(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entity: Entity | null = null;
+  if (isHost) {
+    entity = getCurrentEntity(game);
+  } else {
+    entity = getCurrentEntity(game);
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, "You already moved this turn.");
+  }
+
+  if (premoveSet.has(entity.num)) {
+    premoveSet.delete(entity.num);
+    send(game.room, `/me ${entity.num} back to movement view`);
+  } else {
+    premoveSet.add(entity.num);
+    send(game.room, `/me ${entity.num} viewing pre-move abilities`);
+  }
+  broadcastPages(game);
 }
 
 // ── Display commands ──────────────────────────────────────────────────────────

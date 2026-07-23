@@ -6,6 +6,7 @@ import { hostCommand } from "./host.js";
 import { gameCommand } from "./game.js";
 import { infoCommand } from "./info.js";
 import { playerCommand } from "./player.js";
+import { sheetsCommand } from "./sheets.js";
 
 export function handleCommand(
   room: Room | null,
@@ -35,6 +36,7 @@ export function handleCommand(
       "**Player Commands**: %move, %attack, %use, %dash, %endturn, %r",
       "**Character Commands**: %vs, %vl, %vi, %sc, %sw, %sco, %regp",
       "**Reference**: %wt, %rf, %wtm",
+      "**Sheets**: %sheets, %sheets all",
       "**Other**: %roll, %loot, %xp, %gold, %cut, %checkrange",
     ];
     sendPm(user.name, help.join("\n"));
@@ -111,6 +113,12 @@ export function handleCommand(
     id === "sco"
   ) {
     playerCommand(user, id, args || val);
+    return;
+  }
+
+  // Sheets/compliance
+  if (id === "sheets") {
+    sheetsCommand(user, id, args || val);
     return;
   }
 }

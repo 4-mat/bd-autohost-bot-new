@@ -1,4 +1,4 @@
-# Ice Kyubs v2 — HTML Pages & GUI Guide
+# Ice Kyubs, HTML Pages & GUI Guide
 
 ## Overview
 
