@@ -773,14 +773,18 @@
       "Heaven's Wind",
       "Kip Up",
       "Night Visitor",
+      "Stacked Deck",
       "Tornado",
       "Wormhole"
     ],
     "swap": [
+      "Breach",
+      "Disengage",
       "Exercitus",
-      "Heaven's Wind",
+      "Forward Jab",
+      "Impede",
       "Phalanx",
-      "Stacked Deck",
+      "Shield Wall",
       "Triumvirate"
     ],
     "resource": [
