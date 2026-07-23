@@ -6,7 +6,9 @@
     "build": "tsc",
     "start": "node --loader ts-node/esm src/index.ts",
     "dev": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "test": "tsx watch test-app.ts",
+    "typecheck": "tsc --noEmit",
+    "check-updates": "tsx src/sheets/check-updates.ts"
   },
   "dependencies": {
     "ws": "^8.16.0",

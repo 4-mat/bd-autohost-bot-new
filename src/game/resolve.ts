@@ -9,6 +9,11 @@ import {
   inRange,
   manhattan,
   dist,
+  chebyshev,
+  pushEntity,
+  pullEntity,
+  getAoETargets,
+  getSplashTargets,
   Terrain,
 } from "./state.js";
 import { rollDice, toId, posToStr } from "../utils.js";
@@ -57,33 +62,95 @@ function resolveAttack(
     gameOver: false,
   };
 
-  // Find target(s)
-  const targets = findTargets(game, caster, ability, targetRef);
+  const isAttack =
+    ability.damageType === "Physical" || ability.damageType === "Magical";
+  const isHeal = ability.effect.toLowerCase().includes("heal") && !isAttack;
+  const isBuff = !isAttack && !isHeal && ability.actionType !== "Passive";
+
+  // Parse multi-hit from roll string (e.g. "2d8+5\n(Double Hit)")
+  const hits = parseMultiHit(ability);
+  const range = ability.range.toLowerCase().trim();
+  const isAoE =
+    ability.targetAmount === "AoE" ||
+    range.startsWith("burst") ||
+    range.startsWith("cone") ||
+    range.startsWith("line") ||
+    range.startsWith("pierce") ||
+    range.startsWith("beam") ||
+    range.startsWith("star");
+
+  // Handle Push/Pull from effect text
+  const pushPullResult = parsePushPull(ability);
+
+  // Find targets
+  let targets: Entity[];
+  if (isAoE) {
+    targets = getAoETargets(game, caster, ability.range, ability.targetGroup);
+    if (targets.length === 0 && targetRef) {
+      // Fallback to single target
+      targets = findTargets(game, caster, ability, targetRef);
+    }
+  } else {
+    targets = findTargets(game, caster, ability, targetRef);
+  }
+
   if (targets.length === 0) {
     result.messages.push(
-      `${caster.num} targets ${ability.name} but no valid targets found.`,
+      `${caster.num} uses ${ability.name} but no valid targets found.`,
     );
     return result;
   }
 
-  const isAttack =
-    ability.damageType === "Physical" || ability.damageType === "Magical";
-
   // Build the /me message
   const targetNames = targets.map((t) => t.num).join(", ");
   const rollStr = ability.roll ? ` ${ability.roll}` : "";
+  const actionTypeStr = ability.actionType === "Reaction" ? " (Reaction)" : "";
   result.messages.push(
-    `/me ${ability.name} @ ${targetNames}, MR ${ability.mr},${rollStr}`,
+    `/me ${ability.name} @ ${targetNames}, MR ${ability.mr},${rollStr}${actionTypeStr}`,
   );
 
   // Resolve each target
   for (const target of targets) {
-    const singleResult = resolveSingleTarget(game, caster, ability, target);
-    result.messages.push(...singleResult.messages);
-    result.deaths.push(...singleResult.deaths);
+    if (isAttack) {
+      for (let h = 0; h < hits; h++) {
+        const label = hits > 1 ? ` (Hit ${h + 1}/${hits})` : "";
+        const singleResult = resolveSingleTarget(
+          game,
+          caster,
+          ability,
+          target,
+          label,
+        );
+        result.messages.push(...singleResult.messages);
+        result.deaths.push(...singleResult.deaths);
+
+        // Push/Pull after damage
+        if (
+          pushPullResult &&
+          singleResult.messages.some((m) => m.includes("HIT"))
+        ) {
+          applyPushPull(game, caster, target, pushPullResult, result);
+        }
+      }
+    } else if (isHeal) {
+      const healResult = resolveHeal(game, caster, ability, target);
+      result.messages.push(...healResult.messages);
+    } else {
+      // Non-damaging ability: buffs, debuffs, status, tile effects
+      const statusResult = resolveNonDamaging(game, caster, ability, target);
+      result.messages.push(...statusResult.messages);
+      result.deaths.push(...statusResult.deaths);
+    }
   }
 
-  // Set cooldown if ability has a frequency that creates cooldown
+  // Handle Splash for non-AoE attacks
+  if (isAttack && !isAoE && targets.length > 0) {
+    const splashResult = resolveSplash(game, caster, ability, targets[0]);
+    result.messages.push(...splashResult.messages);
+    result.deaths.push(...splashResult.deaths);
+  }
+
+  // Set cooldown
   setCooldown(caster, ability);
 
   // Track uses
@@ -91,7 +158,7 @@ function resolveAttack(
     caster.usesUsed[ability.name] = (caster.usesUsed[ability.name] ?? 0) + 1;
   }
 
-  // Check game over after all targets
+  // Check game over
   for (const death of result.deaths) {
     if (isWinCondition(game)) {
       result.gameOver = true;
@@ -114,22 +181,13 @@ function resolveSingleTarget(
   caster: Entity,
   ability: AbilityData,
   target: Entity,
+  hitLabel = "",
 ): ResolutionResult {
   const result: ResolutionResult = {
     messages: [],
     deaths: [],
     gameOver: false,
   };
-  const isAttack =
-    ability.damageType === "Physical" || ability.damageType === "Magical";
-
-  if (!isAttack) {
-    // Non-damaging ability — just log it
-    result.messages.push(
-      `  ${caster.num} uses ${ability.name} on ${target.num}.`,
-    );
-    return result;
-  }
 
   // 1. Accuracy check
   const casterAccBonus = getStatBonus(caster, "acc");
@@ -141,7 +199,7 @@ function resolveSingleTarget(
   } = rollAccuracy(ability.mr, targetEva, casterAccBonus);
 
   result.messages.push(
-    `  **Accuracy**: ${caster.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} → ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
+    `  **Accuracy${hitLabel}**: ${caster.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} → ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
   if (!hit) return result;
@@ -150,7 +208,7 @@ function resolveSingleTarget(
   const damageRoll = rollDice(ability.roll);
   let baseDamage = damageRoll.total;
 
-  // Add offensive stat
+  // Add offensive stat (only first hit gets ATK/MAG per multi-hit rules)
   if (ability.damageType === "Physical") {
     baseDamage += getEffectiveStat(caster, "atk");
   } else {
@@ -179,10 +237,10 @@ function resolveSingleTarget(
   // 3. Deal damage
   const actual = dealDamage(target, finalDamage);
   result.messages.push(
-    `  **Damage**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${getEffectiveStat(caster, ability.damageType === "Physical" ? "atk" : "mag")}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${getEffectiveStat(target, ability.damageType === "Physical" ? "pd" : "md")}) = **${finalDamage}** → ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${getEffectiveStat(caster, ability.damageType === "Physical" ? "atk" : "mag")}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${getEffectiveStat(target, ability.damageType === "Physical" ? "pd" : "md")}) = **${finalDamage}** → ${target.num} (${target.curhp}/${target.maxhp} HP)`,
   );
 
-  // 4. Apply statuses from effect (simplified — parse common patterns)
+  // 4. Apply statuses from effect
   applyStatusEffects(game, caster, target, ability);
 
   // 5. Check death
@@ -203,8 +261,13 @@ function findTargets(
   ability: AbilityData,
   targetRef?: string,
 ): Entity[] {
-  const group = ability.targetGroup.toLowerCase();
-  const range = ability.range.toLowerCase();
+  const group = ability.targetGroup;
+  const range = ability.range;
+
+  // Handle compound ranges like "Range 10 or Burst 1" — try each part
+  const rangeParts = range.toLowerCase().includes(" or ")
+    ? range.split(/\s+or\s+/i)
+    : [range];
 
   // If a specific target was given
   if (targetRef) {
@@ -212,45 +275,50 @@ function findTargets(
       (e) =>
         toId(e.num) === toId(targetRef) || toId(e.name) === toId(targetRef),
     );
-    if (
-      target &&
-      isValidTarget(caster, target, group) &&
-      isValidRange(game, caster, target, range)
-    ) {
-      return [target];
+    if (target && isValidTarget(caster, target, group)) {
+      // Check if target is in range for any of the range parts
+      for (const rp of rangeParts) {
+        if (inRange(game, caster.pos, target.pos, rp.trim())) {
+          return [target];
+        }
+      }
     }
     return [];
   }
 
-  // Auto-target: get all valid targets
-  return game.entities.filter(
-    (e) =>
-      e.num !== caster.num &&
-      isValidTarget(caster, e, group) &&
-      isValidRange(game, caster, e, range),
-  );
+  // Auto-target: get all valid targets in any range part
+  return game.entities.filter((e) => {
+    if (e.num === caster.num && !group.toLowerCase().includes("self"))
+      return false;
+    if (!isValidTarget(caster, e, group)) return false;
+    for (const rp of rangeParts) {
+      if (inRange(game, caster.pos, e.pos, rp.trim())) return true;
+    }
+    return false;
+  });
 }
 
 function isValidTarget(caster: Entity, target: Entity, group: string): boolean {
   if (target.curhp <= 0) return false;
+  const g = group.toLowerCase();
 
-  if (group === "self") return target.num === caster.num;
-  if (group === "ally")
+  if (g.includes("self and allies") || g.includes("self and ally"))
+    return target.team === caster.team;
+  if (g.includes("self or ally") || g.includes("self or allies"))
+    return target.team === caster.team;
+  if (g.includes("self or foe")) return true; // any entity
+  if (g.includes("foe or ally")) return target.num !== caster.num;
+  if (g.includes("self, foes, allies") || g.includes("self, foes, and allies"))
+    return true;
+
+  if (g === "self") return target.num === caster.num;
+  if (g === "ally")
     return target.team === caster.team && target.num !== caster.num;
-  if (group === "foe") return target.team !== caster.team;
-  if (group === "any") return true;
-  if (group === "tile") return false; // tile targeting handled separately
+  if (g === "foe") return target.team !== caster.team;
+  if (g === "any") return true;
+  if (g === "tile") return false;
 
   return true; // default: any
-}
-
-function isValidRange(
-  game: Game,
-  caster: Entity,
-  target: Entity,
-  range: string,
-): boolean {
-  return inRange(game, caster.pos, target.pos, range);
 }
 
 function getEffectiveStat(entity: Entity, stat: string): number {
@@ -416,6 +484,32 @@ function applyStatusEffects(
     });
   }
 
+  // Cripple
+  if (effect.includes("cripple")) {
+    const crMatch = effect.match(/cripple\s*\/\s*(\d+)/);
+    const rounds = crMatch ? parseInt(crMatch[1]) : 1;
+    applyStatus(target, {
+      name: "Cripple",
+      damage: 0,
+      rounds,
+      maxRounds: rounds,
+      removable: true,
+    });
+  }
+
+  // Shield
+  if (effect.includes("shield")) {
+    const shMatch = effect.match(/shield\s*\/\s*(\d+)/);
+    const rounds = shMatch ? parseInt(shMatch[1]) : 1;
+    applyStatus(target, {
+      name: "Shield",
+      damage: 0,
+      rounds,
+      maxRounds: rounds,
+      removable: true,
+    });
+  }
+
   // Buffs: "+X STAT/Y" pattern
   const buffRegex = /\+(\d+)\s+(atk|mag|pd|md|eva|mp|def|acc|cr)\s*\/\s*(\d+)/g;
   let buffMatch;
@@ -461,7 +555,7 @@ function setCooldown(entity: Entity, ability: AbilityData) {
   const freq = ability.frequency.toLowerCase();
   if (freq === "every turn" || freq === "passive") return;
 
-  // EoT = 2 turns cooldown (can't use next turn)
+  // EoT = 2 turns (can't use next turn)
   if (freq === "eot") {
     entity.cooldowns[ability.name] = 2;
   }
@@ -469,6 +563,8 @@ function setCooldown(entity: Entity, ability: AbilityData) {
   else if (freq === "e3t") {
     entity.cooldowns[ability.name] = 3;
   }
+  // Once/Twice/Thrice = use-based, not cooldown-based
+  // But mark that a use was consumed (done in resolveAttack)
 }
 
 function isWinCondition(game: Game): boolean {
@@ -483,4 +579,237 @@ function isWinCondition(game: Game): boolean {
   }
   const aliveTeams = [...teams.values()].filter(Boolean).length;
   return aliveTeams <= 1;
+}
+
+// Parse multi-hit count from roll string (e.g. "2d8+5\n(Double Hit)" → 2)
+function parseMultiHit(ability: AbilityData): number {
+  const roll = ability.roll.toLowerCase();
+  if (roll.includes("double hit")) return 2;
+  if (roll.includes("triple hit")) return 3;
+  if (roll.includes("quad")) return 4;
+  return 1;
+}
+
+// Parse Push/Pull from ability effect text
+function parsePushPull(
+  ability: AbilityData,
+): { type: "push" | "pull"; amount: number } | null {
+  const effect = ability.effect.toLowerCase();
+  const pushMatch = effect.match(/push\s*(\d+)/);
+  if (pushMatch) return { type: "push", amount: parseInt(pushMatch[1]) };
+  const pullMatch = effect.match(/pull\s*(\d+)/);
+  if (pullMatch) return { type: "pull", amount: parseInt(pullMatch[1]) };
+  return null;
+}
+
+// Apply Push/Pull to a target
+function applyPushPull(
+  game: Game,
+  caster: Entity,
+  target: Entity,
+  pp: { type: "push" | "pull"; amount: number },
+  result: ResolutionResult,
+) {
+  if (pp.type === "push") {
+    const { moved, path } = pushEntity(game, target, caster.pos, pp.amount);
+    if (moved > 0) {
+      const pathStr = path.map((p) => posToStr(p[0], p[1])).join(" → ");
+      result.messages.push(
+        `  **Push**: ${target.num} pushed ${moved} tile${moved > 1 ? "s" : ""} to ${pathStr}`,
+      );
+    } else {
+      result.messages.push(`  **Push**: ${target.num} could not be pushed.`);
+    }
+  } else {
+    const { moved, path } = pullEntity(game, target, caster.pos, pp.amount);
+    if (moved > 0) {
+      const pathStr = path.map((p) => posToStr(p[0], p[1])).join(" → ");
+      result.messages.push(
+        `  **Pull**: ${target.num} pulled ${moved} tile${moved > 1 ? "s" : ""} to ${pathStr}`,
+      );
+    } else {
+      result.messages.push(`  **Pull**: ${target.num} could not be pulled.`);
+    }
+  }
+}
+
+// Resolve a healing ability
+function resolveHeal(
+  game: Game,
+  caster: Entity,
+  ability: AbilityData,
+  target: Entity,
+): ResolutionResult {
+  const result: ResolutionResult = {
+    messages: [],
+    deaths: [],
+    gameOver: false,
+  };
+
+  if (ability.roll) {
+    const healRoll = rollDice(ability.roll);
+    let healAmount = healRoll.total;
+
+    // Heals may add caster ATK or MAG
+    const effect = ability.effect.toLowerCase();
+    if (effect.includes("atk") || effect.includes("mag")) {
+      const bonus = Math.max(
+        getEffectiveStat(caster, "atk"),
+        getEffectiveStat(caster, "mag"),
+      );
+      healAmount += bonus;
+    }
+
+    const prevHp = target.curhp;
+    target.curhp = Math.min(target.maxhp, target.curhp + healAmount);
+    const healed = target.curhp - prevHp;
+
+    result.messages.push(
+      `  **Heal**: ${ability.roll}(${healRoll.rolls.join("+")}) = **${healed}** → ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    );
+  } else {
+    // Roll-less heals (e.g. percentage-based from effect text)
+    result.messages.push(
+      `  ${caster.num} uses ${ability.name} on ${target.num}. (Manual resolution needed)`,
+    );
+  }
+
+  return result;
+}
+
+// Resolve a non-damaging ability (buffs, debuffs, status, tile effects)
+function resolveNonDamaging(
+  game: Game,
+  caster: Entity,
+  ability: AbilityData,
+  target: Entity,
+): ResolutionResult {
+  const result: ResolutionResult = {
+    messages: [],
+    deaths: [],
+    gameOver: false,
+  };
+
+  // Apply statuses and buffs/debuffs from effect text
+  applyStatusEffects(game, caster, target, ability);
+
+  const effect = ability.effect.toLowerCase();
+
+  // Track what was applied
+  const applied: string[] = [];
+
+  // Check for common status inflictions in effect text
+  const statusPatterns: [RegExp, string][] = [
+    [/(\d+)\s*bleed\s*\/\s*(\d+)/, "Bleed"],
+    [/(\d+)\s*poison\s*\/\s*(\d+)/, "Poison"],
+    [/burn\s*\/\s*(\d+)/, "Burn"],
+    [/(\d+)\s*curse\s*\/\s*(\d+)/, "Curse"],
+    [/root\s*\/\s*(\d+)/, "Root"],
+    [/seal\s*\/\s*(\d+)/, "Seal"],
+    [/stun\s*\/\s*(\d+)/, "Stun"],
+    [/confusion\s*\/\s*(\d+)/, "Confusion"],
+    [/cripple\s*\/\s*(\d+)/, "Cripple"],
+    [/slow\s*\/\s*(\d+)/, "Slow"],
+  ];
+
+  for (const [regex, name] of statusPatterns) {
+    const match = effect.match(regex);
+    if (match) {
+      applied.push(
+        `${name}${match[1] ? ` (${match[1]})` : ""}/${match[2] || "?"}`,
+      );
+    }
+  }
+
+  // Check for buffs
+  const buffRegex = /\+(\d+)\s+(atk|mag|pd|md|eva|mp|def|acc|cr)\s*\/\s*(\d+)/g;
+  let buffMatch;
+  while ((buffMatch = buffRegex.exec(effect)) !== null) {
+    const stat = buffMatch[2].toUpperCase();
+    applied.push(`+${buffMatch[1]} ${stat}/${buffMatch[3]}`);
+  }
+
+  // Check for debuffs
+  const debuffRegex =
+    /-(\d+)\s+(atk|mag|pd|md|eva|mp|def|acc|cr)\s*\/\s*(\d+)/g;
+  let debuffMatch;
+  while ((debuffMatch = debuffRegex.exec(effect)) !== null) {
+    const stat = debuffMatch[2].toUpperCase();
+    applied.push(`-${debuffMatch[1]} ${stat}/${debuffMatch[3]}`);
+  }
+
+  if (applied.length > 0) {
+    result.messages.push(
+      `  ${caster.num} uses ${ability.name} on ${target.num}: ${applied.join(", ")}`,
+    );
+  } else {
+    result.messages.push(
+      `  ${caster.num} uses ${ability.name} on ${target.num}. (Manual resolution may be needed)`,
+    );
+  }
+
+  return result;
+}
+
+// Resolve Splash damage around a primary target
+function resolveSplash(
+  game: Game,
+  caster: Entity,
+  ability: AbilityData,
+  primary: Entity,
+): ResolutionResult {
+  const result: ResolutionResult = {
+    messages: [],
+    deaths: [],
+    gameOver: false,
+  };
+
+  const range = ability.range.toLowerCase();
+  const splashMatch = range.match(/splash\s*(\d+)/);
+  if (!splashMatch) return result;
+
+  const radius = parseInt(splashMatch[1]);
+  const splashTargets = getSplashTargets(
+    game,
+    caster,
+    primary,
+    radius,
+    ability.targetGroup,
+  );
+
+  if (splashTargets.length === 0) return result;
+
+  const names = splashTargets.map((t) => t.num).join(", ");
+  result.messages.push(`  **Splash ${radius}**: hits ${names}`);
+
+  // Splash targets are hit/missed with the same result as primary
+  // For simplicity, apply same damage to each splash target (half DEF)
+  for (const target of splashTargets) {
+    const damageRoll = rollDice(ability.roll);
+    let baseDamage = damageRoll.total;
+
+    if (ability.damageType === "Physical") {
+      baseDamage += getEffectiveStat(caster, "atk");
+      baseDamage -= Math.floor(getEffectiveStat(target, "pd") / 2);
+    } else if (ability.damageType === "Magical") {
+      baseDamage += getEffectiveStat(caster, "mag");
+      baseDamage -= Math.floor(getEffectiveStat(target, "md") / 2);
+    }
+
+    const finalDamage = Math.max(0, baseDamage);
+    const actual = dealDamage(target, finalDamage);
+    result.messages.push(
+      `  **Splash Damage**: → ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**`,
+    );
+
+    if (target.curhp <= 0) {
+      result.messages.push(
+        `  **${target.num} (${target.name}) has been defeated!**`,
+      );
+      removeEntity(game, target);
+      result.deaths.push(target);
+    }
+  }
+
+  return result;
 }

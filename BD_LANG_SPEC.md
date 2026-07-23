@@ -6,7 +6,9 @@ A plaintext notation and formal grammar for describing Battle Dome 4.4 abilities
 
 ## 1. Core Idea
 
-Every ability is described as a sequence of **clauses**. Each clause starts with a keyword and is followed by its arguments. Clauses can be joined with commas or "and". The result reads like English but follows strict rules.
+BD Lang is standardized prose. Every game mechanic is described in plain English where one function is described by one term. Each term has exactly one meaning. There are no synonyms, no abbreviations in effect text, and no alternative wordings for the same function.
+
+Every ability is described as a sequence of clauses. Each clause starts with a keyword and is followed by its arguments. Clauses can be joined with commas or "and". The result reads like English but follows strict rules.
 
 ---
 
@@ -577,176 +579,45 @@ Example map:
 
 ## 9. Standard Action Resolution Steps
 
-Every Standard/Full attack follows this sequence in order. Effects are written as `@<Step>: <effect>`. If no step is given, the default is `@OnHit`.
+Every Standard or Full attack follows these eleven steps in order. No ability may skip steps, though steps may be empty. Effects are written in prose using the step's name as a natural language time marker.
 
-```
-@Declare:       Ability is declared, action slot consumed.
-@Cost:          Selection, choices, sacrifices, and cost payments.
-                If costs cannot be paid, the attack stops here.
-@Target:        Target selection and validation.
-                If no valid target can be chosen, the attack stops.
-@BeforeAcc:     Effects that resolve before the accuracy roll.
-@Acc:           The accuracy roll itself (1d20 vs MR + EVA).
-                On miss → skip to @OnMiss.
-@BeforeDMG:     Effects that modify the damage roll before it's rolled.
-@DMG:           The damage roll itself.
-@OnHit:         Effects that trigger when the attack hits.
-@OnMiss:        Effects that trigger when the attack misses.
-@Always:        Effects that happen regardless of hit or miss.
-@Resolved:      Cleanup / aftermath / endstep.
-                Cooldown ticks, resource caps, buff expiration, death checks.
-```
+**Declare.** The ability is declared by name. The action slot (Standard or Full) is consumed. The ability's frequency is decremented. No targets are chosen, no costs are paid, and no effects resolve yet.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ 1. @Declare                                             │
-│    Ability name declared, action slot consumed           │
-├─────────────────────────────────────────────────────────┤
-│ 2. @Cost                                                │
-│    Selection, choices, sacrifices, cost payments.        │
-│    If costs cannot be paid, attack stops here.           │
-├─────────────────────────────────────────────────────────┤
-│ 3. @Target                                              │
-│    Choose targets. If none valid, attack stops.          │
-├─────────────────────────────────────────────────────────┤
-│ 4. @BeforeAcc                                           │
-│    Pre-accuracy effects, buffs/debuffs, stat changes     │
-├─────────────────────────────────────────────────────────┤
-│ 5. @Acc                                                 │
-│    1d20 >= MR + target EVA → hit                         │
-│    1d20 < MR + target EVA → miss                         │
-│    ┌─ Hit ──────────────────┐  ┌─ Miss ───────────────┐ │
-│    │ 6. @BeforeDMG          │  │ 9. @OnMiss            │ │
-│    │    Dice modifiers,      │  │    Effects that       │ │
-│    │    advantage, etc       │  │    trigger on miss    │ │
-│    ├─────────────────────────┤  └──────────────────────┘ │
-│    │ 7. @DMG                │                             │
-│    │    Roll XdY+Z           │                             │
-│    ├─────────────────────────┤                             │
-│    │ 8. @OnHit              │                             │
-│    │    Statuses, buffs,     │                             │
-│    │    displacement, etc    │                             │
-│    └─────────────────────────┘                             │
-├─────────────────────────────────────────────────────────┤
-│ 10. @Always (Regardless of Hit/Miss)                     │
-│    Effects that happen either way                        │
-├─────────────────────────────────────────────────────────┤
-│ 11. @Resolved (Cleanup / Aftermath)                      │
-│    Cooldown ticks, resource caps, buff expiration,        │
-│    death/faint checks, effect cleanup                     │
-└─────────────────────────────────────────────────────────┘
-```
+**Cost.** All costs, selections, and sacrifices are resolved in this step. This includes spending resources (such as Rage, Mana, Qi, Blood, or Coins), sacrificing HP, choosing between options, or paying any other price the ability lists. If a cost cannot be paid, the ability ends here. No targets have been chosen yet, so costs are not contingent on targets.
 
-### Effect Clause Grammar — Updated
+**Target.** A target or targets are chosen and validated against the ability's range and targeting rules. If no valid target can be chosen, the ability ends here.
 
-```
-effect         = [ "@", timing_step, ":" ], effect_text ;
-timing_step    = "Declare"
-               | "Cost"
-               | "Target"
-               | "BeforeAcc"
-               | "Acc"
-               | "BeforeDMG"
-               | "DMG"
-               | "OnHit"
-               | "OnMiss"
-               | "Always"
-               | "Resolved" ;
-effect_text    = simple_effect | compound_effect | conditional_effect ;
-compound_effect = "{", effect_sequence, "}"
-               | effect_sequence ;
-```
+**Before Accuracy.** Effects listed in the ability that resolve before the accuracy roll take place here. This includes pre-accuracy buffs, debuffs, conditional dice modifications, or any effect the ability explicitly places before accuracy. If the ability says "before accuracy" or "before the accuracy roll," it resolves in this step.
 
-### Rewording Rules by Step
+**Accuracy.** The accuracy roll is made. A single d20 is rolled and compared to the ability's Miss Rate plus the target's EVA. If the roll is greater than or equal to this value, the attack hits. If the roll is less, the attack misses and skips to On Miss.
 
-| Step         | What goes here                                           | Example                                                             |
-| ------------ | -------------------------------------------------------- | ------------------------------------------------------------------- |
-| `@Declare`   | Ability name, action type spent                          | `@Declare: Bloodrush declared as Standard action.`                  |
-| `@Cost`      | Selection, choices, sacrifices, cost payments            | `@Cost: Spend 2 Mana. Choose Physical or Magical. Sacrifice 10 HP.` |
-| `@Target`    | Target filters, validation                               | `@Target: 1 Foe within Range 4. Must be visible.`                   |
-| `@BeforeAcc` | Pre-accuracy effects, stat changes                       | `@BeforeAcc: If target has Mark, gain +1 dice.`                     |
-| `@Acc`       | Accuracy roll only                                       | `@Acc: 1d20 >= 2 + target EVA.`                                     |
-| `@BeforeDMG` | Dice modifiers before rolling                            | `@BeforeDMG: +2 dice. Advantage dice.`                              |
-| `@DMG`       | Damage roll                                              | `@DMG: 2d8+4 Magical.`                                              |
-| `@OnHit`     | Statuses, displacement, buffs/debuffs, secondary effects | `@OnHit: Inflict Bleed 5 for 1 round. Push 2.`                      |
-| `@OnMiss`    | Miss-only effects                                        | `@OnMiss: Gain 2 Rage.`                                             |
-| `@Always`    | Effects regardless of hit/miss                           | `@Always: Lose 1 Campaign. Teleport to tile.`                       |
-| `@Resolved`  | Cooldowns, resource caps, death checks                   | `@Resolved: Cap Rage at 20. Check death.`                           |
+**Before Damage.** If the attack hits, effects that modify the damage roll before it is rolled take place here. This includes dice modifiers, advantage, disadvantage, bomb dice, and any effect that explicitly occurs before damage. If the ability says "before damage" or "before the damage roll," it resolves in this step.
 
-### Example — Full Timing Breakdown
+**Damage.** The damage roll is made. The ability's listed dice (XdY+Z) are rolled, modified by any effects from Before Damage, and the damage type (Physical, Magical, Bomb, True, or Pure) is applied. The target's relevant defense (PD, MD, or equivalent) is subtracted. If the ability ignores defense or outside factors, those rules apply now.
 
-```
-Eventide (Level 2)
-Frequency: Every Other Turn.
-Miss Rate: 4.
-Action: Standard.
-Target: 1 Foe.
-Range: 7.
+**On Hit.** If the attack hit, all effects listed as triggering on a hit resolve now. This includes inflicting statuses, applying debuffs, displacing targets, gaining resources, healing, or any secondary effect the ability describes as occurring on hit. If the ability says "on hit" or does not specify a step, it resolves here.
 
-@Declare: Declare Eventide. Action slot consumed.
-@Target: Choose 1 Foe in Range 7.
-@BeforeAcc: Choose Delay 1 or Delay 2. If Delay 2, +2 Curse reduction.
-@Acc: 1d20 >= 4 + target EVA.
-@OnHit:  Inflict Curse 3 for 1 round. Delay 1 round.
-         If Delay 2: Curse's DEF reduction increased by 2.
-@Always: —
-@Cleanup: Reduce Eventide cooldown by 1 round.
-```
+**On Miss.** If the attack missed, all effects listed as triggering on a miss resolve now. If the ability has no miss effects, this step is empty.
 
-### Example — Simple Attack
+**Regardless of Hit.** Effects that resolve regardless of whether the attack hit or missed take place here. If the ability says "regardless of hit or miss" or describes an effect that applies in either case, it resolves in this step.
 
-```
-Arrow Flurry (Level 1)
-Frequency: Every Turn.
-Miss Rate: 3.
-Damage: 2d8+7 Physical.
-Action: Standard.
-Target: 1 Foe.
-Range: 6.
-
-@Target:  1 Foe in Range 6.
-@BeforeAcc: If target has 3+ Marks, gain Splash Burst 2.
-            Else if target has 1+ Marks, gain Splash Burst 1.
-@Acc: 1d20 >= 3 + target EVA.
-@DMG: 2d8+7 Physical.
-@OnHit: —
-@OnMiss: —
-@Always: —
-@Cleanup: —
-```
-
-### Example — Resource Spender
-
-```
-Power Swing (Level 3)
-Frequency: Every Other Turn.
-Miss Rate: 6.
-Damage: 3d10+6 Physical.
-Action: Standard.
-Target: 1 Foe.
-Range: Melee.
-
-@BeforeAcc: Spend X Rage. This attack gains -X Miss Rate and +2X Critical Threshold.
-@Acc: 1d20 >= (6 - X) + target EVA.
-@BeforeDMG: +2X Critical Threshold.
-@DMG: 3d10+6 Physical.
-@OnHit: —
-@OnMiss: —
-@Always: —
-@Cleanup: Reduce cooldown by 1 round.
-```
+**Resolved.** After all other steps have completed, the ability fully resolves. Cooldowns tick, buff and debuff durations decrement, resource caps are enforced, and death or faint checks are performed. Any effect that lasts until the start of the user's next turn begins its countdown here.
 
 ### Default Step
 
-If an effect line has no `@Step:` prefix, it defaults to `@OnHit`. The earlier steps (`@Declare`, `@Target`, `@BeforeAcc`, `@Acc`, `@BeforeDMG`, `@DMG`) are usually only written out when the ability has effects at those steps. For simple abilities, you can omit them.
+If an effect does not specify a step, it resolves on hit. The steps before accuracy are usually only written out when the ability has effects at those steps. For simple abilities, only the on-hit effects need to be stated.
 
 ### Timing Notes
 
-- **Sacrifices** (HP, resources) go in `@BeforeAcc` unless the ability says otherwise.
-- **Choices** go in `@BeforeAcc` (the player decides before the roll).
-- **Delay** damage goes in `@OnHit` with `Delay N rounds`.
-- **Reactions** have their own timing that interrupts the above flow (see §Reactions).
-- **Thirst/Threshold** checks happen at the step they modify — e.g., `Thirst 5: +3 MR` in `@BeforeAcc`.
+Sacrifices (HP, resources) resolve at Cost unless the ability says otherwise. Choices resolve at Cost (the player decides before the roll). Delay damage resolves on hit with a delay of N rounds. Reactions have their own timing that interrupts the above flow. Thirst and threshold checks resolve at the step they modify.
+
+### Examples
+
+**Eventide (Level 2)** — Declare Eventide, consume Standard. Choose Delay 1 or Delay 2 at Cost. Roll accuracy against Miss Rate 4 plus target EVA. On hit, inflict 3 Curse for 1 round and delay the damage by 1 round. If Delay 2 was chosen, the Curse's defense reduction increases by 2. Resolve cooldown.
+
+**Arrow Flurry (Level 1)** — Declare Arrow Flurry, consume Standard. On hit, if the target has three or more Marks, gain Splash Burst 2. If the target has one or more Marks, gain Splash Burst 1 instead. Roll accuracy against Miss Rate 3 plus target EVA. Roll 2d8+7 Physical damage on hit.
+
+**Power Swing (Level 3)** — Declare Power Swing, consume Standard. At Cost, spend Rage to reduce Miss Rate and increase Critical Threshold. Roll accuracy. Before damage, apply Critical Threshold modifiers. Roll 3d10+6 Physical damage on hit. Resolve cooldown.
 
 ---
 

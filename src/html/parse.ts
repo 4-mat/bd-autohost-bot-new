@@ -245,6 +245,7 @@ export function handleKyubsInfo(roomid: string, html: string) {
         dashUsed: false,
         standardUsed: false,
         movementUsed: false,
+        swiftUsed: false,
       };
       game.entities.push(entity);
     } else {
