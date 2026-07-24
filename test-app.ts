@@ -230,7 +230,7 @@ wss.on("connection", (ws) => {
           broadcast(
             JSON.stringify({
               type: "chat",
-              text: `<span class="name">${escHtml(session.username)}</span>${escHtml(text)}`,
+              text: `<span class="name">${escHtml(session.username)}</span>: ${escHtml(text)}`,
             }),
           );
           return;
@@ -370,10 +370,6 @@ const userEl = document.getElementById('current-user');
 
 let currentNick = 'HostUser';
 
-if (msg.type === 'gui') {
-  guiContent.innerHTML = msg.html;
-}
-
 function addLine(type, raw) {
   const div = document.createElement('div');
   if (type === 'system') { div.className = 'msg-system'; div.textContent = raw; }
@@ -395,7 +391,7 @@ guiContent.addEventListener('click', (e) => {
   const cmd = btn.getAttribute('value');
   if (!cmd) return;
   ws.send(JSON.stringify({ type: 'chat', text: cmd }));
-  addLine('chat', '<span class="name">' + currentNick + '</span> ' + cmd);
+  addLine('chat', '<span class="name">' + currentNick + '</span>: ' + cmd);
 });
 
 let ws;
