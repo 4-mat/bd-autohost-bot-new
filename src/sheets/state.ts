@@ -8,6 +8,7 @@ interface StoredState {
   hash: string;
   timestamp: string;
   sheets: Record<string, string>;
+  pending?: Record<string, string> | null;
 }
 
 function ensureDir() {
@@ -43,4 +44,34 @@ export function stateHash(data: Record<string, string>): string {
     .update(JSON.stringify(data))
     .digest("hex")
     .slice(0, 16);
+}
+
+export function loadPending(name: string): Record<string, string> | null {
+  const state = loadState(name);
+  return state?.pending ?? null;
+}
+
+export function savePending(name: string, data: Record<string, string>) {
+  const state = loadState(name) ?? {
+    hash: "",
+    timestamp: "",
+    sheets: {},
+  };
+  state.pending = data;
+  state.timestamp = new Date().toISOString();
+  writeFileSync(statePath(name), JSON.stringify(state, null, 2) + "\n");
+}
+
+export function approvePending(name: string) {
+  const state = loadState(name);
+  if (!state?.pending) return;
+  const hash = createHash("sha256")
+    .update(JSON.stringify(state.pending))
+    .digest("hex")
+    .slice(0, 16);
+  state.sheets = state.pending;
+  state.hash = hash;
+  state.pending = null;
+  state.timestamp = new Date().toISOString();
+  writeFileSync(statePath(name), JSON.stringify(state, null, 2) + "\n");
 }
