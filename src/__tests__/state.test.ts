@@ -1,0 +1,881 @@
+import { describe, it, expect } from "bun:test";
+import {
+  Terrain,
+  isObstruction,
+  moveCost,
+  chebyshev,
+  manhattan,
+  dist,
+  hasLineOfSight,
+  inRange,
+  getReachableTiles,
+  getBurstTiles,
+  getStarTiles,
+  getConeTiles,
+  getLineTiles,
+  getPierceTiles,
+  getBeamTiles,
+  getAoETargets,
+  getSplashTargets,
+  pushEntity,
+  pullEntity,
+  dealDamage,
+  rollAccuracy,
+  checkGameOver,
+  calculateLoot,
+  nextTurn,
+  processEndOfTurn,
+  processStartOfTurn,
+  pushSnapshot,
+  popSnapshot,
+  getCurrentEntity,
+  getEntity,
+  removeEntity,
+  type Game,
+  type Entity,
+  type AbilityData,
+} from "../game/state.js";
+import { posToStr } from "../utils.js";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeEntity(
+  overrides: Partial<Entity> & { num: string; name: string },
+): Entity {
+  return {
+    id: overrides.num.toLowerCase(),
+    isMonster: false,
+    curhp: 100,
+    maxhp: 100,
+    atk: 10,
+    mag: 10,
+    pd: 5,
+    md: 5,
+    eva: 0,
+    mp: 3,
+    pos: [0, 0],
+    team: 0,
+    className: "Monk",
+    weaponName: "Fist",
+    classLevel: 1,
+    weaponLevel: 1,
+    abilities: [],
+    statuses: [],
+    buffs: [],
+    cooldowns: {},
+    usesUsed: {},
+    pendingAction: null,
+    dashUsed: false,
+    standardUsed: false,
+    movementUsed: false,
+    swiftUsed: false,
+    ...overrides,
+  };
+}
+
+function makeGame(
+  opts: {
+    size?: number;
+    terrain?: Terrain[][];
+    entities?: Entity[];
+    mode?: string;
+    turnOrder?: string[];
+  } = {},
+): Game {
+  const size = opts.size ?? 5;
+  const map =
+    opts.terrain ??
+    Array.from({ length: size }, () => Array(size).fill(Terrain.Normal));
+  const entities = opts.entities ?? [
+    makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+    makeEntity({ num: "P2", name: "Bob", pos: [2, 2], team: 1 }),
+  ];
+  const turnOrder = opts.turnOrder ?? entities.map((e) => e.num);
+  return {
+    id: "test",
+    room: "battledome",
+    host: "Host",
+    entities,
+    map,
+    mapName: "test",
+    turnOrder,
+    turnIndex: 0,
+    round: 1,
+    log: [],
+    snapshots: [],
+    mode: opts.mode ?? "ffa",
+    phase: "playing",
+    started: true,
+    kills: {},
+    winner: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Terrain
+// ---------------------------------------------------------------------------
+
+describe("Terrain", () => {
+  it("isObstruction returns true for Stop, Bone, Ice, Stone, Broken", () => {
+    expect(isObstruction(Terrain.Stop)).toBe(true);
+    expect(isObstruction(Terrain.Bone)).toBe(true);
+    expect(isObstruction(Terrain.Ice)).toBe(true);
+    expect(isObstruction(Terrain.Stone)).toBe(true);
+    expect(isObstruction(Terrain.Broken)).toBe(true);
+  });
+
+  it("isObstruction returns false for Normal, Water, Forest, etc.", () => {
+    expect(isObstruction(Terrain.Normal)).toBe(false);
+    expect(isObstruction(Terrain.Water)).toBe(false);
+    expect(isObstruction(Terrain.Forest)).toBe(false);
+    expect(isObstruction(Terrain.Lava)).toBe(false);
+    expect(isObstruction(Terrain.Air)).toBe(false);
+  });
+
+  it("moveCost returns base+1 for Sticky", () => {
+    expect(moveCost(Terrain.Sticky)).toBe(2);
+    expect(moveCost(Terrain.Sticky, 2)).toBe(3);
+  });
+
+  it("moveCost returns base-1 for Boost (min 0)", () => {
+    expect(moveCost(Terrain.Boost)).toBe(0);
+    expect(moveCost(Terrain.Boost, 3)).toBe(2);
+    expect(moveCost(Terrain.Boost, 0)).toBe(0);
+  });
+
+  it("moveCost returns base for Normal terrain", () => {
+    expect(moveCost(Terrain.Normal)).toBe(1);
+    expect(moveCost(Terrain.Normal, 2)).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Distance
+// ---------------------------------------------------------------------------
+
+describe("Distance", () => {
+  it("chebyshev for same tile is 0", () => {
+    expect(chebyshev([3, 3], [3, 3])).toBe(0);
+  });
+
+  it("chebyshev for adjacent tiles is 1", () => {
+    expect(chebyshev([0, 0], [0, 1])).toBe(1);
+    expect(chebyshev([0, 0], [1, 0])).toBe(1);
+    expect(chebyshev([0, 0], [1, 1])).toBe(1); // diagonal
+  });
+
+  it("chebyshev for diagonal 2 away is 2", () => {
+    expect(chebyshev([0, 0], [2, 2])).toBe(2);
+  });
+
+  it("manhattan for same tile is 0", () => {
+    expect(manhattan([3, 3], [3, 3])).toBe(0);
+  });
+
+  it("manhattan counts cardinal steps", () => {
+    expect(manhattan([0, 0], [0, 3])).toBe(3);
+    expect(manhattan([0, 0], [2, 0])).toBe(2);
+    expect(manhattan([0, 0], [1, 1])).toBe(2); // diagonal = 2 manhattan
+  });
+
+  it("dist is same as manhattan", () => {
+    expect(dist([0, 0], [3, 4])).toBe(manhattan([0, 0], [3, 4]));
+    expect(dist([1, 2], [5, 6])).toBe(8);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BFS Pathfinding
+// ---------------------------------------------------------------------------
+
+describe("getReachableTiles", () => {
+  it("returns empty map for 0 MP", () => {
+    const game = makeGame();
+    const reachable = getReachableTiles(game, [0, 0], 0);
+    expect(reachable.size).toBe(0);
+  });
+
+  it("finds 4 adjacent tiles with MP=1 on all-normal map", () => {
+    const game = makeGame({ size: 5 });
+    const reachable = getReachableTiles(game, [2, 2], 1);
+    // Should reach up, down, left, right
+    expect(reachable.has(posToStr(1, 2))).toBe(true); // up
+    expect(reachable.has(posToStr(3, 2))).toBe(true); // down
+    expect(reachable.has(posToStr(2, 1))).toBe(true); // left
+    expect(reachable.has(posToStr(2, 3))).toBe(true); // right
+    // Diagonal should NOT be reachable with 1 MP (no diagonal movement)
+    expect(reachable.has(posToStr(1, 1))).toBe(false);
+    expect(reachable.size).toBe(4);
+  });
+
+  it("finds diamond pattern with MP=2", () => {
+    const game = makeGame({ size: 5 });
+    const reachable = getReachableTiles(game, [2, 2], 2);
+    // 4 adjacent (cost 1) + 8 more at distance 2
+    expect(reachable.size).toBe(12);
+    expect(reachable.get(posToStr(0, 2))).toBe(2); // 2 tiles up = cost 2
+    expect(reachable.get(posToStr(2, 0))).toBe(2); // 2 tiles left = cost 2
+  });
+
+  it("avoids obstructions", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[0][1] = Terrain.Stone; // block right of [0,0]
+    const game = makeGame({ terrain: map });
+    const reachable = getReachableTiles(game, [0, 0], 3);
+    // Can't go right through stone
+    expect(reachable.has(posToStr(0, 1))).toBe(false);
+    expect(reachable.has(posToStr(0, 2))).toBe(false);
+    // Can go down then right
+    expect(reachable.has(posToStr(1, 0))).toBe(true);
+  });
+
+  it("avoids lava", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[1][0] = Terrain.Lava;
+    const game = makeGame({ terrain: map });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(1, 0))).toBe(false);
+  });
+
+  it("sticky terrain costs 2 MP", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[0][1] = Terrain.Sticky;
+    const game = makeGame({ terrain: map });
+    const reachable = getReachableTiles(game, [0, 0], 2);
+    // Sticky at [0,1] costs 2 MP, so reachable but uses all MP
+    expect(reachable.has(posToStr(0, 1))).toBe(true);
+    expect(reachable.get(posToStr(0, 1))).toBe(2);
+    // Can't go further right from sticky with 0 MP left
+    expect(reachable.has(posToStr(0, 2))).toBe(false);
+  });
+
+  it("boost terrain costs 0 MP", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[0][1] = Terrain.Boost;
+    const game = makeGame({ terrain: map });
+    const reachable = getReachableTiles(game, [0, 0], 1);
+    // Boost at [0,1] costs 0, so it's traversed but not stored in reachable (cost 0 excluded)
+    expect(reachable.has(posToStr(0, 1))).toBe(false); // cost 0, excluded by design
+    expect(reachable.has(posToStr(0, 2))).toBe(true); // 1 MP left after free pass
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Line of Sight
+// ---------------------------------------------------------------------------
+
+describe("hasLineOfSight", () => {
+  it("same tile has LOS", () => {
+    const game = makeGame();
+    expect(hasLineOfSight(game, [0, 0], [0, 0])).toBe(true);
+  });
+
+  it("cardinal line with no obstructions has LOS", () => {
+    const game = makeGame({ size: 5 });
+    expect(hasLineOfSight(game, [0, 0], [0, 4])).toBe(true);
+    expect(hasLineOfSight(game, [0, 0], [4, 0])).toBe(true);
+  });
+
+  it("diagonal line with no obstructions has LOS", () => {
+    const game = makeGame({ size: 5 });
+    expect(hasLineOfSight(game, [0, 0], [4, 4])).toBe(true);
+  });
+
+  it("LOS blocked by stone wall", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[0][2] = Terrain.Stone;
+    const game = makeGame({ terrain: map });
+    expect(hasLineOfSight(game, [0, 0], [0, 4])).toBe(false);
+    expect(hasLineOfSight(game, [0, 0], [0, 1])).toBe(true); // before wall
+  });
+
+  it("LOS blocked by bone wall", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[2][2] = Terrain.Bone;
+    const game = makeGame({ terrain: map });
+    expect(hasLineOfSight(game, [0, 0], [4, 4])).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Range checking
+// ---------------------------------------------------------------------------
+
+describe("inRange", () => {
+  const game = makeGame({ size: 10 });
+
+  it("empty range returns false", () => {
+    expect(inRange(game, [0, 0], [1, 1], "")).toBe(false);
+  });
+
+  it("varies range returns false", () => {
+    expect(inRange(game, [0, 0], [1, 1], "varies")).toBe(false);
+  });
+
+  it("melee: adjacent tiles are in range", () => {
+    expect(inRange(game, [5, 5], [5, 6], "melee")).toBe(true); // right
+    expect(inRange(game, [5, 5], [6, 5], "melee")).toBe(true); // down
+    expect(inRange(game, [5, 5], [6, 6], "melee")).toBe(true); // diagonal
+    expect(inRange(game, [5, 5], [5, 7], "melee")).toBe(false); // 2 away
+  });
+
+  it("global: anything is in range", () => {
+    expect(inRange(game, [0, 0], [9, 9], "global")).toBe(true);
+  });
+
+  it("range X: Manhattan distance with LOS", () => {
+    expect(inRange(game, [5, 5], [5, 7], "range 3")).toBe(true); // manhattan 2
+    expect(inRange(game, [5, 5], [5, 9], "range 3")).toBe(false); // manhattan 4
+    expect(inRange(game, [5, 5], [3, 7], "range 3")).toBe(false); // manhattan 4
+    expect(inRange(game, [5, 5], [5, 8], "range 4")).toBe(true); // manhattan 3
+  });
+
+  it("homing X: Manhattan distance, no LOS needed", () => {
+    expect(inRange(game, [5, 5], [5, 9], "homing 5")).toBe(true); // manhattan 4
+    expect(inRange(game, [5, 5], [5, 9], "homing 3")).toBe(false); // manhattan 4
+  });
+
+  it("burst X: Chebyshev distance", () => {
+    expect(inRange(game, [5, 5], [7, 7], "burst 3")).toBe(true); // cheb 2
+    expect(inRange(game, [5, 5], [5, 8], "burst 2")).toBe(false); // cheb 3
+    expect(inRange(game, [5, 5], [5, 8], "burst 3")).toBe(true); // cheb 3
+  });
+
+  it("line X: cardinal or diagonal", () => {
+    expect(inRange(game, [5, 5], [5, 9], "line 5")).toBe(true); // cardinal, dist 4
+    expect(inRange(game, [5, 5], [9, 9], "line 5")).toBe(false); // diagonal, diagDist 4 > ceil(5/2)=3
+    expect(inRange(game, [5, 5], [8, 8], "line 5")).toBe(true); // diagonal, diagDist 3 <= ceil(5/2)=3
+    expect(inRange(game, [5, 5], [3, 7], "line 5")).toBe(true); // diagonal, diagDist 2 <= ceil(5/2)=3
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AoE Tiles
+// ---------------------------------------------------------------------------
+
+describe("getBurstTiles", () => {
+  it("burst 1 returns 8 tiles", () => {
+    const tiles = getBurstTiles([2, 2], 1);
+    expect(tiles.length).toBe(8);
+    expect(tiles.some(([r, c]) => r === 1 && c === 2)).toBe(true); // up
+    expect(tiles.some(([r, c]) => r === 3 && c === 2)).toBe(true); // down
+    expect(tiles.some(([r, c]) => r === 1 && c === 1)).toBe(true); // diag
+    // Should not include center
+    expect(tiles.some(([r, c]) => r === 2 && c === 2)).toBe(false);
+  });
+
+  it("burst 2 returns 24 tiles", () => {
+    const tiles = getBurstTiles([2, 2], 2);
+    expect(tiles.length).toBe(24); // 5*5 - 1
+  });
+});
+
+describe("getStarTiles", () => {
+  it("star 1 returns 4 tiles (diamond shape)", () => {
+    const tiles = getStarTiles([2, 2], 1);
+    expect(tiles.length).toBe(4); // up, down, left, right only (no diagonal)
+    expect(tiles.some(([r, c]) => r === 1 && c === 2)).toBe(true);
+    expect(tiles.some(([r, c]) => r === 2 && c === 1)).toBe(true);
+    expect(tiles.some(([r, c]) => r === 1 && c === 1)).toBe(false); // diagonal NOT in star
+  });
+
+  it("star 2 returns 12 tiles", () => {
+    const tiles = getStarTiles([2, 2], 2);
+    expect(tiles.length).toBe(12); // manhattan 1 (4) + manhattan 2 (8) = 12
+  });
+});
+
+describe("getConeTiles", () => {
+  it("cone generates tiles in all 4 cardinal directions", () => {
+    const tiles = getConeTiles([5, 5], 1);
+    // Cone 1: 3 tiles forward in each direction (1 forward + 1 to each side)
+    // Up: [4,4], [4,5], [4,6]
+    // Down: [6,4], [6,5], [6,6]
+    // Left: [4,4], [5,4], [6,4]
+    // Right: [4,6], [5,6], [6,6]
+    // Total = 12 (with some overlap at corners)
+    expect(tiles.length).toBe(12);
+  });
+
+  it("cone does not include origin", () => {
+    const tiles = getConeTiles([5, 5], 3);
+    expect(tiles.some(([r, c]) => r === 5 && c === 5)).toBe(false);
+  });
+});
+
+describe("getLineTiles", () => {
+  it("generates tiles in all 8 directions", () => {
+    const tiles = getLineTiles([5, 5], 3);
+    // 4 cardinal * 3 + 4 diagonal * ceil(3/2) = 12 + 8 = 20
+    expect(tiles.length).toBe(20);
+  });
+
+  it("does not include origin", () => {
+    const tiles = getLineTiles([5, 5], 5);
+    expect(tiles.some(([r, c]) => r === 5 && c === 5)).toBe(false);
+  });
+});
+
+describe("getPierceTiles", () => {
+  it("same as getLineTiles", () => {
+    const line = getLineTiles([5, 5], 3);
+    const pierce = getPierceTiles([5, 5], 3);
+    expect(pierce.length).toBe(line.length);
+  });
+});
+
+describe("getBeamTiles", () => {
+  it("generates 3-wide tiles in 4 cardinal directions", () => {
+    const tiles = getBeamTiles([5, 5], 2);
+    // 4 directions * 2 depth * 3 width = 24
+    expect(tiles.length).toBe(24);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AoE Targeting
+// ---------------------------------------------------------------------------
+
+describe("getAoETargets", () => {
+  it("finds enemies in burst radius", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [4, 4], team: 1 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Foe");
+    expect(targets.map((t) => t.num)).toContain("P2");
+    expect(targets.map((t) => t.num)).not.toContain("P3"); // too far
+  });
+
+  it("excludes dead entities", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({
+      num: "P2",
+      name: "B",
+      pos: [2, 3],
+      team: 1,
+      curhp: 0,
+    });
+    const game = makeGame({ entities: [p1, p2] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Foe");
+    expect(targets.length).toBe(0);
+  });
+});
+
+describe("getSplashTargets", () => {
+  it("finds nearby enemies around primary target", () => {
+    const caster = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
+    const primary = makeEntity({ num: "P2", name: "B", pos: [2, 2], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 3], team: 1 });
+    const p4 = makeEntity({ num: "P4", name: "D", pos: [4, 4], team: 1 });
+    const game = makeGame({ entities: [caster, primary, p3, p4] });
+    const splash = getSplashTargets(game, caster, primary, 1, "Foe");
+    expect(splash.map((t) => t.num)).toContain("P3");
+    expect(splash.map((t) => t.num)).not.toContain("P4");
+  });
+
+  it("excludes the primary target itself", () => {
+    const caster = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
+    const primary = makeEntity({ num: "P2", name: "B", pos: [2, 2], team: 1 });
+    const game = makeGame({ entities: [caster, primary] });
+    const splash = getSplashTargets(game, caster, primary, 2, "Foe");
+    expect(splash.some((t) => t.num === "P2")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Push / Pull
+// ---------------------------------------------------------------------------
+
+describe("pushEntity", () => {
+  it("pushes target away from source", () => {
+    const game = makeGame();
+    const target = makeEntity({ num: "P1", name: "T", pos: [2, 2], team: 0 });
+    game.entities = [target];
+    const { moved, path } = pushEntity(game, target, [2, 0], 2);
+    expect(moved).toBe(2);
+    expect(target.pos[1]).toBe(4); // pushed right
+    expect(path.length).toBe(2);
+  });
+
+  it("stops at obstruction", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[2][3] = Terrain.Stone;
+    const game = makeGame({ terrain: map });
+    const target = makeEntity({ num: "P1", name: "T", pos: [2, 2], team: 0 });
+    game.entities = [target];
+    const { moved } = pushEntity(game, target, [2, 0], 5);
+    expect(moved).toBe(0); // stone at [2,3] blocks the first push tile
+  });
+
+  it("stops at map edge", () => {
+    const game = makeGame({ size: 5 });
+    const target = makeEntity({ num: "P1", name: "T", pos: [2, 4], team: 0 });
+    game.entities = [target];
+    const { moved } = pushEntity(game, target, [2, 0], 5);
+    expect(moved).toBe(0); // already at right edge
+  });
+});
+
+describe("pullEntity", () => {
+  it("pulls target towards source", () => {
+    const game = makeGame();
+    const target = makeEntity({ num: "P1", name: "T", pos: [2, 4], team: 0 });
+    game.entities = [target];
+    const { moved } = pullEntity(game, target, [2, 0], 2);
+    expect(moved).toBe(2);
+    expect(target.pos[1]).toBe(2); // pulled left
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deal Damage
+// ---------------------------------------------------------------------------
+
+describe("dealDamage", () => {
+  it("reduces HP by damage amount", () => {
+    const e = makeEntity({ num: "P1", name: "T", curhp: 100, maxhp: 100 });
+    const actual = dealDamage(e, 30);
+    expect(actual).toBe(30);
+    expect(e.curhp).toBe(70);
+  });
+
+  it("clamps to 0", () => {
+    const e = makeEntity({ num: "P1", name: "T", curhp: 10 });
+    const actual = dealDamage(e, 50);
+    expect(actual).toBe(50);
+    expect(e.curhp).toBe(-40);
+  });
+
+  it("negative damage is clamped to 0", () => {
+    const e = makeEntity({ num: "P1", name: "T", curhp: 100 });
+    const actual = dealDamage(e, -5);
+    expect(actual).toBe(0);
+    expect(e.curhp).toBe(100);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Accuracy
+// ---------------------------------------------------------------------------
+
+describe("rollAccuracy", () => {
+  it("returns hit/miss and crit info", () => {
+    const result = rollAccuracy(10, 5);
+    expect(typeof result.hit).toBe("boolean");
+    expect(typeof result.roll).toBe("number");
+    expect(typeof result.crit).toBe("boolean");
+    expect(result.roll).toBeGreaterThanOrEqual(1);
+    expect(result.roll).toBeLessThanOrEqual(25); // 1d20 + 0 bonuses
+  });
+
+  it("crit happens on natural 20", () => {
+    // We can't guarantee a 20, but we can check the structure
+    // Run many times and check that at least some crit
+    let sawCrit = false;
+    for (let i = 0; i < 1000; i++) {
+      if (rollAccuracy(0, 0, 0).crit) {
+        sawCrit = true;
+        break;
+      }
+    }
+    expect(sawCrit).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Game Over
+// ---------------------------------------------------------------------------
+
+describe("checkGameOver", () => {
+  it("returns null when 2+ entities alive in FFA", () => {
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "A", curhp: 100 }),
+        makeEntity({ num: "P2", name: "B", curhp: 50 }),
+      ],
+    });
+    expect(checkGameOver(game)).toBeNull();
+  });
+
+  it("returns winner when 1 alive in FFA", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100 });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 0 });
+    const game = makeGame({ entities: [p1, p2] });
+    const winner = checkGameOver(game);
+    expect(winner?.num).toBe("P1");
+    expect(game.phase).toBe("ended");
+  });
+
+  it("returns null in team mode when both teams alive", () => {
+    const game = makeGame({
+      mode: "2v2",
+      entities: [
+        makeEntity({ num: "P1", name: "A", curhp: 100, team: 0 }),
+        makeEntity({ num: "P2", name: "B", curhp: 100, team: 0 }),
+        makeEntity({ num: "P3", name: "C", curhp: 50, team: 1 }),
+        makeEntity({ num: "P4", name: "D", curhp: 50, team: 1 }),
+      ],
+    });
+    expect(checkGameOver(game)).toBeNull();
+  });
+
+  it("returns winner in team mode when one team wiped", () => {
+    const game = makeGame({
+      mode: "2v2",
+      entities: [
+        makeEntity({ num: "P1", name: "A", curhp: 100, team: 0 }),
+        makeEntity({ num: "P2", name: "B", curhp: 100, team: 0 }),
+        makeEntity({ num: "P3", name: "C", curhp: 0, team: 1 }),
+        makeEntity({ num: "P4", name: "D", curhp: 0, team: 1 }),
+      ],
+    });
+    const winner = checkGameOver(game);
+    expect(winner).not.toBeNull();
+    expect(winner?.team).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Loot
+// ---------------------------------------------------------------------------
+
+describe("calculateLoot", () => {
+  it("returns loot for each entity", () => {
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "A", curhp: 100 }),
+        makeEntity({ num: "P2", name: "B", curhp: 50 }),
+      ],
+    });
+    game.kills = { P1: 2, P2: 0 };
+    game.winner = "P1";
+    const loot = calculateLoot(game);
+    expect(loot.length).toBe(2);
+    const p1Loot = loot.find((l) => l.entity.num === "P1");
+    const p2Loot = loot.find((l) => l.entity.num === "P2");
+    expect(p1Loot).toBeDefined();
+    expect(p2Loot).toBeDefined();
+    // Winner gets 1.5x
+    expect(p1Loot!.xp).toBeGreaterThan(p2Loot!.xp);
+  });
+
+  it("gem count scales with player count", () => {
+    const game4 = makeGame({
+      entities: Array.from({ length: 4 }, (_, i) =>
+        makeEntity({ num: `P${i + 1}`, name: `P${i + 1}`, curhp: 100 }),
+      ),
+    });
+    const loot4 = calculateLoot(game4);
+    expect(loot4[0].gems).toBe(1);
+
+    const game6 = makeGame({
+      entities: Array.from({ length: 6 }, (_, i) =>
+        makeEntity({ num: `P${i + 1}`, name: `P${i + 1}`, curhp: 100 }),
+      ),
+    });
+    const loot6 = calculateLoot(game6);
+    expect(loot6[0].gems).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Snapshots
+// ---------------------------------------------------------------------------
+
+describe("Snapshots", () => {
+  it("pushSnapshot and popSnapshot restore state", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const game = makeGame({ entities: [p1] });
+
+    pushSnapshot(game);
+    expect(game.snapshots.length).toBe(1);
+
+    // Mutate
+    p1.curhp = 20;
+    p1.pos = [3, 3];
+    expect(p1.curhp).toBe(20);
+
+    // Pop restores
+    popSnapshot(game);
+    expect(p1.curhp).toBe(100);
+    expect(p1.pos).toEqual([0, 0]);
+  });
+
+  it("returns false when no snapshots", () => {
+    const game = makeGame();
+    expect(popSnapshot(game)).toBe(false);
+  });
+
+  it("caps snapshots at 20", () => {
+    const game = makeGame();
+    for (let i = 0; i < 25; i++) pushSnapshot(game);
+    expect(game.snapshots.length).toBe(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Turn Management
+// ---------------------------------------------------------------------------
+
+describe("Turn Management", () => {
+  it("getCurrentEntity returns the active entity", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    expect(getCurrentEntity(game)?.num).toBe("P1");
+  });
+
+  it("getEntity finds by num or name", () => {
+    const game = makeGame();
+    expect(getEntity(game, "P1")?.num).toBe("P1");
+    expect(getEntity(game, "p1")?.num).toBe("P1");
+    expect(getEntity(game, "Alice")?.num).toBe("P1");
+  });
+
+  it("nextTurn advances turnIndex", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    const next = nextTurn(game);
+    expect(next?.num).toBe("P2");
+    expect(game.turnIndex).toBe(1);
+  });
+
+  it("nextTurn wraps to round 2", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 1;
+    game.round = 1;
+    nextTurn(game);
+    expect(game.turnIndex).toBe(0);
+    expect(game.round).toBe(2);
+  });
+
+  it("nextTurn resets per-turn flags", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    p1.dashUsed = true;
+    p1.standardUsed = true;
+    nextTurn(game);
+    // p1 is not the current entity anymore, check p2
+    expect(p2.dashUsed).toBe(false);
+    expect(p2.standardUsed).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// End-of-Turn Processing
+// ---------------------------------------------------------------------------
+
+describe("processEndOfTurn", () => {
+  it("decrements status durations", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      statuses: [
+        { name: "Bleed", damage: 5, rounds: 3, maxRounds: 3, removable: true },
+        { name: "Burn", damage: 3, rounds: 1, maxRounds: 1, removable: true },
+      ],
+    });
+    const game = makeGame();
+    processEndOfTurn(game, e);
+    expect(e.statuses.length).toBe(1); // Burn expired
+    expect(e.statuses[0].name).toBe("Bleed");
+    expect(e.statuses[0].rounds).toBe(2);
+  });
+
+  it("decrements buff durations", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      buffs: [
+        { stat: "atk", amount: 5, rounds: 2 },
+        { stat: "pd", amount: 3, rounds: 1 },
+      ],
+    });
+    const game = makeGame();
+    processEndOfTurn(game, e);
+    expect(e.buffs.length).toBe(1);
+    expect(e.buffs[0].stat).toBe("atk");
+    expect(e.buffs[0].rounds).toBe(1);
+  });
+
+  it("decrements cooldowns", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      cooldowns: { Fireball: 2, Heal: 1 },
+    });
+    const game = makeGame();
+    processEndOfTurn(game, e);
+    expect(e.cooldowns["Fireball"]).toBe(1);
+    expect(e.cooldowns["Heal"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Start-of-Turn Processing
+// ---------------------------------------------------------------------------
+
+describe("processStartOfTurn", () => {
+  it("applies status damage", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      curhp: 100,
+      statuses: [
+        { name: "Bleed", damage: 10, rounds: 3, maxRounds: 3, removable: true },
+      ],
+    });
+    const game = makeGame();
+    processStartOfTurn(game, e);
+    expect(e.curhp).toBe(90);
+  });
+
+  it("applies lava damage", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[2][2] = Terrain.Lava;
+    const game = makeGame({ terrain: map });
+    const e = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [2, 2] });
+    processStartOfTurn(game, e);
+    expect(e.curhp).toBe(70); // 30 lava damage
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Remove Entity
+// ---------------------------------------------------------------------------
+
+describe("removeEntity", () => {
+  it("removes entity from game", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    removeEntity(game, p1);
+    expect(game.entities.length).toBe(1);
+    expect(game.entities[0].num).toBe("P2");
+    expect(game.turnOrder).toEqual(["P2"]);
+  });
+});

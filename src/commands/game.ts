@@ -48,13 +48,9 @@ export function gameCommand(
       break;
 
     case "endturn":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleEndTurn(game, user);
-      break;
-
     case "next":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handleNext(game, user);
+      handleAdvanceTurn(game, user);
       break;
 
     case "back":
@@ -255,28 +251,9 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   broadcastPages(game);
 }
 
-function handleEndTurn(game: Game, user: User) {
-  const isHost = toId(user.name) === toId(game.host);
-  const entity = getCurrentEntity(game);
-  if (!entity || (!isHost && toId(entity.name) !== toId(user.name))) {
-    return sendPm(user.name, "It's not your turn.");
-  }
-
-  pushSnapshot(game);
-  const result = nextTurn(game);
-  if (!result) {
-    const winner = checkGameOver(game);
-    announceGameOver(game, winner);
-    return;
-  }
-  send(game.room, `**${result.num}'s turn!** (${result.name})`);
-  broadcastPages(game);
-}
-
-function handleNext(game: Game, user: User) {
-  // Only the host can resolve turns
+function handleAdvanceTurn(game: Game, user: User) {
   if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can use %next.");
+    return sendPm(user.name, "Only the host can advance turns.");
   }
 
   const entity = getCurrentEntity(game);
@@ -284,14 +261,12 @@ function handleNext(game: Game, user: User) {
 
   pushSnapshot(game);
 
-  // Resolve pending action if any
   if (entity.pendingAction) {
     const res = resolveAction(game, entity);
     for (const msg of res.messages) {
       send(game.room, msg);
     }
 
-    // Check for deaths -> game over
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
       announceGameOver(game, winner);
@@ -299,7 +274,6 @@ function handleNext(game: Game, user: User) {
     }
   }
 
-  // Log the turn
   game.log.push({
     turn: game.round,
     entity: entity.num,
@@ -309,7 +283,6 @@ function handleNext(game: Game, user: User) {
 
   const result = nextTurn(game);
   if (!result) {
-    // nextTurn returns null when game is over (<=1 entities)
     const winner = checkGameOver(game);
     announceGameOver(game, winner);
     return;

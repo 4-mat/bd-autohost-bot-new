@@ -13,6 +13,7 @@ const PORT = 4000;
 const PREFIX = "%";
 
 let browserWs: WebSocket | null = null;
+let currentUser = "HostUser";
 
 function broadcast(msg: string) {
   if (browserWs?.readyState === WebSocket.OPEN) {
@@ -52,6 +53,10 @@ setWs({
     }
   },
 });
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 function findPlayerTab(name: string): string {
   for (const game of games.values()) {
@@ -93,8 +98,14 @@ wss.on("connection", (ws) => {
 
   broadcast(
     JSON.stringify({
+      type: "nick",
+      user: currentUser,
+    }),
+  );
+  broadcast(
+    JSON.stringify({
       type: "system",
-      text: "Connected. Type %help for commands.",
+      text: "Connected. Type %help for commands. Use /nick <name> to switch accounts.",
     }),
   );
 
@@ -103,11 +114,40 @@ wss.on("connection", (ws) => {
       const msg = JSON.parse(data.toString());
       if (msg.type === "chat") {
         const text = msg.text.trim();
+
+        if (text.startsWith("/nick ")) {
+          const nick = text.slice(6).trim();
+          if (!nick) {
+            broadcast(
+              JSON.stringify({ type: "system", text: "Usage: /nick <name>" }),
+            );
+            return;
+          }
+          const uid = toId(nick);
+          if (!users.has(uid)) {
+            users.set(uid, {
+              id: uid,
+              name: nick,
+              rooms: { battledome: " " },
+              last: Date.now(),
+            });
+          }
+          currentUser = nick;
+          broadcast(JSON.stringify({ type: "nick", user: nick }));
+          broadcast(
+            JSON.stringify({
+              type: "system",
+              text: `Now talking as **${nick}**.`,
+            }),
+          );
+          return;
+        }
+
         if (!text.startsWith(PREFIX)) {
           broadcast(
             JSON.stringify({
               type: "chat",
-              text: `<span class="name">HostUser</span> ${text}`,
+              text: `<span class="name">${escHtml(currentUser)}</span> ${escHtml(text)}`,
             }),
           );
           return;
@@ -121,7 +161,7 @@ wss.on("connection", (ws) => {
         const val = commaIdx >= 0 ? rest.slice(commaIdx + 1).trim() : "";
 
         const room = rooms.get("battledome")!;
-        const user = users.get("hostuser")!;
+        const user = users.get(toId(currentUser))!;
         handleCommand(room, user, cmd, args, val);
       }
     } catch (e) {
@@ -186,7 +226,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   <span style="color:#333">|</span>
   <span class="room">#battledome</span>
   <span style="color:#333">|</span>
-  <span style="color:#8888aa">HostUser</span>
+  <span style="color:#8888aa" id="current-user">HostUser</span>
   <span style="flex:1"></span>
   <span style="color:#8888aa;font-size:10px" id="status">connecting...</span>
 </div>
@@ -194,7 +234,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   <div id="chat-panel">
     <div id="chat-messages"></div>
     <div id="chat-input-area">
-      <input id="chat-input" type="text" placeholder="Type %command..." autocomplete="off" spellcheck="false" />
+      <input id="chat-input" type="text" placeholder="Type %command or /nick name..." autocomplete="off" spellcheck="false" />
       <button id="send-btn">Send</button>
     </div>
   </div>
@@ -227,7 +267,9 @@ const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 const guiContent = document.getElementById('gui-content');
 const statusEl = document.getElementById('status');
+const userEl = document.getElementById('current-user');
 let activeTab = 'host';
+let currentNick = 'HostUser';
 const tabHtml = { host: '', p1: '', p2: '', p3: '' };
 
 function addLine(type, raw) {
@@ -257,7 +299,7 @@ guiContent.addEventListener('click', (e) => {
   const cmd = btn.getAttribute('value');
   if (!cmd) return;
   ws.send(JSON.stringify({ type: 'chat', text: cmd }));
-  addLine('chat', '<span class="name">HostUser</span> ' + cmd);
+  addLine('chat', '<span class="name">' + currentNick + '</span> ' + cmd);
 });
 
 document.querySelectorAll('.gui-tab').forEach(tab => {
@@ -287,6 +329,9 @@ function connect() {
       if (tabHtml.hasOwnProperty(tab)) tabHtml[tab] = msg.html;
       else tabHtml.host = msg.html;
       if (activeTab === tab) renderGui();
+    } else if (msg.type === 'nick') {
+      currentNick = msg.user;
+      if (userEl) userEl.textContent = msg.user;
     } else if (msg.type === 'chat') {
       addLine('chat', msg.text);
     } else if (msg.type === 'action') {
@@ -324,6 +369,7 @@ document.addEventListener('mouseup', () => { if (dragging) { dragging = false; d
 
 addLine('system', 'Welcome to BD Autohost test client.');
 addLine('system', 'Commands: %host, %setgame, %addp, %remp, %setmap, %gento, %start, %help');
+addLine('system', 'Switch accounts: /nick <name>');
 </script>
 </body>
 </html>`;
