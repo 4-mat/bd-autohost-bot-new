@@ -6,7 +6,7 @@
     "build": "tsc",
     "start": "node --loader ts-node/esm src/index.ts",
     "dev": "tsx src/index.ts",
-    "test": "tsx watch test-app.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check-updates": "tsx src/sheets/check-updates.ts"
   },

@@ -96,7 +96,8 @@ export function handleCommand(
     id === "hp" ||
     id === "cut" ||
     id === "checkrange" ||
-    id === "cr"
+    id === "cr" ||
+    id === "premove"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;

@@ -189,6 +189,7 @@ const player1: Entity = {
   dashUsed: false,
   standardUsed: false,
   movementUsed: false,
+  swiftUsed: false,
 };
 
 const player2: Entity = {
@@ -219,6 +220,7 @@ const player2: Entity = {
   dashUsed: false,
   standardUsed: true,
   movementUsed: true,
+  swiftUsed: false,
 };
 
 const monster1: Entity = {
@@ -251,6 +253,7 @@ const monster1: Entity = {
   dashUsed: false,
   standardUsed: false,
   movementUsed: false,
+  swiftUsed: false,
 };
 
 const game: Game = {
