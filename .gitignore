@@ -2,5 +2,5 @@ node_modules/
 dist/
 *.js
 *.js.map
-config.ts
+config.local.ts
 html-output.txt
