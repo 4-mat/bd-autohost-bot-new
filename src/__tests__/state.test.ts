@@ -748,7 +748,7 @@ describe("Turn Management", () => {
     });
     game.turnIndex = 0;
     const next = nextTurn(game);
-    expect(next?.num).toBe("P2");
+    expect(next.entity?.num).toBe("P2");
     expect(game.turnIndex).toBe(1);
   });
 

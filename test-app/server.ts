@@ -9,11 +9,17 @@ import { games } from "./src/game/state.js";
 
 loadGameData();
 
-const PORT = 4000;
+const PORT = Number(process.env.PORT) || 4000;
 const PREFIX = "%";
 
 let browserWs: WebSocket | null = null;
-let currentUser = "HostUser";
+
+interface Session {
+  username: string;
+  authenticated: boolean;
+}
+
+const sessions = new Map<WebSocket, Session>();
 
 function broadcast(msg: string) {
   if (browserWs?.readyState === WebSocket.OPEN) {
@@ -69,6 +75,19 @@ function findPlayerTab(name: string): string {
   return "host";
 }
 
+function ensureUser(name: string) {
+  const uid = toId(name);
+  if (!users.has(uid)) {
+    users.set(uid, {
+      id: uid,
+      name,
+      rooms: { battledome: " " },
+      last: Date.now(),
+    });
+  }
+  return uid;
+}
+
 const server = http.createServer((_req, res) => {
   res.writeHead(200, { "Content-Type": "text/html" });
   res.end(HTML_PAGE);
@@ -78,6 +97,10 @@ const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
   browserWs = ws;
+
+  const session: Session = { username: "", authenticated: false };
+  sessions.set(ws, session);
+
   console.log("Browser connected");
 
   if (!rooms.has("battledome")) {
@@ -98,22 +121,44 @@ wss.on("connection", (ws) => {
 
   broadcast(
     JSON.stringify({
-      type: "nick",
-      user: currentUser,
-    }),
-  );
-  broadcast(
-    JSON.stringify({
       type: "system",
-      text: "Connected. Type %help for commands. Use /nick <name> to switch accounts.",
+      text: "Connected. Please log in with a username.",
     }),
   );
 
   ws.on("message", (data) => {
     try {
       const msg = JSON.parse(data.toString());
+      const session = sessions.get(ws);
+      if (!session) return;
+
+      if (msg.type === "login") {
+        const username = String(msg.username ?? "").trim();
+        if (!username) {
+          ws.send(
+            JSON.stringify({ type: "system", text: "Username cannot be empty." }),
+          );
+          return;
+        }
+        ensureUser(username);
+        session.username = username;
+        session.authenticated = true;
+        broadcast(JSON.stringify({ type: "nick", user: username }));
+        broadcast(
+          JSON.stringify({ type: "system", text: `Logged in as ${username}.` }),
+        );
+        return;
+      }
+
+      if (!session.authenticated) {
+        ws.send(
+          JSON.stringify({ type: "system", text: "Please log in first." }),
+        );
+        return;
+      }
+
       if (msg.type === "chat") {
-        const text = msg.text.trim();
+        const text: string = msg.text.trim();
 
         if (text.startsWith("/nick ")) {
           const nick = text.slice(6).trim();
@@ -123,16 +168,8 @@ wss.on("connection", (ws) => {
             );
             return;
           }
-          const uid = toId(nick);
-          if (!users.has(uid)) {
-            users.set(uid, {
-              id: uid,
-              name: nick,
-              rooms: { battledome: " " },
-              last: Date.now(),
-            });
-          }
-          currentUser = nick;
+          ensureUser(nick);
+          session.username = nick;
           broadcast(JSON.stringify({ type: "nick", user: nick }));
           broadcast(
             JSON.stringify({
@@ -147,7 +184,7 @@ wss.on("connection", (ws) => {
           broadcast(
             JSON.stringify({
               type: "chat",
-              text: `<span class="name">${escHtml(currentUser)}</span> ${escHtml(text)}`,
+              text: `<span class="name">${escHtml(session.username)}</span>${escHtml(text)}`,
             }),
           );
           return;
@@ -161,7 +198,8 @@ wss.on("connection", (ws) => {
         const val = commaIdx >= 0 ? rest.slice(commaIdx + 1).trim() : "";
 
         const room = rooms.get("battledome")!;
-        const user = users.get(toId(currentUser))!;
+        const user = users.get(toId(session.username))!;
+
         handleCommand(room, user, cmd, args, val);
       }
     } catch (e) {
@@ -170,6 +208,7 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
+    sessions.delete(ws);
     browserWs = null;
     console.log("Browser disconnected");
   });
@@ -254,8 +293,9 @@ const HTML_PAGE = `<!DOCTYPE html>
         No GUI data yet.<br><br>
         <span style="color:#00aaff">Quick start:</span><br>
         %host<br>
-        %addp Player1, Bard, Crossbow, 3<br>
-        %addp Player2, Cleric, Longbow, 3<br>
+        %addp Player1, Bard, Crossbow<br>
+        %addp Player2, Cleric, Longbow<br>
+        %setlevel P1, 3<br>
         %start
       </div>
     </div>
@@ -314,8 +354,14 @@ document.querySelectorAll('.gui-tab').forEach(tab => {
 let ws;
 function connect() {
   statusEl.textContent = 'connecting...';
-  ws = new WebSocket('ws://' + location.host);
-  ws.onopen = () => { statusEl.textContent = 'connected'; statusEl.style.color = '#00cc00'; };
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  ws = new WebSocket(proto + location.host);
+  ws.onopen = () => {
+    statusEl.textContent = 'connected';
+    statusEl.style.color = '#00cc00';
+    const username = prompt('Username?') || '';
+    ws.send(JSON.stringify({ type: 'login', username }));
+  };
   ws.onclose = () => {
     statusEl.textContent = 'disconnected';
     statusEl.style.color = '#cc0000';
@@ -368,7 +414,7 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.cursor = ''; document.body.style.userSelect = ''; } });
 
 addLine('system', 'Welcome to BD Autohost test client.');
-addLine('system', 'Commands: %host, %setgame, %addp, %remp, %setmap, %gento, %start, %help');
+addLine('system', 'Commands: %host, %setgame, %addp, %remp, %setmap, %setlevel, %gento, %start, %help');
 addLine('system', 'Switch accounts: /nick <name>');
 </script>
 </body>

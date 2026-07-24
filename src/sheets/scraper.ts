@@ -1,5 +1,5 @@
 import { SHEETS } from "./sources";
-import { loadState, saveState } from "./state";
+import { loadState, savePending, loadPending, approvePending } from "./state";
 
 interface SheetRow {
   [key: string]: string;
@@ -123,10 +123,12 @@ export async function checkAllUpdates(): Promise<{
 
     results.push({ name: sheet.name, label: sheet.label, tabs });
 
-    const prev = loadState(sheet.name);
+    const pending = loadPending(sheet.name);
+    const approved = loadState(sheet.name);
+    const prev = pending ?? approved?.sheets ?? null;
     if (prev) {
       for (const tab of tabs) {
-        const prevRaw = prev.sheets[tab.name];
+        const prevRaw = prev[tab.name];
         if (!prevRaw) continue;
         const oldData = csvToRows(prevRaw);
         const d = diffRows(oldData, tab.data);
@@ -144,10 +146,16 @@ export async function checkAllUpdates(): Promise<{
 
     const dataMap: Record<string, string> = {};
     for (const tab of tabs) dataMap[tab.name] = tab.raw;
-    saveState(sheet.name, dataMap);
+    savePending(sheet.name, dataMap);
   }
 
   return { changed: anyChanged, results, diffs: allDiffs };
+}
+
+export async function approveAllUpdates() {
+  for (const sheet of SHEETS) {
+    approvePending(sheet.name);
+  }
 }
 
 export type { DiffResult, SheetRow, FetchResult };

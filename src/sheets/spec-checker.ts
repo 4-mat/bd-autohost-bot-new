@@ -91,8 +91,6 @@ function checkEffect(
   const e = effect.trim();
   if (!e) return v;
 
-  const isPassive = false;
-
   // Rule 1: Status application must use "inflict X Status/Y" (not "applies", "causes", "gives", etc.)
   const badStatus = new RegExp(
     `(apply|applies|applied|causes?|gives?|applied with|deals?)\\s+(\\d+\\s+)?(${STATUS_PATTERN})`,
@@ -154,6 +152,7 @@ function checkEffect(
   }
 
   // Rule 5: Conditional effects must start with "If" (not "On"/"When" for non-passives)
+  const isPassive = action === "Passive";
   if (!isPassive) {
     for (const cs of CONDITIONAL_STARTS) {
       const re = new RegExp(`^${cs}`, "gi");

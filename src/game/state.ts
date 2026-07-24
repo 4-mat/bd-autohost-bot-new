@@ -852,23 +852,62 @@ export function processEndOfTurn(game: Game, entity: Entity) {
 }
 
 // Damage statuses deal damage before entity's turn
-export function processStartOfTurn(game: Game, entity: Entity) {
-  for (const status of entity.statuses) {
+export function processStartOfTurn(
+  game: Game,
+  entity: Entity,
+): { messages: string[]; died: boolean } {
+  const messages: string[] = [];
+
+  // Tick cooldowns
+  for (const [name, turns] of Object.entries(entity.cooldowns)) {
+    entity.cooldowns[name] = turns - 1;
+    if (entity.cooldowns[name] <= 0) delete entity.cooldowns[name];
+  }
+
+  // Tick buff durations, remove expired
+  entity.buffs = entity.buffs.filter((b) => {
+    b.rounds--;
+    if (b.rounds <= 0) {
+      messages.push(
+        `  ${entity.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
+      );
+      return false;
+    }
+    return true;
+  });
+
+  // Apply status damage (DoT)
+  for (const status of [...entity.statuses]) {
     if (status.damage > 0) {
       dealDamage(entity, status.damage);
+      messages.push(
+        `  ${entity.num} takes **${status.damage}** ${status.name} damage (${entity.curhp}/${entity.maxhp} HP).`,
+      );
+    }
+    // Tick status duration
+    status.rounds--;
+    if (status.rounds <= 0) {
+      messages.push(`  ${entity.num}'s ${status.name} wore off.`);
+      entity.statuses = entity.statuses.filter((s) => s !== status);
     }
   }
 
-  // Lava damage check
+  // Lava damage
   const terrain = game.map[entity.pos[0]]?.[entity.pos[1]];
   if (terrain === Terrain.Lava) {
     dealDamage(entity, 30);
+    messages.push(
+      `  ${entity.num} takes **30** lava damage (${entity.curhp}/${entity.maxhp} HP).`,
+    );
   }
 
-  // Check death
-  if (entity.curhp <= 0) {
+  const died = entity.curhp <= 0;
+  if (died) {
+    messages.push(`  **${entity.num} (${entity.name}) has been defeated!**`);
     removeEntity(game, entity);
   }
+
+  return { messages, died };
 }
 
 export function removeEntity(game: Game, entity: Entity) {
@@ -963,10 +1002,14 @@ export function calculateLoot(
   return results;
 }
 
-export function nextTurn(game: Game): Entity | null {
+export function nextTurn(game: Game): {
+  entity: Entity | null;
+  messages: string[];
+  died: boolean;
+} {
   if (game.entities.length <= 1) {
     game.phase = "ended";
-    return null;
+    return { entity: null, messages: [], died: false };
   }
 
   game.turnIndex++;
@@ -976,7 +1019,7 @@ export function nextTurn(game: Game): Entity | null {
   }
 
   const entity = getCurrentEntity(game);
-  if (!entity) return null;
+  if (!entity) return { entity: null, messages: [], died: false };
 
   // Reset per-turn flags
   entity.dashUsed = false;
@@ -985,6 +1028,6 @@ export function nextTurn(game: Game): Entity | null {
   entity.swiftUsed = false;
   entity.pendingAction = null;
 
-  processStartOfTurn(game, entity);
-  return entity;
+  const { messages, died } = processStartOfTurn(game, entity);
+  return { entity, messages, died };
 }

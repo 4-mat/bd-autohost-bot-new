@@ -32,7 +32,7 @@ export function handleCommand(
 
   if (id === "help" || id === "h") {
     const help = [
-      "**Host Commands**: %host, %setgame, %addp, %remp, %setmap, %gento, %start, %dehost, %info, %map, %pl, %to",
+      "**Host Commands**: %host, %setgame, %addp, %remp, %setmap, %setlevel, %gento, %start, %dehost, %info, %map, %pl, %to",
       "**Player Commands**: %move, %use, %dash, %endturn, %r",
       "**Character Commands**: %vs, %vl, %vi, %sc, %sw, %sco, %regp",
       "**Reference**: %wt, %rf, %wtm",
@@ -70,6 +70,8 @@ export function handleCommand(
     id === "addp" ||
     id === "remp" ||
     id === "setmap" ||
+    id === "setlevel" ||
+    id === "sl" ||
     id === "gento" ||
     id === "start"
   ) {

@@ -5,7 +5,7 @@ A built-in testing environment lets you test commands and HTML pages without con
 Start it with:
 
 ```bash
-npm run test
+npm run testapp
 ```
 
 Then open:

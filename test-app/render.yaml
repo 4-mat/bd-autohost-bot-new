@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: bd-autohost
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.14.0

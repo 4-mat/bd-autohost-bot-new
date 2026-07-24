@@ -91,18 +91,18 @@ export function gameCommand(
 
     case "hp":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handleHp(game, user, args);
+      handleHp(game, user, full);
       break;
 
     case "cut":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCut(game, user, args);
+      handleCut(game, user, full);
       break;
 
     case "checkrange":
     case "cr":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCheckRange(game, user, args);
+      handleCheckRange(game, user, full);
       break;
 
     default:
@@ -215,6 +215,23 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   );
   if (!ability) return sendPm(user.name, `Unknown ability: ${abilityName}`);
 
+  // Cooldown check
+  if (entity.cooldowns[ability.name]) {
+    return sendPm(
+      user.name,
+      `${ability.name} is on cooldown (${entity.cooldowns[ability.name]} turns left).`,
+    );
+  }
+
+  // Max uses check
+  if (ability.maxUses) {
+    const used = entity.usesUsed[ability.name] ?? 0;
+    if (used >= ability.maxUses) {
+      return sendPm(user.name, `${ability.name} has no uses remaining.`);
+    }
+  }
+
+  // Action type enforcement
   if (ability.actionType === "Standard" && entity.standardUsed) {
     return sendPm(user.name, "You already used your Standard action.");
   }
@@ -227,8 +244,21 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   ) {
     return sendPm(
       user.name,
-      "You already used your Standard or Movement action.",
+      "Full action requires both Standard and Movement unused.",
     );
+  }
+  if (ability.actionType === "Free") {
+    // Free actions always allowed (no slot consumed)
+  } else if (
+    ability.actionType === "Trigger" ||
+    ability.actionType === "Reaction"
+  ) {
+    return sendPm(
+      user.name,
+      `${ability.actionType} abilities resolve automatically, not manually.`,
+    );
+  } else if (ability.actionType === "Passive") {
+    return sendPm(user.name, "Passive abilities cannot be used manually.");
   }
 
   pushSnapshot(game);
@@ -282,12 +312,34 @@ function handleAdvanceTurn(game: Game, user: User) {
   });
 
   const result = nextTurn(game);
-  if (!result) {
-    const winner = checkGameOver(game);
-    announceGameOver(game, winner);
-    return;
+  for (const msg of result.messages) {
+    send(game.room, msg);
   }
-  send(game.room, `**${result.num}'s turn!** (${result.name})`);
+
+  if (result.died || !result.entity) {
+    const winner = checkGameOver(game);
+    if (game.phase === "ended") {
+      announceGameOver(game, winner);
+      return;
+    }
+    // If entity died from DoT but game isn't over, advance again
+    if (!result.entity) {
+      const retry = nextTurn(game);
+      for (const msg of retry.messages) {
+        send(game.room, msg);
+      }
+      if (!retry.entity) {
+        const winner = checkGameOver(game);
+        announceGameOver(game, winner);
+        return;
+      }
+      send(game.room, `**${retry.entity.num}'s turn!** (${retry.entity.name})`);
+      broadcastPages(game);
+      return;
+    }
+  }
+
+  send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
 }
 
