@@ -199,7 +199,7 @@ function resolveSingleTarget(
   } = rollAccuracy(ability.mr, targetEva, casterAccBonus);
 
   result.messages.push(
-    `  **Accuracy${hitLabel}**: ${caster.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} → ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
+    `  **Accuracy${hitLabel}**: ${caster.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
   if (!hit) return result;
@@ -237,7 +237,7 @@ function resolveSingleTarget(
   // 3. Deal damage
   const actual = dealDamage(target, finalDamage);
   result.messages.push(
-    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${getEffectiveStat(caster, ability.damageType === "Physical" ? "atk" : "mag")}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${getEffectiveStat(target, ability.damageType === "Physical" ? "pd" : "md")}) = **${finalDamage}** → ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${getEffectiveStat(caster, ability.damageType === "Physical" ? "atk" : "mag")}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${getEffectiveStat(target, ability.damageType === "Physical" ? "pd" : "md")}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
   );
 
   // 4. Apply statuses from effect
@@ -264,7 +264,7 @@ function findTargets(
   const group = ability.targetGroup;
   const range = ability.range;
 
-  // Handle compound ranges like "Range 10 or Burst 1" — try each part
+  // Handle compound ranges like "Range 10 or Burst 1" -- try each part
   const rangeParts = range.toLowerCase().includes(" or ")
     ? range.split(/\s+or\s+/i)
     : [range];
@@ -368,7 +368,7 @@ function applyStatusEffects(
   ability: AbilityData,
 ) {
   // Parse effect text for common status patterns
-  // This is a simplified parser — real implementation would need the full ability data
+  // This is a simplified parser -- real implementation would need the full ability data
   const effect = ability.effect.toLowerCase();
 
   // Bleed: "X bleed/Y" or "inflict X bleed/Y"
@@ -541,7 +541,7 @@ function applyStatusEffects(
 }
 
 function applyStatus(entity: Entity, status: StatusEffect) {
-  // Don't stack same status — refresh duration
+  // Don't stack same status -- refresh duration
   const existing = entity.statuses.find((s) => s.name === status.name);
   if (existing) {
     existing.rounds = status.rounds;
@@ -581,7 +581,7 @@ function isWinCondition(game: Game): boolean {
   return aliveTeams <= 1;
 }
 
-// Parse multi-hit count from roll string (e.g. "2d8+5\n(Double Hit)" → 2)
+// Parse multi-hit count from roll string (e.g. "2d8+5\n(Double Hit)" -> 2)
 function parseMultiHit(ability: AbilityData): number {
   const roll = ability.roll.toLowerCase();
   if (roll.includes("double hit")) return 2;
@@ -613,7 +613,7 @@ function applyPushPull(
   if (pp.type === "push") {
     const { moved, path } = pushEntity(game, target, caster.pos, pp.amount);
     if (moved > 0) {
-      const pathStr = path.map((p) => posToStr(p[0], p[1])).join(" → ");
+      const pathStr = path.map((p) => posToStr(p[0], p[1])).join(" -> ");
       result.messages.push(
         `  **Push**: ${target.num} pushed ${moved} tile${moved > 1 ? "s" : ""} to ${pathStr}`,
       );
@@ -623,7 +623,7 @@ function applyPushPull(
   } else {
     const { moved, path } = pullEntity(game, target, caster.pos, pp.amount);
     if (moved > 0) {
-      const pathStr = path.map((p) => posToStr(p[0], p[1])).join(" → ");
+      const pathStr = path.map((p) => posToStr(p[0], p[1])).join(" -> ");
       result.messages.push(
         `  **Pull**: ${target.num} pulled ${moved} tile${moved > 1 ? "s" : ""} to ${pathStr}`,
       );
@@ -665,7 +665,7 @@ function resolveHeal(
     const healed = target.curhp - prevHp;
 
     result.messages.push(
-      `  **Heal**: ${ability.roll}(${healRoll.rolls.join("+")}) = **${healed}** → ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+      `  **Heal**: ${ability.roll}(${healRoll.rolls.join("+")}) = **${healed}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
     );
   } else {
     // Roll-less heals (e.g. percentage-based from effect text)
@@ -799,7 +799,7 @@ function resolveSplash(
     const finalDamage = Math.max(0, baseDamage);
     const actual = dealDamage(target, finalDamage);
     result.messages.push(
-      `  **Splash Damage**: → ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**`,
+      `  **Splash Damage**: -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**`,
     );
 
     if (target.curhp <= 0) {

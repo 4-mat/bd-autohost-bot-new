@@ -71,7 +71,7 @@ export async function sheetsCommand(user: User, cmd: string, args: string) {
           const name = c.row.Name || c.row["Ability Name"] || "?";
           lines.push(`    - ${name}:`);
           for (const [field, { from, to }] of Object.entries(c.changes)) {
-            lines.push(`      ${field}: "${from}" → "${to}"`);
+            lines.push(`      ${field}: "${from}" -> "${to}"`);
           }
         }
       }

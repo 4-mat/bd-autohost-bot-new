@@ -1,4 +1,4 @@
-﻿import { send, sendPm, toId, parsePos, posToStr, rollDice } from "../utils.js";
+import { send, sendPm, toId, parsePos, posToStr, rollDice } from "../utils.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
 import {
@@ -66,7 +66,7 @@ function findGameForRoom(roomid: string): Game | null {
   return null;
 }
 
-// â”€â”€ .host â€” Create a new game â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- .host - Create a new game -------------------------------------------------
 
 function handleHost(room: Room, user: User) {
   const existing = findGameForRoom(room.id);
@@ -102,7 +102,7 @@ function handleHost(room: Room, user: User) {
   sendPm(user.name, "Use %setgame, %addp, %setmap to configure, then %start.");
 }
 
-// â”€â”€ .dehost â€” Remove the game â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- .dehost - Remove the game -------------------------------------------------
 
 function handleDehost(room: Room, user: User) {
   const game = findGameForRoom(room.id);
@@ -115,7 +115,7 @@ function handleDehost(room: Room, user: User) {
   send(room.id, `**${user.name}** has closed the game.`);
 }
 
-// â”€â”€ .setgame <mode> â€” Set game mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- .setgame <mode> - Set game mode -------------------------------------------
 
 function handleSetGame(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
@@ -133,7 +133,7 @@ function handleSetGame(room: Room, user: User, args: string) {
   send(room.id, `Game mode set to **${game.mode}**.`);
 }
 
-// â”€â”€ .addp <name> [class] [weapon] [level] â€” Add a player â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- .addp <name> [class] [weapon] [level] - Add a player ---------------------
 
 function handleAddPlayer(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
@@ -175,7 +175,7 @@ function handleAddPlayer(room: Room, user: User, args: string) {
     );
   }
 
-  // Parse stat strings (flat values — same at all levels)
+  // Parse stat strings (flat values -- same at all levels)
   const lvl = Math.min(level, 10);
   const maxhp = parseInt(classData.stats.hp) + parseInt(weaponData.stats.hp);
 
@@ -229,11 +229,11 @@ function handleAddPlayer(room: Room, user: User, args: string) {
   game.entities.push(entity);
   send(
     room.id,
-    `**${name}** added as ${num} â€” ${classData.name}/${weaponData.name} Lv.${lvl} (${maxhp} HP) at ${posToStr(pos[0], pos[1])}`,
+    `**${name}** added as ${num} - ${classData.name}/${weaponData.name} Lv.${lvl} (${maxhp} HP) at ${posToStr(pos[0], pos[1])}`,
   );
 }
 
-// â”€â”€ .remp <name> â€” Remove a player â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- .remp <name> - Remove a player --------------------------------------------
 
 function handleRemPlayer(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
@@ -252,7 +252,7 @@ function handleRemPlayer(room: Room, user: User, args: string) {
   send(room.id, `**${entity.num} (${entity.name})** has been removed.`);
 }
 
-// â”€â”€ .setmap <name> â€” Set the map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- .setmap <name> - Set the map ----------------------------------------------
 
 function handleSetMap(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
@@ -286,7 +286,7 @@ function handleSetMap(room: Room, user: User, args: string) {
   );
 }
 
-// â”€â”€ .gento â€” Generate turn order â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- .gento - Generate turn order ----------------------------------------------
 
 function handleGenTurnOrder(room: Room, user: User) {
   const game = findGameForRoom(room.id);
@@ -313,13 +313,13 @@ function handleGenTurnOrder(room: Room, user: User) {
   game.round = 1;
 
   const orderStr = rolls
-    .map((r) => `${r.num} (${r.name}) â€” ${r.roll} (1d20+${r.mp})`)
+    .map((r) => `${r.num} (${r.name}) - ${r.roll} (1d20+${r.mp})`)
     .join(", ");
 
   send(room.id, `**Turn Order**: ${orderStr}`);
 }
 
-// â”€â”€ .start â€” Start the game â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- .start - Start the game ---------------------------------------------------
 
 function handleStart(room: Room, user: User) {
   const game = findGameForRoom(room.id);
@@ -355,7 +355,7 @@ function handleStart(room: Room, user: User) {
   broadcastPages(game);
 }
 
-// â”€â”€ Map generators â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Map generators ------------------------------------------------------------
 
 function generateDefaultMap(): Terrain[][] {
   // 12x12 map with varied terrain
@@ -445,7 +445,7 @@ function generateLargeMap(): Terrain[][] {
   return map;
 }
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Helpers -------------------------------------------------------------------
 
 function findSpawnPosition(game: Game): [number, number] {
   const rows = game.map.length;

@@ -33,10 +33,10 @@ export function playerCommand(user: User, cmd: string, args: string) {
 
       const { entity: e } = result;
       const hpPct = Math.max(0, (e.curhp / e.maxhp) * 100);
-      const hpBar = hpPct > 50 ? "🟢" : hpPct > 25 ? "🟡" : "🔴";
+      const hpBar = hpPct > 50 ? "[+]" : hpPct > 25 ? "[~]" : "[-]";
 
       const lines = [
-        `**${e.num} ${e.name}** — ${e.className}/${e.weaponName} (Lv.${e.classLevel}/${e.weaponLevel})`,
+        `**${e.num} ${e.name}** -- ${e.className}/${e.weaponName} (Lv.${e.classLevel}/${e.weaponLevel})`,
         `${hpBar} **HP**: ${e.curhp}/${e.maxhp}`,
         `**ATK**: ${e.atk} | **MAG**: ${e.mag} | **PD**: ${e.pd} | **MD**: ${e.md} | **EVA**: ${e.eva} | **MP**: ${e.mp}`,
         `**Position**: ${posToStr(e.pos[0], e.pos[1])} | **Team**: ${e.team}`,
@@ -74,7 +74,7 @@ export function playerCommand(user: User, cmd: string, args: string) {
 
       const { entity: e } = result;
       const lines = [
-        `**${e.num} ${e.name}** — Levels`,
+        `**${e.num} ${e.name}** -- Levels`,
         `Class: ${e.className} (Lv.${e.classLevel})`,
         `Weapon: ${e.weaponName} (Lv.${e.weaponLevel})`,
         `Abilities:`,
@@ -105,22 +105,22 @@ export function playerCommand(user: User, cmd: string, args: string) {
     }
 
     case "regp": {
-      // Register player — host assigns a player to a PS user
+      // Register player -- host assigns a player to a PS user
       send(
         target,
-        `Register player: (not yet implemented — use .addp instead)`,
+        `Register player: (not yet implemented -- use .addp instead)`,
       );
       break;
     }
 
     case "sc": {
-      // Switch class — not yet implemented
+      // Switch class -- not yet implemented
       sendPm(target, `Switch class: (not yet implemented)`);
       break;
     }
 
     case "sw": {
-      // Switch weapon — not yet implemented
+      // Switch weapon -- not yet implemented
       sendPm(target, `Switch weapon: (not yet implemented)`);
       break;
     }
@@ -136,7 +136,7 @@ export function playerCommand(user: User, cmd: string, args: string) {
       if (!entity) return sendPm(target, "You are not in any active game.");
 
       const lines = [
-        `**${entity.num} ${entity.name}** — Score`,
+        `**${entity.num} ${entity.name}** -- Score`,
         `HP: ${entity.curhp}/${entity.maxhp}`,
         `Abilities used: ${
           Object.entries(entity.usesUsed)

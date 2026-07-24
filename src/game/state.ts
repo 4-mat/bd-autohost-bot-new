@@ -159,7 +159,7 @@ export interface Game {
   mode: string;
   phase: "setup" | "playing" | "ended";
   started: boolean;
-  kills: Record<string, number>; // entity num → kill count
+  kills: Record<string, number>; // entity num -> kill count
   winner: string | null; // winning entity num or team
 }
 
@@ -390,7 +390,7 @@ export function inRange(
   return false;
 }
 
-// Chebyshev distance (max of row diff, col diff) — diagonal counts as 1
+// Chebyshev distance (max of row diff, col diff) -- diagonal counts as 1
 export function chebyshev(a: [number, number], b: [number, number]): number {
   return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
 }
@@ -435,7 +435,7 @@ function inBeam(
     // Horizontal beam
     const colDist = Math.abs(dc);
     if (colDist < 1 || colDist > range) return false;
-    // Check perpendicular (row offset must be 0 or ±1)
+    // Check perpendicular (row offset must be 0 or +/-1)
     return Math.abs(dr) <= 0; // already checked dr===0
   }
   if (dc === 0) {
@@ -456,7 +456,7 @@ function inBeam(
   }
 
   // Off-diagonal: check if within 1 tile perpendicular of the center line
-  // For cardinal beams, perpendicular offset of ±1 is allowed
+  // For cardinal beams, perpendicular offset of +/-1 is allowed
   if (Math.abs(dr) <= range && dc === 0) return Math.abs(dc) <= 0;
   if (Math.abs(dc) <= range && dr === 0) return Math.abs(dr) <= 0;
 
@@ -507,7 +507,7 @@ function inCone(
     return sideways <= d;
   }
 
-  // Pure diagonal — not a cardinal cone
+  // Pure diagonal -- not a cardinal cone
   return false;
 }
 
@@ -904,7 +904,7 @@ export function checkGameOver(game: Game): Entity | null {
     );
     if (aliveTeams.length <= 1) {
       game.phase = "ended";
-      // Winner is the surviving team — pick first survivor
+      // Winner is the surviving team -- pick first survivor
       const winner = aliveTeams[0]?.[1][0] ?? null;
       game.winner = winner?.num ?? null;
       return winner;
@@ -938,7 +938,7 @@ export function calculateLoot(
   }
 
   // Kill bonus: +1 per kill
-  // Winner bonus: ×1.5 in FFA/PvP (surviving player)
+  // Winner bonus: x1.5 in FFA/PvP (surviving player)
   const results: { entity: Entity; xp: number; gold: number; gems: number }[] =
     [];
 
