@@ -294,7 +294,7 @@ function handleNext(game: Game, user: User) {
       send(game.room, msg);
     }
 
-    // Check for deaths → game over
+    // Check for deaths -> game over
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
       announceGameOver(game, winner);
@@ -306,7 +306,7 @@ function handleNext(game: Game, user: User) {
   game.log.push({
     turn: game.round,
     entity: entity.num,
-    description: `${entity.num} (${entity.name}) — turn passed`,
+    description: `${entity.num} (${entity.name}) -- turn passed`,
     snapshot: "",
   });
 
@@ -334,7 +334,7 @@ function handleRoll(target: string, args: string) {
   const formula = args.trim() || "1d20";
   const result = rollDice(formula);
   const detail = result.rolls.join("+");
-  const msg = `🎲 ${formula}: **${result.total}** (${detail})`;
+  const msg = `[roll] ${formula}: **${result.total}** (${detail})`;
   send(target, msg);
 }
 
@@ -366,7 +366,7 @@ function handlePremove(game: Game, user: User) {
   broadcastPages(game);
 }
 
-// ── Display commands ──────────────────────────────────────────────────────────
+// -- Display commands ----------------------------------------------------------
 
 function handleInfo(game: Game, user: User, args: string) {
   const ref = args.trim();
@@ -389,7 +389,7 @@ function handleInfo(game: Game, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${ref}`);
 
   const lines = [
-    `${entity.num} (${entity.name}) — ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}`,
+    `${entity.num} (${entity.name}) -- ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}`,
     `HP: ${entity.curhp}/${entity.maxhp} | ATK: ${entity.atk} | MAG: ${entity.mag} | PD: ${entity.pd} | MD: ${entity.md} | EVA: ${entity.eva} | MP: ${entity.mp}`,
     `Pos: ${posToStr(entity.pos[0], entity.pos[1])} | Team: ${entity.team}`,
     `Abilities: ${entity.abilities.map((a) => a.name).join(", ") || "None"}`,
@@ -410,7 +410,7 @@ function handleInfo(game: Game, user: User, args: string) {
 }
 
 function handleHp(game: Game, user: User, args: string) {
-  // %hp <entity> <amount> — host manually adjusts HP
+  // %hp <entity> <amount> -- host manually adjusts HP
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %hp.");
   }
@@ -453,7 +453,7 @@ function handleHp(game: Game, user: User, args: string) {
 }
 
 function handleCut(game: Game, user: User, args: string) {
-  // %cut <entity> <damage> — host deals raw damage
+  // %cut <entity> <damage> -- host deals raw damage
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %cut.");
   }
@@ -475,7 +475,7 @@ function handleCut(game: Game, user: User, args: string) {
 
   send(
     game.room,
-    `${entity.num} takes **${damage}** damage → ${entity.curhp}/${entity.maxhp} HP`,
+    `${entity.num} takes **${damage}** damage -> ${entity.curhp}/${entity.maxhp} HP`,
   );
 
   if (entity.curhp <= 0) {
@@ -493,7 +493,7 @@ function handleCut(game: Game, user: User, args: string) {
 }
 
 function handleCheckRange(game: Game, user: User, args: string) {
-  // %cr <from>, <to> — check if two positions are in range
+  // %cr <from>, <to> -- check if two positions are in range
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 2 || !parts[0] || !parts[1]) {
     return sendPm(
@@ -517,7 +517,7 @@ function handleCheckRange(game: Game, user: User, args: string) {
 
   sendPm(
     user.name,
-    `Distance ${fromLabel} → ${toLabel}: ${d} tiles (Manhattan)`,
+    `Distance ${fromLabel} -> ${toLabel}: ${d} tiles (Manhattan)`,
   );
 }
 
@@ -528,10 +528,10 @@ function buildPlayerList(game: Game): string {
   for (const e of game.entities) {
     const isCur = e.num === curNum;
     const hpPct = Math.max(0, (e.curhp / e.maxhp) * 100);
-    const marker = isCur ? " ▶" : "";
-    const hpColor = hpPct > 50 ? "🟢" : hpPct > 25 ? "🟡" : "🔴";
+    const marker = isCur ? " " : "";
+    const hpColor = hpPct > 50 ? "[+]" : hpPct > 25 ? "[~]" : "[-]";
     lines.push(
-      `${hpColor} **${e.num}** ${e.name} — ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel}) | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${marker}`,
+      `${hpColor} **${e.num}** ${e.name} -- ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel}) | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${marker}`,
     );
   }
 
@@ -552,7 +552,7 @@ function buildTurnOrder(game: Game): string {
     }
   }
 
-  return `Turn Order: ${parts.join(" → ")}`;
+  return `Turn Order: ${parts.join(" -> ")}`;
 }
 
 export function announceGameOver(game: Game, winner: Entity | null) {
@@ -561,7 +561,7 @@ export function announceGameOver(game: Game, winner: Entity | null) {
   if (winner) {
     send(
       game.room,
-      `🏆 **Game Over! ${winner.num} (${winner.name}) wins!** — ${winner.className}/${winner.weaponName}`,
+      `[WIN] **Game Over! ${winner.num} (${winner.name}) wins!** -- ${winner.className}/${winner.weaponName}`,
     );
   } else {
     send(game.room, "**Game Over!** No survivors!");

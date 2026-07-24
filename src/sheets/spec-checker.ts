@@ -182,7 +182,7 @@ function checkEffect(
   }
 
   // Rule 7: Duration "for X rounds" is valid per BD_LANG_SPEC.md §4.2
-  // No check needed — both "inflict X Status/Y" and "inflict X Status for Y rounds" are valid
+  // No check needed -- both "inflict X Status/Y" and "inflict X Status for Y rounds" are valid
 
   // Rule 8: "Until next turn" should be used for non-numeric durations
   const badUntil =

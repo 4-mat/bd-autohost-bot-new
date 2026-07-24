@@ -62,7 +62,7 @@ async function main() {
         const name = c.row.Name || c.row["Ability Name"] || "unknown";
         console.log(`    - ${name}:`);
         for (const [field, { from, to }] of Object.entries(c.changes)) {
-          console.log(`      ${field}: "${from}" → "${to}"`);
+          console.log(`      ${field}: "${from}" -> "${to}"`);
         }
       }
     }

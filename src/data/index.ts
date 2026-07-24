@@ -392,7 +392,7 @@ function loadBasicClasses() {
         targetGroup: "Self and Allies",
         range: "Burst 1",
         effect:
-          "Targets' abilities on cooldown: use 1 round earlier (E3T→EoT, EoT→Every Turn).",
+          "Targets' abilities on cooldown: use 1 round earlier (E3T->EoT, EoT->Every Turn).",
       },
       {
         name: "Fouetté",

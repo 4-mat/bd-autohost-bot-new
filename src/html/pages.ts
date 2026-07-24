@@ -11,25 +11,38 @@ import {
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
 
-// ── Premove Mode Tracking ─────────────────────────────────────────────────────
+// -- Premove Mode Tracking -----------------------------------------------------
 
 export const premoveSet = new Set<string>();
 
-// ── BD / PS Style Constants ──────────────────────────────────────────────────
+// -- BD / PS Style Constants --------------------------------------------------
 
 const TILE =
   "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
+
 const HEADER_CELL =
   "width:22px;min-width:22px;padding:0;text-align:center;vertical-align:middle";
-const TABLE_BORDER =
-  'style="border-spacing:0px;border-collapse:collapse;border:1px solid #888;background:rgba(120,120,225,0.10)"';
-const PLAYER_LABEL =
+
+const MAP_CELL =
+  "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
+
+const TABLE_STYLE =
+  'border-spacing:0px;border-collapse:collapse;border:1px solid #888;background:rgba(120,120,225,0.10)';
+
+  const TABLE_BORDER = `style="${TABLE_STYLE}"`;
+
+  const PLAYER_LABEL =
   "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// -- Helpers ------------------------------------------------------------------
 
 function btn(value: string, label: string, extra = ""): string {
-  return `<button name="send" value="${value}" style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif;${extra}">${label}</button>`;
+  return `<button 
+name="send" 
+value="${esc(value)}"
+style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif;${extra}">
+${esc(label)}
+</button>`;
 }
 
 function esc(s: string): string {
@@ -40,7 +53,7 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-// ── Host Page ────────────────────────────────────────────────────────────────
+// -- Host Page ----------------------------------------------------------------
 
 export function buildHostPage(game: Game): string {
   const map = buildMap(game);
@@ -49,7 +62,7 @@ export function buildHostPage(game: Game): string {
   const controls = buildControls(game);
 
   return `<div style="margin:35px;font-size:12px;font-family:Verdana,sans-serif">
-  <b>Game: ${esc(game.id)}</b> — ${esc(game.mode)} — Round <b>${game.round}</b> — Phase: ${game.phase}
+  <b>Game: ${esc(game.id)}</b> -- ${esc(game.mode)} -- Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
   <hr>
   ${map}
   <hr>
@@ -61,7 +74,7 @@ export function buildHostPage(game: Game): string {
 </div>`;
 }
 
-// ── Player Page ──────────────────────────────────────────────────────────────
+// -- Player Page --------------------------------------------------------------
 
 export function buildPlayerPage(game: Game, entity: Entity): string {
   const isTurn = game.turnOrder[game.turnIndex] === entity.num;
@@ -96,7 +109,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   }
 
   return `<div style="margin:35px;font-size:12px;font-family:Verdana,sans-serif">
-  <b>${esc(entity.num)} ${esc(entity.name)}</b> — ${esc(entity.className)}/${esc(entity.weaponName)} (Lv.${entity.classLevel}/${entity.weaponLevel})
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})
   <hr>
   ${stats}
   ${map}
@@ -106,7 +119,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 </div>`;
 }
 
-// ── Map (Host + Player shared logic) ─────────────────────────────────────────
+// -- Map (Host + Player shared logic) -----------------------------------------
 
 function buildMap(game: Game): string {
   return buildMapTable(game, null);
@@ -125,21 +138,23 @@ function buildMapTable(game: Game, self: Entity | null): string {
   html += `<div style="overflow-x:auto">`;
   html += `<table align="center" ${TABLE_BORDER}>`;
 
-  // Column header row — numbers
+  // Column header row -- numbers
   html += `<tr><td style="${HEADER_CELL}"></td>`;
   for (let c = 0; c < cols; c++) {
     html += `<td style="${HEADER_CELL}"><b>${c + 1}</b></td>`;
   }
   html += "</tr>";
 
-  // Data rows — letter labels
+  // Data rows -- letter labels
   for (let r = 0; r < rows; r++) {
     html += `<tr>`;
     html += `<td style="${HEADER_CELL}"><b>${String.fromCharCode(65 + r)}</b></td>`;
 
     for (let c = 0; c < cols; c++) {
       const terrain = game.map[r][c];
-      const color = TERRAIN_COLORS[terrain] ?? "#99E599";
+      const color =
+  TERRAIN_COLORS[terrain] ??
+  "#99E599";
       const entity = game.entities.find(
         (e) => e.pos[0] === r && e.pos[1] === c,
       );
@@ -164,7 +179,7 @@ function buildMapTable(game: Game, self: Entity | null): string {
         highlight = "outline:2px solid #cc0;";
       }
 
-      html += `<td style="background:${color};${TILE}${highlight}" title="${title}"`;
+html += `<td style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"`;
       if (entity) {
         html += `><b style="${PLAYER_LABEL}">${label}</b></td>`;
       } else {
@@ -178,17 +193,32 @@ function buildMapTable(game: Game, self: Entity | null): string {
   return html;
 }
 
-// ── Player Data Table (Host) ─────────────────────────────────────────────────
+// -- Player Data Table (Host) -------------------------------------------------
 
 function buildPlayerDataTable(game: Game): string {
   let html = `<b>Player Data</b>`;
   html += `<div style="overflow-x:auto">`;
-  html += `<table class="bdinfo" align="center" ${TABLE_BORDER} cellpadding="3">`;
-  html += `<col width="22"><col><col><col><col width="22"><col width="22"><col width="22"><col width="22"><col width="22">`;
 
-  // Header row
+  html += `
+<table class="bdinfo" align="center" ${TABLE_BORDER} cellpadding="3">
+<colgroup>
+<col width="22">
+<col>
+<col>
+<col>
+<col width="22">
+<col width="22">
+<col width="22">
+<col width="22">
+<col width="22">
+</colgroup>
+<tbody>
+`;
+
+  // Header
   html += `<tr style="height:22px">`;
-  for (const h of [
+
+  const headers = [
     "#",
     "Name",
     "Class/Weapon",
@@ -199,16 +229,34 @@ function buildPlayerDataTable(game: Game): string {
     "MD",
     "EVA",
     "MP",
-  ]) {
+  ];
+
+  for (const h of headers) {
     html += `<th style="padding:0px 8px">${h}</th>`;
   }
-  html += "</tr>";
 
+  html += `</tr>`;
+
+
+  // Players
   for (const e of game.entities) {
     html += `<tr style="height:22px">`;
-    html += `<th style="padding:0px 8px" title="${esc(e.className)}, ${esc(e.weaponName)}"><b>${esc(e.num)}</b></th>`;
+
+    html += `
+<th style="padding:0px 8px" 
+title="${esc(e.className)}, ${esc(e.weaponName)}">
+<b>${esc(e.num)}</b>
+</th>
+`;
+
     html += `<th style="padding:0px 8px">${esc(e.name)}</th>`;
-    html += `<th style="padding:0px 8px">${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})</th>`;
+
+    html += `
+<th style="padding:0px 8px">
+${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
+</th>
+`;
+
     html += `<th style="padding:0px 8px">${e.curhp}/${e.maxhp}</th>`;
     html += `<th style="padding:0px 8px">${e.atk}</th>`;
     html += `<th style="padding:0px 8px">${e.mag}</th>`;
@@ -216,22 +264,46 @@ function buildPlayerDataTable(game: Game): string {
     html += `<th style="padding:0px 8px">${e.md}</th>`;
     html += `<th style="padding:0px 8px">${e.eva}</th>`;
     html += `<th style="padding:0px 8px">${e.mp}</th>`;
-    html += "</tr>";
+
+    html += `</tr>`;
   }
 
-  // Turn order row
+
+  // Turn order
   const turnParts: string[] = [];
-  for (const num of game.turnOrder) {
-    const e = game.entities.find((x) => x.num === num);
-    turnParts.push(e ? e.name : num);
-  }
-  html += `<tr style="min-height:22px"><td colspan="10" style="text-align:center"><b>Turn Order: ${turnParts.join(", ")}</b></td></tr>`;
 
-  html += "</table></div>";
+  for (const num of game.turnOrder) {
+    const e = game.entities.find(
+      (x) => x.num === num
+    );
+
+    turnParts.push(
+      e ? e.name : num
+    );
+  }
+
+  html += `
+<tr style="min-height:22px">
+<td colspan="10" style="text-align:center">
+<b>
+Turn Order: ${turnParts.map(esc).join(", ")}
+</b>
+</td>
+</tr>
+`;
+
+
+  html += `
+</tbody>
+</table>
+</div>
+`;
+
   return html;
 }
 
-// ── Action Log ───────────────────────────────────────────────────────────────
+
+// -- Action Log ---------------------------------------------------------------
 
 function buildActionLog(game: Game): string {
   let html = `<b>Action Log</b>`;
@@ -249,7 +321,7 @@ function buildActionLog(game: Game): string {
   return html;
 }
 
-// ── Controls (Host) ──────────────────────────────────────────────────────────
+// -- Controls (Host) ----------------------------------------------------------
 
 function buildControls(game: Game): string {
   return `<b>Controls</b><br>
@@ -264,7 +336,7 @@ function buildControls(game: Game): string {
 </div>`;
 }
 
-// ── Entity Stats (Player) ────────────────────────────────────────────────────
+// -- Entity Stats (Player) ----------------------------------------------------
 
 function buildEntityStats(entity: Entity): string {
   const hpPct = Math.max(0, (entity.curhp / entity.maxhp) * 100);
@@ -296,7 +368,7 @@ function buildEntityStats(entity: Entity): string {
   return html;
 }
 
-// ── Move Buttons (Player) ────────────────────────────────────────────────────
+// -- Move Buttons (Player) ----------------------------------------------------
 
 function buildMoveButtons(game: Game, entity: Entity): string {
   const reachable = getReachableTiles(game, entity.pos, entity.mp);
@@ -317,7 +389,7 @@ function buildDashButton(entity: Entity): string {
   return `<div style="margin:2px 0">${btn(`%dash ${entity.name}`, "Dash (1.5x MP)")}</div>`;
 }
 
-// ── Pre-Move Ability Buttons (Player) ────────────────────────────────────────
+// -- Pre-Move Ability Buttons (Player) ----------------------------------------
 
 function buildPreMoveAbilities(game: Game, entity: Entity): string {
   const available = getPreMoveAbilities(game, entity);
@@ -354,7 +426,7 @@ function buildPreMoveAbilities(game: Game, entity: Entity): string {
   return html;
 }
 
-// ── Ability Buttons (Player) ─────────────────────────────────────────────────
+// -- Ability Buttons (Player) -------------------------------------------------
 
 function buildAbilityButtons(game: Game, entity: Entity): string {
   const available = getAvailableAbilities(game, entity);
@@ -421,7 +493,7 @@ function buildAbilityButton(
   if (targets.length > 0 && ab.targetAmount !== "AoE") {
     let html = "";
     for (const t of targets) {
-      const label = `${ab.name} → ${t.num}`;
+      const label = `${ab.name} -> ${t.num}`;
       const cmd = `%attack ${ab.name} @ ${t.num},${entity.name}`;
       html += btn(cmd, label, "font-size:11px;padding:2px 6px");
     }
@@ -461,7 +533,7 @@ function buildAbilityButton(
   );
 }
 
-// ── Target Resolution Helpers ────────────────────────────────────────────────
+// -- Target Resolution Helpers ------------------------------------------------
 
 function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
   return entity.abilities.filter((ab) => {

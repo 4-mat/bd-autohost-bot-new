@@ -1,3 +1,6 @@
+import { writeFileSync, mkdirSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadGameData, classes, weapons } from "../src/data/index.js";
 import type { AbilityData } from "../src/data/index.js";
 
@@ -188,8 +191,11 @@ const output = {
 };
 
 const json = JSON.stringify(output, null, 2);
-const outPath = new URL("../data/abilities.json", import.meta.url);
-await Bun.write(outPath.pathname.replace(/^\/([A-Z]:)/, "$1"), json);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const outDir = resolve(__dirname, "..", "data");
+mkdirSync(outDir, { recursive: true });
+const outPath = resolve(outDir, "abilities.json");
+writeFileSync(outPath, json, "utf-8");
 
 console.log(`Extracted ${all.length} abilities to data/abilities.json`);
 console.log(`\nGroupings:`);
@@ -228,3 +234,5 @@ console.log(
     .map((k) => `${k}(${byMechanic[k].length})`)
     .join(", ")}`,
 );
+
+process.exit(0);
