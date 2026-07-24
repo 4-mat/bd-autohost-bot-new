@@ -19,12 +19,27 @@ interface Session {
   authenticated: boolean;
 }
 
+
 const sessions = new Map<WebSocket, Session>();
 
 function broadcast(msg: string) {
   for (const client of browserClients) {
     if (client.readyState === WebSocket.OPEN) {
       client.send(msg);
+    }
+  }
+}
+
+function sendToUser(username: string, msg: object) {
+  const id = toId(username);
+
+  for (const [ws, session] of sessions) {
+    if (
+      session.authenticated &&
+      toId(session.username) === id &&
+      ws.readyState === WebSocket.OPEN
+    ) {
+      ws.send(JSON.stringify(msg));
     }
   }
 }
@@ -37,7 +52,13 @@ setWs({
         const pmTarget = pmContent.match(/^\/pm ([^,]+),/)?.[1] ?? "";
         const html = pmContent.split("/pminfobox ")[1] ?? "";
         const tab = findPlayerTab(pmTarget);
-        broadcast(JSON.stringify({ type: "gui", tab, html }));
+        sendToUser(
+          pmTarget,
+          {
+            type: "gui",
+            html,
+          }
+        );
       } else {
         broadcast(
           JSON.stringify({
@@ -74,7 +95,7 @@ function findPlayerTab(name: string): string {
       }
     }
   }
-  return "host";
+  return "spectator";
 }
 
 function ensureUser(name: string) {
@@ -100,7 +121,7 @@ const wss = new WebSocketServer({ server });
 wss.on("connection", (ws) => {
   browserClients.add(ws);
 
-  const session: Session = { username: "", authenticated: false };
+  const session: Session = { username: "", authenticated: false};
   sessions.set(ws, session);
 
   console.log("Browser connected");
@@ -143,11 +164,22 @@ wss.on("connection", (ws) => {
           return;
         }
         ensureUser(username);
+
         session.username = username;
         session.authenticated = true;
-        broadcast(JSON.stringify({ type: "nick", user: username }));
+        
+        ws.send(
+          JSON.stringify({
+            type: "nick",
+            user: username,
+          }),
+        );
+
         broadcast(
-          JSON.stringify({ type: "system", text: `Logged in as ${username}.` }),
+          JSON.stringify({
+            type: "join",
+            user: username,
+          }),
         );
         return;
       }
@@ -164,24 +196,36 @@ wss.on("connection", (ws) => {
 
         if (text.startsWith("/nick ")) {
           const nick = text.slice(6).trim();
+
           if (!nick) {
             broadcast(
               JSON.stringify({ type: "system", text: "Usage: /nick <name>" }),
             );
             return;
           }
+        
+          const oldName = session.username;
+        
           ensureUser(nick);
           session.username = nick;
-          broadcast(JSON.stringify({ type: "nick", user: nick }));
+        
+          broadcast(
+            JSON.stringify({
+              type: "nick",
+              user: nick,
+            }),
+          );
+        
           broadcast(
             JSON.stringify({
               type: "system",
-              text: `Now talking as **${nick}**.`,
+              text: `${oldName} renamed to ${nick}.`,
             }),
           );
+        
           return;
         }
-
+        
         if (!text.startsWith(PREFIX)) {
           broadcast(
             JSON.stringify({
@@ -209,11 +253,24 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.on("close", () => {
-    sessions.delete(ws);
-    browserClients.delete(ws);
-    console.log("Browser disconnected");
-  });
+ws.on("close", () => {
+  const username = session.username;
+
+  if (session.authenticated && username) {
+    broadcast(
+      JSON.stringify({
+        type: "leave",
+        user: username,
+      }),
+    );
+  }
+
+  sessions.delete(ws);
+  browserClients.delete(ws);
+
+  console.log(`${username || "Unknown"} disconnected`);
+});
+
 });
 
 server.listen(PORT, () => {
@@ -310,9 +367,12 @@ const sendBtn = document.getElementById('send-btn');
 const guiContent = document.getElementById('gui-content');
 const statusEl = document.getElementById('status');
 const userEl = document.getElementById('current-user');
-let activeTab = 'host';
+
 let currentNick = 'HostUser';
-const tabHtml = { host: '', p1: '', p2: '', p3: '' };
+
+if (msg.type === 'gui') {
+  guiContent.innerHTML = msg.html;
+}
 
 function addLine(type, raw) {
   const div = document.createElement('div');
@@ -328,12 +388,6 @@ function addLine(type, raw) {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-function renderGui() {
-  const html = tabHtml[activeTab];
-  if (html) { guiContent.innerHTML = html; }
-  else { guiContent.innerHTML = '<div style="color:#8888aa;padding:40px;text-align:center">No data for this view yet.</div>'; }
-}
-
 guiContent.addEventListener('click', (e) => {
   const btn = e.target.closest('button[name="send"]');
   if (!btn) return;
@@ -342,15 +396,6 @@ guiContent.addEventListener('click', (e) => {
   if (!cmd) return;
   ws.send(JSON.stringify({ type: 'chat', text: cmd }));
   addLine('chat', '<span class="name">' + currentNick + '</span> ' + cmd);
-});
-
-document.querySelectorAll('.gui-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.gui-tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    activeTab = tab.dataset.tab;
-    renderGui();
-  });
 });
 
 let ws;
@@ -372,14 +417,16 @@ function connect() {
   };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.type === 'gui') {
-      const tab = msg.tab || 'host';
-      if (tabHtml.hasOwnProperty(tab)) tabHtml[tab] = msg.html;
-      else tabHtml.host = msg.html;
-      if (activeTab === tab) renderGui();
+    
+      if (msg.type === 'gui') {
+      guiContent.innerHTML = msg.html;
     } else if (msg.type === 'nick') {
       currentNick = msg.user;
       if (userEl) userEl.textContent = msg.user;
+    } else if (msg.type === 'join') {
+      addLine('system', msg.user + ' joined.');
+    } else if (msg.type === 'leave') {
+      addLine('system', msg.user + ' left.');
     } else if (msg.type === 'chat') {
       addLine('chat', msg.text);
     } else if (msg.type === 'action') {
