@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: bd-autohost
+    name: bd-autohost-test
     env: node
     plan: free
     buildCommand: npm install && npm run build

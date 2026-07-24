@@ -1,17 +1,24 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "src",
     "resolveJsonModule": true,
-    "declaration": true,
+    "declaration": false,
     "sourceMap": true
   },
-  "include": ["src"],
-  "exclude": ["node_modules", "dist", "src/__tests__"]
+  "include": [
+    "test-app.ts",
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/__tests__"
+  ]
 }
