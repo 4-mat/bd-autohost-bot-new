@@ -155,7 +155,7 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
     return sendPm(user.name, "Invalid position. Use: %move e4[,entity]");
 
   const reachable = getReachableTiles(game, entity.pos, entity.mp);
-  const key = `${pos[0] + 1},${pos[1] + 1}`;
+  const key = posToStr(pos[0], pos[1]);
 
   if (!reachable.has(key)) {
     return sendPm(user.name, "That tile is not reachable with remaining MP.");
