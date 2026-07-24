@@ -1,4 +1,4 @@
-import type { SheetRow } from "./scraper";
+import type { SheetRow } from "./scraper.js";
 
 interface Violation {
   rule: string;

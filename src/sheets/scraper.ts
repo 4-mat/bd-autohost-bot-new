@@ -1,5 +1,5 @@
-import { SHEETS } from "./sources";
-import { loadState, savePending, loadPending, approvePending } from "./state";
+import { SHEETS } from "./sources.js";
+import { loadState, savePending, loadPending, approvePending } from "./state.js";
 
 interface SheetRow {
   [key: string]: string;

@@ -1,5 +1,6 @@
-import { checkAllUpdates } from "./scraper";
-import { checkSheet } from "./spec-checker";
+import { checkAllUpdates } from "./scraper.js";
+import { checkSheet } from "./spec-checker.js";
+
 
 async function main() {
   const checkAll = process.argv.includes("--all");
