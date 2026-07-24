@@ -1,6 +1,6 @@
 ## Local Test Client
 
-A built-in testing environment lets you test commands and HTML pages without connecting the bot to Pokémon Showdown.
+A built-in testing environment lets you test commands and HTML pages without connecting the bot to Pokemon Showdown.
 
 Start it with:
 
