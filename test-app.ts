@@ -12,7 +12,7 @@ loadGameData();
 const PORT = Number(process.env.PORT) || 4000;
 const PREFIX = "%";
 
-let browserWs: WebSocket | null = null;
+const browserClients = new Set<WebSocket>();
 
 interface Session {
   username: string;
@@ -22,8 +22,10 @@ interface Session {
 const sessions = new Map<WebSocket, Session>();
 
 function broadcast(msg: string) {
-  if (browserWs?.readyState === WebSocket.OPEN) {
-    browserWs.send(msg);
+  for (const client of browserClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(msg);
+    }
   }
 }
 
@@ -96,7 +98,7 @@ const server = http.createServer((_req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
-  browserWs = ws;
+  browserClients.add(ws);
 
   const session: Session = { username: "", authenticated: false };
   sessions.set(ws, session);
@@ -209,7 +211,7 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     sessions.delete(ws);
-    browserWs = null;
+    browserClients.delete(ws);
     console.log("Browser disconnected");
   });
 });
