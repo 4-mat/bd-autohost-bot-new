@@ -212,10 +212,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   const targetName = atIdx >= 0 ? abilityTarget.slice(atIdx + 1).trim() : "";
 
   if (!abilityName)
-    return sendPm(
-      user.name,
-      "Specify an ability. Use: %attack Ability @ Target",
-    );
+    return sendPm(user.name, "Specify an ability. Use: %use Ability @ Target");
 
   const ability = entity.abilities.find(
     (a) => toId(a.name) === toId(abilityName),

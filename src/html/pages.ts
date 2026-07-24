@@ -27,11 +27,11 @@ const MAP_CELL =
   "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
 
 const TABLE_STYLE =
-  'border-spacing:0px;border-collapse:collapse;border:1px solid #888;background:rgba(120,120,225,0.10)';
+  "border-spacing:0px;border-collapse:collapse;border:1px solid #888;background:rgba(120,120,225,0.10)";
 
-  const TABLE_BORDER = `style="${TABLE_STYLE}"`;
+const TABLE_BORDER = `style="${TABLE_STYLE}"`;
 
-  const PLAYER_LABEL =
+const PLAYER_LABEL =
   "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
 
 // -- Helpers ------------------------------------------------------------------
@@ -152,9 +152,7 @@ function buildMapTable(game: Game, self: Entity | null): string {
 
     for (let c = 0; c < cols; c++) {
       const terrain = game.map[r][c];
-      const color =
-  TERRAIN_COLORS[terrain] ??
-  "#99E599";
+      const color = TERRAIN_COLORS[terrain] ?? "#99E599";
       const entity = game.entities.find(
         (e) => e.pos[0] === r && e.pos[1] === c,
       );
@@ -179,7 +177,7 @@ function buildMapTable(game: Game, self: Entity | null): string {
         highlight = "outline:2px solid #cc0;";
       }
 
-html += `<td style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"`;
+      html += `<td style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"`;
       if (entity) {
         html += `><b style="${PLAYER_LABEL}">${label}</b></td>`;
       } else {
@@ -237,7 +235,6 @@ function buildPlayerDataTable(game: Game): string {
 
   html += `</tr>`;
 
-
   // Players
   for (const e of game.entities) {
     html += `<tr style="height:22px">`;
@@ -268,18 +265,13 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
     html += `</tr>`;
   }
 
-
   // Turn order
   const turnParts: string[] = [];
 
   for (const num of game.turnOrder) {
-    const e = game.entities.find(
-      (x) => x.num === num
-    );
+    const e = game.entities.find((x) => x.num === num);
 
-    turnParts.push(
-      e ? e.name : num
-    );
+    turnParts.push(e ? e.name : num);
   }
 
   html += `
@@ -292,7 +284,6 @@ Turn Order: ${turnParts.map(esc).join(", ")}
 </tr>
 `;
 
-
   html += `
 </tbody>
 </table>
@@ -301,7 +292,6 @@ Turn Order: ${turnParts.map(esc).join(", ")}
 
   return html;
 }
-
 
 // -- Action Log ---------------------------------------------------------------
 
@@ -494,7 +484,7 @@ function buildAbilityButton(
     let html = "";
     for (const t of targets) {
       const label = `${ab.name} -> ${t.num}`;
-      const cmd = `%attack ${ab.name} @ ${t.num},${entity.name}`;
+      const cmd = `%use ${ab.name} @ ${t.num},${entity.name}`;
       html += btn(cmd, label, "font-size:11px;padding:2px 6px");
     }
     html += `<br>`;
@@ -506,8 +496,8 @@ function buildAbilityButton(
     const label = `${ab.name}${usesStr}${cdStr}`;
     const cmd =
       targets.length === 1
-        ? `%attack ${ab.name} @ ${targets[0].num},${entity.name}`
-        : `%attack ${ab.name},${entity.name}`;
+        ? `%use ${ab.name} @ ${targets[0].num},${entity.name}`
+        : `%use ${ab.name},${entity.name}`;
     return btn(cmd, label, "font-size:11px;padding:2px 6px");
   }
 
@@ -516,7 +506,7 @@ function buildAbilityButton(
     let html = `<span style="color:#888;font-size:10px">${ab.name}:</span> `;
     for (const t of tiles) {
       html += btn(
-        `%attack ${ab.name} @ ${t},${entity.name}`,
+        `%use ${ab.name} @ ${t},${entity.name}`,
         t,
         "font-size:10px;padding:1px 4px",
       );
@@ -527,7 +517,7 @@ function buildAbilityButton(
 
   // Fallback
   return btn(
-    `%attack ${ab.name},${entity.name}`,
+    `%use ${ab.name},${entity.name}`,
     `${ab.name}${usesStr}`,
     "font-size:11px;padding:2px 6px",
   );
