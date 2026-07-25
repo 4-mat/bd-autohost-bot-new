@@ -24,7 +24,6 @@ import {
   checkGameOver,
   calculateLoot,
   nextTurn,
-  processEndOfTurn,
   processStartOfTurn,
   pushSnapshot,
   popSnapshot,
@@ -783,56 +782,6 @@ describe("Turn Management", () => {
 });
 
 // ---------------------------------------------------------------------------
-// End-of-Turn Processing
-// ---------------------------------------------------------------------------
-
-describe("processEndOfTurn", () => {
-  it("decrements status durations", () => {
-    const e = makeEntity({
-      num: "P1",
-      name: "A",
-      statuses: [
-        { name: "Bleed", damage: 5, rounds: 3, maxRounds: 3, removable: true },
-        { name: "Burn", damage: 3, rounds: 1, maxRounds: 1, removable: true },
-      ],
-    });
-    const game = makeGame();
-    processEndOfTurn(game, e);
-    expect(e.statuses.length).toBe(1); // Burn expired
-    expect(e.statuses[0].name).toBe("Bleed");
-    expect(e.statuses[0].rounds).toBe(2);
-  });
-
-  it("decrements buff durations", () => {
-    const e = makeEntity({
-      num: "P1",
-      name: "A",
-      buffs: [
-        { stat: "atk", amount: 5, rounds: 2 },
-        { stat: "pd", amount: 3, rounds: 1 },
-      ],
-    });
-    const game = makeGame();
-    processEndOfTurn(game, e);
-    expect(e.buffs.length).toBe(1);
-    expect(e.buffs[0].stat).toBe("atk");
-    expect(e.buffs[0].rounds).toBe(1);
-  });
-
-  it("decrements cooldowns", () => {
-    const e = makeEntity({
-      num: "P1",
-      name: "A",
-      cooldowns: { Fireball: 2, Heal: 1 },
-    });
-    const game = makeGame();
-    processEndOfTurn(game, e);
-    expect(e.cooldowns["Fireball"]).toBe(1);
-    expect(e.cooldowns["Heal"]).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Start-of-Turn Processing
 // ---------------------------------------------------------------------------
 
@@ -847,8 +796,10 @@ describe("processStartOfTurn", () => {
       ],
     });
     const game = makeGame();
-    processStartOfTurn(game, e);
+    const { messages, died } = processStartOfTurn(game, e);
     expect(e.curhp).toBe(90);
+    expect(died).toBe(false);
+    expect(messages.some((m) => m.includes("Bleed"))).toBe(true);
   });
 
   it("applies lava damage", () => {
@@ -856,8 +807,82 @@ describe("processStartOfTurn", () => {
     map[2][2] = Terrain.Lava;
     const game = makeGame({ terrain: map });
     const e = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [2, 2] });
-    processStartOfTurn(game, e);
+    const { died } = processStartOfTurn(game, e);
     expect(e.curhp).toBe(70); // 30 lava damage
+    expect(died).toBe(false);
+  });
+
+  it("ticks cooldowns and removes expired ones", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      cooldowns: { Fireball: 2, Heal: 1 },
+    });
+    const game = makeGame();
+    processStartOfTurn(game, e);
+    expect(e.cooldowns["Fireball"]).toBe(1);
+    expect(e.cooldowns["Heal"]).toBeUndefined();
+  });
+
+  it("ticks buff durations and removes expired", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      buffs: [
+        { stat: "atk", amount: 5, rounds: 2 },
+        { stat: "pd", amount: 3, rounds: 1 },
+      ],
+    });
+    const game = makeGame();
+    processStartOfTurn(game, e);
+    expect(e.buffs.length).toBe(1);
+    expect(e.buffs[0].stat).toBe("atk");
+    expect(e.buffs[0].rounds).toBe(1);
+  });
+
+  it("ticks status durations and removes expired", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      statuses: [
+        { name: "Bleed", damage: 5, rounds: 3, maxRounds: 3, removable: true },
+        { name: "Burn", damage: 3, rounds: 1, maxRounds: 1, removable: true },
+      ],
+    });
+    const game = makeGame();
+    processStartOfTurn(game, e);
+    // Burn has 1 round, gets ticked to 0 and removed. Bleed goes from 3 to 2.
+    expect(e.statuses.length).toBe(1);
+    expect(e.statuses[0].name).toBe("Bleed");
+    expect(e.statuses[0].rounds).toBe(2);
+  });
+
+  it("returns died=true when status damage kills entity", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      curhp: 5,
+      statuses: [
+        { name: "Bleed", damage: 10, rounds: 2, maxRounds: 2, removable: true },
+      ],
+    });
+    const game = makeGame();
+    const { died, messages } = processStartOfTurn(game, e);
+    expect(e.curhp).toBe(-5);
+    expect(died).toBe(true);
+    expect(messages.some((m) => m.includes("defeated"))).toBe(true);
+    // Entity should be removed from game
+    expect(game.entities.find((x) => x.num === "P1")).toBeUndefined();
+  });
+
+  it("returns died=true when lava damage kills entity", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[2][2] = Terrain.Lava;
+    const game = makeGame({ terrain: map });
+    const e = makeEntity({ num: "P1", name: "A", curhp: 20, pos: [2, 2] });
+    const { died } = processStartOfTurn(game, e);
+    expect(e.curhp).toBe(-10);
+    expect(died).toBe(true);
   });
 });
 

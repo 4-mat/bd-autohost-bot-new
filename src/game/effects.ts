@@ -436,24 +436,14 @@ function parseStatusInflict(lower: string): Effect[] {
   // Try "inflict N Status/M"
   const slashMatch = lower.match(/inflict\s+(\d+)?\s*([a-z]+)\s*\/\s*(\d+)/);
   if (slashMatch) {
-    const name = capitalize(slashMatch[1] ? "" : slashMatch[2]);
+    const statusName = slashMatch[2];
+    const name = capitalize(statusName);
     const dmg = slashMatch[1] ? parseInt(slashMatch[1]) : 0;
     const rounds = parseInt(slashMatch[3]);
-    const statusName = slashMatch[1] ? "" : slashMatch[2];
     if (STATUS_NAMES.includes(statusName)) {
       effects.push({
         type: "status",
-        name: capitalize(statusName),
-        damage: dmg,
-        rounds,
-      });
-      return effects;
-    }
-    // "inflict 3X Curse/1" where X is variable
-    if (STATUS_NAMES.includes(statusName)) {
-      effects.push({
-        type: "status",
-        name: capitalize(statusName),
+        name,
         damage: dmg,
         rounds,
       });

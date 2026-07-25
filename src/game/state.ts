@@ -830,27 +830,6 @@ export function dealDamage(entity: Entity, damage: number): number {
   return actual;
 }
 
-// Process end-of-turn effects: decrement status durations, etc
-export function processEndOfTurn(game: Game, entity: Entity) {
-  // Decrement statuses
-  entity.statuses = entity.statuses.filter((s) => {
-    s.rounds--;
-    return s.rounds > 0;
-  });
-
-  // Decrement buffs
-  entity.buffs = entity.buffs.filter((b) => {
-    b.rounds--;
-    return b.rounds > 0;
-  });
-
-  // Decrement cooldowns
-  for (const key of Object.keys(entity.cooldowns)) {
-    entity.cooldowns[key]--;
-    if (entity.cooldowns[key] <= 0) delete entity.cooldowns[key];
-  }
-}
-
 // Damage statuses deal damage before entity's turn
 export function processStartOfTurn(
   game: Game,

@@ -1,6 +1,5 @@
 import { checkAllUpdates } from "./scraper.js";
-import { checkSheet } from "./spec-checker.js";
-
+import { checkAllSheets, checkSheet } from "./spec-checker.js";
 
 async function main() {
   const checkAll = process.argv.includes("--all");
@@ -9,29 +8,25 @@ async function main() {
   const { changed, results, diffs } = await checkAllUpdates();
 
   if (checkAll) {
-    // Check compliance on all data
     console.log("Checking BD Lang compliance on all sheets...\n");
-    for (const result of results) {
-      for (const tab of result.tabs) {
-        if (tab.data.length === 0) continue;
-        const issues = checkSheet(tab.data);
-        if (issues.length === 0) {
-          console.log(`  ${tab.label}: All ${tab.data.length} rows compliant.`);
-          continue;
+    const compliance = checkAllSheets(results);
+    for (const r of compliance) {
+      if (r.issues.length === 0) {
+        console.log(`  ${r.label}: All ${r.total} rows compliant.`);
+        continue;
+      }
+      console.log(
+        `  ${r.label}: ${r.issues.length}/${r.total} ability(ies) with violations:\n`,
+      );
+      for (const issue of r.issues) {
+        console.log(`    ${issue.name}:`);
+        for (const v of issue.violations) {
+          const icon = v.severity === "error" ? "ERROR" : "WARN";
+          console.log(`      [${icon}] ${v.rule}`);
+          console.log(`        Found:    ${v.found}`);
+          console.log(`        Suggest:  ${v.suggestion}`);
         }
-        console.log(
-          `  ${tab.label}: ${issues.length}/${tab.data.length} ability(ies) with violations:\n`,
-        );
-        for (const issue of issues) {
-          console.log(`    ${issue.name}:`);
-          for (const v of issue.violations) {
-            const icon = v.severity === "error" ? "ERROR" : "WARN";
-            console.log(`      [${icon}] ${v.rule}`);
-            console.log(`        Found:    ${v.found}`);
-            console.log(`        Suggest:  ${v.suggestion}`);
-          }
-          console.log();
-        }
+        console.log();
       }
     }
     return;

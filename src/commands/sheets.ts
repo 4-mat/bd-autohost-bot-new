@@ -1,7 +1,7 @@
-import { sendPm } from "../utils.js";
+import { sendPm, sendPmChunks } from "../utils.js";
 import type { User } from "../users.js";
 import { checkAllUpdates } from "../sheets/scraper.js";
-import { checkSheet } from "../sheets/spec-checker.js";
+import { checkSheet, checkAllSheets } from "../sheets/spec-checker.js";
 
 export async function sheetsCommand(user: User, cmd: string, args: string) {
   const target = user.name;
@@ -11,27 +11,23 @@ export async function sheetsCommand(user: User, cmd: string, args: string) {
     const { changed, results, diffs } = await checkAllUpdates();
 
     if (args === "all") {
-      // Check compliance on all sheets
       sendPm(target, "Checking BD Lang compliance on all sheets...");
+      const compliance = checkAllSheets(results);
       const lines: string[] = [];
 
-      for (const result of results) {
-        for (const tab of result.tabs) {
-          if (tab.data.length === 0) continue;
-          const issues = checkSheet(tab.data);
-          if (issues.length === 0) {
-            lines.push(`${tab.label}: All ${tab.data.length} rows compliant.`);
-            continue;
-          }
-          lines.push(
-            `${tab.label}: ${issues.length}/${tab.data.length} with violations:`,
-          );
-          for (const issue of issues) {
-            lines.push(`  ${issue.name}:`);
-            for (const v of issue.violations) {
-              const icon = v.severity === "error" ? "ERR" : "WARN";
-              lines.push(`    [${icon}] ${v.rule}: ${v.suggestion}`);
-            }
+      for (const r of compliance) {
+        if (r.issues.length === 0) {
+          lines.push(`${r.label}: All ${r.total} rows compliant.`);
+          continue;
+        }
+        lines.push(
+          `${r.label}: ${r.issues.length}/${r.total} with violations:`,
+        );
+        for (const issue of r.issues) {
+          lines.push(`  ${issue.name}:`);
+          for (const v of issue.violations) {
+            const icon = v.severity === "error" ? "ERR" : "WARN";
+            lines.push(`    [${icon}] ${v.rule}: ${v.suggestion}`);
           }
         }
       }
@@ -39,9 +35,7 @@ export async function sheetsCommand(user: User, cmd: string, args: string) {
       if (lines.length === 0) {
         sendPm(target, "No violations found.");
       } else {
-        // Split into chunks to avoid PM length limits
-        const chunk = lines.join("\n");
-        sendPm(target, chunk);
+        sendPmChunks(target, lines.join("\n"));
       }
       return;
     }
@@ -91,7 +85,7 @@ export async function sheetsCommand(user: User, cmd: string, args: string) {
         lines.push("  Compliance: All changes OK.");
       }
 
-      sendPm(target, lines.join("\n"));
+      sendPmChunks(target, lines.join("\n"));
     }
   }
 }
