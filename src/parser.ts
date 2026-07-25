@@ -13,7 +13,7 @@ bot.on("updateuser", (parts: string[]) => {
   if (name && toId(name) === toId(config.username)) {
     console.log(`Logged in as ${name}`);
     for (const room of config.rooms) {
-      send("", `|/join ${room}`);
+      send("", `/join ${room}`);
     }
   }
 });

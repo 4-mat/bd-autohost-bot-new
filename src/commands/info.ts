@@ -63,7 +63,7 @@ export function infoCommand(user: User, cmd: string, args: string) {
 
 function buildAbilityLine(ab: {
   name: string;
-  level: number;
+  level: number | "EX1" | "EX2";
   frequency: string;
   mr: number;
   roll: string;

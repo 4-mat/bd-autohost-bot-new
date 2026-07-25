@@ -1,6 +1,6 @@
 export interface AbilityData {
   name: string;
-  level: number;
+  level: number | "EX1" | "EX2";
   frequency: string;
   mr: number;
   roll: string;
@@ -983,7 +983,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Bolt Arsenal",
-        level: 0,
+        level: "EX1",
         frequency: "Every Turn",
         mr: 0,
         roll: "",
@@ -997,7 +997,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Quiver of Thunder",
-        level: 0,
+        level: "EX2",
         frequency: "Once",
         mr: 0,
         roll: "",
@@ -1181,7 +1181,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Bound Gauntlet",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -1195,7 +1195,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Tactical Sniper",
-        level: 0,
+        level: "EX2",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -1375,7 +1375,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Shrapnel Tip",
-        level: 0,
+        level: "EX1",
         frequency: "EoT",
         mr: 5,
         roll: "1d8-2 (Triple Hit)",
@@ -1388,7 +1388,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Overdraw",
-        level: 0,
+        level: "EX2",
         frequency: "EoT",
         mr: 4,
         roll: "4d8+0",
@@ -1583,7 +1583,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Total Depravity",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -1597,7 +1597,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Bloodbind",
-        level: 0,
+        level: "EX2",
         frequency: "Every Turn",
         mr: 0,
         roll: "",
@@ -1790,7 +1790,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Immortal Coil",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -1804,7 +1804,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Quietus",
-        level: 0,
+        level: "EX2",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -2001,7 +2001,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Animatus",
-        level: 0,
+        level: "EX1",
         frequency: "Every Turn",
         mr: 0,
         roll: "",
@@ -2015,7 +2015,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Egregore",
-        level: 0,
+        level: "EX2",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -2212,7 +2212,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Impede",
-        level: 0,
+        level: "EX1",
         frequency: "EoT",
         mr: 4,
         roll: "4d8+0",
@@ -2226,7 +2226,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Hastiliarius",
-        level: 0,
+        level: "EX2",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -2411,7 +2411,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Paragon",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -2425,7 +2425,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Martial Mastery",
-        level: 0,
+        level: "EX2",
         frequency: "Twice/EoT",
         mr: 0,
         roll: "",
@@ -2608,7 +2608,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Aikido",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -2622,7 +2622,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Tempest Sweep",
-        level: 0,
+        level: "EX2",
         frequency: "EoT",
         mr: 3,
         roll: "3d8+3",
@@ -2797,7 +2797,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Swing Cycle",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -2811,7 +2811,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Wrath",
-        level: 0,
+        level: "EX2",
         frequency: "EoT",
         mr: 5,
         roll: "1d10+10",
@@ -3005,7 +3005,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Aftershock",
-        level: 0,
+        level: "EX1",
         frequency: "EoT",
         mr: 0,
         roll: "",
@@ -3019,7 +3019,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Fissure",
-        level: 0,
+        level: "EX2",
         frequency: "Once",
         mr: 4,
         roll: "3d10+10",
@@ -3216,7 +3216,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Fleet Footwork",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -3230,7 +3230,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Line Out",
-        level: 0,
+        level: "EX2",
         frequency: "EoT",
         mr: 0,
         roll: "",
@@ -3428,7 +3428,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Declaration of War",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -3442,7 +3442,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Imperial Tyranny",
-        level: 0,
+        level: "EX2",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -3655,7 +3655,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Zanshin",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -3669,7 +3669,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Fudoshin",
-        level: 0,
+        level: "EX2",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -3854,7 +3854,7 @@ function loadBasicWeapons() {
       },
       {
         name: "One for All",
-        level: 0,
+        level: "EX1",
         frequency: "Once",
         mr: 5,
         roll: "2d12+6",
@@ -3868,7 +3868,7 @@ function loadBasicWeapons() {
       },
       {
         name: "All for One",
-        level: 0,
+        level: "EX2",
         frequency: "Every Turn",
         mr: 0,
         roll: "",
@@ -4066,7 +4066,7 @@ function loadBasicWeapons() {
       },
       {
         name: "All-Terrain Master",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -4080,7 +4080,7 @@ function loadBasicWeapons() {
       },
       {
         name: "The Serenity of Nature",
-        level: 0,
+        level: "EX2",
         frequency: "Once",
         mr: 0,
         roll: "",
@@ -4264,7 +4264,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Ichorous",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -4278,7 +4278,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Catalysis",
-        level: 0,
+        level: "EX2",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -4474,7 +4474,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Heaven's Will",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -4488,7 +4488,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Judgment",
-        level: 0,
+        level: "EX2",
         frequency: "Once",
         mr: 3,
         roll: "3d10+6",
@@ -4673,7 +4673,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Card Counter",
-        level: 0,
+        level: "EX1",
         frequency: "Every Turn",
         mr: 0,
         roll: "",
@@ -4687,7 +4687,7 @@ function loadBasicWeapons() {
       },
       {
         name: "High Roller",
-        level: 0,
+        level: "EX2",
         frequency: "Every Turn",
         mr: 0,
         roll: "",
@@ -4868,7 +4868,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Far Side of the Moon",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -4882,7 +4882,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Fatal Moonlight",
-        level: 0,
+        level: "EX2",
         frequency: "Once",
         mr: 5,
         roll: "2d10+10",
@@ -5078,7 +5078,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Fateweave",
-        level: 0,
+        level: "EX1",
         frequency: "Once",
         mr: 0,
         roll: "3d6+5",
@@ -5092,7 +5092,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Psychic Overlord",
-        level: 0,
+        level: "EX2",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -5276,7 +5276,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Deathly Crew",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -5290,7 +5290,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Captain's Order",
-        level: 0,
+        level: "EX2",
         frequency: "E3T",
         mr: 4,
         roll: "4d6+2",
@@ -5474,7 +5474,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Nocturnal Predator",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -5488,7 +5488,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Sanguine Explosion",
-        level: 0,
+        level: "EX2",
         frequency: "Once",
         mr: 5,
         roll: "3d4+2",
@@ -5673,7 +5673,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Jammed Blades",
-        level: 0,
+        level: "EX1",
         frequency: "Passive",
         mr: 0,
         roll: "",
@@ -5687,7 +5687,7 @@ function loadBasicWeapons() {
       },
       {
         name: "Silken Suit",
-        level: 0,
+        level: "EX2",
         frequency: "Passive",
         mr: 0,
         roll: "",

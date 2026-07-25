@@ -7,7 +7,8 @@ import { setWs } from "./utils.js";
 export const bot = new EventEmitter();
 
 export function connect() {
-  const url = `wss://${config.server}:${config.port}/showdown/websocket`;
+  const proto = config.useTLS ? "wss" : "ws";
+  const url = `${proto}://${config.server}:${config.port}/showdown/websocket`;
   const ws = new WebSocket(url);
 
   ws.on("open", () => {

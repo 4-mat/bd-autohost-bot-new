@@ -15,6 +15,11 @@ import {
   calculateLoot,
   dist,
   inRange,
+  isStunned,
+  isRooted,
+  isSealed,
+  isConfused,
+  getEffectiveMp,
   type Game,
   type Entity,
 } from "../game/state.js";
@@ -45,6 +50,16 @@ export function gameCommand(
     case "use":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleAttack(game, user, cmd, full);
+      break;
+
+    case "confirm":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleConfirm(game, user);
+      break;
+
+    case "cancel":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleCancel(game, user);
       break;
 
     case "endturn":
@@ -156,6 +171,12 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   if (!isHost && toId(entity.name) !== toId(user.name)) {
     return sendPm(user.name, "It's not your turn.");
   }
+  if (isStunned(entity)) {
+    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+  }
+  if (isRooted(entity)) {
+    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+  }
   if (entity.movementUsed && cmd === "move") {
     return sendPm(user.name, `${entity.num} already moved this turn.`);
   }
@@ -164,7 +185,7 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   if (!pos)
     return sendPm(user.name, "Invalid position. Use: %move e4[,entity]");
 
-  const reachable = getReachableTiles(game, entity.pos, entity.mp);
+  const reachable = getReachableTiles(game, entity.pos, entity.mp, entity);
   const key = posToStr(pos[0], pos[1]);
 
   if (!reachable.has(key)) {
@@ -208,6 +229,18 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 
   if (!isHost && toId(entity.name) !== toId(user.name)) {
     return sendPm(user.name, "It's not your turn.");
+  }
+  if (isStunned(entity)) {
+    return sendPm(
+      user.name,
+      `${entity.num} is Stunned and cannot use abilities.`,
+    );
+  }
+  if (isSealed(entity)) {
+    return sendPm(
+      user.name,
+      `${entity.num} is Sealed and cannot use abilities.`,
+    );
   }
 
   // Parse: ability name @ target
@@ -291,6 +324,58 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   broadcastPages(game);
 }
 
+function handleConfirm(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!entity.pendingAction) {
+    return sendPm(user.name, "No action pending. Select an ability first.");
+  }
+
+  pushSnapshot(game);
+  const res = resolveAction(game, entity);
+  for (const msg of res.messages) {
+    send(game.room, msg);
+  }
+
+  entity.pendingAction = null;
+
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return;
+  }
+
+  broadcastPages(game);
+}
+
+function handleCancel(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!entity.pendingAction) {
+    return sendPm(user.name, "No action pending.");
+  }
+
+  const ability = entity.pendingAction.ability;
+  if (ability.actionType === "Standard") entity.standardUsed = false;
+  if (ability.actionType === "Swift") entity.swiftUsed = false;
+  if (ability.actionType === "Full") {
+    entity.standardUsed = false;
+    entity.movementUsed = false;
+  }
+
+  entity.pendingAction = null;
+  send(game.room, `/me ${entity.num} cancels ${ability.name}`);
+  broadcastPages(game);
+}
+
 function handleAdvanceTurn(game: Game, user: User) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can advance turns.");
@@ -301,10 +386,25 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   pushSnapshot(game);
 
-  if (entity.pendingAction) {
+  // Stunned entities can't act — skip their action and clear pending
+  if (isStunned(entity)) {
+    if (entity.pendingAction) {
+      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
+      entity.pendingAction = null;
+    } else {
+      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
+    }
+  } else if (entity.pendingAction) {
     const res = resolveAction(game, entity);
     for (const msg of res.messages) {
       send(game.room, msg);
+    }
+
+    // Track kills
+    for (const death of res.deaths) {
+      if (entity.pendingAction === null) {
+        // Only track kills from the attacker (not DoT deaths)
+      }
     }
 
     const winner = checkGameOver(game);
@@ -519,12 +619,19 @@ function handleCut(game: Game, user: User, args: string) {
     return sendPm(user.name, "Invalid damage amount.");
 
   pushSnapshot(game);
-  dealDamage(entity, damage);
+  const dmgResult = dealDamage(entity, damage);
 
   send(
     game.room,
     `${entity.num} takes **${damage}** damage -> ${entity.curhp}/${entity.maxhp} HP`,
   );
+
+  if (dmgResult.shieldAbsorbed > 0) {
+    send(
+      game.room,
+      `**Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+    );
+  }
 
   if (entity.curhp <= 0) {
     removeEntity(game, entity);

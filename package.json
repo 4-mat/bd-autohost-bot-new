@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/test-app.js",
     "dev": "tsx watch test-app.ts",
-    "bot": "tsx src/index.ts",
+    "bot": "bun src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check-updates": "tsx src/sheets/check-updates.ts"
