@@ -336,12 +336,29 @@ function handleConfirm(game: Game, user: User) {
   }
 
   pushSnapshot(game);
-  const res = resolveAction(game, entity);
-  for (const msg of res.messages) {
-    send(game.room, msg);
+  const step = resolveAction(game, entity);
+
+if (step.done === false) {
+  send(
+    game.room,
+    `${entity.num}: ${step.prompt.message}`,
+  );
+
+  if (step.prompt.kind === "target") {
+    send(
+      game.room,
+      `Use %target <target>. Options: ${step.prompt.candidates.map(e => e.num).join(", ")}`
+    );
   }
 
-  entity.pendingAction = null;
+  return;
+}
+
+for (const msg of step.result.messages) {
+  send(game.room, msg);
+}
+
+entity.pendingAction = null;
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
@@ -395,13 +412,23 @@ function handleAdvanceTurn(game: Game, user: User) {
       send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
     }
   } else if (entity.pendingAction) {
-    const res = resolveAction(game, entity);
-    for (const msg of res.messages) {
-      send(game.room, msg);
-    }
+    const step = resolveAction(game, entity);
+
+  if (step.done === false) {
+    sendPm(
+      user.name,
+      step.prompt.message
+    );
+    return;
+  }
+  
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
+  
 
     // Track kills
-    for (const death of res.deaths) {
+    for (const death of step.result.deaths) {
       if (entity.pendingAction === null) {
         // Only track kills from the attacker (not DoT deaths)
       }

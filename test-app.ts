@@ -18,6 +18,7 @@ interface Session {
   username: string;
   authenticated: boolean;
   tabs: string[];
+  spectating: boolean;
 }
 
 const sessions = new Map<WebSocket, Session>();
@@ -38,6 +39,30 @@ function broadcast(msg: string) {
       client.send(msg);
     }
   }
+}
+
+function sendSpectatorGui(username: string) {
+  const saved = userGui.get(toId(username));
+
+  const html =
+    saved?.spectator ||
+    `
+<div style="color:#888;padding:40px;text-align:center">
+  No GUI data yet.<br><br>
+  <span style="color:#00aaff">Quick start:</span><br>
+  %host<br>
+  %addp Player1, Bard, Crossbow<br>
+  %addp Player2, Cleric, Longbow<br>
+  %setlevel P1, 3<br>
+  %start
+</div>
+`;
+
+  sendToUser(username, {
+    type: "gui",
+    role: "spectator",
+    html,
+  });
 }
 
 function sendToUser(username: string, msg: object) {
@@ -111,18 +136,21 @@ setWs({
       for (const [ws, session] of sessions) {
         if (
           session.authenticated &&
-          session.tabs.includes("spectator") &&
+          (
+            session.tabs.includes("spectator") ||
+            session.tabs.includes("player")
+          ) &&
           toId(session.username) !== hostId &&
           ws.readyState === WebSocket.OPEN
         ) {
           const specSaved = userGui.get(toId(session.username)) ?? {};
-          specSaved.spectator = stripButtons(html);
+          specSaved.spectator = stripControls(html);
           userGui.set(toId(session.username), specSaved);
           ws.send(
             JSON.stringify({
               type: "gui",
               role: "spectator",
-              html: stripButtons(html),
+              html: stripControls(html),
             }),
           );
         }
@@ -144,8 +172,13 @@ function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function stripButtons(html: string): string {
-  return html.replace(/<button[^>]*>[\s\S]*?<\/button>/gi, "");
+function stripControls(html: string): string {
+  return html
+    .replace(/<button[^>]*>[\s\S]*?<\/button>/gi, "")
+    .replace(
+      /<[^>]*>\s*Controls\s*<\/[^>]*>/gi,
+      ""
+    );
 }
 
 function findPlayerSlot(name: string): string | null {
@@ -236,9 +269,10 @@ wss.on("connection", (ws) => {
   browserClients.add(ws);
 
   const session: Session = {
-    username: "",
-    authenticated: false,
-    tabs: [],
+  username: "",
+  authenticated: false,
+  tabs: [],
+  spectating: false,
   };
   sessions.set(ws, session);
 
@@ -300,13 +334,18 @@ wss.on("connection", (ws) => {
         if (session.tabs.includes("spectator")) {
           const savedSpec = userGui.get(toId(username));
           const specHtml =
-            savedSpec?.spectator ||
-            stripButtons(savedSpec?.host || "") ||
-            `
-    <div style="color:#888;padding:40px;text-align:center">
-      Spectator View — waiting for game data...
-    </div>
-  `;
+  savedSpec?.spectator ||
+  `
+<div style="color:#888;padding:40px;text-align:center">
+  No GUI data yet.<br><br>
+  <span style="color:#00aaff">Quick start:</span><br>
+  %host<br>
+  %addp Player1, Bard, Crossbow<br>
+  %addp Player2, Cleric, Longbow<br>
+  %setlevel P1, 3<br>
+  %start
+</div>
+`;
           ws.send(
             JSON.stringify({
               type: "gui",
@@ -412,10 +451,28 @@ wss.on("connection", (ws) => {
         const commaIdx = rest.indexOf(",");
         const args = commaIdx >= 0 ? rest.slice(0, commaIdx).trim() : rest;
         const val = commaIdx >= 0 ? rest.slice(commaIdx + 1).trim() : "";
-
         const room = rooms.get("battledome")!;
         const user = users.get(toId(session.username))!;
+        
+        // WARNING: This is a temporary hack to allow spectators to view the GUI. HARDCODED COMMAND.
+        if (cmd === "spectate") {
+          session.spectating = true;
 
+          if (!session.tabs.includes("spectator")) {
+            session.tabs.push("spectator");
+          }
+        
+          ws.send(
+            JSON.stringify({
+              type: "tabs",
+              tabs: session.tabs,
+            }),
+          );
+        
+          sendSpectatorGui(session.username);
+        
+          return;
+        }
         handleCommand(room, user, cmd, args, val);
 
         refreshAllTabs();
