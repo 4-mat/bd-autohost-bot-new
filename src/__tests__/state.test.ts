@@ -536,23 +536,70 @@ describe("pullEntity", () => {
 describe("dealDamage", () => {
   it("reduces HP by damage amount", () => {
     const e = makeEntity({ num: "P1", name: "T", curhp: 100, maxhp: 100 });
-    const actual = dealDamage(e, 30);
-    expect(actual).toBe(30);
+    const result = dealDamage(e, 30);
+    expect(result.actual).toBe(30);
+    expect(result.shieldAbsorbed).toBe(0);
     expect(e.curhp).toBe(70);
   });
 
   it("clamps to 0", () => {
     const e = makeEntity({ num: "P1", name: "T", curhp: 10 });
-    const actual = dealDamage(e, 50);
-    expect(actual).toBe(50);
+    const result = dealDamage(e, 50);
+    expect(result.actual).toBe(50);
     expect(e.curhp).toBe(-40);
   });
 
   it("negative damage is clamped to 0", () => {
     const e = makeEntity({ num: "P1", name: "T", curhp: 100 });
-    const actual = dealDamage(e, -5);
-    expect(actual).toBe(0);
+    const result = dealDamage(e, -5);
+    expect(result.actual).toBe(0);
     expect(e.curhp).toBe(100);
+  });
+
+  it("shield absorbs damage before HP", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "T",
+      curhp: 50,
+      statuses: [
+        {
+          name: "Shield",
+          damage: 20,
+          rounds: 3,
+          maxRounds: 3,
+          removable: true,
+        },
+      ],
+    });
+    const result = dealDamage(e, 30);
+    expect(result.shieldAbsorbed).toBe(20);
+    expect(result.actual).toBe(10);
+    expect(e.curhp).toBe(40);
+    expect(e.statuses.length).toBe(0); // shield broken
+    expect(result.shieldBreaks).toBe(true);
+  });
+
+  it("shield fully absorbs damage", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "T",
+      curhp: 50,
+      statuses: [
+        {
+          name: "Shield",
+          damage: 100,
+          rounds: 3,
+          maxRounds: 3,
+          removable: true,
+        },
+      ],
+    });
+    const result = dealDamage(e, 30);
+    expect(result.shieldAbsorbed).toBe(30);
+    expect(result.actual).toBe(0);
+    expect(e.curhp).toBe(50);
+    expect(e.statuses[0].damage).toBe(70); // 100 - 30
+    expect(result.shieldBreaks).toBe(false);
   });
 });
 

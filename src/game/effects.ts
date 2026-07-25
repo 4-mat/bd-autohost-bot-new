@@ -3,6 +3,8 @@ import {
   type Entity,
   type StatusEffect,
   dealDamage,
+  pushEntity,
+  pullEntity,
 } from "./state.js";
 import { rollDice, toId } from "../utils.js";
 
@@ -736,6 +738,25 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+function getBaseStat(entity: Entity, stat: string): number {
+  switch (stat) {
+    case "atk":
+      return entity.atk;
+    case "mag":
+      return entity.mag;
+    case "pd":
+      return entity.pd;
+    case "md":
+      return entity.md;
+    case "eva":
+      return entity.eva;
+    case "mp":
+      return entity.mp;
+    default:
+      return 0;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Effect Application
 // ---------------------------------------------------------------------------
@@ -751,6 +772,15 @@ export function applyEffects(
   for (const effect of effects) {
     switch (effect.type) {
       case "status": {
+        // Shield blocks non-damaging statuses
+        const hasShield = target.statuses.some(
+          (s) => toId(s.name) === "shield",
+        );
+        if (hasShield && effect.damage === 0) {
+          messages.push(`  ${target.num}'s Shield blocks ${effect.name}!`);
+          break;
+        }
+
         const existing = target.statuses.find((s) => s.name === effect.name);
         if (existing) {
           existing.rounds = Math.max(existing.rounds, effect.rounds);
@@ -774,26 +804,55 @@ export function applyEffects(
       }
 
       case "buff": {
-        target.buffs.push({
-          stat: effect.stat,
-          amount: effect.amount,
-          rounds: effect.rounds ?? 1,
-        });
-        messages.push(
-          `  ${target.num} gains +${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-        );
+        if (effect.percent) {
+          // Percent-based buff: calculate amount from base stat
+          const baseStat = getBaseStat(target, effect.stat);
+          const amount = Math.floor(baseStat * (effect.percent / 100));
+          target.buffs.push({
+            stat: effect.stat,
+            amount,
+            rounds: effect.rounds ?? 1,
+          });
+          messages.push(
+            `  ${target.num} gains +${effect.percent}% ${effect.stat.toUpperCase()} (+${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
+          );
+        } else {
+          target.buffs.push({
+            stat: effect.stat,
+            amount: effect.amount,
+            rounds: effect.rounds ?? 1,
+          });
+          messages.push(
+            `  ${target.num} gains +${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+          );
+        }
         break;
       }
 
       case "debuff": {
-        target.buffs.push({
-          stat: effect.stat,
-          amount: effect.amount,
-          rounds: effect.rounds ?? 1,
-        });
-        messages.push(
-          `  ${target.num} loses ${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-        );
+        if (effect.percent) {
+          const baseStat = getBaseStat(target, effect.stat);
+          const amount = -Math.floor(
+            baseStat * (Math.abs(effect.percent) / 100),
+          );
+          target.buffs.push({
+            stat: effect.stat,
+            amount,
+            rounds: effect.rounds ?? 1,
+          });
+          messages.push(
+            `  ${target.num} loses ${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
+          );
+        } else {
+          target.buffs.push({
+            stat: effect.stat,
+            amount: effect.amount,
+            rounds: effect.rounds ?? 1,
+          });
+          messages.push(
+            `  ${target.num} loses ${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+          );
+        }
         break;
       }
 
@@ -850,34 +909,65 @@ export function applyEffects(
       }
 
       case "push": {
-        messages.push(
-          `  ${target.num} pushed ${effect.amount} tiles. (Push resolution needed)`,
+        // Push target away from caster
+        const pushSource = effect.toward === "user" ? caster.pos : target.pos;
+        const { moved: pushMoved, path: pushPath } = pushEntity(
+          game,
+          target,
+          pushSource,
+          effect.amount ?? 1,
         );
+        if (pushMoved > 0) {
+          const pathStr = pushPath.map((p) => `${p[0]},${p[1]}`).join(" -> ");
+          messages.push(
+            `  ${target.num} pushed ${pushMoved} tile${pushMoved > 1 ? "s" : ""} to ${pathStr}.`,
+          );
+        } else {
+          messages.push(`  ${target.num} could not be pushed.`);
+        }
         break;
       }
 
       case "pull": {
-        messages.push(
-          `  ${target.num} pulled ${effect.amount} tiles. (Pull resolution needed)`,
+        // Pull target towards caster
+        const { moved: pullMoved, path: pullPath } = pullEntity(
+          game,
+          target,
+          caster.pos,
+          effect.amount ?? 1,
         );
+        if (pullMoved > 0) {
+          const pathStr = pullPath.map((p) => `${p[0]},${p[1]}`).join(" -> ");
+          messages.push(
+            `  ${target.num} pulled ${pullMoved} tile${pullMoved > 1 ? "s" : ""} to ${pathStr}.`,
+          );
+        } else {
+          messages.push(`  ${target.num} could not be pulled.`);
+        }
         break;
       }
 
       case "teleport": {
         messages.push(
-          `  ${caster.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed)`,
+          `  ${caster.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
         );
         break;
       }
 
       case "swap": {
-        messages.push(`  ${caster.num} and ${target.num} swap positions.`);
+        // Swap caster and target positions
+        const tmpPos = [...caster.pos] as [number, number];
+        caster.pos = [...target.pos] as [number, number];
+        target.pos = tmpPos;
+        messages.push(
+          `  ${caster.num} and ${target.num} swap positions -> ${caster.num} at ${caster.pos[0]},${caster.pos[1]}, ${target.num} at ${target.pos[0]},${target.pos[1]}.`,
+        );
         break;
       }
 
       case "move": {
         messages.push(
-          `  ${caster.num} moves up to ${effect.amount} tiles. (Move resolution needed)`,
+          `  ${caster.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
         );
         break;
       }

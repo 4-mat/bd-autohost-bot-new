@@ -101,6 +101,12 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
       actions = buildAbilityButtons(game, entity);
     }
+    if (entity.pendingAction) {
+      const pa = entity.pendingAction;
+      const targetStr = pa.target ? ` targeting ${pa.target}` : "";
+      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #0c0;background:rgba(0,204,0,0.10)"><b style="color:#0c0">PENDING:</b> ${esc(pa.ability.name)}${targetStr}</div>`;
+      actions += `<div style="margin-top:4px">${btn("%confirm", "Confirm")} ${btn("%cancel", "Cancel")}</div>`;
+    }
     actions += `<div style="margin-top:6px">${btn("%endturn", "End Turn")}</div>`;
   } else {
     const cur = getCurrentTurnEntity(game);
@@ -235,8 +241,14 @@ function buildPlayerDataTable(game: Game): string {
 
   html += `</tr>`;
 
-  // Players
-  for (const e of game.entities) {
+  // Players (ordered by turn order if available)
+  const ordered =
+    game.turnOrder.length > 0
+      ? game.turnOrder
+          .map((n) => game.entities.find((e) => e.num === n))
+          .filter((e): e is Entity => !!e)
+      : game.entities;
+  for (const e of ordered) {
     html += `<tr style="height:22px">`;
 
     html += `
@@ -534,7 +546,7 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    if (ab.level > 0) {
+    if (typeof ab.level === "number" && ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
@@ -568,7 +580,7 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    if (ab.level > 0) {
+    if (typeof ab.level === "number" && ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }

@@ -14,6 +14,7 @@ import {
   Terrain,
 } from "../game/state.js";
 import { classes, weapons, loadGameData } from "../data/index.js";
+import { getMapByName, listMaps } from "../data/maps.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
 
@@ -71,6 +72,9 @@ export function hostCommand(
       break;
     case "sw":
       handleSwitchWeapon(room, user, full);
+      break;
+    case "listmaps":
+      handleListMaps(room, user, full);
       break;
     default:
       sendPm(user.name, `Host command ${cmd}: not yet implemented.`);
@@ -210,9 +214,11 @@ function handleAddPlayer(room: Room, user: User, args: string) {
   const playerNum = game.entities.filter((e) => !e.isMonster).length + 1;
   const num = `P${playerNum}`;
 
-  // Filter abilities by level
-  const classAbilities = classData.abilities.filter((a) => a.level <= lvl);
-  const weaponAbilities = weaponData.abilities.filter((a) => a.level <= lvl);
+  // Filter abilities by level (EX abilities always included)
+  const hasLevel = (a: { level: number | "EX1" | "EX2" }) =>
+    a.level === "EX1" || a.level === "EX2" || a.level <= lvl;
+  const classAbilities = classData.abilities.filter(hasLevel);
+  const weaponAbilities = weaponData.abilities.filter(hasLevel);
   const allAbilities = [...classAbilities, ...weaponAbilities] as any[];
 
   // Find a starting position (first open normal tile)
@@ -395,8 +401,14 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   // Update abilities to new class + existing weapon, filtered by level
   const lvl = entity.classLevel;
   entity.abilities = [
-    ...classData.abilities.filter((a) => a.level <= lvl),
-    ...(weaponData ? weaponData.abilities.filter((a) => a.level <= lvl) : []),
+    ...classData.abilities.filter(
+      (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+    ),
+    ...(weaponData
+      ? weaponData.abilities.filter(
+          (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+        )
+      : []),
   ] as any[];
 
   send(
@@ -463,8 +475,14 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   // Update abilities to existing class + new weapon, filtered by level
   const lvl = entity.weaponLevel;
   entity.abilities = [
-    ...(classData ? classData.abilities.filter((a) => a.level <= lvl) : []),
-    ...weaponData.abilities.filter((a) => a.level <= lvl),
+    ...(classData
+      ? classData.abilities.filter(
+          (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+        )
+      : []),
+    ...weaponData.abilities.filter(
+      (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+    ),
   ] as any[];
 
   send(
@@ -513,8 +531,12 @@ function handleSetLevel(room: Room, user: User, args: string) {
 
   // Update abilities to match new level
   entity.abilities = [
-    ...classData.abilities.filter((a) => a.level <= level),
-    ...weaponData.abilities.filter((a) => a.level <= level),
+    ...classData.abilities.filter(
+      (a) => a.level === "EX1" || a.level === "EX2" || a.level <= level,
+    ),
+    ...weaponData.abilities.filter(
+      (a) => a.level === "EX1" || a.level === "EX2" || a.level <= level,
+    ),
   ] as any[];
 
   send(
@@ -582,10 +604,27 @@ function handleSetMap(room: Room, user: User, args: string) {
   if (game.started) return sendPm(user.name, "Game already started.");
 
   const mapName = args.trim();
-  if (!mapName) return sendPm(user.name, "Usage: %setmap <name>");
+  if (!mapName)
+    return sendPm(
+      user.name,
+      "Usage: %setmap <name>. Use %listmaps to see available maps.",
+    );
 
-  // Try to load a map by name (for now, just support "default" and size-based maps)
   const lower = mapName.toLowerCase();
+
+  // Try the curated map database first
+  const def = getMapByName(lower);
+  if (def) {
+    game.map = def.grid.map((row) => [...row]);
+    game.mapName = def.displayName;
+    send(
+      room.id,
+      `Map set to **${def.displayName}** (${def.rows}x${def.cols}).`,
+    );
+    return;
+  }
+
+  // Fallback to procedural maps
   if (lower === "default" || lower === "small") {
     game.map = generateDefaultMap();
     game.mapName = "Small (12x12)";
@@ -596,13 +635,57 @@ function handleSetMap(room: Room, user: User, args: string) {
     game.map = generateLargeMap();
     game.mapName = "Large (20x20)";
   } else {
-    return sendPm(user.name, "Unknown map. Available: small, medium, large");
+    return sendPm(
+      user.name,
+      "Unknown map. Use %listmaps to see available maps, or small/medium/large for procedural maps.",
+    );
   }
 
   send(
     room.id,
     `Map set to **${game.mapName}** (${game.map.length}x${game.map[0].length}).`,
   );
+}
+
+// -- .listmaps [size] - List available maps -----------------------------------
+
+function handleListMaps(room: Room, user: User, args: string) {
+  const filter = args.trim().toLowerCase();
+  let maps = listMaps();
+
+  if (filter) {
+    // Filter by size like "10x10" or "8x8"
+    const sizeMatch = filter.match(/^(\d+)x(\d+)$/);
+    if (sizeMatch) {
+      const rows = parseInt(sizeMatch[1]);
+      const cols = parseInt(sizeMatch[2]);
+      maps = maps.filter((m) => m.rows === rows && m.cols === cols);
+    } else {
+      // Filter by name substring
+      maps = maps.filter((m) => m.name.includes(filter));
+    }
+  }
+
+  if (maps.length === 0) {
+    return sendPm(user.name, "No maps found matching that filter.");
+  }
+
+  // Group by size
+  const bySize = new Map<string, typeof maps>();
+  for (const m of maps) {
+    const key = `${m.rows}x${m.cols}`;
+    if (!bySize.has(key)) bySize.set(key, []);
+    bySize.get(key)!.push(m);
+  }
+
+  const lines: string[] = [];
+  lines.push(`**BD Maps** (${maps.length} total):`);
+  for (const [size, sizeMaps] of [...bySize.entries()].sort()) {
+    const names = sizeMaps.map((m) => m.displayName).join(", ");
+    lines.push(`${size}: ${names}`);
+  }
+
+  sendPm(user.name, lines.join("\n"));
 }
 
 // -- .gento - Generate turn order ----------------------------------------------

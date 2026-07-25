@@ -20,15 +20,15 @@ export enum Terrain {
 }
 
 export const TERRAIN_COLORS: Record<number, string> = {
-  [Terrain.Normal]: "#99E599",
-  [Terrain.Stop]: "#919191",
+  [Terrain.Normal]: "#A9F5A9",
+  [Terrain.Stop]: "#A9A9A9",
   [Terrain.Water]: "#454FDF",
   [Terrain.Forest]: "#226622",
-  [Terrain.Ice]: "#99D9EA",
-  [Terrain.Air]: "#CCCCFF",
-  [Terrain.Sticky]: "#CCAA00",
-  [Terrain.Lava]: "#DD2200",
-  [Terrain.Broken]: "#303030",
+  [Terrain.Ice]: "#33E9E9",
+  [Terrain.Air]: "#B8D3DE",
+  [Terrain.Sticky]: "#CCCC00",
+  [Terrain.Lava]: "#8B0000",
+  [Terrain.Broken]: "#000000",
   [Terrain.Bone]: "#CCCCAA",
   [Terrain.Stone]: "#888888",
   [Terrain.Hearth]: "#FF6633",
@@ -103,6 +103,7 @@ export interface Entity {
   name: string;
   id: string;
   isMonster: boolean;
+  isJuggernaut: boolean;
   curhp: number;
   maxhp: number;
   atk: number;
@@ -239,11 +240,16 @@ export function manhattan(a: [number, number], b: [number, number]): number {
 }
 
 // BFS pathfinding considering terrain costs
+// If entity is provided, uses effective MP (accounting for Slow status)
 export function getReachableTiles(
   game: Game,
   start: [number, number],
   mp: number,
+  entity?: Entity,
 ): Map<string, number> {
+  // Apply Slow MP reduction if entity is provided
+  const effectiveMp = entity ? getEffectiveMp(entity) : mp;
+  const finalMp = Math.min(mp, effectiveMp);
   const reachable = new Map<string, number>();
   const queue: Array<{ pos: [number, number]; cost: number }> = [
     { pos: start, cost: 0 },
@@ -274,7 +280,7 @@ export function getReachableTiles(
 
       const tileCost = moveCost(terrain);
       const newCost = cost + tileCost;
-      if (newCost > mp) continue;
+      if (newCost > finalMp) continue;
 
       const nk = posToStr(nr, nc);
       const prev = visited.get(nk);
@@ -823,11 +829,73 @@ export function rollAccuracy(
   return { hit, roll, crit };
 }
 
-// Apply damage to entity
-export function dealDamage(entity: Entity, damage: number): number {
-  const actual = Math.max(0, damage);
-  entity.curhp -= actual;
-  return actual;
+// -- Status check helpers ------------------------------------------------------
+
+export function hasStatus(entity: Entity, name: string): boolean {
+  return entity.statuses.some((s) => toId(s.name) === toId(name));
+}
+
+export function isStunned(entity: Entity): boolean {
+  return hasStatus(entity, "stun");
+}
+
+export function isRooted(entity: Entity): boolean {
+  return hasStatus(entity, "root");
+}
+
+export function isSealed(entity: Entity): boolean {
+  return hasStatus(entity, "seal");
+}
+
+export function isSlowed(entity: Entity): boolean {
+  return hasStatus(entity, "slow");
+}
+
+export function isConfused(entity: Entity): boolean {
+  return hasStatus(entity, "confusion");
+}
+
+export function getSlowMpReduction(entity: Entity): number {
+  let reduction = 0;
+  for (const s of entity.statuses) {
+    if (toId(s.name) === "slow") reduction += s.damage || 1;
+  }
+  return reduction;
+}
+
+export function getEffectiveMp(entity: Entity): number {
+  return Math.max(0, entity.mp - getSlowMpReduction(entity));
+}
+
+// Apply damage to entity — Shield absorbs first if present
+export function dealDamage(
+  entity: Entity,
+  damage: number,
+): {
+  actual: number;
+  shieldAbsorbed: number;
+  shieldBreaks: boolean;
+} {
+  let remaining = Math.max(0, damage);
+  let shieldAbsorbed = 0;
+  let shieldBreaks = false;
+
+  // Shield absorbs damage before HP
+  const shield = entity.statuses.find((s) => toId(s.name) === "shield");
+  if (shield && remaining > 0) {
+    const absorbed = Math.min(shield.damage, remaining);
+    shield.damage -= absorbed;
+    remaining -= absorbed;
+    shieldAbsorbed = absorbed;
+    if (shield.damage <= 0) {
+      shieldBreaks = true;
+      entity.statuses = entity.statuses.filter((s) => s !== shield);
+    }
+  }
+
+  const actual = remaining;
+  entity.curhp -= remaining;
+  return { actual, shieldAbsorbed, shieldBreaks };
 }
 
 // Damage statuses deal damage before entity's turn
@@ -878,6 +946,20 @@ export function processStartOfTurn(
     messages.push(
       `  ${entity.num} takes **30** lava damage (${entity.curhp}/${entity.maxhp} HP).`,
     );
+  }
+
+  // Announce status restrictions
+  if (isStunned(entity)) {
+    messages.push(`  **${entity.num} is stunned and cannot act!**`);
+  }
+  if (isConfused(entity)) {
+    messages.push(`  **${entity.num} is confused!**`);
+  }
+  if (isRooted(entity)) {
+    messages.push(`  **${entity.num} is rooted and cannot move!**`);
+  }
+  if (isSealed(entity)) {
+    messages.push(`  **${entity.num} is sealed and cannot use abilities!**`);
   }
 
   const died = entity.curhp <= 0;

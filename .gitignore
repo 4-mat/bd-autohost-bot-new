@@ -4,3 +4,4 @@ dist/
 *.js.map
 config.local.ts
 html-output.txt
+.env

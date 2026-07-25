@@ -563,10 +563,11 @@ guiContent.addEventListener('click', (e) => {
 });
 function createTabs(tabs) {
   const container = document.getElementById("gui-tabs");
+  const previousTab = activeTab;
   container.innerHTML = "";
 
   tabs.forEach(tab => {
-    guiPages[tab] = "";
+    guiPages[tab] ??= "";
 
     const button = document.createElement("div");
     button.className = "gui-tab";
@@ -589,7 +590,11 @@ function createTabs(tabs) {
     container.appendChild(button);
   });
 
-  if (tabs.length > 0) {
+  if (previousTab && tabs.includes(previousTab)) {
+    const buttons = [...container.children];
+    const index = tabs.indexOf(previousTab);
+    buttons[index].click();
+  } else if (tabs.length > 0) {
     container.firstChild.click();
   }
 }

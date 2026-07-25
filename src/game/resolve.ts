@@ -14,6 +14,7 @@ import {
   getAoETargets,
   getSplashTargets,
   Terrain,
+  isConfused,
 } from "./state.js";
 import { parseEffects, applyEffects } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
@@ -22,6 +23,7 @@ export interface ResolutionResult {
   messages: string[];
   deaths: Entity[];
   gameOver: boolean;
+  confusionTriggered?: boolean;
 }
 
 export function resolveAction(game: Game, entity: Entity): ResolutionResult {
@@ -112,6 +114,7 @@ function resolveAttack(
   // Resolve each target
   for (const target of targets) {
     if (isAttack) {
+      let confusionApplied = false;
       for (let h = 0; h < hits; h++) {
         const label = hits > 1 ? ` (Hit ${h + 1}/${hits})` : "";
         const singleResult = resolveSingleTarget(
@@ -120,9 +123,15 @@ function resolveAttack(
           ability,
           target,
           label,
+          confusionApplied,
         );
         result.messages.push(...singleResult.messages);
         result.deaths.push(...singleResult.deaths);
+
+        // Track if confusion self-damage was applied this ability
+        if (!confusionApplied && singleResult.confusionTriggered) {
+          confusionApplied = true;
+        }
 
         // Push/Pull after damage
         if (
@@ -182,6 +191,7 @@ function resolveSingleTarget(
   ability: AbilityData,
   target: Entity,
   hitLabel = "",
+  confusionAlreadyApplied = false,
 ): ResolutionResult {
   const result: ResolutionResult = {
     messages: [],
@@ -201,6 +211,28 @@ function resolveSingleTarget(
   result.messages.push(
     `  **Accuracy${hitLabel}**: ${caster.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
+
+  // Confusion: if caster is confused and rolls 16+, take higher of ATK/MAG as
+  // self-damage. Only once per multi-hit ability.
+  if (isConfused(caster) && accRoll >= 16 && !confusionAlreadyApplied) {
+    const offStat = Math.max(
+      getEffectiveStat(caster, "atk"),
+      getEffectiveStat(caster, "mag"),
+    );
+    dealDamage(caster, offStat);
+    result.messages.push(
+      `  **${caster.num} is Confused!** Takes **${offStat}** self-damage from their own ${offStat === getEffectiveStat(caster, "atk") ? "ATK" : "MAG"} (${caster.curhp}/${caster.maxhp} HP).`,
+    );
+    result.confusionTriggered = true;
+
+    if (caster.curhp <= 0) {
+      result.messages.push(
+        `  **${caster.num} (${caster.name}) has been defeated by Confusion!**`,
+      );
+      removeEntity(game, caster);
+      result.deaths.push(caster);
+    }
+  }
 
   if (!hit) return result;
 
@@ -235,10 +267,16 @@ function resolveSingleTarget(
   const finalDamage = Math.max(0, baseDamage);
 
   // 3. Deal damage
-  const actual = dealDamage(target, finalDamage);
+  const dmgResult = dealDamage(target, finalDamage);
   result.messages.push(
     `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${getEffectiveStat(caster, ability.damageType === "Physical" ? "atk" : "mag")}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${getEffectiveStat(target, ability.damageType === "Physical" ? "pd" : "md")}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
   );
+
+  if (dmgResult.shieldAbsorbed > 0) {
+    result.messages.push(
+      `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+    );
+  }
 
   // 4. Apply statuses from effect
   const effects = parseEffects(ability.effect);
@@ -566,10 +604,16 @@ function resolveSplash(
     }
 
     const finalDamage = Math.max(0, baseDamage);
-    const actual = dealDamage(target, finalDamage);
+    const dmgResult = dealDamage(target, finalDamage);
     result.messages.push(
       `  **Splash Damage**: -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**`,
     );
+
+    if (dmgResult.shieldAbsorbed > 0) {
+      result.messages.push(
+        `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+      );
+    }
 
     if (target.curhp <= 0) {
       result.messages.push(
