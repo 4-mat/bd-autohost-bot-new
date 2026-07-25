@@ -54,11 +54,23 @@ export function hostCommand(
     case "sl":
       handleSetLevel(room, user, full);
       break;
+    case "setteam":
+      handleSetTeam(room, user, full);
+      break;
     case "gento":
       handleGenTurnOrder(room, user);
       break;
     case "start":
       handleStart(room, user);
+      break;
+    case "addm":
+      handleAddMonster(room, user, full);
+      break;
+    case "sc":
+      handleSwitchClass(room, user, full);
+      break;
+    case "sw":
+      handleSwitchWeapon(room, user, full);
       break;
     default:
       sendPm(user.name, `Host command ${cmd}: not yet implemented.`);
@@ -139,7 +151,7 @@ function handleSetGame(room: Room, user: User, args: string) {
   send(room.id, `Game mode set to **${game.mode}**.`);
 }
 
-// -- .addp <name>, [class], [weapon] - Add a player ---------------------------
+// -- .addp <name>, [class], [weapon], [team] - Add a player --------------------
 
 function handleAddPlayer(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
@@ -151,12 +163,13 @@ function handleAddPlayer(room: Room, user: User, args: string) {
 
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 1 || !parts[0]) {
-    return sendPm(user.name, "Usage: %addp <name>, [class], [weapon]");
+    return sendPm(user.name, "Usage: %addp <name>, [class], [weapon], [team]");
   }
 
   const name = parts[0];
   const className = parts[1] || "Bard";
   const weaponName = parts[2] || "Crossbow";
+  const team = parts[3] ? parseInt(parts[3]) : 0;
   const level = 1;
 
   // Check if already added
@@ -179,6 +192,10 @@ function handleAddPlayer(room: Room, user: User, args: string) {
       user.name,
       `Unknown weapon: ${weaponName}. Use %wt to look up.`,
     );
+  }
+
+  if (isNaN(team) || team < 0) {
+    return sendPm(user.name, "Team must be a non-negative number (0 = FFA).");
   }
 
   // Parse stat strings (flat values -- same at all levels)
@@ -215,7 +232,7 @@ function handleAddPlayer(room: Room, user: User, args: string) {
     eva: statVal(classData.stats.eva) + statVal(weaponData.stats.eva),
     mp: statVal(classData.stats.mp) + statVal(weaponData.stats.mp),
     pos,
-    team: 0,
+    team,
     className: classData.name,
     weaponName: weaponData.name,
     classLevel: lvl,
@@ -233,10 +250,228 @@ function handleAddPlayer(room: Room, user: User, args: string) {
   };
 
   game.entities.push(entity);
+  const teamStr = team > 0 ? ` Team ${team}` : "";
   send(
     room.id,
-    `**${name}** added as ${num} - ${classData.name}/${weaponData.name} Lv.${lvl} (${maxhp} HP) at ${posToStr(pos[0], pos[1])}`,
+    `**${name}** added as ${num} - ${classData.name}/${weaponData.name} Lv.${lvl} (${maxhp} HP) at ${posToStr(pos[0], pos[1])}${teamStr}`,
   );
+}
+
+// -- .addm <name>, <hp>, <atk>, <mag>, <pd>, <md>, <eva>, <mp> [, team] - Add a monster --
+
+function handleAddMonster(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %addm.");
+  }
+  if (game.started) return sendPm(user.name, "Game already started.");
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 8 || !parts[0]) {
+    return sendPm(
+      user.name,
+      "Usage: %addm <name>, <hp>, <atk>, <mag>, <pd>, <md>, <eva>, <mp> [, team]",
+    );
+  }
+
+  const name = parts[0];
+  const hp = parseInt(parts[1]);
+  const atk = parseInt(parts[2]);
+  const mag = parseInt(parts[3]);
+  const pd = parseInt(parts[4]);
+  const md = parseInt(parts[5]);
+  const eva = parseInt(parts[6]);
+  const mp = parseInt(parts[7]);
+  const team = parts[8] ? parseInt(parts[8]) : 0;
+
+  if ([hp, atk, mag, pd, md, eva, mp].some(isNaN)) {
+    return sendPm(user.name, "All stat values must be numbers.");
+  }
+  if (isNaN(team) || team < 0) {
+    return sendPm(user.name, "Team must be a non-negative number.");
+  }
+
+  // Check duplicate
+  if (game.entities.some((e) => toId(e.name) === toId(name))) {
+    return sendPm(user.name, `${name} is already in the game.`);
+  }
+
+  // Next monster number
+  const monsterNum = game.entities.filter((e) => e.isMonster).length + 1;
+  const num = `M${monsterNum}`;
+  const pos = findSpawnPosition(game);
+
+  const entity: Entity = {
+    num,
+    name,
+    id: toId(name),
+    isMonster: true,
+    curhp: hp,
+    maxhp: hp,
+    atk,
+    mag,
+    pd,
+    md,
+    eva,
+    mp,
+    pos,
+    team,
+    className: "Monster",
+    weaponName: "Natural",
+    classLevel: 1,
+    weaponLevel: 1,
+    abilities: [],
+    statuses: [],
+    buffs: [],
+    cooldowns: {},
+    usesUsed: {},
+    pendingAction: null,
+    dashUsed: false,
+    standardUsed: false,
+    movementUsed: false,
+    swiftUsed: false,
+  };
+
+  game.entities.push(entity);
+  const teamStr = team > 0 ? ` Team ${team}` : "";
+  send(
+    room.id,
+    `**${name}** added as ${num} - Monster (${hp} HP, ATK:${atk} MAG:${mag} PD:${pd} MD:${md} EVA:${eva} MP:${mp}) at ${posToStr(pos[0], pos[1])}${teamStr}`,
+  );
+}
+
+// -- .sc <entity>, <class> - Switch class --------------------------------------
+
+function handleSwitchClass(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %sc.");
+  }
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %sc <entity>, <class>");
+  }
+
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+
+  const newClass = parts[1];
+  const classData = classes.get(toId(newClass));
+  if (!classData) {
+    return sendPm(user.name, `Unknown class: ${newClass}. Use %wt to look up.`);
+  }
+
+  pushSnapshot(game);
+
+  // Recalculate HP: old weapon + new class
+  const weaponData = weapons.get(toId(entity.weaponName));
+  const newMaxhp =
+    parseInt(classData.stats.hp) +
+    (weaponData ? parseInt(weaponData.stats.hp) : 0);
+
+  const oldClass = entity.className;
+  entity.className = classData.name;
+  entity.maxhp = newMaxhp;
+  entity.curhp = Math.min(entity.curhp, newMaxhp);
+
+  // Recalculate stats
+  const sv = (s: string) => parseFloat(s) || 0;
+  entity.atk =
+    sv(classData.stats.atk) + (weaponData ? sv(weaponData.stats.atk) : 0);
+  entity.mag =
+    sv(classData.stats.mag) + (weaponData ? sv(weaponData.stats.mag) : 0);
+  entity.pd =
+    sv(classData.stats.pd) + (weaponData ? sv(weaponData.stats.pd) : 0);
+  entity.md =
+    sv(classData.stats.md) + (weaponData ? sv(weaponData.stats.md) : 0);
+  entity.eva =
+    sv(classData.stats.eva) + (weaponData ? sv(weaponData.stats.eva) : 0);
+  entity.mp =
+    sv(classData.stats.mp) + (weaponData ? sv(weaponData.stats.mp) : 0);
+
+  // Update abilities to new class + existing weapon, filtered by level
+  const lvl = entity.classLevel;
+  entity.abilities = [
+    ...classData.abilities.filter((a) => a.level <= lvl),
+    ...(weaponData ? weaponData.abilities.filter((a) => a.level <= lvl) : []),
+  ] as any[];
+
+  send(
+    room.id,
+    `${entity.num} (${entity.name}) class: ${oldClass} -> ${classData.name} (${newMaxhp} HP)`,
+  );
+  broadcastPages(game);
+}
+
+// -- .sw <entity>, <weapon> - Switch weapon ------------------------------------
+
+function handleSwitchWeapon(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %sw.");
+  }
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %sw <entity>, <weapon>");
+  }
+
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+
+  const newWeapon = parts[1];
+  const weaponData = weapons.get(toId(newWeapon));
+  if (!weaponData) {
+    return sendPm(
+      user.name,
+      `Unknown weapon: ${newWeapon}. Use %wt to look up.`,
+    );
+  }
+
+  pushSnapshot(game);
+
+  // Recalculate HP: existing class + new weapon
+  const classData = classes.get(toId(entity.className));
+  const newMaxhp =
+    (classData ? parseInt(classData.stats.hp) : 0) +
+    parseInt(weaponData.stats.hp);
+
+  const oldWeapon = entity.weaponName;
+  entity.weaponName = weaponData.name;
+  entity.maxhp = newMaxhp;
+  entity.curhp = Math.min(entity.curhp, newMaxhp);
+
+  // Recalculate stats
+  const sv = (s: string) => parseFloat(s) || 0;
+  entity.atk =
+    (classData ? sv(classData.stats.atk) : 0) + sv(weaponData.stats.atk);
+  entity.mag =
+    (classData ? sv(classData.stats.mag) : 0) + sv(weaponData.stats.mag);
+  entity.pd =
+    (classData ? sv(classData.stats.pd) : 0) + sv(weaponData.stats.pd);
+  entity.md =
+    (classData ? sv(classData.stats.md) : 0) + sv(weaponData.stats.md);
+  entity.eva =
+    (classData ? sv(classData.stats.eva) : 0) + sv(weaponData.stats.eva);
+  entity.mp =
+    (classData ? sv(classData.stats.mp) : 0) + sv(weaponData.stats.mp);
+
+  // Update abilities to existing class + new weapon, filtered by level
+  const lvl = entity.weaponLevel;
+  entity.abilities = [
+    ...(classData ? classData.abilities.filter((a) => a.level <= lvl) : []),
+    ...weaponData.abilities.filter((a) => a.level <= lvl),
+  ] as any[];
+
+  send(
+    room.id,
+    `${entity.num} (${entity.name}) weapon: ${oldWeapon} -> ${weaponData.name} (${newMaxhp} HP)`,
+  );
+  broadcastPages(game);
 }
 
 // -- .setlevel <entity>, <level> - Set entity level ----------------------------
@@ -286,6 +521,34 @@ function handleSetLevel(room: Room, user: User, args: string) {
     room.id,
     `${entity.num} (${entity.name}) level: ${oldLvl} -> ${level} (${maxhp} HP)`,
   );
+  broadcastPages(game);
+}
+
+// -- .setteam <entity>, <team> - Set entity team --------------------------------
+
+function handleSetTeam(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %setteam.");
+  }
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %setteam <entity>, <team>");
+  }
+
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+
+  const team = parseInt(parts[1]);
+  if (isNaN(team) || team < 0) {
+    return sendPm(user.name, "Team must be a non-negative number.");
+  }
+
+  const oldTeam = entity.team;
+  entity.team = team;
+  send(room.id, `${entity.num} (${entity.name}) team: ${oldTeam} -> ${team}`);
   broadcastPages(game);
 }
 

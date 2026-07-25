@@ -30,6 +30,24 @@ export function sendPm(user: string, msg: string) {
   send(`pm-${toId(user)}`, `|/pm ${user}, ${msg}`);
 }
 
+const PM_CHUNK_LIMIT = 900;
+export function sendPmChunks(user: string, msg: string) {
+  if (msg.length <= PM_CHUNK_LIMIT) {
+    sendPm(user, msg);
+    return;
+  }
+  let start = 0;
+  while (start < msg.length) {
+    let end = start + PM_CHUNK_LIMIT;
+    if (end < msg.length) {
+      const newline = msg.lastIndexOf("\n", end);
+      if (newline > start) end = newline + 1;
+    }
+    sendPm(user, msg.slice(start, end).trim());
+    start = end;
+  }
+}
+
 export function splitMessage(msg: string) {
   const trim = msg.trim();
   const spaceIdx = trim.indexOf(" ");

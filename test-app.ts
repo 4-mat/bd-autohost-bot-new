@@ -23,11 +23,14 @@ interface Session {
 const sessions = new Map<WebSocket, Session>();
 
 // Stores the latest GUI for every user
-const userGui = new Map<string, {
-  host?: string;
-  player?: string;
-  spectator?: string;
-}>();
+const userGui = new Map<
+  string,
+  {
+    host?: string;
+    player?: string;
+    spectator?: string;
+  }
+>();
 
 function broadcast(msg: string) {
   for (const client of browserClients) {
@@ -89,21 +92,42 @@ setWs({
           break;
         }
       }
-    
+
       if (!hostName) return;
-    
+
       const hostId = toId(hostName);
-    
+
       const saved = userGui.get(hostId) ?? {};
       saved.host = html;
       userGui.set(hostId, saved);
-    
+
       sendToUser(hostName, {
         type: "gui",
         role: "host",
         html,
       });
-    
+
+      // Send to all spectators
+      for (const [ws, session] of sessions) {
+        if (
+          session.authenticated &&
+          session.tabs.includes("spectator") &&
+          toId(session.username) !== hostId &&
+          ws.readyState === WebSocket.OPEN
+        ) {
+          const specSaved = userGui.get(toId(session.username)) ?? {};
+          specSaved.spectator = stripButtons(html);
+          userGui.set(toId(session.username), specSaved);
+          ws.send(
+            JSON.stringify({
+              type: "gui",
+              role: "spectator",
+              html: stripButtons(html),
+            }),
+          );
+        }
+      }
+
       return;
     }
 
@@ -120,11 +144,20 @@ function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function stripButtons(html: string): string {
+  return html.replace(/<button[^>]*>[\s\S]*?<\/button>/gi, "");
+}
+
 function findPlayerSlot(name: string): string | null {
   for (const game of games.values()) {
+    if (game.host && toId(game.host) === toId(name)) {
+      // if host is always player 1
+      return "P1";
+    }
+
     for (const e of game.entities) {
       if (toId(e.name) === toId(name)) {
-        return e.num.toUpperCase(); // P1, P2, etc.
+        return e.num.toUpperCase();
       }
     }
   }
@@ -162,25 +195,22 @@ function getUserTabs(username: string): string[] {
   return tabs;
 }
 
-
 function refreshAllTabs() {
   for (const [ws, session] of sessions) {
-    if (
-      session.authenticated &&
-      ws.readyState === WebSocket.OPEN
-    ) {
+    if (session.authenticated && ws.readyState === WebSocket.OPEN) {
       const tabs = getUserTabs(session.username);
 
       session.tabs = tabs;
 
-      ws.send(JSON.stringify({
-        type: "tabs",
-        tabs,
-      }));
+      ws.send(
+        JSON.stringify({
+          type: "tabs",
+          tabs,
+        }),
+      );
     }
   }
 }
-
 
 function ensureUser(name: string) {
   const uid = toId(name);
@@ -205,11 +235,12 @@ const wss = new WebSocketServer({ server });
 wss.on("connection", (ws) => {
   browserClients.add(ws);
 
-const session: Session = {
-  username: "",
-  authenticated: false,
-  tabs: [],
-};  sessions.set(ws, session);
+  const session: Session = {
+    username: "",
+    authenticated: false,
+    tabs: [],
+  };
+  sessions.set(ws, session);
 
   console.log("Browser connected");
 
@@ -246,50 +277,66 @@ const session: Session = {
         const username = String(msg.username ?? "").trim();
         if (!username) {
           ws.send(
-            JSON.stringify({ type: "system", text: "Username cannot be empty." }),
+            JSON.stringify({
+              type: "system",
+              text: "Username cannot be empty.",
+            }),
           );
           return;
         }
         ensureUser(username);
 
         session.username = username;
-session.authenticated = true;
-session.tabs = getUserTabs(username);
+        session.authenticated = true;
+        session.tabs = getUserTabs(username);
 
-ws.send(JSON.stringify({
-  type: "tabs",
-  tabs: session.tabs,
-}));
+        ws.send(
+          JSON.stringify({
+            type: "tabs",
+            tabs: session.tabs,
+          }),
+        );
 
-if (session.tabs.includes("spectator")) {
-  ws.send(JSON.stringify({
-    type: "gui",
-    role: "spectator",
-    html: `
-      <div style="color:#888;padding:40px;text-align:center">
-        Spectator View
-      </div>
-    `,
-  }));
-}
+        if (session.tabs.includes("spectator")) {
+          const savedSpec = userGui.get(toId(username));
+          const specHtml =
+            savedSpec?.spectator ||
+            stripButtons(savedSpec?.host || "") ||
+            `
+    <div style="color:#888;padding:40px;text-align:center">
+      Spectator View — waiting for game data...
+    </div>
+  `;
+          ws.send(
+            JSON.stringify({
+              type: "gui",
+              role: "spectator",
+              html: specHtml,
+            }),
+          );
+        }
 
-const savedGui = userGui.get(toId(username));
+        const savedGui = userGui.get(toId(username));
 
-if (savedGui?.host && session.tabs.includes("host")) {
-  ws.send(JSON.stringify({
-    type: "gui",
-    role: "host",
-    html: savedGui.host,
-  }));
-}
+        if (savedGui?.host && session.tabs.includes("host")) {
+          ws.send(
+            JSON.stringify({
+              type: "gui",
+              role: "host",
+              html: savedGui.host,
+            }),
+          );
+        }
 
-if (savedGui?.player && session.tabs.includes("player")) {
-  ws.send(JSON.stringify({
-    type: "gui",
-    role: "player",
-    html: savedGui.player,
-  }));
-}
+        if (savedGui?.player && session.tabs.includes("player")) {
+          ws.send(
+            JSON.stringify({
+              type: "gui",
+              role: "player",
+              html: savedGui.player,
+            }),
+          );
+        }
 
         ws.send(
           JSON.stringify({
@@ -326,29 +373,29 @@ if (savedGui?.player && session.tabs.includes("player")) {
             );
             return;
           }
-        
+
           const oldName = session.username;
-        
+
           ensureUser(nick);
           session.username = nick;
-        
+
           broadcast(
             JSON.stringify({
               type: "nick",
               user: nick,
             }),
           );
-        
+
           broadcast(
             JSON.stringify({
               type: "system",
               text: `${oldName} renamed to ${nick}.`,
             }),
           );
-        
+
           return;
         }
-        
+
         if (!text.startsWith(PREFIX)) {
           broadcast(
             JSON.stringify({
@@ -378,24 +425,23 @@ if (savedGui?.player && session.tabs.includes("player")) {
     }
   });
 
-ws.on("close", () => {
-  const username = session.username;
+  ws.on("close", () => {
+    const username = session.username;
 
-  if (session.authenticated && username) {
-    broadcast(
-      JSON.stringify({
-        type: "leave",
-        user: username,
-      }),
-    );
-  }
+    if (session.authenticated && username) {
+      broadcast(
+        JSON.stringify({
+          type: "leave",
+          user: username,
+        }),
+      );
+    }
 
-  sessions.delete(ws);
-  browserClients.delete(ws);
+    sessions.delete(ws);
+    browserClients.delete(ws);
 
-  console.log(`${username || "Unknown"} disconnected`);
-});
-
+    console.log(`${username || "Unknown"} disconnected`);
+  });
 });
 
 server.listen(PORT, () => {

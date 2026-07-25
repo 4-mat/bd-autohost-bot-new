@@ -32,12 +32,12 @@ export function handleCommand(
 
   if (id === "help" || id === "h") {
     const help = [
-      "**Host Commands**: %host, %setgame, %addp, %remp, %setmap, %setlevel, %gento, %start, %dehost, %info, %map, %pl, %to",
-      "**Player Commands**: %move, %use, %dash, %endturn, %r",
-      "**Character Commands**: %vs, %vl, %vi, %sc, %sw, %sco, %regp",
+      "**Host Commands**: %host, %setgame, %addp, %addm, %remp, %setmap, %setlevel, %setteam, %gento, %start, %dehost",
+      "**In-Game (Host)**: %info, %map, %pl, %to, %status, %regp, %hp, %cut, %cr",
+      "**In-Game (Player)**: %move, %use, %dash, %endturn, %premove, %r",
+      "**Character**: %vs, %vl, %vi, %sc, %sw, %sco",
       "**Reference**: %wt, %rf, %wtm",
       "**Sheets**: %sheets, %sheets all",
-      "**Other**: %roll, %loot, %xp, %gold, %cut, %checkrange",
     ];
     sendPm(user.name, help.join("\n"));
     return;
@@ -68,12 +68,16 @@ export function handleCommand(
     id === "dehost" ||
     id === "setgame" ||
     id === "addp" ||
+    id === "addm" ||
     id === "remp" ||
     id === "setmap" ||
     id === "setlevel" ||
     id === "sl" ||
+    id === "setteam" ||
     id === "gento" ||
-    id === "start"
+    id === "start" ||
+    id === "sc" ||
+    id === "sw"
   ) {
     hostCommand(room, user, id, args, val);
     return;
@@ -99,22 +103,16 @@ export function handleCommand(
     id === "cut" ||
     id === "checkrange" ||
     id === "cr" ||
-    id === "premove"
+    id === "premove" ||
+    id === "status" ||
+    id === "regp"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;
   }
 
   // Loot/progression
-  if (
-    id === "loot" ||
-    id === "xp" ||
-    id === "gold" ||
-    id === "regp" ||
-    id === "sc" ||
-    id === "sw" ||
-    id === "sco"
-  ) {
+  if (id === "loot" || id === "xp" || id === "gold" || id === "sco") {
     playerCommand(user, id, args || val);
     return;
   }

@@ -1,4 +1,4 @@
-import type { SheetRow } from "./scraper.js";
+import type { SheetRow, FetchResult } from "./scraper.js";
 
 interface Violation {
   rule: string;
@@ -34,50 +34,6 @@ const STATUSSES = [
   "Root",
 ];
 const STATUS_PATTERN = STATUSSES.join("|");
-const RESOURCES = [
-  "Rage",
-  "Qi",
-  "Mana",
-  "Blood",
-  "Resolve",
-  "Focus",
-  "Coin",
-  "CP",
-  "Mark",
-  "Campaign",
-  "Enrage",
-];
-const FREQUENCIES = [
-  "Every Turn",
-  "EoT",
-  "E3T",
-  "Once",
-  "Twice",
-  "Thrice",
-  "Twice/EoT",
-  "Twice/E3T",
-  "Thrice/E3T",
-  "Once/E3T",
-  "Passive",
-];
-const ACTIONS = [
-  "Standard",
-  "Full",
-  "Movement",
-  "Swift",
-  "Free",
-  "Trigger",
-  "Reaction",
-  "Passive",
-  "Standard or Swift",
-  "Standard or Full",
-  "Standard or Movement",
-  "Movement or Standard",
-  "Movement or Swift",
-  "Standard or Reaction",
-  "Swift or Standard",
-  "Reaction or Trigger",
-];
 const SELF_REF_WORDS = ["you", "your", "yourself"];
 const CHOICE_WORDS = ["select", "pick", "opt"];
 const CONDITIONAL_STARTS = ["on ", "when ", "whenever "];
@@ -275,25 +231,22 @@ function checkEffect(
     }
   }
 
-  // Rule 15: Damage type must be Physical, Magical, or "Physical or Magical"
-  const validDamageTypes = ["Physical", "Magical", "Physical or Magical"];
-  const badDamageType =
-    /\b(True|Pure|Hybrid|Elemental|Fire|Ice|Lightning|Dark|Holy|Neutral)\s+(damage|type)\b/gi;
-  const m15 = e.match(badDamageType);
+  // Rule 15: Damage type must be Physical or Magical (not True, Fire, Poison, etc.)
+  const invalidDmgTypes =
+    /\b(True|Pure|Hybrid|Elemental|Fire|Ice|Lightning|Dark|Holy|Neutral|Poison|Bleed|Burn|Cursed|Light|Shadow)\s+damage\b/gi;
+  const m15 = e.match(invalidDmgTypes);
   if (m15) {
-    v.push({
-      rule: "Damage Type",
-      found: m15[0],
-      suggestion: `Use one of: ${validDamageTypes.join(", ")}`,
-      severity: "warning",
-    });
+    for (const m of m15) {
+      v.push({
+        rule: "Damage Type",
+        found: m,
+        suggestion: 'Use "Physical damage" or "Magical damage"',
+        severity: "warning",
+      });
+    }
   }
 
   return v;
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function checkAbility(row: SheetRow): {
@@ -313,6 +266,26 @@ export function checkSheet(rows: SheetRow[]): {
   return rows
     .map((r) => checkAbility(r))
     .filter((r) => r.violations.length > 0);
+}
+
+export interface SheetComplianceResult {
+  label: string;
+  total: number;
+  issues: { name: string; violations: Violation[] }[];
+}
+
+export function checkAllSheets(
+  results: FetchResult[],
+): SheetComplianceResult[] {
+  const out: SheetComplianceResult[] = [];
+  for (const r of results) {
+    for (const tab of r.tabs) {
+      if (tab.data.length === 0) continue;
+      const issues = checkSheet(tab.data);
+      out.push({ label: tab.label, total: tab.data.length, issues });
+    }
+  }
+  return out;
 }
 
 export type { Violation };

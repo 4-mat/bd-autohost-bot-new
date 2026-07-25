@@ -105,6 +105,16 @@ export function gameCommand(
       handleCheckRange(game, user, full);
       break;
 
+    case "status":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleStatus(game, user, full);
+      break;
+
+    case "regp":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleRegp(game, user, full);
+      break;
+
     default:
       sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
       break;
@@ -357,7 +367,7 @@ function handleRoll(target: string, args: string) {
   const result = rollDice(formula);
   const detail = result.rolls.join("+");
   const msg = `[roll] ${formula}: **${result.total}** (${detail})`;
-  send(target, msg);
+  sendPm(target, msg);
 }
 
 function handlePremove(game: Game, user: User) {
@@ -574,6 +584,131 @@ function buildPlayerList(game: Game): string {
   }
 
   return lines.join("\n") || "No players.";
+}
+
+function handleStatus(game: Game, user: User, args: string) {
+  // %status <entity>, <action>, [params]
+  // Actions:
+  //   add <name>, <dmg>/<rounds>  — add a status
+  //   remove <name>               — remove a status
+  //   list                        — list all statuses
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %status.");
+  }
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0]) {
+    return sendPm(
+      user.name,
+      "Usage: %status <entity>, add <name>, <dmg>/<rounds> | %status <entity>, remove <name> | %status <entity>, list",
+    );
+  }
+
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+
+  const action = parts[1].toLowerCase();
+  if (action === "list") {
+    if (entity.statuses.length === 0) {
+      return sendPm(user.name, `${entity.num} has no statuses.`);
+    }
+    const list = entity.statuses
+      .map(
+        (s) =>
+          `${s.name} ${s.damage > 0 ? s.damage + "/" : ""}${s.rounds}${s.removable ? "" : " (permanent)"}`,
+      )
+      .join(", ");
+    return sendPm(user.name, `${entity.num} statuses: ${list}`);
+  }
+
+  if (action === "add") {
+    // %status P1, add Bleed, 3/2
+    const statusName = parts[2];
+    if (!statusName) {
+      return sendPm(
+        user.name,
+        "Usage: %status <entity>, add <name>, <dmg>/<rounds>",
+      );
+    }
+
+    let damage = 0;
+    let rounds = 1;
+
+    if (parts[3]) {
+      const slashParts = parts[3].split("/");
+      damage = parseInt(slashParts[0]) || 0;
+      rounds = parseInt(slashParts[1]) || 1;
+    }
+
+    pushSnapshot(game);
+    entity.statuses.push({
+      name: capitalize(statusName),
+      damage,
+      rounds,
+      maxRounds: rounds,
+      removable: true,
+    });
+    send(
+      game.room,
+      `${entity.num} afflicted with ${capitalize(statusName)}${damage > 0 ? ` (${damage}/${rounds})` : ` (${rounds} rounds)`}.`,
+    );
+    broadcastPages(game);
+    return;
+  }
+
+  if (action === "remove") {
+    const statusName = parts[2];
+    if (!statusName) {
+      return sendPm(user.name, "Usage: %status <entity>, remove <name>");
+    }
+
+    const id = toId(statusName);
+    const idx = entity.statuses.findIndex((s) => toId(s.name) === id);
+    if (idx === -1) {
+      return sendPm(
+        user.name,
+        `${entity.num} does not have status: ${statusName}`,
+      );
+    }
+
+    pushSnapshot(game);
+    entity.statuses.splice(idx, 1);
+    send(game.room, `${entity.num}'s ${capitalize(statusName)} removed.`);
+    broadcastPages(game);
+    return;
+  }
+
+  sendPm(
+    user.name,
+    `Unknown status action: ${action}. Use add, remove, or list.`,
+  );
+}
+
+function handleRegp(game: Game, user: User, args: string) {
+  // %regp <psuser>, <entity> — assign a PS user to control an entity
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %regp.");
+  }
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %regp <psuser>, <entity>");
+  }
+
+  const psUser = parts[0];
+  const entity = getEntity(game, parts[1]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[1]}`);
+
+  pushSnapshot(game);
+  entity.name = psUser;
+  entity.id = toId(psUser);
+  send(game.room, `${entity.num} is now controlled by **${psUser}**.`);
+  broadcastPages(game);
+}
+
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function buildTurnOrder(game: Game): string {
