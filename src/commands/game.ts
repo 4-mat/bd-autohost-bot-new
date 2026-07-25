@@ -432,20 +432,28 @@ function handleInfo(game: Game, user: User, args: string) {
 }
 
 function handleHp(game: Game, user: User, args: string) {
-  // %hp <entity> <amount> -- host manually adjusts HP
+  // %hp <amount>, [entity] -- host manually adjusts HP
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %hp.");
   }
 
   const parts = args.split(",").map((s) => s.trim());
-  if (parts.length < 2 || !parts[0] || !parts[1]) {
-    return sendPm(user.name, "Usage: %hp <entity>, <amount>");
+  let entity: Entity | null = null;
+  let amount: number;
+
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    // %hp -25, P1
+    amount = parseInt(parts[0]);
+    entity = getEntity(game, parts[1]);
+  } else if (parts.length === 1) {
+    // %hp -25 (current entity)
+    amount = parseInt(parts[0]);
+    entity = getCurrentEntity(game);
+  } else {
+    return sendPm(user.name, "Usage: %hp <amount>, [entity]");
   }
 
-  const entity = getEntity(game, parts[0]);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-
-  const amount = parseInt(parts[1]);
+  if (!entity) return sendPm(user.name, "No active entity.");
   if (isNaN(amount)) return sendPm(user.name, "Invalid HP amount.");
 
   pushSnapshot(game);
@@ -475,20 +483,28 @@ function handleHp(game: Game, user: User, args: string) {
 }
 
 function handleCut(game: Game, user: User, args: string) {
-  // %cut <entity> <damage> -- host deals raw damage
+  // %cut <damage>, [entity] -- host deals raw damage
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %cut.");
   }
 
   const parts = args.split(",").map((s) => s.trim());
-  if (parts.length < 2 || !parts[0] || !parts[1]) {
-    return sendPm(user.name, "Usage: %cut <entity>, <damage>");
+  let entity: Entity | null = null;
+  let damage: number;
+
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    // %cut 10, P1
+    damage = parseInt(parts[0]);
+    entity = getEntity(game, parts[1]);
+  } else if (parts.length === 1) {
+    // %cut 10 (current entity)
+    damage = parseInt(parts[0]);
+    entity = getCurrentEntity(game);
+  } else {
+    return sendPm(user.name, "Usage: %cut <damage>, [entity]");
   }
 
-  const entity = getEntity(game, parts[0]);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-
-  const damage = parseInt(parts[1]);
+  if (!entity) return sendPm(user.name, "No active entity.");
   if (isNaN(damage) || damage < 0)
     return sendPm(user.name, "Invalid damage amount.");
 
