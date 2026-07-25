@@ -15,16 +15,32 @@ import { posToStr } from "../utils.js";
 
 export const premoveSet = new Set<string>();
 
+// -- Movement Path / Reach Preview Tracking ------------------------------------
+// Both keyed by entity.num. Server-side state, same pattern as premoveSet --
+// it survives across page re-renders since this module stays loaded.
+
+// The path a player is building this movement phase, as an ordered list of
+// tiles clicked so far (not including their starting position).
+export const pathState = new Map<string, Array<[number, number]>>();
+
+// viewer entity.num -> the entity.num whose reachable tiles they're
+// currently previewing in red (set by clicking another character on the map).
+export const reachPreview = new Map<string, string>();
+
+export function clearMovementState(entityNum: string) {
+  pathState.delete(entityNum);
+  reachPreview.delete(entityNum);
+}
+
 // -- BD / PS Style Constants --------------------------------------------------
 
-const TILE =
-  "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
+const CELL_SIZE = 34; // was 22 -- bumped up per request
 
-const HEADER_CELL =
-  "width:22px;min-width:22px;padding:0;text-align:center;vertical-align:middle";
+const TILE = `width:${CELL_SIZE}px;height:${CELL_SIZE}px;padding:0;text-align:center;vertical-align:middle`;
 
-const MAP_CELL =
-  "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
+const HEADER_CELL = `width:${CELL_SIZE}px;min-width:${CELL_SIZE}px;padding:0;text-align:center;vertical-align:middle`;
+
+const MAP_CELL = `width:${CELL_SIZE}px;height:${CELL_SIZE}px;padding:0;text-align:center;vertical-align:middle`;
 
 const TABLE_STYLE =
   "border-spacing:0px;border-collapse:collapse;border:1px solid #888;background:rgba(120,120,225,0.10)";
@@ -32,7 +48,12 @@ const TABLE_STYLE =
 const TABLE_BORDER = `style="${TABLE_STYLE}"`;
 
 const PLAYER_LABEL =
-  "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
+  "font-size:12px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
+
+// Overlay colors for the interactive map
+const OVERLAY_REACHABLE = "rgba(110,190,255,0.55)"; // light blue: in range, unpressed
+const OVERLAY_PATH = "rgba(20,70,190,0.80)"; // darker blue: already pressed into the path
+const OVERLAY_ENEMY_REACH = "rgba(230,60,60,0.45)"; // red: another character's reach preview
 
 // -- Helpers ------------------------------------------------------------------
 
@@ -45,12 +66,27 @@ ${esc(label)}
 </button>`;
 }
 
+// A button meant to fill an entire map cell edge-to-edge (movement tiles,
+// clickable entity portraits) rather than sit inline like a normal control.
+function cellBtn(value: string, label: string, extra = ""): string {
+  return `<button
+name="send"
+value="${esc(value)}"
+style="width:100%;height:100%;padding:0;margin:0;border:none;background:transparent;cursor:pointer;${extra}">
+${esc(label)}
+</button>`;
+}
+
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function posKey([r, c]: [number, number]): string {
+  return `${r},${c}`;
 }
 
 // -- Host Page ----------------------------------------------------------------
@@ -79,11 +115,9 @@ export function buildHostPage(game: Game): string {
 export function buildPlayerPage(game: Game, entity: Entity): string {
   const isTurn = game.turnOrder[game.turnIndex] === entity.num;
 
-  const map = buildMiniMap(game, entity);
-  const stats = buildEntityStats(entity);
-
   let phase = "";
   let actions = "";
+  let interactive = false;
 
   if (isTurn) {
     const inPremove = premoveSet.has(entity.num);
@@ -93,8 +127,9 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
       actions = buildPreMoveAbilities(game, entity);
       actions += `<div style="margin-top:6px">${btn("%premove", "Back to Movement")}</div>`;
     } else if (!entity.movementUsed) {
-      phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move</span></div>`;
-      actions = buildMoveButtons(game, entity);
+      phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move, or click a character to preview their reach</span></div>`;
+      interactive = true;
+      actions = buildMovementControls(game, entity);
       actions += buildDashButton(entity);
       actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")}</div>`;
     } else {
@@ -114,6 +149,9 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
 
+  const stats = buildEntityStats(entity);
+  const map = buildMiniMap(game, entity, interactive);
+
   return `<div style="margin:35px;font-size:12px;font-family:Verdana,sans-serif">
   <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})
   <hr>
@@ -128,30 +166,66 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 // -- Map (Host + Player shared logic) -----------------------------------------
 
 function buildMap(game: Game): string {
-  return buildMapTable(game, null);
+  return buildMapTable(game, null, false);
 }
 
-function buildMiniMap(game: Game, self: Entity): string {
-  return buildMapTable(game, self);
+function buildMiniMap(game: Game, self: Entity, interactive: boolean): string {
+  return buildMapTable(game, self, interactive);
 }
 
-function buildMapTable(game: Game, self: Entity | null): string {
+function buildMapTable(
+  game: Game,
+  self: Entity | null,
+  interactive: boolean,
+): string {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
   const curNum = game.turnOrder[game.turnIndex];
+
+  // -- Compute reachable/path/preview tile sets for self, if interactive --
+  const reachableSet = new Set<string>();
+  const pathSet = new Set<string>();
+  const previewSet = new Set<string>();
+
+  if (interactive && self) {
+    const path = pathState.get(self.num) ?? [];
+    for (const p of path) pathSet.add(posKey(p));
+
+    const remainingMp = self.mp - path.length;
+    if (remainingMp > 0) {
+      const tip = path.length > 0 ? path[path.length - 1] : self.pos;
+      const reachable = getReachableTiles(game, tip, remainingMp);
+      for (const [, pos] of reachable as unknown as Array<
+        [string, [number, number]]
+      >) {
+        reachableSet.add(posKey(pos));
+      }
+    }
+
+    const previewNum = reachPreview.get(self.num);
+    if (previewNum) {
+      const target = game.entities.find((e) => e.num === previewNum);
+      if (target) {
+        const reach = getReachableTiles(game, target.pos, target.mp);
+        for (const [, pos] of reach as unknown as Array<
+          [string, [number, number]]
+        >) {
+          previewSet.add(posKey(pos));
+        }
+      }
+    }
+  }
 
   let html = `<b>Map</b>`;
   html += `<div style="overflow-x:auto">`;
   html += `<table align="center" ${TABLE_BORDER}>`;
 
-  // Column header row -- numbers
   html += `<tr><td style="${HEADER_CELL}"></td>`;
   for (let c = 0; c < cols; c++) {
     html += `<td style="${HEADER_CELL}"><b>${c + 1}</b></td>`;
   }
   html += "</tr>";
 
-  // Data rows -- letter labels
   for (let r = 0; r < rows; r++) {
     html += `<tr>`;
     html += `<td style="${HEADER_CELL}"><b>${String.fromCharCode(65 + r)}</b></td>`;
@@ -162,14 +236,14 @@ function buildMapTable(game: Game, self: Entity | null): string {
       const entity = game.entities.find(
         (e) => e.pos[0] === r && e.pos[1] === c,
       );
+      const key = posKey([r, c]);
+      const tileStr = posToStr(r, c);
 
-      let label = "";
       let title = TERRAIN_NAMES[terrain] ?? "Normal";
-      let highlight = "";
+      let outline = "";
       let isCur = false;
 
       if (entity) {
-        label = entity.num;
         title = entity.name;
         isCur = entity.num === curNum;
       }
@@ -177,24 +251,71 @@ function buildMapTable(game: Game, self: Entity | null): string {
       if (self && entity) {
         const isSelf = entity.num === self.num;
         const isAlly = !isSelf && entity.team === self.team && self.team !== 0;
-        if (isSelf) highlight = "outline:2px solid #0a0;";
-        else if (isAlly) highlight = "outline:2px solid #08c;";
+        if (isSelf) outline = "outline:2px solid #0a0;";
+        else if (isAlly) outline = "outline:2px solid #08c;";
       } else if (isCur && entity) {
-        highlight = "outline:2px solid #cc0;";
+        outline = "outline:2px solid #cc0;";
       }
 
-      html += `<td style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"`;
+      // Overlay priority: path (darkest) > reachable > enemy reach preview.
+      // Occupied tiles never get the movement overlay -- you can't move onto
+      // a tile that's occupied, so only the reach-preview overlay (for
+      // clicking a character) can show there.
+      let overlay = "";
+      if (!entity && pathSet.has(key)) overlay = OVERLAY_PATH;
+      else if (!entity && reachableSet.has(key)) overlay = OVERLAY_REACHABLE;
+      else if (previewSet.has(key)) overlay = OVERLAY_ENEMY_REACH;
+
+      const overlayDiv = overlay
+        ? `<div style="position:absolute;inset:0;background:${overlay};pointer-events:none"></div>`
+        : "";
+
+      let inner: string;
       if (entity) {
-        html += `><b style="${PLAYER_LABEL}">${label}</b></td>`;
+        if (interactive && self && entity.num !== self.num) {
+          // Clicking another character previews their reach in red.
+          inner = cellBtn(
+            `%viewreach ${entity.num},${self.name}`,
+            entity.num,
+            `${PLAYER_LABEL};position:relative;z-index:1`,
+          );
+        } else {
+          inner = `<b style="${PLAYER_LABEL};position:relative;z-index:1">${entity.num}</b>`;
+        }
+      } else if (interactive && self && reachableSet.has(key)) {
+        // Empty, in range, not yet pressed into the path -- clickable.
+        inner = cellBtn(`%pathstep ${tileStr},${self.name}`, "", "z-index:1");
       } else {
-        html += `></td>`;
+        inner = "";
       }
+
+      html += `<td style="position:relative;background:${color};${outline}${MAP_CELL}" title="${esc(title)}">${overlayDiv}${inner}</td>`;
     }
     html += "</tr>";
   }
 
   html += "</table></div>";
   return html;
+}
+
+// -- Movement Controls (Player, movement phase) --------------------------------
+
+function buildMovementControls(game: Game, entity: Entity): string {
+  const path = pathState.get(entity.num) ?? [];
+
+  if (path.length === 0) {
+    return `<div style="margin:4px 0;color:#888"><i>Click a highlighted tile to start moving.</i></div>`;
+  }
+
+  const remaining = entity.mp - path.length;
+  let html = `<div style="margin:4px 0">Path: ${path.length} tile${path.length > 1 ? "s" : ""} (${remaining} MP left)</div>`;
+  html += `<div style="margin-top:4px">${btn(`%confirmmove ${entity.name}`, "Confirm Move")} ${btn(`%cancelpath ${entity.name}`, "Cancel Path")}</div>`;
+  return html;
+}
+
+function buildDashButton(entity: Entity): string {
+  if (entity.dashUsed) return "";
+  return `<div style="margin:2px 0">${btn(`%dash ${entity.name}`, "Dash (1.5x MP)")}</div>`;
 }
 
 // -- Player Data Table (Host) -------------------------------------------------
@@ -219,7 +340,6 @@ function buildPlayerDataTable(game: Game): string {
 <tbody>
 `;
 
-  // Header
   html += `<tr style="height:22px">`;
 
   const headers = [
@@ -241,7 +361,6 @@ function buildPlayerDataTable(game: Game): string {
 
   html += `</tr>`;
 
-  // Players (ordered by turn order if available)
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
@@ -277,12 +396,10 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
     html += `</tr>`;
   }
 
-  // Turn order
   const turnParts: string[] = [];
 
   for (const num of game.turnOrder) {
     const e = game.entities.find((x) => x.num === num);
-
     turnParts.push(e ? e.name : num);
   }
 
@@ -368,27 +485,6 @@ function buildEntityStats(entity: Entity): string {
 
   html += "</div>";
   return html;
-}
-
-// -- Move Buttons (Player) ----------------------------------------------------
-
-function buildMoveButtons(game: Game, entity: Entity): string {
-  const reachable = getReachableTiles(game, entity.pos, entity.mp);
-  const tiles: string[] = [];
-
-  for (const [key] of reachable) {
-    tiles.push(btn(`%move ${key},${entity.name}`, key));
-  }
-
-  if (tiles.length === 0) {
-    return `<div style="margin:4px 0;color:#888"><i>No valid moves.</i></div>`;
-  }
-  return `<div style="margin:4px 0">${tiles.join(" ")}</div>`;
-}
-
-function buildDashButton(entity: Entity): string {
-  if (entity.dashUsed) return "";
-  return `<div style="margin:2px 0">${btn(`%dash ${entity.name}`, "Dash (1.5x MP)")}</div>`;
 }
 
 // -- Pre-Move Ability Buttons (Player) ----------------------------------------
@@ -491,7 +587,6 @@ function buildAbilityButton(
   const tiles =
     ab.targetGroup === "Tile" ? getValidTiles(game, ab, entity) : [];
 
-  // Single target abilities: show ability + each target as separate buttons
   if (targets.length > 0 && ab.targetAmount !== "AoE") {
     let html = "";
     for (const t of targets) {
@@ -503,7 +598,6 @@ function buildAbilityButton(
     return html;
   }
 
-  // AoE abilities
   if (ab.targetAmount === "AoE" || targets.length <= 1) {
     const label = `${ab.name}${usesStr}${cdStr}`;
     const cmd =
@@ -513,7 +607,6 @@ function buildAbilityButton(
     return btn(cmd, label, "font-size:11px;padding:2px 6px");
   }
 
-  // Tile targeting
   if (tiles.length > 0) {
     let html = `<span style="color:#888;font-size:10px">${ab.name}:</span> `;
     for (const t of tiles) {
@@ -527,7 +620,6 @@ function buildAbilityButton(
     return html;
   }
 
-  // Fallback
   return btn(
     `%use ${ab.name},${entity.name}`,
     `${ab.name}${usesStr}`,

@@ -13,7 +13,7 @@ import {
   isConfused,
 } from "./state.js";
 import { parseEffects, applyEffects } from "./effects.js";
-import { rollDice, toId, posToStr } from "../utils.js";
+import { rollDice, toId, posToStr } from "./utils.js";
 
 export interface ResolutionResult {
   messages: string[];
@@ -25,6 +25,11 @@ export interface ResolutionResult {
 function newResult(): ResolutionResult {
   return { messages: [], deaths: [], gameOver: false };
 }
+
+// ---------------------------------------------------------------------------
+// #5: shared helpers so the Physical/Magical branch and getEffectiveStat
+// aren't duplicated (and re-computed) in every resolve* function.
+// ---------------------------------------------------------------------------
 
 function offensiveStat(entity: Entity, damageType: string): number {
   return getEffectiveStat(entity, damageType === "Physical" ? "atk" : "mag");
@@ -59,6 +64,8 @@ function getEffectiveStat(entity: Entity, stat: string): number {
   for (const b of entity.buffs) {
     if (b.stat === stat) base += b.amount;
   }
+  // #7: this only ever touches combat stats (atk/mag/pd/md/eva/mp), never
+  // HP, so there's no "except HP" carve-out to call out here.
   return Math.max(0, base);
 }
 
@@ -69,6 +76,13 @@ function getStatBonus(entity: Entity, stat: string): number {
   }
   return bonus;
 }
+
+// ---------------------------------------------------------------------------
+// Prompts: what the engine yields when it needs a human to click something.
+// The generator pauses at these points; the caller renders buttons (e.g. via
+// your existing /pminfobox mechanism) and resumes the generator with the
+// chosen value once a response comes in.
+// ---------------------------------------------------------------------------
 
 export interface SelectionOption {
   id: string;
@@ -103,16 +117,18 @@ function* resolveAttackFlow(
   game: Game,
   user: Entity,
   ability: AbilityData,
-  initialTarget?: string,
+  initialTargetRef?: string,
 ): Generator<AttackPrompt, ResolutionResult, PromptResponse> {
   const result = newResult();
 
   // --- Declare Attack ---
-  // result.messages.push(`/me declares ${ability.name}`);
+  result.messages.push(`/me declares ${ability.name}`);
 
   // --- Selection / Choices / Sacrifice / Pay Costs ---
-  // STUB: this is a placeholder. Work on how costs/choices are represented 
-
+  // STUB: I don't know your AbilityData cost/choice schema yet, so this is
+  // a placeholder. Tell me how costs/choices are represented (a field on
+  // AbilityData? a separate table keyed by ability name?) and I'll wire the
+  // real logic in.
   if (abilityNeedsSelection(ability)) {
     const choiceId = yield {
       kind: "selection",
@@ -135,31 +151,35 @@ function* resolveAttackFlow(
     ability,
   );
   let targets = autoTargets;
-  if (targets.length === 0) {
-  const candidates = getTargetCandidates(game, user, ability);
 
-  if (candidates.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return result;
+  // If the player already picked a target before %confirm (your UI's own
+  // ability+target selection step), try that first instead of immediately
+  // yielding a prompt for something already known.
+  if (targets.length === 0 && initialTargetRef) {
+    targets = findTargets(game, user, ability, initialTargetRef);
   }
 
-  const targetRef = initialTarget ?? (yield {
-    kind: "target",
-    message: `Choose a target for ${ability.name}`,
-    candidates,
-  });
-
-  targets = findTargets(game, user, ability, targetRef);
-
   if (targets.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return result;
+    const candidates = getTargetCandidates(game, user, ability);
+    if (candidates.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but no valid targets found.`,
+      );
+      return result;
+    }
+    const targetRef = yield {
+      kind: "target",
+      message: `Choose a target for ${ability.name}`,
+      candidates,
+    };
+    targets = findTargets(game, user, ability, targetRef);
+    if (targets.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but no valid targets found.`,
+      );
+      return result;
+    }
   }
-}
 
   const targetNames = targets.map((t) => t.num).join(", ");
   const rollStr = ability.roll ? ` ${ability.roll}` : "";
@@ -177,6 +197,9 @@ function* resolveAttackFlow(
     if (isAttack) {
       let confusionApplied = false;
       for (let h = 0; h < hitCount; h++) {
+        // Bug fix carried over from the previous review: stop the combo if
+        // confusion self-damage already killed the user mid-multi-hit.
+        if (user.curhp <= 0) break;
 
         const label = hitCount > 1 ? ` (Hit ${h + 1}/${hitCount})` : "";
         const singleResult = resolveSingleTarget(
@@ -238,13 +261,21 @@ function* resolveAttackFlow(
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Driver: start/resume the generator, stash it on the entity so a later
+// button click can find its way back to the right paused resolution.
+// Requires adding to your Entity type:
+//   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
+//   pendingPromptKind?: AttackPrompt["kind"];
+// ---------------------------------------------------------------------------
+
 export function startAttack(
   game: Game,
   user: Entity,
   ability: AbilityData,
-  target?: string,
+  initialTargetRef?: string,
 ): AttackStep {
-  const flow = resolveAttackFlow(game, user, ability, target);
+  const flow = resolveAttackFlow(game, user, ability, initialTargetRef);
   user.pendingResolution = flow;
   return advanceAttack(user, flow, undefined as unknown as PromptResponse);
 }
@@ -286,26 +317,25 @@ function respondToPromptOfKind(
   return advanceAttack(user, flow, value);
 }
 
-// TODO: work out how to handle the case where the generator throws an error
-
 function advanceAttack(
   user: Entity,
   flow: Generator<AttackPrompt, ResolutionResult, PromptResponse>,
   input: PromptResponse,
 ): AttackStep {
   const step = flow.next(input);
-
-  if (step.done === true) {
+  if (step.done) {
     user.pendingResolution = undefined;
     user.pendingPromptKind = undefined;
     return { done: true, result: step.value };
   }
-
   user.pendingPromptKind = step.value.kind;
   return { done: false, prompt: step.value };
 }
 
-// TODO: implement these once we know how costs/choices will be represented in AbilityData.
+// ---------------------------------------------------------------------------
+// STUBS for the Selection/Costs phase — fill in once you tell me how costs
+// and choices are represented in AbilityData.
+// ---------------------------------------------------------------------------
 
 function abilityNeedsSelection(ability: AbilityData): boolean {
   // TODO: e.g. `return !!ability.cost || !!ability.choices;`
@@ -322,7 +352,8 @@ function applySelection(
   ability: AbilityData,
   choiceId: string,
 ): boolean {
-  // TODO: deduct HP/MP/resources for the chosen cost, return false if the user can't actually pay it.
+  // TODO: deduct HP/MP/resources for the chosen cost, return false if the
+  // user can't actually pay it.
   return true;
 }
 
@@ -349,9 +380,9 @@ function getTargetCandidates(
   });
 }
 
-// ---------------------------
-// Targeting / hit resolution 
-// ---------------------------
+// ---------------------------------------------------------------------------
+// Targeting / hit resolution — same logic as before, with #6's fix applied.
+// ---------------------------------------------------------------------------
 
 function prepareTargeting(
   game: Game,
@@ -692,7 +723,7 @@ function resolveSplash(
 
     if (target.curhp <= 0) {
       result.messages.push(
-        `  **${target.num} (${target.name}) has been killed!**`,
+        `  **${target.num} (${target.name}) has been defeated!**`,
       );
       removeEntity(game, target);
       result.deaths.push(target);
@@ -700,27 +731,4 @@ function resolveSplash(
   }
 
   return result;
-}
-
-// Legacy entry point for existing callers that don't handle prompts yet. TO BE REMOVED
-
-export function resolveAction(
-  game: Game,
-  user: Entity,
-): AttackStep {
-  const action = user.pendingAction;
-
-  if (!action || action.type !== "attack") {
-    return { 
-      done: true,
-      result: newResult()
-    };
-  }
-
-  return startAttack(
-    game,
-    user,
-    action.ability,
-    action.target,
-  );
 }

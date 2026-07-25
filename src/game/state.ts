@@ -1,6 +1,7 @@
 import { rollDice, posToStr, toId } from "../utils.js";
 import { send, sendPm } from "../utils.js";
 import { rooms } from "../rooms.js";
+import type { AttackPrompt, ResolutionResult, PromptResponse } from "./resolve.js";
 
 // Terrain types from the game rules
 export enum Terrain {
@@ -128,6 +129,8 @@ export interface Entity {
   standardUsed: boolean;
   movementUsed: boolean;
   swiftUsed: boolean;
+  pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
+  pendingPromptKind?: AttackPrompt["kind"];
 }
 
 export interface PendingAction {
