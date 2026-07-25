@@ -103,7 +103,7 @@ export interface Entity {
   name: string;
   id: string;
   isMonster: boolean;
-  isJuggernaut: boolean;
+  isJuggernaut?: boolean;
   curhp: number;
   maxhp: number;
   atk: number;
