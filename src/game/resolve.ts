@@ -2,7 +2,6 @@ import {
   type Game,
   type Entity,
   type AbilityData,
-  type StatusEffect,
   rollAccuracy,
   dealDamage,
   removeEntity,
@@ -16,6 +15,7 @@ import {
   getSplashTargets,
   Terrain,
 } from "./state.js";
+import { parseEffects, applyEffects } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
 export interface ResolutionResult {
@@ -241,7 +241,9 @@ function resolveSingleTarget(
   );
 
   // 4. Apply statuses from effect
-  applyStatusEffects(game, caster, target, ability);
+  const effects = parseEffects(ability.effect);
+  const effectMsgs = applyEffects(game, caster, target, effects);
+  result.messages.push(...effectMsgs);
 
   // 5. Check death
   if (target.curhp <= 0) {
@@ -359,196 +361,6 @@ function getStatBonus(entity: Entity, stat: string): number {
     if (b.stat === stat) bonus += b.amount;
   }
   return bonus;
-}
-
-function applyStatusEffects(
-  game: Game,
-  caster: Entity,
-  target: Entity,
-  ability: AbilityData,
-) {
-  // Parse effect text for common status patterns
-  // This is a simplified parser -- real implementation would need the full ability data
-  const effect = ability.effect.toLowerCase();
-
-  // Bleed: "X bleed/Y" or "inflict X bleed/Y"
-  const bleedMatch = effect.match(/(\d+)\s*bleed\s*\/\s*(\d+)/);
-  if (bleedMatch) {
-    applyStatus(target, {
-      name: "Bleed",
-      damage: parseInt(bleedMatch[1]),
-      rounds: parseInt(bleedMatch[2]),
-      maxRounds: parseInt(bleedMatch[2]),
-      removable: true,
-    });
-  }
-
-  // Burn
-  const burnMatch = effect.match(/burn\s*\/\s*(\d+)/);
-  if (burnMatch) {
-    applyStatus(target, {
-      name: "Burn",
-      damage: 0,
-      rounds: parseInt(burnMatch[1]),
-      maxRounds: parseInt(burnMatch[1]),
-      removable: true,
-    });
-  }
-
-  // Poison
-  const poisonMatch = effect.match(/(\d+)\s*poison\s*\/\s*(\d+)/);
-  if (poisonMatch) {
-    applyStatus(target, {
-      name: "Poison",
-      damage: parseInt(poisonMatch[1]),
-      rounds: parseInt(poisonMatch[2]),
-      maxRounds: parseInt(poisonMatch[2]),
-      removable: true,
-    });
-  }
-
-  // Curse
-  const curseMatch = effect.match(/(\d+)\s*curse\s*\/\s*(\d+)/);
-  if (curseMatch) {
-    applyStatus(target, {
-      name: "Curse",
-      damage: parseInt(curseMatch[1]),
-      rounds: parseInt(curseMatch[2]),
-      maxRounds: parseInt(curseMatch[2]),
-      removable: true,
-    });
-  }
-
-  // Root
-  if (effect.includes("root")) {
-    const rootMatch = effect.match(/root\s*\/\s*(\d+)/);
-    const rounds = rootMatch ? parseInt(rootMatch[1]) : 1;
-    applyStatus(target, {
-      name: "Root",
-      damage: 0,
-      rounds,
-      maxRounds: rounds,
-      removable: true,
-    });
-  }
-
-  // Seal
-  if (effect.includes("seal")) {
-    const sealMatch = effect.match(/seal\s*\/\s*(\d+)/);
-    const rounds = sealMatch ? parseInt(sealMatch[1]) : 1;
-    applyStatus(target, {
-      name: "Seal",
-      damage: 0,
-      rounds,
-      maxRounds: rounds,
-      removable: true,
-    });
-  }
-
-  // Slow
-  if (effect.includes("slow")) {
-    const slowMatch = effect.match(/slow\s*\/\s*(\d+)/);
-    const rounds = slowMatch ? parseInt(slowMatch[1]) : 1;
-    applyStatus(target, {
-      name: "Slow",
-      damage: 0,
-      rounds,
-      maxRounds: rounds,
-      removable: true,
-    });
-  }
-
-  // Stun
-  if (effect.includes("stun")) {
-    const stunMatch = effect.match(/stun\s*\/\s*(\d+)/);
-    const rounds = stunMatch ? parseInt(stunMatch[1]) : 1;
-    applyStatus(target, {
-      name: "Stun",
-      damage: 0,
-      rounds,
-      maxRounds: rounds,
-      removable: true,
-    });
-  }
-
-  // Confusion
-  if (effect.includes("confusion")) {
-    const confMatch = effect.match(/confusion\s*\/\s*(\d+)/);
-    const rounds = confMatch ? parseInt(confMatch[1]) : 1;
-    applyStatus(target, {
-      name: "Confusion",
-      damage: 0,
-      rounds,
-      maxRounds: rounds,
-      removable: true,
-    });
-  }
-
-  // Cripple
-  if (effect.includes("cripple")) {
-    const crMatch = effect.match(/cripple\s*\/\s*(\d+)/);
-    const rounds = crMatch ? parseInt(crMatch[1]) : 1;
-    applyStatus(target, {
-      name: "Cripple",
-      damage: 0,
-      rounds,
-      maxRounds: rounds,
-      removable: true,
-    });
-  }
-
-  // Shield
-  if (effect.includes("shield")) {
-    const shMatch = effect.match(/shield\s*\/\s*(\d+)/);
-    const rounds = shMatch ? parseInt(shMatch[1]) : 1;
-    applyStatus(target, {
-      name: "Shield",
-      damage: 0,
-      rounds,
-      maxRounds: rounds,
-      removable: true,
-    });
-  }
-
-  // Buffs: "+X STAT/Y" pattern
-  const buffRegex = /\+(\d+)\s+(atk|mag|pd|md|eva|mp|def|acc|cr)\s*\/\s*(\d+)/g;
-  let buffMatch;
-  while ((buffMatch = buffRegex.exec(effect)) !== null) {
-    target.buffs.push({
-      stat:
-        buffMatch[2].toLowerCase() === "def"
-          ? "pd"
-          : buffMatch[2].toLowerCase(),
-      amount: parseInt(buffMatch[1]),
-      rounds: parseInt(buffMatch[3]),
-    });
-  }
-
-  // Debuffs: "-X STAT/Y" pattern
-  const debuffRegex =
-    /-(\d+)\s+(atk|mag|pd|md|eva|mp|def|acc|cr)\s*\/\s*(\d+)/g;
-  let debuffMatch;
-  while ((debuffMatch = debuffRegex.exec(effect)) !== null) {
-    target.buffs.push({
-      stat:
-        debuffMatch[2].toLowerCase() === "def"
-          ? "pd"
-          : debuffMatch[2].toLowerCase(),
-      amount: -parseInt(debuffMatch[1]),
-      rounds: parseInt(debuffMatch[3]),
-    });
-  }
-}
-
-function applyStatus(entity: Entity, status: StatusEffect) {
-  // Don't stack same status -- refresh duration
-  const existing = entity.statuses.find((s) => s.name === status.name);
-  if (existing) {
-    existing.rounds = status.rounds;
-    existing.damage = Math.max(existing.damage, status.damage);
-  } else {
-    entity.statuses.push(status);
-  }
 }
 
 function setCooldown(entity: Entity, ability: AbilityData) {
@@ -691,57 +503,14 @@ function resolveNonDamaging(
   };
 
   // Apply statuses and buffs/debuffs from effect text
-  applyStatusEffects(game, caster, target, ability);
+  const effects = parseEffects(ability.effect);
+  const effectMsgs = applyEffects(game, caster, target, effects);
 
-  const effect = ability.effect.toLowerCase();
-
-  // Track what was applied
-  const applied: string[] = [];
-
-  // Check for common status inflictions in effect text
-  const statusPatterns: [RegExp, string][] = [
-    [/(\d+)\s*bleed\s*\/\s*(\d+)/, "Bleed"],
-    [/(\d+)\s*poison\s*\/\s*(\d+)/, "Poison"],
-    [/burn\s*\/\s*(\d+)/, "Burn"],
-    [/(\d+)\s*curse\s*\/\s*(\d+)/, "Curse"],
-    [/root\s*\/\s*(\d+)/, "Root"],
-    [/seal\s*\/\s*(\d+)/, "Seal"],
-    [/stun\s*\/\s*(\d+)/, "Stun"],
-    [/confusion\s*\/\s*(\d+)/, "Confusion"],
-    [/cripple\s*\/\s*(\d+)/, "Cripple"],
-    [/slow\s*\/\s*(\d+)/, "Slow"],
-  ];
-
-  for (const [regex, name] of statusPatterns) {
-    const match = effect.match(regex);
-    if (match) {
-      applied.push(
-        `${name}${match[1] ? ` (${match[1]})` : ""}/${match[2] || "?"}`,
-      );
-    }
-  }
-
-  // Check for buffs
-  const buffRegex = /\+(\d+)\s+(atk|mag|pd|md|eva|mp|def|acc|cr)\s*\/\s*(\d+)/g;
-  let buffMatch;
-  while ((buffMatch = buffRegex.exec(effect)) !== null) {
-    const stat = buffMatch[2].toUpperCase();
-    applied.push(`+${buffMatch[1]} ${stat}/${buffMatch[3]}`);
-  }
-
-  // Check for debuffs
-  const debuffRegex =
-    /-(\d+)\s+(atk|mag|pd|md|eva|mp|def|acc|cr)\s*\/\s*(\d+)/g;
-  let debuffMatch;
-  while ((debuffMatch = debuffRegex.exec(effect)) !== null) {
-    const stat = debuffMatch[2].toUpperCase();
-    applied.push(`-${debuffMatch[1]} ${stat}/${debuffMatch[3]}`);
-  }
-
-  if (applied.length > 0) {
+  if (effectMsgs.length > 0) {
     result.messages.push(
-      `  ${caster.num} uses ${ability.name} on ${target.num}: ${applied.join(", ")}`,
+      `  ${caster.num} uses ${ability.name} on ${target.num}:`,
     );
+    result.messages.push(...effectMsgs);
   } else {
     result.messages.push(
       `  ${caster.num} uses ${ability.name} on ${target.num}. (Manual resolution may be needed)`,

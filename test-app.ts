@@ -17,10 +17,17 @@ const browserClients = new Set<WebSocket>();
 interface Session {
   username: string;
   authenticated: boolean;
+  tabs: string[];
 }
 
-
 const sessions = new Map<WebSocket, Session>();
+
+// Stores the latest GUI for every user
+const userGui = new Map<string, {
+  host?: string;
+  player?: string;
+  spectator?: string;
+}>();
 
 function broadcast(msg: string) {
   for (const client of browserClients) {
@@ -51,14 +58,16 @@ setWs({
       if (pmContent.includes("/pminfobox ")) {
         const pmTarget = pmContent.match(/^\/pm ([^,]+),/)?.[1] ?? "";
         const html = pmContent.split("/pminfobox ")[1] ?? "";
-        const tab = findPlayerTab(pmTarget);
-        sendToUser(
-          pmTarget,
-          {
-            type: "gui",
-            html,
-          }
-        );
+        const id = toId(pmTarget);
+        const saved = userGui.get(id) ?? {};
+        saved.player = html;
+        userGui.set(id, saved);
+        // send immediately if online
+        sendToUser(pmTarget, {
+          type: "gui",
+          role: "player",
+          html,
+        });
       } else {
         broadcast(
           JSON.stringify({
@@ -71,9 +80,33 @@ setWs({
     }
     if (raw.startsWith("|/addhtmlbox ")) {
       const html = raw.slice("|/addhtmlbox ".length);
-      broadcast(JSON.stringify({ type: "gui", tab: "host", html }));
+
+      let hostName: string | null = null;
+
+      for (const game of games.values()) {
+        if (game.host) {
+          hostName = game.host;
+          break;
+        }
+      }
+    
+      if (!hostName) return;
+    
+      const hostId = toId(hostName);
+    
+      const saved = userGui.get(hostId) ?? {};
+      saved.host = html;
+      userGui.set(hostId, saved);
+    
+      sendToUser(hostName, {
+        type: "gui",
+        role: "host",
+        html,
+      });
+    
       return;
     }
+
     const text = raw.replace(/^\|/, "");
     if (text.startsWith("/me ")) {
       broadcast(JSON.stringify({ type: "action", text: text.slice(4) }));
@@ -87,16 +120,67 @@ function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function findPlayerTab(name: string): string {
+function findPlayerSlot(name: string): string | null {
   for (const game of games.values()) {
     for (const e of game.entities) {
       if (toId(e.name) === toId(name)) {
-        return e.num.toLowerCase();
+        return e.num.toUpperCase(); // P1, P2, etc.
       }
     }
   }
-  return "spectator";
+
+  return null;
 }
+
+function getUserTabs(username: string): string[] {
+  const tabs: string[] = [];
+
+  let isHost = false;
+
+  for (const game of games.values()) {
+    if (game.host && toId(game.host) === toId(username)) {
+      isHost = true;
+      break;
+    }
+  }
+
+  if (isHost) {
+    tabs.push("host");
+  }
+
+  const playerSlot = findPlayerSlot(username);
+
+  if (playerSlot) {
+    tabs.push("player");
+  }
+
+  // If they have no role, they are a spectator
+  if (tabs.length === 0) {
+    tabs.push("spectator");
+  }
+
+  return tabs;
+}
+
+
+function refreshAllTabs() {
+  for (const [ws, session] of sessions) {
+    if (
+      session.authenticated &&
+      ws.readyState === WebSocket.OPEN
+    ) {
+      const tabs = getUserTabs(session.username);
+
+      session.tabs = tabs;
+
+      ws.send(JSON.stringify({
+        type: "tabs",
+        tabs,
+      }));
+    }
+  }
+}
+
 
 function ensureUser(name: string) {
   const uid = toId(name);
@@ -121,8 +205,11 @@ const wss = new WebSocketServer({ server });
 wss.on("connection", (ws) => {
   browserClients.add(ws);
 
-  const session: Session = { username: "", authenticated: false};
-  sessions.set(ws, session);
+const session: Session = {
+  username: "",
+  authenticated: false,
+  tabs: [],
+};  sessions.set(ws, session);
 
   console.log("Browser connected");
 
@@ -166,8 +253,44 @@ wss.on("connection", (ws) => {
         ensureUser(username);
 
         session.username = username;
-        session.authenticated = true;
-        
+session.authenticated = true;
+session.tabs = getUserTabs(username);
+
+ws.send(JSON.stringify({
+  type: "tabs",
+  tabs: session.tabs,
+}));
+
+if (session.tabs.includes("spectator")) {
+  ws.send(JSON.stringify({
+    type: "gui",
+    role: "spectator",
+    html: `
+      <div style="color:#888;padding:40px;text-align:center">
+        Spectator View
+      </div>
+    `,
+  }));
+}
+
+const savedGui = userGui.get(toId(username));
+
+if (savedGui?.host && session.tabs.includes("host")) {
+  ws.send(JSON.stringify({
+    type: "gui",
+    role: "host",
+    html: savedGui.host,
+  }));
+}
+
+if (savedGui?.player && session.tabs.includes("player")) {
+  ws.send(JSON.stringify({
+    type: "gui",
+    role: "player",
+    html: savedGui.player,
+  }));
+}
+
         ws.send(
           JSON.stringify({
             type: "nick",
@@ -247,6 +370,8 @@ wss.on("connection", (ws) => {
         const user = users.get(toId(session.username))!;
 
         handleCommand(room, user, cmd, args, val);
+
+        refreshAllTabs();
       }
     } catch (e) {
       console.error("Bad message:", e);
@@ -340,12 +465,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   <div id="gui-panel">
     <div id="gui-header">
       <span>GUI Preview</span>
-      <div id="gui-tabs">
-        <div class="gui-tab active" data-tab="host">Host</div>
-        <div class="gui-tab" data-tab="p1">P1</div>
-        <div class="gui-tab" data-tab="p2">P2</div>
-        <div class="gui-tab" data-tab="p3">P3</div>
-      </div>
+      <div id="gui-tabs"></div>
     </div>
     <div id="gui-content">
       <div style="color:#8888aa;padding:40px;text-align:center">
@@ -369,6 +489,8 @@ const statusEl = document.getElementById('status');
 const userEl = document.getElementById('current-user');
 
 let currentNick = 'HostUser';
+let guiPages = {};
+let activeTab = "";
 
 function addLine(type, raw) {
   const div = document.createElement('div');
@@ -393,6 +515,38 @@ guiContent.addEventListener('click', (e) => {
   ws.send(JSON.stringify({ type: 'chat', text: cmd }));
   addLine('chat', '<span class="name">' + currentNick + '</span>: ' + cmd);
 });
+function createTabs(tabs) {
+  const container = document.getElementById("gui-tabs");
+  container.innerHTML = "";
+
+  tabs.forEach(tab => {
+    guiPages[tab] = "";
+
+    const button = document.createElement("div");
+    button.className = "gui-tab";
+    button.textContent =
+      tab.charAt(0).toUpperCase() + tab.slice(1);
+
+    button.onclick = () => {
+      document.querySelectorAll(".gui-tab")
+        .forEach(t => t.classList.remove("active"));
+
+      button.classList.add("active");
+
+      activeTab = tab;
+
+      guiContent.innerHTML =
+        guiPages[tab] ||
+        '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
+    };
+
+    container.appendChild(button);
+  });
+
+  if (tabs.length > 0) {
+    container.firstChild.click();
+  }
+}
 
 let ws;
 function connect() {
@@ -412,11 +566,18 @@ function connect() {
     setTimeout(connect, 2000);
   };
   ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    
-      if (msg.type === 'gui') {
+  const msg = JSON.parse(e.data);
+
+  if (msg.type === 'tabs') {
+    createTabs(msg.tabs);
+    return;
+  }
+  if (msg.type === 'gui') {
+    guiPages[msg.role] = msg.html;
+    if (activeTab === msg.role) {
       guiContent.innerHTML = msg.html;
-    } else if (msg.type === 'nick') {
+    }
+  } else if (msg.type === 'nick') {
       currentNick = msg.user;
       if (userEl) userEl.textContent = msg.user;
     } else if (msg.type === 'join') {
