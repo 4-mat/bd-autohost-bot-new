@@ -551,6 +551,8 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
         return false;
     }
 
+    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
+
     if (entity.cooldowns[ab.name]) return false;
 
     if (ab.maxUses) {
