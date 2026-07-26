@@ -245,8 +245,8 @@ function buildPlayerDataTable(game: Game): string {
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
-          .map((n) => game.entities.find((e) => e.num === n))
-          .filter((e): e is Entity => !!e)
+        .map((n) => game.entities.find((e) => e.num === n))
+        .filter((e): e is Entity => !!e)
       : game.entities;
   for (const e of ordered) {
     html += `<tr style="height:22px">`;
@@ -576,7 +576,8 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
     if (
       ab.actionType !== "Free" &&
       ab.actionType !== "Swift" &&
-      ab.actionType !== "Trigger"
+      ab.actionType !== "Trigger" &&
+      ab.actionType !== "Movement"
     )
       return false;
 
@@ -584,6 +585,8 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
+
+    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
 
     if (entity.cooldowns[ab.name]) return false;
 
