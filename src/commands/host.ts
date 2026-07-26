@@ -699,7 +699,6 @@ function handleGenTurnOrder(room: Room, user: User) {
   if (game.entities.length === 0) {
     return sendPm(user.name, "No players in the game.");
   }
-  console.log("Hello");
   // Roll 1d20 + MP for each entity, sort descending
   const rolls: { entity: Entity; roll: number; mp: number }[] = [];
   for (const e of game.entities) {
@@ -709,13 +708,17 @@ function handleGenTurnOrder(room: Room, user: User) {
   }
 
   rolls.sort((a, b) => b.roll - a.roll);
-
+  let monster_count = 1;
+  let player_count = 1;
   // Update e.num according to turn order position (1-indexed)
-  rolls.forEach((r, index) => {
-    // If you want prefix formatting like P1, P2, M1, etc., adjust here:
-    //r.num = r.isMonster ? `M${index + 1}` : `P${index + 1}`;
-
-    r.entity.num = `P${index + 1}`;
+  rolls.forEach((r) => {
+    if (r.entity.isMonster) {
+      r.entity.num = `M${monster_count}`;
+      monster_count++;
+    } else {
+      r.entity.num = `P${player_count}`;
+      player_count++;
+    }
   });
 
   game.turnOrder = rolls.map((r) => r.entity.num);
