@@ -406,8 +406,8 @@ function handleSwitchClass(room: Room, user: User, args: string) {
     ),
     ...(weaponData
       ? weaponData.abilities.filter(
-          (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
-        )
+        (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+      )
       : []),
   ] as any[];
 
@@ -477,8 +477,8 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   entity.abilities = [
     ...(classData
       ? classData.abilities.filter(
-          (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
-        )
+        (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+      )
       : []),
     ...weaponData.abilities.filter(
       (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
@@ -699,23 +699,34 @@ function handleGenTurnOrder(room: Room, user: User) {
   if (game.entities.length === 0) {
     return sendPm(user.name, "No players in the game.");
   }
-
   // Roll 1d20 + MP for each entity, sort descending
-  const rolls: { num: string; name: string; roll: number; mp: number }[] = [];
+  const rolls: { entity: Entity; roll: number; mp: number }[] = [];
   for (const e of game.entities) {
     const d20 = rollDice("1d20").total;
     const total = d20 + e.mp;
-    rolls.push({ num: e.num, name: e.name, roll: total, mp: e.mp });
+    rolls.push({ entity: e, roll: total, mp: e.mp });
   }
 
   rolls.sort((a, b) => b.roll - a.roll);
+  let monster_count = 1;
+  let player_count = 1;
+  // Update e.num according to turn order position (1-indexed)
+  rolls.forEach((r) => {
+    if (r.entity.isMonster) {
+      r.entity.num = `M${monster_count}`;
+      monster_count++;
+    } else {
+      r.entity.num = `P${player_count}`;
+      player_count++;
+    }
+  });
 
-  game.turnOrder = rolls.map((r) => r.num);
+  game.turnOrder = rolls.map((r) => r.entity.num);
   game.turnIndex = 0;
   game.round = 1;
 
   const orderStr = rolls
-    .map((r) => `${r.num} (${r.name}) - ${r.roll} (1d20+${r.mp})`)
+    .map((r) => `${r.entity.num} (${r.entity.name}) - ${r.roll} (1d20+${r.entity.mp})`)
     .join(", ");
 
   send(room.id, `**Turn Order**: ${orderStr}`);
