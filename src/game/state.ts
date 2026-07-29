@@ -1,7 +1,11 @@
 import { rollDice, posToStr, toId } from "../utils.js";
 import { send, sendPm } from "../utils.js";
 import { rooms } from "../rooms.js";
-import type { AttackPrompt, ResolutionResult, PromptResponse } from "./resolve.js";
+import type {
+  AttackPrompt,
+  ResolutionResult,
+  PromptResponse,
+} from "./resolve.js";
 
 // Terrain types from the game rules
 export enum Terrain {
@@ -78,7 +82,7 @@ export interface StatusEffect {
 
 export interface AbilityData {
   name: string;
-  level: number;
+  level: number | "EX1" | "EX2";
   frequency: string;
   mr: number;
   roll: string;

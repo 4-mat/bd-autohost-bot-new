@@ -546,7 +546,9 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    if (typeof ab.level === "number" && ab.level > 0) {
+    if (ab.level === "EX1" || ab.level === "EX2") {
+      if (!entity.isJuggernaut) return false;
+    } else if (ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
@@ -580,7 +582,9 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    if (typeof ab.level === "number" && ab.level > 0) {
+    if (ab.level === "EX1" || ab.level === "EX2") {
+      if (!entity.isJuggernaut) return false;
+    } else if (ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
