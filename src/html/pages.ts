@@ -95,7 +95,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     } else if (!entity.movementUsed) {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move</span></div>`;
       actions = buildMoveButtons(game, entity);
-      actions += buildDashButton(entity);
+      actions += buildDashButtons(game, entity);
       actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")}</div>`;
     } else {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
@@ -245,8 +245,8 @@ function buildPlayerDataTable(game: Game): string {
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
-        .map((n) => game.entities.find((e) => e.num === n))
-        .filter((e): e is Entity => !!e)
+          .map((n) => game.entities.find((e) => e.num === n))
+          .filter((e): e is Entity => !!e)
       : game.entities;
   for (const e of ordered) {
     html += `<tr style="height:22px">`;
@@ -386,9 +386,41 @@ function buildMoveButtons(game: Game, entity: Entity): string {
   return `<div style="margin:4px 0">${tiles.join(" ")}</div>`;
 }
 
-function buildDashButton(entity: Entity): string {
-  if (entity.dashUsed) return "";
-  return `<div style="margin:2px 0">${btn(`%dash ${entity.name}`, "Dash (1.5x MP)")}</div>`;
+function buildDashButtons(game: Game, entity: Entity): string {
+  let html = `<div style="margin:6px 0;padding:3px 6px;border-left:2px solid #c60;background:rgba(204,102,0,0.08)">`;
+  html += `<span style="color:#c60;font-size:10px;font-weight:bold">MOVEMENT ACTIONS</span><br>`;
+
+  // Dash reachable tiles
+  if (!entity.dashUsed) {
+    const dashMp = Math.floor(entity.mp * (2 / 3));
+    const reachable = getReachableTiles(game, entity.pos, dashMp, entity);
+    const tiles: string[] = [];
+    for (const [key] of reachable) {
+      tiles.push(btn(`%dash ${key},${entity.name}`, key));
+    }
+    if (tiles.length > 0) {
+      html += `<span style="color:#c60;font-size:10px">Dash (1.5x MP):</span> `;
+      html += tiles.join(" ");
+      html += "<br>";
+    }
+  }
+
+  // Movement-type abilities
+  const movAbilities = entity.abilities.filter(
+    (ab) =>
+      ab.actionType === "Movement" &&
+      !entity.cooldowns[ab.name] &&
+      (!ab.maxUses || (entity.usesUsed[ab.name] ?? 0) < ab.maxUses),
+  );
+  for (const ab of movAbilities) {
+    html += buildAbilityButton(game, entity, ab);
+  }
+
+  // Pass Movement
+  html += `<div style="margin-top:4px">${btn("%passmove", "Pass Movement")}</div>`;
+
+  html += "</div>";
+  return html;
 }
 
 // -- Pre-Move Ability Buttons (Player) ----------------------------------------
