@@ -11,6 +11,11 @@ import {
   getAoETargets,
   getSplashTargets,
   isConfused,
+  needsDirection,
+  getDirectionCandidates,
+  DIRECTION_LABELS,
+  placeTerrain,
+  TERRAIN_NAMES,
 } from "./state.js";
 import { parseEffects, applyEffects } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
@@ -85,6 +90,16 @@ export type AttackPrompt =
       kind: "target";
       message: string;
       candidates: Entity[];
+    }
+  | {
+      kind: "direction";
+      message: string;
+      candidates: string[];
+    }
+  | {
+      kind: "tile";
+      message: string;
+      candidates: string[];
     };
 
 export type PromptResponse = string;
@@ -111,7 +126,7 @@ function* resolveAttackFlow(
   // result.messages.push(`/me declares ${ability.name}`);
 
   // --- Selection / Choices / Sacrifice / Pay Costs ---
-  // STUB: this is a placeholder. Work on how costs/choices are represented 
+  // STUB: this is a placeholder. Work on how costs/choices are represented
 
   if (abilityNeedsSelection(ability)) {
     const choiceId = yield {
@@ -128,38 +143,52 @@ function* resolveAttackFlow(
     }
   }
 
+  // --- Direction prompt for AoE abilities ---
+  const needsDir = needsDirection(ability);
+  let dir = user.pendingAction?.direction;
+  if (needsDir && !dir) {
+    const dirs = getDirectionCandidates();
+    dir = yield {
+      kind: "direction",
+      message: `Choose a direction for ${ability.name}`,
+      candidates: dirs,
+    };
+  }
+
   // --- Target (attack may not continue if nothing can be chosen) ---
-  const { hits: hitCount, isAoE, targets: autoTargets } = prepareTargeting(
-    game,
-    user,
-    ability,
-  );
+  const {
+    hits: hitCount,
+    isAoE,
+    targets: autoTargets,
+  } = prepareTargeting(game, user, ability);
   let targets = autoTargets;
   if (targets.length === 0) {
-  const candidates = getTargetCandidates(game, user, ability);
+    const candidates = getTargetCandidates(game, user, ability);
 
-  if (candidates.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return result;
+    if (candidates.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but no valid targets found.`,
+      );
+      return result;
+    }
+
+    const targetRef =
+      initialTarget ??
+      (yield {
+        kind: "target",
+        message: `Choose a target for ${ability.name}`,
+        candidates,
+      });
+
+    targets = findTargets(game, user, ability, targetRef);
+
+    if (targets.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but no valid targets found.`,
+      );
+      return result;
+    }
   }
-
-  const targetRef = initialTarget ?? (yield {
-    kind: "target",
-    message: `Choose a target for ${ability.name}`,
-    candidates,
-  });
-
-  targets = findTargets(game, user, ability, targetRef);
-
-  if (targets.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return result;
-  }
-}
 
   const targetNames = targets.map((t) => t.num).join(", ");
   const rollStr = ability.roll ? ` ${ability.roll}` : "";
@@ -177,7 +206,6 @@ function* resolveAttackFlow(
     if (isAttack) {
       let confusionApplied = false;
       for (let h = 0; h < hitCount; h++) {
-
         const label = hitCount > 1 ? ` (Hit ${h + 1}/${hitCount})` : "";
         const singleResult = resolveSingleTarget(
           game,
@@ -243,26 +271,34 @@ export function startAttack(
   user: Entity,
   ability: AbilityData,
   target?: string,
+  dir?: string,
 ): AttackStep {
+  if (dir && user.pendingAction) {
+    user.pendingAction.direction = dir;
+  }
   const flow = resolveAttackFlow(game, user, ability, target);
   user.pendingResolution = flow;
   return advanceAttack(user, flow, undefined as unknown as PromptResponse);
 }
 
 // %choose <optionId> -- only valid while a "selection" prompt is pending.
-export function respondToChoice(
-  user: Entity,
-  choiceId: string,
-): AttackStep {
+export function respondToChoice(user: Entity, choiceId: string): AttackStep {
   return respondToPromptOfKind(user, "selection", choiceId, "%choose");
 }
 
 // %target <ref> -- only valid while a "target" prompt is pending.
-export function respondToTarget(
-  user: Entity,
-  targetRef: string,
-): AttackStep {
+export function respondToTarget(user: Entity, targetRef: string): AttackStep {
   return respondToPromptOfKind(user, "target", targetRef, "%target");
+}
+
+// %dir <direction> -- only valid while a "direction" prompt is pending.
+export function respondToDir(user: Entity, dir: string): AttackStep {
+  return respondToPromptOfKind(user, "direction", dir, "%dir");
+}
+
+// %tile <tileRef> -- only valid while a "tile" prompt is pending.
+export function respondToTile(user: Entity, tileRef: string): AttackStep {
+  return respondToPromptOfKind(user, "tile", tileRef, "%tile");
 }
 
 function respondToPromptOfKind(
@@ -278,7 +314,13 @@ function respondToPromptOfKind(
     throw new Error(`${user.num} has no pending action awaiting a response.`);
   }
   if (user.pendingPromptKind !== expectedKind) {
-    const wants = user.pendingPromptKind === "selection" ? "%choose" : "%target";
+    const kindMap: Record<string, string> = {
+      selection: "%choose",
+      target: "%target",
+      direction: "%dir",
+      tile: "%tile",
+    };
+    const wants = kindMap[user.pendingPromptKind ?? ""] ?? "%target";
     throw new Error(
       `${user.num}'s pending action expects ${wants}, not ${commandName}.`,
     );
@@ -349,8 +391,46 @@ function getTargetCandidates(
   });
 }
 
+function getTileCandidates(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+): string[] {
+  const tiles: string[] = [];
+  const rangeStr = ability.range.toLowerCase().trim();
+  const rangeMatch = rangeStr.match(/(?:range|homing)\s*(\d+)/);
+  const range = rangeMatch ? parseInt(rangeMatch[1]) : 3;
+
+  for (let r = 0; r < game.map.length; r++) {
+    for (let c = 0; c < game.map[0].length; c++) {
+      const d = Math.abs(r - user.pos[0]) + Math.abs(c - user.pos[1]);
+      if (d === 0) continue;
+      if (d > range) continue;
+      tiles.push(posToStr(r, c));
+    }
+  }
+  return tiles;
+}
+
+function parseTileRef(ref: string): [number, number] | null {
+  const parts = ref.split(",");
+  if (parts.length === 2) {
+    const r = parseInt(parts[0]);
+    const c = parseInt(parts[1]);
+    if (!isNaN(r) && !isNaN(c)) return [r, c];
+  }
+  // Letter-number format: A1, B3, etc.
+  const match = ref.match(/^([a-zA-Z])\s*(\d+)$/);
+  if (match) {
+    const r = match[1].toUpperCase().charCodeAt(0) - 65;
+    const c = parseInt(match[2]) - 1;
+    if (r >= 0 && c >= 0) return [r, c];
+  }
+  return null;
+}
+
 // ---------------------------
-// Targeting / hit resolution 
+// Targeting / hit resolution
 // ---------------------------
 
 function prepareTargeting(
@@ -448,16 +528,78 @@ function resolveSingleTarget(
 
   const userAccBonus = getStatBonus(user, "acc");
   const targetEva = getEffectiveStat(target, "eva");
-  const { hit, roll: accRoll, crit } = rollAccuracy(
-    ability.mr,
-    targetEva,
-    userAccBonus,
-  );
+  const {
+    hit,
+    roll: accRoll,
+    crit,
+  } = rollAccuracy(ability.mr, targetEva, userAccBonus);
 
   result.messages.push(
     `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
+  // --- Hit resolves first (damage to target) ---
+  if (hit) {
+    const damageRoll = rollDice(ability.roll);
+    const userOff = offensiveStat(user, ability.damageType);
+    let baseDamage =
+      damageRoll.total + userOff - defensiveStat(target, ability.damageType);
+
+    if (crit) {
+      const critRoll = rollDice(ability.roll);
+      baseDamage += critRoll.total;
+      result.messages.push(
+        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+      );
+    }
+
+    const finalDamage = Math.max(0, baseDamage);
+    const dmgResult = dealDamage(target, finalDamage);
+    result.messages.push(
+      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    );
+
+    if (dmgResult.shieldAbsorbed > 0) {
+      result.messages.push(
+        `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+      );
+    }
+
+    const effects = parseEffects(ability.effect);
+    const effectMsgs = applyEffects(game, user, target, effects);
+    result.messages.push(...effectMsgs);
+
+    // Apply recoil damage after hit damage
+    for (const e of parseEffects(ability.effect)) {
+      if (e.type === "recoil") {
+        const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
+        dealDamage(user, recoilDmg);
+        result.messages.push(
+          `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
+        );
+      }
+    }
+
+    if (target.curhp <= 0) {
+      result.messages.push(
+        `  **${target.num} (${target.name}) has been defeated!**`,
+      );
+      removeEntity(game, target);
+      result.deaths.push(target);
+    }
+
+    // Check if recoil killed the user (after target death is recorded)
+    if (user.curhp <= 0) {
+      result.messages.push(
+        `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
+      );
+      removeEntity(game, user);
+      result.deaths.push(user);
+      return result;
+    }
+  }
+
+  // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
   if (isConfused(user) && accRoll >= 16 && !confusionAlreadyApplied) {
     const offStat = Math.max(
       getEffectiveStat(user, "atk"),
@@ -475,46 +617,7 @@ function resolveSingleTarget(
       );
       removeEntity(game, user);
       result.deaths.push(user);
-      // Bug fix: don't keep resolving a hit for an entity that just died.
-      return result;
     }
-  }
-
-  if (!hit) return result;
-
-  const damageRoll = rollDice(ability.roll);
-  const userOff = offensiveStat(user, ability.damageType); // #5: computed once, reused below
-  let baseDamage = damageRoll.total + userOff - defensiveStat(target, ability.damageType);
-
-  if (crit) {
-    const critRoll = rollDice(ability.roll);
-    baseDamage += critRoll.total;
-    result.messages.push(
-      `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
-    );
-  }
-
-  const finalDamage = Math.max(0, baseDamage);
-  const dmgResult = dealDamage(target, finalDamage);
-  result.messages.push(
-    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
-  );
-
-  if (dmgResult.shieldAbsorbed > 0) {
-    result.messages.push(
-      `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
-    );
-  }
-
-  const effects = parseEffects(ability.effect);
-  result.messages.push(...applyEffects(game, user, target, effects));
-
-  if (target.curhp <= 0) {
-    result.messages.push(
-      `  **${target.num} (${target.name}) has been defeated!**`,
-    );
-    removeEntity(game, target);
-    result.deaths.push(target);
   }
 
   return result;
@@ -634,7 +737,9 @@ function resolveNonDamaging(
   const effectMsgs = applyEffects(game, user, target, effects);
 
   if (effectMsgs.length > 0) {
-    result.messages.push(`  ${user.num} uses ${ability.name} on ${target.num}:`);
+    result.messages.push(
+      `  ${user.num} uses ${ability.name} on ${target.num}:`,
+    );
     result.messages.push(...effectMsgs);
   } else {
     result.messages.push(
@@ -704,16 +809,13 @@ function resolveSplash(
 
 // Legacy entry point for existing callers that don't handle prompts yet. TO BE REMOVED
 
-export function resolveAction(
-  game: Game,
-  user: Entity,
-): AttackStep {
+export function resolveAction(game: Game, user: Entity): AttackStep {
   const action = user.pendingAction;
 
   if (!action || action.type !== "attack") {
-    return { 
+    return {
       done: true,
-      result: newResult()
+      result: newResult(),
     };
   }
 
@@ -722,5 +824,6 @@ export function resolveAction(
     user,
     action.ability,
     action.target,
+    action.direction,
   );
 }

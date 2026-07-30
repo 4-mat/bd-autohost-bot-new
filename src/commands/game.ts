@@ -25,7 +25,13 @@ import {
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
 import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
-import { resolveAction } from "../game/resolve.js";
+import {
+  resolveAction,
+  respondToDir,
+  respondToTile,
+  startAttack,
+} from "../game/resolve.js";
+import { DIRECTION_LABELS } from "../game/state.js";
 
 export function gameCommand(
   room: Room | null,
@@ -35,7 +41,12 @@ export function gameCommand(
   val: string,
   pm = false,
 ) {
-  const game = room ? findGameForRoom(room.id) : null;
+  // PM routing: find game by entity/host name
+  let game = room ? findGameForRoom(room.id) : null;
+  if (!game && pm) {
+    game = findGameForUser(user.name);
+    if (!game) return sendPm(user.name, "No active game found.");
+  }
 
   const full = val ? `${args},${val}` : args;
 
@@ -130,6 +141,16 @@ export function gameCommand(
       handleRegp(game, user, full);
       break;
 
+    case "dir":
+      if (!game) return sendPm(user.name, "No active game.");
+      handleDirChoice(game, user, args);
+      break;
+
+    case "tile":
+      if (!game) return sendPm(user.name, "No active game.");
+      handleTileChoice(game, user, full);
+      break;
+
     default:
       sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
       break;
@@ -139,6 +160,17 @@ export function gameCommand(
 function findGameForRoom(roomid: string): Game | null {
   for (const game of games.values()) {
     if (game.room === roomid) return game;
+  }
+  return null;
+}
+
+function findGameForUser(username: string): Game | null {
+  for (const game of games.values()) {
+    if (toId(game.host) === toId(username)) return game;
+    for (const e of game.entities) {
+      if (toId(e.name) === toId(username) || toId(e.num) === toId(username))
+        return game;
+    }
   }
   return null;
 }
@@ -338,27 +370,38 @@ function handleConfirm(game: Game, user: User) {
   pushSnapshot(game);
   const step = resolveAction(game, entity);
 
-if (step.done === false) {
-  send(
-    game.room,
-    `${entity.num}: ${step.prompt.message}`,
-  );
+  if (step.done === false) {
+    send(game.room, `${entity.num}: ${step.prompt.message}`);
 
-  if (step.prompt.kind === "target") {
-    send(
-      game.room,
-      `Use %target <target>. Options: ${step.prompt.candidates.map(e => e.num).join(", ")}`
-    );
+    if (step.prompt.kind === "target") {
+      send(
+        game.room,
+        `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+      );
+    }
+
+    if (step.prompt.kind === "direction") {
+      send(
+        game.room,
+        `Use %dir <direction>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
+    }
+
+    if (step.prompt.kind === "tile") {
+      send(
+        game.room,
+        `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
+    }
+
+    return;
   }
 
-  return;
-}
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
 
-for (const msg of step.result.messages) {
-  send(game.room, msg);
-}
-
-entity.pendingAction = null;
+  entity.pendingAction = null;
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
@@ -414,18 +457,14 @@ function handleAdvanceTurn(game: Game, user: User) {
   } else if (entity.pendingAction) {
     const step = resolveAction(game, entity);
 
-  if (step.done === false) {
-    sendPm(
-      user.name,
-      step.prompt.message
-    );
-    return;
-  }
-  
-  for (const msg of step.result.messages) {
-    send(game.room, msg);
-  }
-  
+    if (step.done === false) {
+      sendPm(user.name, step.prompt.message);
+      return;
+    }
+
+    for (const msg of step.result.messages) {
+      send(game.room, msg);
+    }
 
     // Track kills
     for (const death of step.result.deaths) {
@@ -523,6 +562,60 @@ function handlePremove(game: Game, user: User) {
     send(game.room, `/me ${entity.num} viewing pre-move abilities`);
   }
   broadcastPages(game);
+}
+
+// -- Direction / Tile choice handlers -----------------------------------------
+
+function handleDirChoice(game: Game, user: User, dir: string) {
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+
+  try {
+    const step = respondToDir(entity, dir);
+    if (step.done) {
+      entity.pendingAction = null;
+      for (const msg of step.result.messages) {
+        send(game.room, msg);
+      }
+      const winner = checkGameOver(game);
+      if (game.phase === "ended") {
+        announceGameOver(game, winner);
+        return;
+      }
+    }
+    broadcastPages(game);
+  } catch (e: any) {
+    sendPm(user.name, e.message);
+  }
+}
+
+function handleTileChoice(game: Game, user: User, args: string) {
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+
+  try {
+    const step = respondToTile(entity, args);
+    if (step.done) {
+      entity.pendingAction = null;
+      for (const msg of step.result.messages) {
+        send(game.room, msg);
+      }
+      const winner = checkGameOver(game);
+      if (game.phase === "ended") {
+        announceGameOver(game, winner);
+        return;
+      }
+    }
+    broadcastPages(game);
+  } catch (e: any) {
+    sendPm(user.name, e.message);
+  }
 }
 
 // -- Display commands ----------------------------------------------------------
