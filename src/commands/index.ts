@@ -81,7 +81,7 @@ export function handleCommand(
     id === "sc" ||
     id === "sw"
   ) {
-    hostCommand(room, user, id, args, val);
+    hostCommand(room, user, id, args, val, pm);
     return;
   }
 
