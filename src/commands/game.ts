@@ -338,27 +338,24 @@ function handleConfirm(game: Game, user: User) {
   pushSnapshot(game);
   const step = resolveAction(game, entity);
 
-if (step.done === false) {
-  send(
-    game.room,
-    `${entity.num}: ${step.prompt.message}`,
-  );
+  if (step.done === false) {
+    send(game.room, `${entity.num}: ${step.prompt.message}`);
 
-  if (step.prompt.kind === "target") {
-    send(
-      game.room,
-      `Use %target <target>. Options: ${step.prompt.candidates.map(e => e.num).join(", ")}`
-    );
+    if (step.prompt.kind === "target") {
+      send(
+        game.room,
+        `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+      );
+    }
+
+    return;
   }
 
-  return;
-}
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
 
-for (const msg of step.result.messages) {
-  send(game.room, msg);
-}
-
-entity.pendingAction = null;
+  entity.pendingAction = null;
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
@@ -414,18 +411,14 @@ function handleAdvanceTurn(game: Game, user: User) {
   } else if (entity.pendingAction) {
     const step = resolveAction(game, entity);
 
-  if (step.done === false) {
-    sendPm(
-      user.name,
-      step.prompt.message
-    );
-    return;
-  }
-  
-  for (const msg of step.result.messages) {
-    send(game.room, msg);
-  }
-  
+    if (step.done === false) {
+      sendPm(user.name, step.prompt.message);
+      return;
+    }
+
+    for (const msg of step.result.messages) {
+      send(game.room, msg);
+    }
 
     // Track kills
     for (const death of step.result.deaths) {
@@ -915,4 +908,6 @@ export function broadcastPages(game: Game) {
       sendPm(entity.name, `/pminfobox ${playerHtml}`);
     }
   }
+
+  game.toasts = [];
 }
