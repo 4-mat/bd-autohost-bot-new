@@ -173,7 +173,7 @@ function handleAddPlayer(room: Room, user: User, args: string) {
   const name = parts[0];
   const className = parts[1] || "Bard";
   const weaponName = parts[2] || "Crossbow";
-  const team = parts[3] ? parseInt(parts[3]) : 0;
+  const team = parts[3] ? parseInt(parts[3]) : game.entities.length + 1;
   const level = 1;
 
   // Check if already added

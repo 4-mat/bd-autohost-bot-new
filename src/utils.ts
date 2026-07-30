@@ -70,17 +70,17 @@ export function parseArgs(args: string): string[] {
     .filter(Boolean);
 }
 
-// Map coordinates: letter = column (a-z), number = row
+// Map coordinates: letter = row (a-z), number = col
 export function parsePos(s: string): [number, number] | null {
   const match = s.trim().match(/^([a-zA-Z])\s*,?\s*(\d+)$/);
   if (!match) return null;
-  const col = match[1].toLowerCase().charCodeAt(0) - 97;
-  const row = parseInt(match[2]) - 1;
+  const row = match[1].toLowerCase().charCodeAt(0) - 97;
+  const col = parseInt(match[2]) - 1;
   return [row, col];
 }
 
 export function posToStr(row: number, col: number): string {
-  return `${String.fromCharCode(97 + col)},${row + 1}`;
+  return `${String.fromCharCode(97 + row)},${col + 1}`;
 }
 
 export function natList(arr: string[]): string {
