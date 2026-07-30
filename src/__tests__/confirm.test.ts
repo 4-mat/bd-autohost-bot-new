@@ -348,7 +348,7 @@ describe("full select-confirm flow", () => {
     const game = makeGame({ entities: [caster, target] });
     games.set(game.id, game);
 
-    gameCommand(room, alice, "use", "Punch", "P2");
+    gameCommand(room, alice, "use", "Punch @ P2", "");
     expect(caster.pendingAction).not.toBeNull();
     expect(caster.pendingAction!.ability.name).toBe("Punch");
     expect(caster.standardUsed).toBe(true);
@@ -383,14 +383,14 @@ describe("full select-confirm flow", () => {
     const game = makeGame({ entities: [caster, target] });
     games.set(game.id, game);
 
-    gameCommand(room, alice, "use", "Punch", "P2");
+    gameCommand(room, alice, "use", "Punch @ P2", "");
     expect(caster.pendingAction!.ability.name).toBe("Punch");
 
     gameCommand(room, alice, "cancel", "", "");
     expect(caster.pendingAction).toBeNull();
     expect(caster.standardUsed).toBe(false);
 
-    gameCommand(room, alice, "use", "Kick", "P2");
+    gameCommand(room, alice, "use", "Kick @ P2", "");
     expect(caster.pendingAction!.ability.name).toBe("Kick");
 
     const hpBefore = target.curhp;

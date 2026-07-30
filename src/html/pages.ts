@@ -5,6 +5,7 @@ import {
   hasLineOfSight,
   inRange,
   dist,
+  DIRECTION_LABELS,
   type Game,
   type Entity,
   type AbilityData,
@@ -101,6 +102,22 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
       actions = buildAbilityButtons(game, entity);
     }
+    // Direction prompt buttons
+    if (entity.pendingPromptKind === "direction") {
+      const dirs = ["up", "down", "left", "right"];
+      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #f80;background:rgba(255,136,0,0.10)"><b style="color:#f80">CHOOSE DIRECTION</b><br>`;
+      for (const d of dirs) {
+        const label = DIRECTION_LABELS[d] ?? d;
+        actions += btn(`%dir ${d}`, label, "font-size:12px;padding:4px 12px");
+      }
+      actions += `</div>`;
+    }
+
+    // Tile prompt buttons
+    if (entity.pendingPromptKind === "tile") {
+      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #80f;background:rgba(136,0,255,0.10)"><b style="color:#80f">CHOOSE TILE</b><br><span style="color:#888;font-size:10px">Use %tile &lt;ref&gt; to pick a tile</span></div>`;
+    }
+
     if (entity.pendingAction) {
       const pa = entity.pendingAction;
       const targetStr = pa.target ? ` targeting ${pa.target}` : "";
@@ -245,8 +262,8 @@ function buildPlayerDataTable(game: Game): string {
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
-        .map((n) => game.entities.find((e) => e.num === n))
-        .filter((e): e is Entity => !!e)
+          .map((n) => game.entities.find((e) => e.num === n))
+          .filter((e): e is Entity => !!e)
       : game.entities;
   for (const e of ordered) {
     html += `<tr style="height:22px">`;
@@ -546,14 +563,13 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    if (ab.level === "EX1" || ab.level === "EX2") {
-      if (!entity.isJuggernaut) return false;
-    } else if (ab.level > 0) {
+    if (!entity.isJuggernaut && (ab.level === "EX1" || ab.level === "EX2"))
+      return false;
+
+    if (typeof ab.level === "number" && ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
 
     if (entity.cooldowns[ab.name]) return false;
 
@@ -585,14 +601,13 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    if (ab.level === "EX1" || ab.level === "EX2") {
-      if (!entity.isJuggernaut) return false;
-    } else if (ab.level > 0) {
+    if (!entity.isJuggernaut && (ab.level === "EX1" || ab.level === "EX2"))
+      return false;
+
+    if (typeof ab.level === "number" && ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
 
     if (entity.cooldowns[ab.name]) return false;
 
