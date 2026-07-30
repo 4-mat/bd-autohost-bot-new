@@ -23,13 +23,26 @@ function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
   return a.level === "EX1" || a.level === "EX2" ? exOk : a.level <= lvl;
 }
 
+function findGameForHost(username: string): Game | null {
+  for (const game of games.values()) {
+    if (toId(game.host) === toId(username)) return game;
+  }
+  return null;
+}
+
 export function hostCommand(
   room: Room | null,
   user: User,
   cmd: string,
   args: string,
   val: string,
+  pm = false,
 ) {
+  if (pm && (cmd === "host" || cmd === "dehost")) {
+    sendPm(user.name, `${cmd} must be used in a room.`);
+    return;
+  }
+
   if (!room) {
     sendPm(user.name, "This command must be used in a room.");
     return;
