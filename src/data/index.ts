@@ -4193,6 +4193,13 @@ function loadBasicWeapons() {
         range: "Range 4\n(Splash 1)",
         effect:
           "Spend 3 Mana. Choose Bleed, Burn, Curse, or Poison. inflict 3 [status]/1. Spend +1 Mana: /2.",
+        cost: { type: "Resource", resource: "Mana", amount: 3 },
+        choices: [
+          { id: "bleed", label: "Bleed" },
+          { id: "burn", label: "Burn" },
+          { id: "curse", label: "Curse" },
+          { id: "poison", label: "Poison" },
+        ],
       },
       {
         name: "Spellweave",
