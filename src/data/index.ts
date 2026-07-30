@@ -1,3 +1,15 @@
+export interface AbilityCost {
+  type: "HP" | "MP" | "Resource";
+  amount: number;
+  resource?: string;
+  prompt?: boolean;
+}
+
+export interface AbilityChoice {
+  id: string;
+  label: string;
+}
+
 export interface AbilityData {
   name: string;
   level: number | "EX1" | "EX2";
@@ -20,6 +32,8 @@ export interface AbilityData {
   range: string;
   effect: string;
   maxUses?: number;
+  cost?: AbilityCost;
+  choices?: AbilityChoice[];
 }
 
 export interface ClassData {
@@ -150,6 +164,11 @@ function loadBasicClasses() {
         range: "",
         effect:
           "Choose: +3 ATK/MAG, +1 ACC/CR, or +4 DEF. Until next turn, Rising Hope becomes Star 2 and grants all selected Fantasia bonuses. Cannot choose same bonus more than once.",
+        choices: [
+          { id: "atk_mag", label: "+3 ATK/MAG" },
+          { id: "acc_cr", label: "+1 ACC/CR" },
+          { id: "def", label: "+4 DEF" },
+        ],
       },
       {
         name: "Staccato",
@@ -493,6 +512,7 @@ function loadBasicClasses() {
         targetGroup: "Self or Ally",
         range: "Melee",
         effect: "Spend 2+ Qi: gain +1d4+1 DEF per Qi spent./1",
+        cost: { type: "Resource", resource: "Qi", amount: 2, prompt: true },
       },
       {
         name: "Conversion",

@@ -2,6 +2,7 @@ import {
   type Game,
   type Entity,
   type AbilityData,
+  type AbilityCost,
   rollAccuracy,
   dealDamage,
   removeEntity,
@@ -110,9 +111,17 @@ function* resolveAttackFlow(
   // --- Declare Attack ---
   // result.messages.push(`/me declares ${ability.name}`);
 
-  // --- Selection / Choices / Sacrifice / Pay Costs ---
-  // STUB: this is a placeholder. Work on how costs/choices are represented
+  // --- Auto-deduct non-prompted costs ---
+  if (ability.cost && !ability.cost.prompt) {
+    if (!autoDeductCost(user, ability.cost)) {
+      result.messages.push(
+        `${user.num} could not pay the cost for ${ability.name}.`,
+      );
+      return result;
+    }
+  }
 
+  // --- Selection / Choices / Sacrifice / Pay Costs ---
   if (abilityNeedsSelection(ability)) {
     const choiceId = yield {
       kind: "selection",
@@ -302,70 +311,44 @@ function advanceAttack(
 }
 
 // ---------------------------------------------------------------------------
-// Cost / choice system — parses "Spend X [Resource]" and "Choose: A, B, or C"
-// from the ability's effect text and wires them into the selection pipeline.
+// Cost / choice system — reads structured AbilityData.cost and .choices
+// instead of parsing effect text.
 // ---------------------------------------------------------------------------
 
-function parseResourceCost(
-  effect: string,
-): { resource: string; amount: number } | null {
-  const spendMatch = effect.match(
-    /\bspend\s+(\d+)\s+(hp|mp|qi|mana|rage|resolve|focus|coin|cp|acc)\b/i,
-  );
-  if (spendMatch) {
-    const resource = spendMatch[2].toLowerCase();
-    const amount = parseInt(spendMatch[1]);
-    if (resource === "hp") return { resource: "HP", amount };
-    if (resource === "mp") return { resource: "MP", amount };
-    return {
-      resource: resource.charAt(0).toUpperCase() + resource.slice(1),
-      amount,
-    };
-  }
-
-  const sacrificeMatch = effect.match(/\bsacrifice\s+(\d+)\s+hp\b/i);
-  if (sacrificeMatch) {
-    return { resource: "HP", amount: parseInt(sacrificeMatch[1]) };
-  }
-
-  return null;
-}
-
-function parseChoices(effect: string): SelectionOption[] {
-  const chooseMatch = effect.match(/[Cc]hoose:\s*(.+?)(?:\.|$)/);
-  if (!chooseMatch) return [];
-
-  return chooseMatch[1]
-    .split(/,|\bor\b/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((opt, i) => ({
-      id: `choice_${i}`,
-      label: opt,
-    }));
-}
-
 function abilityNeedsSelection(ability: AbilityData): boolean {
-  if (parseResourceCost(ability.effect)) return true;
-  if (parseChoices(ability.effect).length > 0) return true;
-  return false;
+  return !!(ability.choices?.length || ability.cost?.prompt);
 }
 
 function buildSelectionOptions(ability: AbilityData): SelectionOption[] {
-  const choices = parseChoices(ability.effect);
-  const cost = parseResourceCost(ability.effect);
-
   const opts: SelectionOption[] = [];
-  if (cost) {
-    opts.push({
-      id: "pay_cost",
-      label: `Pay ${cost.amount} ${cost.resource}`,
-    });
+  if (ability.choices) {
+    opts.push(...ability.choices);
   }
-  if (choices.length > 0) {
-    opts.push(...choices);
+  if (ability.cost?.prompt) {
+    const label = `Pay ${ability.cost.amount} ${ability.cost.type === "Resource" ? (ability.cost.resource ?? "") : ability.cost.type}`;
+    // avoid duplicating if the only choice is the same as the cost
+    if (!opts.some((o) => o.label === label)) {
+      opts.push({ id: "pay_cost", label });
+    }
   }
   return opts.length > 0 ? opts : [{ id: "confirm", label: "Confirm" }];
+}
+
+function autoDeductCost(user: Entity, cost: AbilityCost): boolean {
+  if (cost.type === "HP") {
+    if (user.curhp <= cost.amount) return false;
+    user.curhp -= cost.amount;
+    return true;
+  }
+  if (cost.type === "MP") {
+    if (user.mp < cost.amount) return false;
+    user.mp -= cost.amount;
+    return true;
+  }
+  const pool = user.resources[cost.resource ?? ""] ?? 0;
+  if (pool < cost.amount) return false;
+  user.resources[cost.resource ?? ""] = pool - cost.amount;
+  return true;
 }
 
 function applySelection(
@@ -373,25 +356,9 @@ function applySelection(
   ability: AbilityData,
   choiceId: string,
 ): boolean {
-  const cost = parseResourceCost(ability.effect);
-  if (!cost) return true;
-
-  if (cost.resource === "HP") {
-    if (user.curhp <= cost.amount) return false;
-    user.curhp -= cost.amount;
-    return true;
+  if (choiceId === "pay_cost" && ability.cost) {
+    return autoDeductCost(user, ability.cost);
   }
-
-  if (cost.resource === "MP") {
-    if (user.mp < cost.amount) return false;
-    user.mp -= cost.amount;
-    return true;
-  }
-
-  // Named resource pools (Qi, Mana, Rage, etc.)
-  const pool = user.resources[cost.resource] ?? 0;
-  if (pool < cost.amount) return false;
-  user.resources[cost.resource] = pool - cost.amount;
   return true;
 }
 
