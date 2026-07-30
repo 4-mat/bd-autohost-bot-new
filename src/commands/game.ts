@@ -94,6 +94,11 @@ export function gameCommand(
       handlePremove(game, user);
       break;
 
+    case "passmove":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handlePassMove(game, user);
+      break;
+
     case "pl":
       if (!game) return sendPm(user.name, "No active game in this room.");
       sendPm(user.name, buildPlayerList(game));
@@ -177,7 +182,7 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   if (isRooted(entity)) {
     return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
   }
-  if (entity.movementUsed && cmd === "move") {
+  if (entity.movementUsed) {
     return sendPm(user.name, `${entity.num} already moved this turn.`);
   }
 
@@ -185,7 +190,8 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   if (!pos)
     return sendPm(user.name, "Invalid position. Use: %move e4[,entity]");
 
-  const reachable = getReachableTiles(game, entity.pos, entity.mp, entity);
+  const mpBudget = cmd === "dash" ? Math.floor(entity.mp * (2 / 3)) : entity.mp;
+  const reachable = getReachableTiles(game, entity.pos, mpBudget, entity);
   const key = posToStr(pos[0], pos[1]);
 
   if (!reachable.has(key)) {
@@ -338,27 +344,24 @@ function handleConfirm(game: Game, user: User) {
   pushSnapshot(game);
   const step = resolveAction(game, entity);
 
-if (step.done === false) {
-  send(
-    game.room,
-    `${entity.num}: ${step.prompt.message}`,
-  );
+  if (step.done === false) {
+    send(game.room, `${entity.num}: ${step.prompt.message}`);
 
-  if (step.prompt.kind === "target") {
-    send(
-      game.room,
-      `Use %target <target>. Options: ${step.prompt.candidates.map(e => e.num).join(", ")}`
-    );
+    if (step.prompt.kind === "target") {
+      send(
+        game.room,
+        `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+      );
+    }
+
+    return;
   }
 
-  return;
-}
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
 
-for (const msg of step.result.messages) {
-  send(game.room, msg);
-}
-
-entity.pendingAction = null;
+  entity.pendingAction = null;
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
@@ -414,18 +417,14 @@ function handleAdvanceTurn(game: Game, user: User) {
   } else if (entity.pendingAction) {
     const step = resolveAction(game, entity);
 
-  if (step.done === false) {
-    sendPm(
-      user.name,
-      step.prompt.message
-    );
-    return;
-  }
-  
-  for (const msg of step.result.messages) {
-    send(game.room, msg);
-  }
-  
+    if (step.done === false) {
+      sendPm(user.name, step.prompt.message);
+      return;
+    }
+
+    for (const msg of step.result.messages) {
+      send(game.room, msg);
+    }
 
     // Track kills
     for (const death of step.result.deaths) {
@@ -522,6 +521,24 @@ function handlePremove(game: Game, user: User) {
     premoveSet.add(entity.num);
     send(game.room, `/me ${entity.num} viewing pre-move abilities`);
   }
+  broadcastPages(game);
+}
+
+function handlePassMove(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, "You already moved this turn.");
+  }
+
+  pushSnapshot(game);
+  entity.movementUsed = true;
+  send(game.room, `/me ${entity.num} passes movement.`);
+  premoveSet.delete(entity.num);
   broadcastPages(game);
 }
 

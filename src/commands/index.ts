@@ -108,6 +108,7 @@ export function handleCommand(
     id === "checkrange" ||
     id === "cr" ||
     id === "premove" ||
+    id === "passmove" ||
     id === "status" ||
     id === "regp"
   ) {
