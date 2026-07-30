@@ -109,6 +109,8 @@ function makeGame(
     started: true,
     kills: {},
     winner: null,
+    chatLog: [],
+    toasts: [],
   };
 }
 

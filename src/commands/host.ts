@@ -125,6 +125,8 @@ function handleHost(room: Room, user: User) {
     started: false,
     kills: {},
     winner: null,
+    chatLog: [],
+    toasts: [],
   };
 
   games.set(id, game);
