@@ -241,6 +241,7 @@ export function handleKyubsInfo(roomid: string, html: string) {
         buffs: [],
         cooldowns: {},
         usesUsed: {},
+        resources: {},
         pendingAction: null,
         dashUsed: false,
         standardUsed: false,
