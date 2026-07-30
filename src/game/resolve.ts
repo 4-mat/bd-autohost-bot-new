@@ -301,16 +301,71 @@ function advanceAttack(
   return { done: false, prompt: step.value };
 }
 
-// TODO: implement these once we know how costs/choices will be represented in AbilityData.
+// ---------------------------------------------------------------------------
+// Cost / choice system — parses "Spend X [Resource]" and "Choose: A, B, or C"
+// from the ability's effect text and wires them into the selection pipeline.
+// ---------------------------------------------------------------------------
+
+function parseResourceCost(
+  effect: string,
+): { resource: string; amount: number } | null {
+  const spendMatch = effect.match(
+    /\bspend\s+(\d+)\s+(hp|mp|qi|mana|rage|resolve|focus|coin|cp|acc)\b/i,
+  );
+  if (spendMatch) {
+    const resource = spendMatch[2].toLowerCase();
+    const amount = parseInt(spendMatch[1]);
+    if (resource === "hp") return { resource: "HP", amount };
+    if (resource === "mp") return { resource: "MP", amount };
+    return {
+      resource: resource.charAt(0).toUpperCase() + resource.slice(1),
+      amount,
+    };
+  }
+
+  const sacrificeMatch = effect.match(/\bsacrifice\s+(\d+)\s+hp\b/i);
+  if (sacrificeMatch) {
+    return { resource: "HP", amount: parseInt(sacrificeMatch[1]) };
+  }
+
+  return null;
+}
+
+function parseChoices(effect: string): SelectionOption[] {
+  const chooseMatch = effect.match(/[Cc]hoose:\s*(.+?)(?:\.|$)/);
+  if (!chooseMatch) return [];
+
+  return chooseMatch[1]
+    .split(/,|\bor\b/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((opt, i) => ({
+      id: `choice_${i}`,
+      label: opt,
+    }));
+}
 
 function abilityNeedsSelection(ability: AbilityData): boolean {
-  // TODO: e.g. `return !!ability.cost || !!ability.choices;`
+  if (parseResourceCost(ability.effect)) return true;
+  if (parseChoices(ability.effect).length > 0) return true;
   return false;
 }
 
 function buildSelectionOptions(ability: AbilityData): SelectionOption[] {
-  // TODO: map ability.choices (or however they're stored) into buttons.
-  return [];
+  const choices = parseChoices(ability.effect);
+  const cost = parseResourceCost(ability.effect);
+
+  const opts: SelectionOption[] = [];
+  if (cost) {
+    opts.push({
+      id: "pay_cost",
+      label: `Pay ${cost.amount} ${cost.resource}`,
+    });
+  }
+  if (choices.length > 0) {
+    opts.push(...choices);
+  }
+  return opts.length > 0 ? opts : [{ id: "confirm", label: "Confirm" }];
 }
 
 function applySelection(
@@ -318,7 +373,25 @@ function applySelection(
   ability: AbilityData,
   choiceId: string,
 ): boolean {
-  // TODO: deduct HP/MP/resources for the chosen cost, return false if the user can't actually pay it.
+  const cost = parseResourceCost(ability.effect);
+  if (!cost) return true;
+
+  if (cost.resource === "HP") {
+    if (user.curhp <= cost.amount) return false;
+    user.curhp -= cost.amount;
+    return true;
+  }
+
+  if (cost.resource === "MP") {
+    if (user.mp < cost.amount) return false;
+    user.mp -= cost.amount;
+    return true;
+  }
+
+  // Named resource pools (Qi, Mana, Rage, etc.)
+  const pool = user.resources[cost.resource] ?? 0;
+  if (pool < cost.amount) return false;
+  user.resources[cost.resource] = pool - cost.amount;
   return true;
 }
 

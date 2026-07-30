@@ -133,6 +133,7 @@ export interface Entity {
   standardUsed: boolean;
   movementUsed: boolean;
   swiftUsed: boolean;
+  resources: Record<string, number>;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
 }

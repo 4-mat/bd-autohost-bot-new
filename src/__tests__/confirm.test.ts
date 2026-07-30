@@ -38,6 +38,7 @@ function makeEntity(
     buffs: [],
     cooldowns: {},
     usesUsed: {},
+    resources: {},
     pendingAction: null,
     dashUsed: false,
     standardUsed: false,
