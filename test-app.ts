@@ -136,10 +136,8 @@ setWs({
       for (const [ws, session] of sessions) {
         if (
           session.authenticated &&
-          (
-            session.tabs.includes("spectator") ||
-            session.tabs.includes("player")
-          ) &&
+          (session.tabs.includes("spectator") ||
+            session.tabs.includes("player")) &&
           toId(session.username) !== hostId &&
           ws.readyState === WebSocket.OPEN
         ) {
@@ -175,10 +173,7 @@ function escHtml(s: string): string {
 function stripControls(html: string): string {
   return html
     .replace(/<button[^>]*>[\s\S]*?<\/button>/gi, "")
-    .replace(
-      /<[^>]*>\s*Controls\s*<\/[^>]*>/gi,
-      ""
-    );
+    .replace(/<[^>]*>\s*Controls\s*<\/[^>]*>/gi, "");
 }
 
 function findPlayerSlot(name: string): string | null {
@@ -269,10 +264,10 @@ wss.on("connection", (ws) => {
   browserClients.add(ws);
 
   const session: Session = {
-  username: "",
-  authenticated: false,
-  tabs: [],
-  spectating: false,
+    username: "",
+    authenticated: false,
+    tabs: [],
+    spectating: false,
   };
   sessions.set(ws, session);
 
@@ -334,8 +329,8 @@ wss.on("connection", (ws) => {
         if (session.tabs.includes("spectator")) {
           const savedSpec = userGui.get(toId(username));
           const specHtml =
-  savedSpec?.spectator ||
-  `
+            savedSpec?.spectator ||
+            `
 <div style="color:#888;padding:40px;text-align:center">
   No GUI data yet.<br><br>
   <span style="color:#00aaff">Quick start:</span><br>
@@ -453,7 +448,7 @@ wss.on("connection", (ws) => {
         const val = commaIdx >= 0 ? rest.slice(commaIdx + 1).trim() : "";
         const room = rooms.get("battledome")!;
         const user = users.get(toId(session.username))!;
-        
+
         // WARNING: This is a temporary hack to allow spectators to view the GUI. HARDCODED COMMAND.
         if (cmd === "spectate") {
           session.spectating = true;
@@ -461,16 +456,16 @@ wss.on("connection", (ws) => {
           if (!session.tabs.includes("spectator")) {
             session.tabs.push("spectator");
           }
-        
+
           ws.send(
             JSON.stringify({
               type: "tabs",
               tabs: session.tabs,
             }),
           );
-        
+
           sendSpectatorGui(session.username);
-        
+
           return;
         }
         handleCommand(room, user, cmd, args, val);
@@ -544,6 +539,24 @@ const HTML_PAGE = `<!DOCTYPE html>
   .msg-chat .name { color: #ffcc00; font-weight: bold; }
   .msg-pm { color: #cccc00; }
   .msg-action { color: #00cc00; }
+  #mobile-tabs { display:none; gap:4px; }
+  .mtab { display:none; padding:6px 18px; background:#0f3460; border:1px solid #333; border-radius:4px; cursor:pointer; font-size:12px; color:#8888aa; font-family:inherit; }
+  .mtab.on { background:#00aaff; color:#fff; border-color:#00aaff; }
+  @media (max-width:600px) {
+    #header { padding:8px 12px; font-size:14px; }
+    #header .title { font-size:16px; }
+    #mobile-tabs { display:flex; }
+    .mtab { display:block; font-size:16px; padding:8px 24px; }
+    #chat-panel, #resize-handle { display:none; }
+    #container.mobile-chat #chat-panel { display:flex; width:100% !important; }
+    #container.mobile-chat #gui-panel { display:none; }
+    #container.mobile-game #gui-panel { flex:1; }
+    #container.mobile-game #chat-panel { display:none; }
+    #chat-messages { font-size:16px !important; }
+    #chat-input { font-size:16px !important; padding:8px !important; }
+    #send-btn { font-size:16px !important; padding:8px 20px !important; }
+    .gui-tab { font-size:13px !important; padding:4px 16px !important; }
+  }
 </style>
 </head>
 <body>
@@ -553,6 +566,10 @@ const HTML_PAGE = `<!DOCTYPE html>
   <span class="room">#battledome</span>
   <span style="color:#333">|</span>
   <span style="color:#8888aa" id="current-user">HostUser</span>
+  <div id="mobile-tabs">
+    <button class="mtab" data-view="game">Game</button>
+    <button class="mtab" data-view="chat">Chat</button>
+  </div>
   <span style="flex:1"></span>
   <span style="color:#8888aa;font-size:10px" id="status">connecting...</span>
 </div>
@@ -594,6 +611,28 @@ const userEl = document.getElementById('current-user');
 let currentNick = 'HostUser';
 let guiPages = {};
 let activeTab = "";
+let mobileView = 'game';
+const container = document.getElementById('container');
+
+function isMobile() { return window.innerWidth <= 600; }
+
+function setView(v) {
+  mobileView = v;
+  if (!isMobile()) return;
+  container.className = 'mobile-' + v;
+  document.querySelectorAll('.mtab').forEach(b => {
+    b.classList.toggle('on', b.dataset.view === v);
+  });
+}
+
+document.querySelectorAll('.mtab').forEach(b => {
+  b.addEventListener('click', () => setView(b.dataset.view));
+});
+
+window.addEventListener('resize', () => {
+  if (isMobile()) setView(mobileView);
+  else container.className = '';
+});
 
 function addLine(type, raw) {
   const div = document.createElement('div');
