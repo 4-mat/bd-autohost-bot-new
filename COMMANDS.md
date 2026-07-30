@@ -70,14 +70,14 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 
 ### Player Commands
 
-| Command                                 | Description                                   |
-| --------------------------------------- | --------------------------------------------- |
-| `%move [pos][,player]`                  | Move to a tile. Host can specify player.      |
-| `%dash [,player]`                       | Dash (1.5x MP). Host can specify player.      |
+| Command                              | Description                                   |
+| ------------------------------------ | --------------------------------------------- |
+| `%move [pos][,player]`               | Move to a tile. Host can specify player.      |
+| `%dash [,player]`                    | Dash (1.5x MP). Host can specify player.      |
 | `%use [ability] @ [target][,player]` | Use an ability. Host can specify player.      |
-| `%endturn`                              | End current turn. Host bypass available.      |
-| `%next`                                 | Resolve current turn and advance (host only). |
-| `%back`                                 | Undo last action.                             |
+| `%endturn`                           | End current turn. Host bypass available.      |
+| `%next`                              | Resolve current turn and advance (host only). |
+| `%back`                              | Undo last action.                             |
 
 ### Display Commands
 
@@ -124,3 +124,5 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%loot [player]`           | Roll loot for a player. |
 | `%xp [player], [amount]`   | Give XP to a player.    |
 | `%gold [player], [amount]` | Give gold to a player.  |
+
+> **Note**: The Character Commands and Loot/Progression Commands sections above are stub routes in `src/commands/player.ts` — they will **not** be implemented. They exist as routing placeholders only.

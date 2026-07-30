@@ -111,7 +111,7 @@ function* resolveAttackFlow(
   // result.messages.push(`/me declares ${ability.name}`);
 
   // --- Selection / Choices / Sacrifice / Pay Costs ---
-  // STUB: this is a placeholder. Work on how costs/choices are represented 
+  // STUB: this is a placeholder. Work on how costs/choices are represented
 
   if (abilityNeedsSelection(ability)) {
     const choiceId = yield {
@@ -129,37 +129,39 @@ function* resolveAttackFlow(
   }
 
   // --- Target (attack may not continue if nothing can be chosen) ---
-  const { hits: hitCount, isAoE, targets: autoTargets } = prepareTargeting(
-    game,
-    user,
-    ability,
-  );
+  const {
+    hits: hitCount,
+    isAoE,
+    targets: autoTargets,
+  } = prepareTargeting(game, user, ability);
   let targets = autoTargets;
   if (targets.length === 0) {
-  const candidates = getTargetCandidates(game, user, ability);
+    const candidates = getTargetCandidates(game, user, ability);
 
-  if (candidates.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return result;
+    if (candidates.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but no valid targets found.`,
+      );
+      return result;
+    }
+
+    const targetRef =
+      initialTarget ??
+      (yield {
+        kind: "target",
+        message: `Choose a target for ${ability.name}`,
+        candidates,
+      });
+
+    targets = findTargets(game, user, ability, targetRef);
+
+    if (targets.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but no valid targets found.`,
+      );
+      return result;
+    }
   }
-
-  const targetRef = initialTarget ?? (yield {
-    kind: "target",
-    message: `Choose a target for ${ability.name}`,
-    candidates,
-  });
-
-  targets = findTargets(game, user, ability, targetRef);
-
-  if (targets.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return result;
-  }
-}
 
   const targetNames = targets.map((t) => t.num).join(", ");
   const rollStr = ability.roll ? ` ${ability.roll}` : "";
@@ -177,7 +179,6 @@ function* resolveAttackFlow(
     if (isAttack) {
       let confusionApplied = false;
       for (let h = 0; h < hitCount; h++) {
-
         const label = hitCount > 1 ? ` (Hit ${h + 1}/${hitCount})` : "";
         const singleResult = resolveSingleTarget(
           game,
@@ -250,18 +251,12 @@ export function startAttack(
 }
 
 // %choose <optionId> -- only valid while a "selection" prompt is pending.
-export function respondToChoice(
-  user: Entity,
-  choiceId: string,
-): AttackStep {
+export function respondToChoice(user: Entity, choiceId: string): AttackStep {
   return respondToPromptOfKind(user, "selection", choiceId, "%choose");
 }
 
 // %target <ref> -- only valid while a "target" prompt is pending.
-export function respondToTarget(
-  user: Entity,
-  targetRef: string,
-): AttackStep {
+export function respondToTarget(user: Entity, targetRef: string): AttackStep {
   return respondToPromptOfKind(user, "target", targetRef, "%target");
 }
 
@@ -278,7 +273,8 @@ function respondToPromptOfKind(
     throw new Error(`${user.num} has no pending action awaiting a response.`);
   }
   if (user.pendingPromptKind !== expectedKind) {
-    const wants = user.pendingPromptKind === "selection" ? "%choose" : "%target";
+    const wants =
+      user.pendingPromptKind === "selection" ? "%choose" : "%target";
     throw new Error(
       `${user.num}'s pending action expects ${wants}, not ${commandName}.`,
     );
@@ -305,16 +301,71 @@ function advanceAttack(
   return { done: false, prompt: step.value };
 }
 
-// TODO: implement these once we know how costs/choices will be represented in AbilityData.
+// ---------------------------------------------------------------------------
+// Cost / choice system — parses "Spend X [Resource]" and "Choose: A, B, or C"
+// from the ability's effect text and wires them into the selection pipeline.
+// ---------------------------------------------------------------------------
+
+function parseResourceCost(
+  effect: string,
+): { resource: string; amount: number } | null {
+  const spendMatch = effect.match(
+    /\bspend\s+(\d+)\s+(hp|mp|qi|mana|rage|resolve|focus|coin|cp|acc)\b/i,
+  );
+  if (spendMatch) {
+    const resource = spendMatch[2].toLowerCase();
+    const amount = parseInt(spendMatch[1]);
+    if (resource === "hp") return { resource: "HP", amount };
+    if (resource === "mp") return { resource: "MP", amount };
+    return {
+      resource: resource.charAt(0).toUpperCase() + resource.slice(1),
+      amount,
+    };
+  }
+
+  const sacrificeMatch = effect.match(/\bsacrifice\s+(\d+)\s+hp\b/i);
+  if (sacrificeMatch) {
+    return { resource: "HP", amount: parseInt(sacrificeMatch[1]) };
+  }
+
+  return null;
+}
+
+function parseChoices(effect: string): SelectionOption[] {
+  const chooseMatch = effect.match(/[Cc]hoose:\s*(.+?)(?:\.|$)/);
+  if (!chooseMatch) return [];
+
+  return chooseMatch[1]
+    .split(/,|\bor\b/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((opt, i) => ({
+      id: `choice_${i}`,
+      label: opt,
+    }));
+}
 
 function abilityNeedsSelection(ability: AbilityData): boolean {
-  // TODO: e.g. `return !!ability.cost || !!ability.choices;`
+  if (parseResourceCost(ability.effect)) return true;
+  if (parseChoices(ability.effect).length > 0) return true;
   return false;
 }
 
 function buildSelectionOptions(ability: AbilityData): SelectionOption[] {
-  // TODO: map ability.choices (or however they're stored) into buttons.
-  return [];
+  const choices = parseChoices(ability.effect);
+  const cost = parseResourceCost(ability.effect);
+
+  const opts: SelectionOption[] = [];
+  if (cost) {
+    opts.push({
+      id: "pay_cost",
+      label: `Pay ${cost.amount} ${cost.resource}`,
+    });
+  }
+  if (choices.length > 0) {
+    opts.push(...choices);
+  }
+  return opts.length > 0 ? opts : [{ id: "confirm", label: "Confirm" }];
 }
 
 function applySelection(
@@ -322,7 +373,25 @@ function applySelection(
   ability: AbilityData,
   choiceId: string,
 ): boolean {
-  // TODO: deduct HP/MP/resources for the chosen cost, return false if the user can't actually pay it.
+  const cost = parseResourceCost(ability.effect);
+  if (!cost) return true;
+
+  if (cost.resource === "HP") {
+    if (user.curhp <= cost.amount) return false;
+    user.curhp -= cost.amount;
+    return true;
+  }
+
+  if (cost.resource === "MP") {
+    if (user.mp < cost.amount) return false;
+    user.mp -= cost.amount;
+    return true;
+  }
+
+  // Named resource pools (Qi, Mana, Rage, etc.)
+  const pool = user.resources[cost.resource] ?? 0;
+  if (pool < cost.amount) return false;
+  user.resources[cost.resource] = pool - cost.amount;
   return true;
 }
 
@@ -350,7 +419,7 @@ function getTargetCandidates(
 }
 
 // ---------------------------
-// Targeting / hit resolution 
+// Targeting / hit resolution
 // ---------------------------
 
 function prepareTargeting(
@@ -448,11 +517,11 @@ function resolveSingleTarget(
 
   const userAccBonus = getStatBonus(user, "acc");
   const targetEva = getEffectiveStat(target, "eva");
-  const { hit, roll: accRoll, crit } = rollAccuracy(
-    ability.mr,
-    targetEva,
-    userAccBonus,
-  );
+  const {
+    hit,
+    roll: accRoll,
+    crit,
+  } = rollAccuracy(ability.mr, targetEva, userAccBonus);
 
   result.messages.push(
     `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
@@ -484,7 +553,8 @@ function resolveSingleTarget(
 
   const damageRoll = rollDice(ability.roll);
   const userOff = offensiveStat(user, ability.damageType); // #5: computed once, reused below
-  let baseDamage = damageRoll.total + userOff - defensiveStat(target, ability.damageType);
+  let baseDamage =
+    damageRoll.total + userOff - defensiveStat(target, ability.damageType);
 
   if (crit) {
     const critRoll = rollDice(ability.roll);
@@ -634,7 +704,9 @@ function resolveNonDamaging(
   const effectMsgs = applyEffects(game, user, target, effects);
 
   if (effectMsgs.length > 0) {
-    result.messages.push(`  ${user.num} uses ${ability.name} on ${target.num}:`);
+    result.messages.push(
+      `  ${user.num} uses ${ability.name} on ${target.num}:`,
+    );
     result.messages.push(...effectMsgs);
   } else {
     result.messages.push(
@@ -704,23 +776,15 @@ function resolveSplash(
 
 // Legacy entry point for existing callers that don't handle prompts yet. TO BE REMOVED
 
-export function resolveAction(
-  game: Game,
-  user: Entity,
-): AttackStep {
+export function resolveAction(game: Game, user: Entity): AttackStep {
   const action = user.pendingAction;
 
   if (!action || action.type !== "attack") {
-    return { 
+    return {
       done: true,
-      result: newResult()
+      result: newResult(),
     };
   }
 
-  return startAttack(
-    game,
-    user,
-    action.ability,
-    action.target,
-  );
+  return startAttack(game, user, action.ability, action.target);
 }
