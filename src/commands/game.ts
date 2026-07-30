@@ -275,33 +275,38 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   }
 
   // Action type enforcement
-  if (ability.actionType === "Standard" && entity.standardUsed) {
-    return sendPm(user.name, "You already used your Standard action.");
+  if (entity.standardUsed) {
+    return sendPm(
+      user.name,
+      "You already used a Standard action. End your turn first.",
+    );
   }
   if (ability.actionType === "Swift" && entity.swiftUsed) {
     return sendPm(user.name, "You already used your Swift action this turn.");
   }
-  if (
-    ability.actionType === "Full" &&
-    (entity.standardUsed || entity.movementUsed)
-  ) {
+  if (ability.actionType === "Full" && entity.movementUsed) {
     return sendPm(
       user.name,
       "Full action requires both Standard and Movement unused.",
     );
   }
-  if (ability.actionType === "Free") {
-    // Free actions always allowed (no slot consumed)
-  } else if (
-    ability.actionType === "Trigger" ||
-    ability.actionType === "Reaction"
-  ) {
+  if (ability.actionType === "Trigger" || ability.actionType === "Reaction") {
     return sendPm(
       user.name,
       `${ability.actionType} abilities resolve automatically, not manually.`,
     );
-  } else if (ability.actionType === "Passive") {
+  }
+  if (ability.actionType === "Passive") {
     return sendPm(user.name, "Passive abilities cannot be used manually.");
+  }
+  if (
+    ability.actionType !== "Standard" &&
+    ability.actionType !== "Swift" &&
+    ability.actionType !== "Full" &&
+    ability.actionType !== "Free" &&
+    ability.actionType !== "Movement"
+  ) {
+    return sendPm(user.name, `Unknown action type: ${ability.actionType}.`);
   }
 
   pushSnapshot(game);
@@ -311,6 +316,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     entity.standardUsed = true;
     entity.movementUsed = true;
   }
+  if (ability.actionType === "Movement") entity.movementUsed = true;
   entity.pendingAction = {
     type: "attack",
     ability,
