@@ -152,6 +152,11 @@ export interface ActionLogEntry {
   snapshot: string;
 }
 
+export interface ChatEntry {
+  user: string;
+  message: string;
+}
+
 export interface Game {
   id: string;
   room: string;
@@ -169,6 +174,8 @@ export interface Game {
   started: boolean;
   kills: Record<string, number>; // entity num -> kill count
   winner: string | null; // winning entity num or team
+  chatLog: ChatEntry[];
+  toasts: ChatEntry[];
 }
 
 export const games = new Map<string, Game>();
