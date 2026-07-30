@@ -510,6 +510,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BD Autohost - Test Client</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -539,23 +540,33 @@ const HTML_PAGE = `<!DOCTYPE html>
   .msg-chat .name { color: #ffcc00; font-weight: bold; }
   .msg-pm { color: #cccc00; }
   .msg-action { color: #00cc00; }
+  #header-tabs { display:none; align-items:center; gap:6px; }
   #mobile-tabs { display:none; gap:4px; }
   .mtab { display:none; padding:6px 18px; background:#0f3460; border:1px solid #333; border-radius:4px; cursor:pointer; font-size:12px; color:#8888aa; font-family:inherit; }
   .mtab.on { background:#00aaff; color:#fff; border-color:#00aaff; }
+  .toast-wrap { position:fixed; bottom:70px; left:0; right:0; padding:8px; pointer-events:none; z-index:9999; }
+  .toast-msg { background:rgba(0,0,0,.88); color:#fff; padding:10px 14px; border-radius:8px; margin:4px 8px; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,.4); animation:ti .3s ease,to .3s ease 3.7s forwards; }
+  @keyframes ti{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes to{from{opacity:1}to{opacity:0;transform:translateY(20px)}}
   @media (max-width:600px) {
-    #header { padding:8px 12px; font-size:14px; }
-    #header .title { font-size:16px; }
-    #mobile-tabs { display:flex; }
-    .mtab { display:block; font-size:16px; padding:8px 24px; }
+    #header { padding:10px 12px; font-size:16px; flex-wrap:wrap; gap:8px; }
+    #header .title { font-size:18px; }
+    #header-tabs { display:flex; }
+    #gui-header { display:none; }
+    #mobile-tabs { display:flex; flex:1; justify-content:flex-end; }
+    .mtab { display:block; font-size:18px; padding:10px 28px; }
+    #container { flex-direction:column; }
     #chat-panel, #resize-handle { display:none; }
-    #container.mobile-chat #chat-panel { display:flex; width:100% !important; }
+    #container.mobile-chat #chat-panel { display:flex; width:100% !important; flex:1; }
     #container.mobile-chat #gui-panel { display:none; }
     #container.mobile-game #gui-panel { flex:1; }
     #container.mobile-game #chat-panel { display:none; }
-    #chat-messages { font-size:16px !important; }
-    #chat-input { font-size:16px !important; padding:8px !important; }
-    #send-btn { font-size:16px !important; padding:8px 20px !important; }
-    .gui-tab { font-size:13px !important; padding:4px 16px !important; }
+    #chat-messages { font-size:18px !important; padding:12px; padding-bottom:calc(env(safe-area-inset-bottom,0px) + 80px); }
+    #chat-input { font-size:18px !important; padding:12px !important; }
+    #send-btn { font-size:18px !important; padding:12px 28px !important; }
+    .gui-tab { font-size:16px !important; padding:8px 20px !important; }
+    #gui-content { padding:4px; }
+    #status { font-size:12px !important; }
   }
 </style>
 </head>
@@ -566,6 +577,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   <span class="room">#battledome</span>
   <span style="color:#333">|</span>
   <span style="color:#8888aa" id="current-user">HostUser</span>
+  <div id="header-tabs"></div>
   <div id="mobile-tabs">
     <button class="mtab" data-view="game">Game</button>
     <button class="mtab" data-view="chat">Chat</button>
@@ -629,6 +641,21 @@ document.querySelectorAll('.mtab').forEach(b => {
   b.addEventListener('click', () => setView(b.dataset.view));
 });
 
+function showToast(text) {
+  let wrap = document.getElementById("toast-wrap");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "toast-wrap";
+    wrap.className = "toast-wrap";
+    document.body.appendChild(wrap);
+  }
+  const t = document.createElement("div");
+  t.className = "toast-msg";
+  t.textContent = text.replace(/<[^>]+>/g, "");
+  wrap.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
 window.addEventListener('resize', () => {
   if (isMobile()) setView(mobileView);
   else container.className = '';
@@ -658,40 +685,36 @@ guiContent.addEventListener('click', (e) => {
   addLine('chat', '<span class="name">' + currentNick + '</span>: ' + cmd);
 });
 function createTabs(tabs) {
-  const container = document.getElementById("gui-tabs");
   const previousTab = activeTab;
-  container.innerHTML = "";
 
-  tabs.forEach(tab => {
-    guiPages[tab] ??= "";
+  function renderTabs(container) {
+    container.innerHTML = "";
+    tabs.forEach(tab => {
+      guiPages[tab] ??= "";
+      const button = document.createElement("div");
+      button.className = "gui-tab";
+      button.dataset.role = tab;
+      const label = isMobile() && tab === "player" ? "Game" : tab.charAt(0).toUpperCase() + tab.slice(1);
+      button.textContent = label;
+      button.onclick = () => {
+        document.querySelectorAll(".gui-tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
+        activeTab = tab;
+        guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
+      };
+      container.appendChild(button);
+    });
+  }
 
-    const button = document.createElement("div");
-    button.className = "gui-tab";
-    button.textContent =
-      tab.charAt(0).toUpperCase() + tab.slice(1);
-
-    button.onclick = () => {
-      document.querySelectorAll(".gui-tab")
-        .forEach(t => t.classList.remove("active"));
-
-      button.classList.add("active");
-
-      activeTab = tab;
-
-      guiContent.innerHTML =
-        guiPages[tab] ||
-        '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
-    };
-
-    container.appendChild(button);
-  });
+  const hc = document.getElementById("header-tabs");
+  const gc = document.getElementById("gui-tabs");
+  if (gc) renderTabs(gc);
+  if (hc) renderTabs(hc);
 
   if (previousTab && tabs.includes(previousTab)) {
-    const buttons = [...container.children];
-    const index = tabs.indexOf(previousTab);
-    buttons[index].click();
+    document.querySelector('.gui-tab[data-role="' + previousTab + '"]')?.click();
   } else if (tabs.length > 0) {
-    container.firstChild.click();
+    document.querySelector(".gui-tab")?.click();
   }
 }
 
@@ -733,6 +756,7 @@ function connect() {
       addLine('system', msg.user + ' left.');
     } else if (msg.type === 'chat') {
       addLine('chat', msg.text);
+      if (isMobile() && mobileView === 'game') showToast(msg.text);
     } else if (msg.type === 'action') {
       addLine('action', msg.text);
     } else if (msg.type === 'pm') {
@@ -743,6 +767,7 @@ function connect() {
   };
 }
 connect();
+setView(mobileView);
 
 function sendChat() {
   const text = chatInput.value.trim();
