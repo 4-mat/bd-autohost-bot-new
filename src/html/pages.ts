@@ -15,27 +15,14 @@ import { posToStr } from "../utils.js";
 
 export const premoveSet = new Set<string>();
 
-// -- Tabs & Toast CSS ---------------------------------------------------------
+// -- Toast CSS -----------------------------------------------------------------
 
-const TAB_ID = "t";
-
-const TAB_CSS = `
-.${TAB_ID}b { display:flex; gap:4px; margin-bottom:8px; }
-.${TAB_ID}b label { padding:6px 16px; cursor:pointer; background:#444; color:#aaa; border-radius:4px 4px 0 0; font-size:13px; }
-.${TAB_ID}b label:hover { background:#555; }
-#${TAB_ID}g:checked ~ .${TAB_ID}b label:first-child,
-#${TAB_ID}c:checked ~ .${TAB_ID}b label:last-child { background:#666; color:#fff; }
-.${TAB_ID}c, .${TAB_ID}g { display:none; }
-#${TAB_ID}g:checked ~ .${TAB_ID}g,
-#${TAB_ID}c:checked ~ .${TAB_ID}c { display:block; }
-.${TAB_ID}lst { max-height:60vh; overflow-y:auto; padding:4px; }
-.${TAB_ID}ent { padding:4px 8px; margin:2px 0; border-radius:4px; background:rgba(255,255,255,0.05); font-size:12px; }
-.${TAB_ID}ent b { color:#88ccff; }
-.toast-wrap { position:fixed; bottom:0; left:0; right:0; padding:8px; padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px); pointer-events:none; z-index:1000; }
-.toast { background:rgba(0,0,0,0.88); color:#fff; padding:8px 14px; border-radius:8px; margin:4px 8px; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,0.4); animation:ti .3s ease, to .3s ease 3.7s forwards; }
-@keyframes ti { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-@keyframes to { from{opacity:1} to{opacity:0;transform:translateY(20px)} }
-`;
+const TCSS = `.tw{position:fixed;bottom:0;left:0;right:0;padding:8px;padding-bottom:calc(env(safe-area-inset-bottom,0px)+60px);pointer-events:none;z-index:1000}
+.t{background:rgba(0,0,0,.88);color:#fff;padding:8px 14px;border-radius:8px;margin:4px 8px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4);animation:ti .3s ease,t .3s ease 3.7s forwards}
+@keyframes ti{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes t{from{opacity:1}to{opacity:0;transform:translateY(20px)}}
+.toast-wrap{position:fixed;bottom:0;left:0;right:0;padding:8px;padding-bottom:calc(env(safe-area-inset-bottom,0px)+60px);pointer-events:none;z-index:1000}
+.toast{background:rgba(0,0,0,.88);color:#fff;padding:8px 14px;border-radius:8px;margin:4px 8px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4);animation:ti .3s ease,to .3s ease 3.7s forwards}`;
 
 // -- Mobile-friendly responsive CSS -------------------------------------------
 
@@ -70,34 +57,6 @@ const PLAYER_LABEL =
   "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
 
 // -- Tab Layout, Chat Tab, Toasts --------------------------------------------
-
-function withTabs(game: Game, content: string): string {
-  return `${R}<style>${TAB_CSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
-  <input type="radio" name="${TAB_ID}" id="${TAB_ID}g" checked style="display:none">
-  <input type="radio" name="${TAB_ID}" id="${TAB_ID}c" style="display:none">
-  <div class="${TAB_ID}b">
-    <label for="${TAB_ID}g">Game</label>
-    <label for="${TAB_ID}c">Chat</label>
-  </div>
-  <div class="${TAB_ID}g">${content}</div>
-  <div class="${TAB_ID}c">${buildChatTab(game)}</div>
-  ${buildToasts(game)}
-</div>`;
-}
-
-function buildChatTab(game: Game): string {
-  const entries =
-    game.chatLog.length === 0
-      ? `<div style="color:#888;padding:8px"><i>No messages yet.</i></div>`
-      : game.chatLog
-          .slice(-50)
-          .map(
-            (e) =>
-              `<div class="${TAB_ID}ent"><b>${esc(e.user)}:</b> ${esc(e.message)}</div>`,
-          )
-          .join("");
-  return `<div class="${TAB_ID}lst">${entries}</div>`;
-}
 
 function buildToasts(game: Game): string {
   if (game.toasts.length === 0) return "";
@@ -137,10 +96,11 @@ export function buildHostPage(game: Game): string {
   const log = buildActionLog(game);
   const controls = buildControls(game);
 
-  const gameTab = `<b>Game: ${esc(game.id)}</b> -- ${esc(game.mode)} -- Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
-  <hr>${map}<hr>${pl}<hr>${log}<hr>${controls}`;
-
-  return withTabs(game, gameTab);
+  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
+  <b>Game: ${esc(game.id)}</b> -- ${esc(game.mode)} -- Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
+  <hr>${map}<hr>${pl}<hr>${log}<hr>${controls}
+  ${buildToasts(game)}
+</div>`;
 }
 
 // -- Player Page --------------------------------------------------------------
@@ -183,10 +143,11 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
 
-  const gameTab = `<b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})
-  <hr>${stats}${map}<hr>${phase}${actions}`;
-
-  return withTabs(game, gameTab);
+  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})
+  <hr>${stats}${map}<hr>${phase}${actions}
+  ${buildToasts(game)}
+</div>`;
 }
 
 // -- Map (Host + Player shared logic) -----------------------------------------
