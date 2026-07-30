@@ -84,14 +84,14 @@ export interface AbilityData {
   roll: string;
   damageType: "Physical" | "Magical" | "";
   actionType:
-    | "Standard"
-    | "Full"
-    | "Movement"
-    | "Swift"
-    | "Free"
-    | "Trigger"
-    | "Reaction"
-    | "Passive";
+  | "Standard"
+  | "Full"
+  | "Movement"
+  | "Swift"
+  | "Free"
+  | "Trigger"
+  | "Reaction"
+  | "Passive";
   targetAmount: number | "AoE";
   targetGroup: string;
   range: string;
@@ -300,7 +300,7 @@ export function getReachableTiles(
 // Line of sight check for range rule
 export function hasLineOfSight(
   game: Game,
-  from: [number, number],
+  from: [number, number], // [row, col]
   to: [number, number],
 ): boolean {
   const dx = to[1] - from[1];
@@ -311,12 +311,12 @@ export function hasLineOfSight(
   const sx = dx / steps;
   const sy = dy / steps;
 
-  for (let i = 1; i < steps; i++) {
+  for (let i = 1; i <= steps; i++) {
     const x = Math.round(from[1] + sx * i);
     const y = Math.round(from[0] + sy * i);
     if (x < 0 || y < 0 || y >= game.map.length || x >= game.map[0].length)
       return false;
-    const t = game.map[y][x];
+    const t = game.map[x][y];
     if (isObstruction(t)) return false;
   }
   return true;
