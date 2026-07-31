@@ -432,13 +432,19 @@ function buildPreMoveAbilities(game: Game, entity: Entity): string {
     groups[key].push(ab);
   }
 
-  const order = ["Trigger", "Swift", "Free"];
+  const order = ["Trigger", "Reaction", "Swift", "Free"];
   for (const type of order) {
     const abs = groups[type];
     if (!abs || abs.length === 0) continue;
 
     const typeColor =
-      type === "Swift" ? "#0c0" : type === "Trigger" ? "#cc0" : "#888";
+      type === "Swift"
+        ? "#0c0"
+        : type === "Trigger"
+          ? "#cc0"
+          : type === "Reaction"
+            ? "#f60"
+            : "#888";
 
     html += `<div style="margin:4px 0;padding:3px 6px;border-left:2px solid ${typeColor}">`;
     html += `<span style="color:${typeColor};font-size:10px;font-weight:bold">${type.toUpperCase()}</span><br>`;
@@ -606,7 +612,8 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
       ab.actionType !== "Free" &&
       ab.actionType !== "Swift" &&
       ab.actionType !== "Trigger" &&
-      ab.actionType !== "Movement"
+      ab.actionType !== "Movement" &&
+      !(ab.actionType === "Reaction" && entity.triggered)
     )
       return false;
 
