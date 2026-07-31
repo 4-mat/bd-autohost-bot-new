@@ -85,8 +85,12 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function posKey([r, c]: [number, number]): string {
-  return `${r},${c}`;
+// Returns a stable string key for a [row, col] tile, matching the format
+// that getReachableTiles uses for its map keys (posToStr: "a,1" style).
+// Defensive against bad inputs so a stray non-tuple never crashes a render.
+function posKey(pos: [number, number]): string {
+  if (!Array.isArray(pos) || pos.length < 2) return "";
+  return posToStr(pos[0], pos[1]);
 }
 
 // -- Host Page ----------------------------------------------------------------
@@ -194,11 +198,15 @@ function buildMapTable(
     const remainingMp = self.mp - path.length;
     if (remainingMp > 0) {
       const tip = path.length > 0 ? path[path.length - 1] : self.pos;
+      // getReachableTiles returns Map<string, number> where the KEYS are
+      // posToStr-formatted tiles (e.g. "a,1") and the values are movement
+      // costs. We only need the tiles themselves, so iterate the keys
+      // directly -- the previous version's `for (const [, pos] of map)`
+      // wrongly treated the cost (a number) as a position, then handed it to
+      // posKey which destructured it -- producing "number is not iterable".
       const reachable = getReachableTiles(game, tip, remainingMp);
-      for (const [, pos] of reachable as unknown as Array<
-        [string, [number, number]]
-      >) {
-        reachableSet.add(posKey(pos));
+      for (const key of reachable.keys()) {
+        reachableSet.add(key);
       }
     }
 
@@ -207,10 +215,8 @@ function buildMapTable(
       const target = game.entities.find((e) => e.num === previewNum);
       if (target) {
         const reach = getReachableTiles(game, target.pos, target.mp);
-        for (const [, pos] of reach as unknown as Array<
-          [string, [number, number]]
-        >) {
-          previewSet.add(posKey(pos));
+        for (const key of reach.keys()) {
+          previewSet.add(key);
         }
       }
     }

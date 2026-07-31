@@ -111,7 +111,7 @@ function* resolveAttackFlow(
   // result.messages.push(`/me declares ${ability.name}`);
 
   // --- Selection / Choices / Sacrifice / Pay Costs ---
-  // STUB: this is a placeholder. Work on how costs/choices are represented 
+  // STUB: this is a placeholder. Work on how costs/choices are represented
 
   if (abilityNeedsSelection(ability)) {
     const choiceId = yield {
@@ -129,37 +129,39 @@ function* resolveAttackFlow(
   }
 
   // --- Target (attack may not continue if nothing can be chosen) ---
-  const { hits: hitCount, isAoE, targets: autoTargets } = prepareTargeting(
-    game,
-    user,
-    ability,
-  );
+  const {
+    hits: hitCount,
+    isAoE,
+    targets: autoTargets,
+  } = prepareTargeting(game, user, ability);
   let targets = autoTargets;
   if (targets.length === 0) {
-  const candidates = getTargetCandidates(game, user, ability);
+    const candidates = getTargetCandidates(game, user, ability);
 
-  if (candidates.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return result;
+    if (candidates.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but no valid targets found.`,
+      );
+      return result;
+    }
+
+    const targetRef =
+      initialTarget ??
+      (yield {
+        kind: "target",
+        message: `Choose a target for ${ability.name}`,
+        candidates,
+      });
+
+    targets = findTargets(game, user, ability, targetRef);
+
+    if (targets.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but no valid targets found.`,
+      );
+      return result;
+    }
   }
-
-  const targetRef = initialTarget ?? (yield {
-    kind: "target",
-    message: `Choose a target for ${ability.name}`,
-    candidates,
-  });
-
-  targets = findTargets(game, user, ability, targetRef);
-
-  if (targets.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return result;
-  }
-}
 
   const targetNames = targets.map((t) => t.num).join(", ");
   const rollStr = ability.roll ? ` ${ability.roll}` : "";
@@ -177,7 +179,6 @@ function* resolveAttackFlow(
     if (isAttack) {
       let confusionApplied = false;
       for (let h = 0; h < hitCount; h++) {
-
         const label = hitCount > 1 ? ` (Hit ${h + 1}/${hitCount})` : "";
         const singleResult = resolveSingleTarget(
           game,
@@ -250,18 +251,12 @@ export function startAttack(
 }
 
 // %choose <optionId> -- only valid while a "selection" prompt is pending.
-export function respondToChoice(
-  user: Entity,
-  choiceId: string,
-): AttackStep {
+export function respondToChoice(user: Entity, choiceId: string): AttackStep {
   return respondToPromptOfKind(user, "selection", choiceId, "%choose");
 }
 
 // %target <ref> -- only valid while a "target" prompt is pending.
-export function respondToTarget(
-  user: Entity,
-  targetRef: string,
-): AttackStep {
+export function respondToTarget(user: Entity, targetRef: string): AttackStep {
   return respondToPromptOfKind(user, "target", targetRef, "%target");
 }
 
@@ -278,7 +273,8 @@ function respondToPromptOfKind(
     throw new Error(`${user.num} has no pending action awaiting a response.`);
   }
   if (user.pendingPromptKind !== expectedKind) {
-    const wants = user.pendingPromptKind === "selection" ? "%choose" : "%target";
+    const wants =
+      user.pendingPromptKind === "selection" ? "%choose" : "%target";
     throw new Error(
       `${user.num}'s pending action expects ${wants}, not ${commandName}.`,
     );
@@ -350,7 +346,7 @@ function getTargetCandidates(
 }
 
 // ---------------------------
-// Targeting / hit resolution 
+// Targeting / hit resolution
 // ---------------------------
 
 function prepareTargeting(
@@ -448,16 +444,78 @@ function resolveSingleTarget(
 
   const userAccBonus = getStatBonus(user, "acc");
   const targetEva = getEffectiveStat(target, "eva");
-  const { hit, roll: accRoll, crit } = rollAccuracy(
-    ability.mr,
-    targetEva,
-    userAccBonus,
-  );
+  const {
+    hit,
+    roll: accRoll,
+    crit,
+  } = rollAccuracy(ability.mr, targetEva, userAccBonus);
 
   result.messages.push(
     `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
+  // --- Hit resolves first (damage to target first) ---
+  if (hit) {
+    const damageRoll = rollDice(ability.roll);
+    const userOff = offensiveStat(user, ability.damageType);
+    let baseDamage =
+      damageRoll.total + userOff - defensiveStat(target, ability.damageType);
+
+    if (crit) {
+      const critRoll = rollDice(ability.roll);
+      baseDamage += critRoll.total;
+      result.messages.push(
+        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+      );
+    }
+
+    const finalDamage = Math.max(0, baseDamage);
+    const dmgResult = dealDamage(target, finalDamage);
+    result.messages.push(
+      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    );
+
+    if (dmgResult.shieldAbsorbed > 0) {
+      result.messages.push(
+        `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+      );
+    }
+
+    const effects = parseEffects(ability.effect);
+    const effectMsgs = applyEffects(game, user, target, effects);
+    result.messages.push(...effectMsgs);
+
+    // Apply recoil damage after hit damage
+    for (const e of parseEffects(ability.effect)) {
+      if (e.type === "recoil") {
+        const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
+        dealDamage(user, recoilDmg);
+        result.messages.push(
+          `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
+        );
+      }
+    }
+
+    if (target.curhp <= 0) {
+      result.messages.push(
+        `  **${target.num} (${target.name}) has been defeated!**`,
+      );
+      removeEntity(game, target);
+      result.deaths.push(target);
+    }
+
+    // Check if recoil killed the user (after target death is recorded)
+    if (user.curhp <= 0) {
+      result.messages.push(
+        `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
+      );
+      removeEntity(game, user);
+      result.deaths.push(user);
+      return result;
+    }
+  }
+
+  // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
   if (isConfused(user) && accRoll >= 16 && !confusionAlreadyApplied) {
     const offStat = Math.max(
       getEffectiveStat(user, "atk"),
@@ -475,46 +533,7 @@ function resolveSingleTarget(
       );
       removeEntity(game, user);
       result.deaths.push(user);
-      // Bug fix: don't keep resolving a hit for an entity that just died.
-      return result;
     }
-  }
-
-  if (!hit) return result;
-
-  const damageRoll = rollDice(ability.roll);
-  const userOff = offensiveStat(user, ability.damageType); // #5: computed once, reused below
-  let baseDamage = damageRoll.total + userOff - defensiveStat(target, ability.damageType);
-
-  if (crit) {
-    const critRoll = rollDice(ability.roll);
-    baseDamage += critRoll.total;
-    result.messages.push(
-      `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
-    );
-  }
-
-  const finalDamage = Math.max(0, baseDamage);
-  const dmgResult = dealDamage(target, finalDamage);
-  result.messages.push(
-    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
-  );
-
-  if (dmgResult.shieldAbsorbed > 0) {
-    result.messages.push(
-      `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
-    );
-  }
-
-  const effects = parseEffects(ability.effect);
-  result.messages.push(...applyEffects(game, user, target, effects));
-
-  if (target.curhp <= 0) {
-    result.messages.push(
-      `  **${target.num} (${target.name}) has been defeated!**`,
-    );
-    removeEntity(game, target);
-    result.deaths.push(target);
   }
 
   return result;
@@ -634,7 +653,9 @@ function resolveNonDamaging(
   const effectMsgs = applyEffects(game, user, target, effects);
 
   if (effectMsgs.length > 0) {
-    result.messages.push(`  ${user.num} uses ${ability.name} on ${target.num}:`);
+    result.messages.push(
+      `  ${user.num} uses ${ability.name} on ${target.num}:`,
+    );
     result.messages.push(...effectMsgs);
   } else {
     result.messages.push(
@@ -704,23 +725,15 @@ function resolveSplash(
 
 // Legacy entry point for existing callers that don't handle prompts yet. TO BE REMOVED
 
-export function resolveAction(
-  game: Game,
-  user: Entity,
-): AttackStep {
+export function resolveAction(game: Game, user: Entity): AttackStep {
   const action = user.pendingAction;
 
   if (!action || action.type !== "attack") {
-    return { 
+    return {
       done: true,
-      result: newResult()
+      result: newResult(),
     };
   }
 
-  return startAttack(
-    game,
-    user,
-    action.ability,
-    action.target,
-  );
+  return startAttack(game, user, action.ability, action.target);
 }

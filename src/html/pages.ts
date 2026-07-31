@@ -15,7 +15,29 @@ import { posToStr } from "../utils.js";
 
 export const premoveSet = new Set<string>();
 
-// -- BD / PS Style Constants --------------------------------------------------
+// -- Toast CSS -----------------------------------------------------------------
+
+const TCSS = `.tw{position:fixed;bottom:0;left:0;right:0;padding:8px;padding-bottom:calc(env(safe-area-inset-bottom,0px)+60px);pointer-events:none;z-index:1000}
+.t{background:rgba(0,0,0,.88);color:#fff;padding:8px 14px;border-radius:8px;margin:4px 8px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4);animation:ti .3s ease,t .3s ease 3.7s forwards}
+@keyframes ti{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes t{from{opacity:1}to{opacity:0;transform:translateY(20px)}}
+.toast-wrap{position:fixed;bottom:0;left:0;right:0;padding:8px;padding-bottom:calc(env(safe-area-inset-bottom,0px)+60px);pointer-events:none;z-index:1000}
+.toast{background:rgba(0,0,0,.88);color:#fff;padding:8px 14px;border-radius:8px;margin:4px 8px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4);animation:ti .3s ease,to .3s ease 3.7s forwards}`;
+
+// -- Mobile-friendly responsive CSS -------------------------------------------
+
+const R = `<style>
+@media (max-width:600px) {
+  .bdg button { padding:8px 12px !important; font-size:14px !important; }
+  .bdg .tile { width:36px !important; height:36px !important; font-size:14px !important; }
+  .bdg .hcell { width:36px !important; min-width:36px !important; font-size:14px !important; }
+  .bdg .mcell { width:36px !important; height:36px !important; font-size:14px !important; }
+  .bdg td, .bdg th { padding:6px 4px !important; font-size:13px !important; }
+  .bdg .stat { display:block !important; margin:4px 0 !important; }
+  .bdg .wrap { margin:8px !important; }
+  .bdg .log { max-width:100% !important; }
+}
+</style>`;
 
 const TILE =
   "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
@@ -33,6 +55,19 @@ const TABLE_BORDER = `style="${TABLE_STYLE}"`;
 
 const PLAYER_LABEL =
   "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
+
+// -- Toast helpers ------------------------------------------------------------
+
+function buildToasts(game: Game): string {
+  if (game.toasts.length === 0) return "";
+  const items = game.toasts
+    .map(
+      (e) =>
+        `<div class="toast"><b>${esc(e.user)}:</b> ${esc(e.message)}</div>`,
+    )
+    .join("");
+  return `<div class="toast-wrap">${items}</div>`;
+}
 
 // -- Helpers ------------------------------------------------------------------
 
@@ -61,16 +96,10 @@ export function buildHostPage(game: Game): string {
   const log = buildActionLog(game);
   const controls = buildControls(game);
 
-  return `<div style="margin:35px;font-size:12px;font-family:Verdana,sans-serif">
+  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   <b>Game: ${esc(game.id)}</b> -- ${esc(game.mode)} -- Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
-  <hr>
-  ${map}
-  <hr>
-  ${pl}
-  <hr>
-  ${log}
-  <hr>
-  ${controls}
+  <hr>${map}<hr>${pl}<hr>${log}<hr>${controls}
+  ${buildToasts(game)}
 </div>`;
 }
 
@@ -114,14 +143,10 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
 
-  return `<div style="margin:35px;font-size:12px;font-family:Verdana,sans-serif">
+  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})
-  <hr>
-  ${stats}
-  ${map}
-  <hr>
-  ${phase}
-  ${actions}
+  <hr>${stats}${map}<hr>${phase}${actions}
+  ${buildToasts(game)}
 </div>`;
 }
 
@@ -145,9 +170,9 @@ function buildMapTable(game: Game, self: Entity | null): string {
   html += `<table align="center" ${TABLE_BORDER}>`;
 
   // Column header row -- numbers
-  html += `<tr><td style="${HEADER_CELL}"></td>`;
+  html += `<tr><td class="hcell" style="${HEADER_CELL}"></td>`;
   for (let c = 0; c < cols; c++) {
-    html += `<td style="${HEADER_CELL}"><b>${c + 1}</b></td>`;
+    html += `<td class="hcell" style="${HEADER_CELL}"><b>${c + 1}</b></td>`;
   }
   html += "</tr>";
 
@@ -183,7 +208,7 @@ function buildMapTable(game: Game, self: Entity | null): string {
         highlight = "outline:2px solid #cc0;";
       }
 
-      html += `<td style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"`;
+      html += `<td class="mcell" style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"`;
       if (entity) {
         html += `><b style="${PLAYER_LABEL}">${label}</b></td>`;
       } else {
@@ -245,8 +270,8 @@ function buildPlayerDataTable(game: Game): string {
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
-        .map((n) => game.entities.find((e) => e.num === n))
-        .filter((e): e is Entity => !!e)
+          .map((n) => game.entities.find((e) => e.num === n))
+          .filter((e): e is Entity => !!e)
       : game.entities;
   for (const e of ordered) {
     html += `<tr style="height:22px">`;
@@ -315,7 +340,7 @@ function buildActionLog(game: Game): string {
   }
 
   const recent = game.log.slice(-15);
-  html += `<table align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">`;
+  html += `<table class="log" align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">`;
   for (const entry of recent) {
     html += `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`;
   }
@@ -344,7 +369,7 @@ function buildEntityStats(entity: Entity): string {
   const hpPct = Math.max(0, (entity.curhp / entity.maxhp) * 100);
   const hpColor = hpPct > 50 ? "#0c0" : hpPct > 25 ? "#cc0" : "#c00";
 
-  let html = `<div style="margin:4px 0;padding:4px 8px;border:1px solid #888;background:rgba(120,120,225,0.10)">`;
+  let html = `<div class="stat" style="margin:4px 0;padding:4px 8px;border:1px solid #888;background:rgba(120,120,225,0.10)">`;
   html += `<b>HP:</b> <b style="color:${hpColor}">${entity.curhp}/${entity.maxhp}</b>`;
   html += ` <b>ATK:</b> ${entity.atk}`;
   html += ` <b>MAG:</b> ${entity.mag}`;
@@ -546,7 +571,9 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    if (typeof ab.level === "number" && ab.level > 0) {
+    if (ab.level === "EX1" || ab.level === "EX2") {
+      if (!entity.isJuggernaut) return false;
+    } else if (ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
@@ -583,7 +610,9 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    if (typeof ab.level === "number" && ab.level > 0) {
+    if (ab.level === "EX1" || ab.level === "EX2") {
+      if (!entity.isJuggernaut) return false;
+    } else if (ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }

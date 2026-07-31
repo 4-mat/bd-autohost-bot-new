@@ -17,6 +17,18 @@ import { classes, weapons, loadGameData } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
+import type { AbilityData } from "../data/index.js";
+
+function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
+  return a.level === "EX1" || a.level === "EX2" ? exOk : a.level <= lvl;
+}
+
+function findGameForHost(username: string): Game | null {
+  for (const game of games.values()) {
+    if (toId(game.host) === toId(username)) return game;
+  }
+  return null;
+}
 
 export function hostCommand(
   room: Room | null,
@@ -24,7 +36,13 @@ export function hostCommand(
   cmd: string,
   args: string,
   val: string,
+  pm = false,
 ) {
+  if (pm && (cmd === "host" || cmd === "dehost")) {
+    sendPm(user.name, `${cmd} must be used in a room.`);
+    return;
+  }
+
   if (!room) {
     sendPm(user.name, "This command must be used in a room.");
     return;
@@ -73,6 +91,9 @@ export function hostCommand(
     case "sw":
       handleSwitchWeapon(room, user, full);
       break;
+    case "setjugg":
+      handleSetJugg(room, user, full);
+      break;
     case "listmaps":
       handleListMaps(room, user, full);
       break;
@@ -117,6 +138,8 @@ function handleHost(room: Room, user: User) {
     started: false,
     kills: {},
     winner: null,
+    chatLog: [],
+    toasts: [],
   };
 
   games.set(id, game);
@@ -214,11 +237,12 @@ function handleAddPlayer(room: Room, user: User, args: string) {
   const playerNum = game.entities.filter((e) => !e.isMonster).length + 1;
   const num = `P${playerNum}`;
 
-  // Filter abilities by level (EX abilities always included)
-  const hasLevel = (a: { level: number | "EX1" | "EX2" }) =>
-    a.level === "EX1" || a.level === "EX2" || a.level <= lvl;
-  const classAbilities = classData.abilities.filter(hasLevel);
-  const weaponAbilities = weaponData.abilities.filter(hasLevel);
+  const classAbilities = classData.abilities.filter((a) =>
+    hasAbility(a, lvl, false),
+  );
+  const weaponAbilities = weaponData.abilities.filter((a) =>
+    hasAbility(a, lvl, false),
+  );
   const allAbilities = [...classAbilities, ...weaponAbilities] as any[];
 
   // Find a starting position (first open normal tile)
@@ -229,6 +253,7 @@ function handleAddPlayer(room: Room, user: User, args: string) {
     name,
     id: toId(name),
     isMonster: false,
+    isJuggernaut: false,
     curhp: maxhp,
     maxhp,
     atk: statVal(classData.stats.atk) + statVal(weaponData.stats.atk),
@@ -401,13 +426,16 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   // Update abilities to new class + existing weapon, filtered by level
   const lvl = entity.classLevel;
   entity.abilities = [
-    ...classData.abilities.filter(
-      (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+    ...classData.abilities.filter((a) =>
+      hasAbility(a, lvl, !!entity.isJuggernaut),
     ),
     ...(weaponData
       ? weaponData.abilities.filter(
         (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
       )
+      ? weaponData.abilities.filter((a) =>
+          hasAbility(a, lvl, !!entity.isJuggernaut),
+        )
       : []),
   ] as any[];
 
@@ -479,9 +507,12 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
       ? classData.abilities.filter(
         (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
       )
+      ? classData.abilities.filter((a) =>
+          hasAbility(a, lvl, !!entity.isJuggernaut),
+        )
       : []),
-    ...weaponData.abilities.filter(
-      (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+    ...weaponData.abilities.filter((a) =>
+      hasAbility(a, lvl, !!entity.isJuggernaut),
     ),
   ] as any[];
 
@@ -531,11 +562,11 @@ function handleSetLevel(room: Room, user: User, args: string) {
 
   // Update abilities to match new level
   entity.abilities = [
-    ...classData.abilities.filter(
-      (a) => a.level === "EX1" || a.level === "EX2" || a.level <= level,
+    ...classData.abilities.filter((a) =>
+      hasAbility(a, level, !!entity.isJuggernaut),
     ),
-    ...weaponData.abilities.filter(
-      (a) => a.level === "EX1" || a.level === "EX2" || a.level <= level,
+    ...weaponData.abilities.filter((a) =>
+      hasAbility(a, level, !!entity.isJuggernaut),
     ),
   ] as any[];
 
@@ -571,6 +602,42 @@ function handleSetTeam(room: Room, user: User, args: string) {
   const oldTeam = entity.team;
   entity.team = team;
   send(room.id, `${entity.num} (${entity.name}) team: ${oldTeam} -> ${team}`);
+  broadcastPages(game);
+}
+
+// -- .setjugg <entity> - Toggle juggernaut -------------------------------------
+
+function handleSetJugg(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %setjugg.");
+  }
+
+  const entity = getEntity(game, args.trim());
+  if (!entity) return sendPm(user.name, `Unknown entity: ${args.trim()}`);
+
+  entity.isJuggernaut = !entity.isJuggernaut;
+
+  // Re-filter abilities to include/exclude EX
+  const classData = classes.get(toId(entity.className));
+  const weaponData = weapons.get(toId(entity.weaponName));
+  const lvl = entity.classLevel;
+  if (classData && weaponData) {
+    entity.abilities = [
+      ...classData.abilities.filter((a) =>
+        hasAbility(a, lvl, entity.isJuggernaut!),
+      ),
+      ...weaponData.abilities.filter((a) =>
+        hasAbility(a, lvl, entity.isJuggernaut!),
+      ),
+    ] as any[];
+  }
+
+  send(
+    room.id,
+    `${entity.num} (${entity.name}) is ${entity.isJuggernaut ? "now" : "no longer"} a Juggernaut.`,
+  );
   broadcastPages(game);
 }
 
@@ -726,7 +793,10 @@ function handleGenTurnOrder(room: Room, user: User) {
   game.round = 1;
 
   const orderStr = rolls
-    .map((r) => `${r.entity.num} (${r.entity.name}) - ${r.roll} (1d20+${r.entity.mp})`)
+    .map(
+      (r) =>
+        `${r.entity.num} (${r.entity.name}) - ${r.roll} (1d20+${r.entity.mp})`,
+    )
     .join(", ");
 
   send(room.id, `**Turn Order**: ${orderStr}`);
