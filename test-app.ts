@@ -742,6 +742,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   #header { background: #0f3460; padding: 6px 12px; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 12px; font-size: 12px; }
   #header .title { color: #00aaff; font-weight: bold; font-size: 14px; }
   #header .room { color: #ffcc00; }
+  .sep { color: #333; }
   #container { flex: 1; display: flex; overflow: hidden; }
   #chat-panel { width: 420px; min-width: 250px; min-height: 0; display: flex; flex-direction: column; }
   #resize-handle { width: 4px; background: #333; cursor: col-resize; flex-shrink: 0; }
@@ -769,6 +770,8 @@ const HTML_PAGE = `<!DOCTYPE html>
   #mobile-tabs { display:none; gap:4px; }
   .mtab { display:none; padding:6px 18px; background:#0f3460; border:1px solid #333; border-radius:4px; cursor:pointer; font-size:12px; color:#8888aa; font-family:inherit; }
   .mtab.on { background:#00aaff; color:#fff; border-color:#00aaff; }
+  .chat-badge { display:none; background:#cc0000; color:#fff; border-radius:9px; padding:1px 7px; font-size:13px; font-weight:bold; margin-left:6px; }
+  .chat-badge.show { display:inline-block; }
   .toast-wrap { position:fixed; bottom:70px; left:0; right:0; padding:8px; pointer-events:none; z-index:9999; }
   .toast-msg { background:rgba(0,0,0,.88); color:#fff; padding:10px 14px; border-radius:8px; margin:4px 8px; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,.4); animation:ti .3s ease,to .3s ease 3.7s forwards; }
   @keyframes ti{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
@@ -785,10 +788,12 @@ const HTML_PAGE = `<!DOCTYPE html>
   @media (max-width:600px) {
     #header { padding:10px 12px; font-size:16px; flex-wrap:wrap; gap:8px; }
     #header .title { font-size:18px; }
-    #header-tabs { display:flex; }
+    #header-tabs { display:flex; order:3; flex-basis:100%; justify-content:center; padding-bottom:4px; }
     #gui-header { display:none; }
-    #mobile-tabs { display:flex; flex:1; justify-content:flex-end; }
+    #mobile-tabs { display:flex; margin-left:auto; }
+    .sep { display:none; }
     .mtab { display:block; font-size:18px; padding:10px 28px; }
+    .chat-badge { font-size:14px; padding:2px 8px; }
     #container { flex-direction:column; }
     #chat-panel, #resize-handle { display:none; }
     #container.mobile-chat #chat-panel { display:flex; width:100% !important; flex:1; }
@@ -808,15 +813,15 @@ const HTML_PAGE = `<!DOCTYPE html>
 <body>
 <div id="header">
   <span class="title">BD Autohost Test Client</span>
-  <span style="color:#333">|</span>
+  <span class="sep">|</span>
   <span class="room">#battledome</span>
-  <span style="color:#333">|</span>
+  <span class="sep">|</span>
   <span style="color:#8888aa" id="current-user">HostUser</span>
   ${IS_RENDER ? `<span style="color:#8888aa;font-size:10px" title="Deployed at">Last Updated: ${DEPLOYED_AT} EST</span>` : ""}
   <div id="header-tabs"></div>
   <div id="mobile-tabs">
     <button class="mtab" data-view="game">Game</button>
-    <button class="mtab" data-view="chat">Chat</button>
+    <button class="mtab" data-view="chat">Chat<span id="chat-badge" class="chat-badge"></span></button>
   </div>
   <span style="flex:1"></span>
   <span style="color:#8888aa;font-size:10px" id="status">connecting...</span>
@@ -874,6 +879,7 @@ let activeTab = "";
 let mobileView = 'game';
 let connectedPlayers = [];
 let teamChatLines = [];
+let unread = 0;
 const container = document.getElementById('container');
 
 function renderPlayerList() {
@@ -896,6 +902,13 @@ function renderTeamChat() {
 
 function isMobile() { return window.innerWidth <= 600; }
 
+function updateBadge() {
+  const b = document.getElementById('chat-badge');
+  if (!b) return;
+  b.textContent = unread > 9 ? '9+' : unread;
+  b.classList.toggle('show', unread > 0);
+}
+
 function setView(v) {
   mobileView = v;
   if (!isMobile()) return;
@@ -903,6 +916,11 @@ function setView(v) {
   document.querySelectorAll('.mtab').forEach(b => {
     b.classList.toggle('on', b.dataset.view === v);
   });
+  if (v === 'chat') {
+    unread = 0;
+    updateBadge();
+    setTimeout(() => chatInput.focus(), 60);
+  }
 }
 
 document.querySelectorAll('.mtab').forEach(b => {
@@ -969,6 +987,7 @@ function createTabs(tabs) {
         document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
         activeTab = tab;
         guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
+        if (isMobile() && mobileView === 'chat') setView('game');
       };
       container.appendChild(button);
     });
@@ -1062,7 +1081,11 @@ function connect() {
       addLine('system', msg.user + ' left.');
     } else if (msg.type === 'chat') {
       addLine('chat', msg.text);
-      if (isMobile() && mobileView === 'game') showToast(msg.text);
+      if (isMobile() && mobileView === 'game') {
+        showToast(msg.text);
+        unread++;
+        updateBadge();
+      }
     } else if (msg.type === 'action') {
       addLine('action', msg.text);
     } else if (msg.type === 'pm') {
