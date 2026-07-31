@@ -2,6 +2,7 @@ import {
   TERRAIN_COLORS,
   TERRAIN_NAMES,
   getReachableTiles,
+  getEffectiveMp,
   hasLineOfSight,
   inRange,
   dist,
@@ -125,7 +126,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     } else if (!entity.movementUsed) {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move</span></div>`;
       actions = buildMoveButtons(game, entity);
-      actions += buildDashButton(entity);
+      actions += buildDashButtons(game, entity);
       actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")} ${btn("%passmove", "Pass Movement")}</div>`;
     } else {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
@@ -412,9 +413,22 @@ function buildMoveButtons(game: Game, entity: Entity): string {
   return `<div style="margin:4px 0">${tiles.join(" ")}</div>`;
 }
 
-function buildDashButton(entity: Entity): string {
+function buildDashButtons(game: Game, entity: Entity): string {
   if (entity.dashUsed) return "";
-  return `<div style="margin:2px 0">${btn(`%dash ${entity.name}`, "Dash (1.5x MP)")}</div>`;
+
+  // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
+  const dashMp = Math.floor(getEffectiveMp(entity) * 1.5);
+  const reachable = getReachableTiles(game, entity.pos, dashMp);
+  const tiles: string[] = [];
+
+  for (const [key] of reachable) {
+    tiles.push(btn(`%dash ${key},${entity.name}`, key));
+  }
+
+  if (tiles.length === 0) {
+    return `<div style="margin:4px 0;color:#888"><i>No dash targets.</i></div>`;
+  }
+  return `<div style="margin:2px 0;padding:3px 6px;border-left:2px solid #c60;background:rgba(204,102,0,0.08)"><span style="color:#c60;font-size:10px;font-weight:bold">DASH (1.5x MP, Full)</span><br>${tiles.join(" ")}</div>`;
 }
 
 // -- Pre-Move Ability Buttons (Player) ----------------------------------------
