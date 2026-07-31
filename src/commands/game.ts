@@ -25,7 +25,12 @@ import {
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
 import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
-import { resolveAction } from "../game/resolve.js";
+import {
+  resolveAction,
+  respondToChoice,
+  respondToTarget,
+  type AttackStep,
+} from "../game/resolve.js";
 
 export function gameCommand(
   room: Room | null,
@@ -62,6 +67,16 @@ export function gameCommand(
       handleCancel(game, user);
       break;
 
+    case "target":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleTarget(game, user, full);
+      break;
+
+    case "choose":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleChoose(game, user, full);
+      break;
+
     case "endturn":
     case "next":
       if (!game) return sendPm(user.name, "No active game in this room.");
@@ -92,6 +107,12 @@ export function gameCommand(
     case "premove":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handlePremove(game, user);
+      break;
+
+    case "passmove":
+    case "pass":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handlePassMove(game, user);
       break;
 
     case "pl":
@@ -153,7 +174,10 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   if (parts.length >= 3) {
     entityName = parts[parts.length - 1];
     posStr = parts.slice(0, -1).join(",");
-  } else if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+  } else if (
+    parts.length === 2 &&
+    (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
+  ) {
     entityName = parts[1];
     posStr = parts[0];
   }
@@ -212,7 +236,10 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (parts.length >= 3) {
     entityName = parts[parts.length - 1];
     abilityTarget = parts.slice(0, -1).join(",");
-  } else if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+  } else if (
+    parts.length === 2 &&
+    (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
+  ) {
     entityName = parts[1];
     abilityTarget = parts[0];
   }
@@ -290,16 +317,28 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
       "Full action requires both Standard and Movement unused.",
     );
   }
-  if (ability.actionType === "Free") {
-    // Free actions always allowed (no slot consumed)
-  } else if (
-    ability.actionType === "Trigger" ||
-    ability.actionType === "Reaction"
+  // Issue #3: Free/Swift/Trigger must be used before the Standard action.
+  if (
+    entity.standardUsed &&
+    (ability.actionType === "Free" ||
+      ability.actionType === "Swift" ||
+      ability.actionType === "Trigger")
   ) {
     return sendPm(
       user.name,
-      `${ability.actionType} abilities resolve automatically, not manually.`,
+      `${ability.actionType} abilities must be used before your Standard action.`,
     );
+  }
+  if (ability.actionType === "Trigger") {
+    // Trigger abilities are free-like: manual use, no slot consumed.
+    // Using a trigger lets the entity manually resolve Reactions this turn.
+  } else if (ability.actionType === "Reaction") {
+    if (!entity.triggered) {
+      return sendPm(
+        user.name,
+        "No trigger active this turn — Reaction abilities cannot be used manually.",
+      );
+    }
   } else if (ability.actionType === "Passive") {
     return sendPm(user.name, "Passive abilities cannot be used manually.");
   }
@@ -311,6 +350,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     entity.standardUsed = true;
     entity.movementUsed = true;
   }
+  if (ability.actionType === "Trigger") entity.triggered = true;
   entity.pendingAction = {
     type: "attack",
     ability,
@@ -337,7 +377,46 @@ function handleConfirm(game: Game, user: User) {
 
   pushSnapshot(game);
   const step = resolveAction(game, entity);
+  finishStep(game, entity, step);
+}
 
+function handleTarget(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!args) return sendPm(user.name, "Usage: %target <target>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToTarget(entity, args);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function handleChoose(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!args) return sendPm(user.name, "Usage: %choose <option>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToChoice(entity, args);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
 
@@ -345,6 +424,11 @@ function handleConfirm(game: Game, user: User) {
       send(
         game.room,
         `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+      );
+    } else if (step.prompt.kind === "selection") {
+      send(
+        game.room,
+        `Use %choose <option>. Options: ${step.prompt.options.map((o) => o.id).join(", ")}`,
       );
     }
 
@@ -386,6 +470,8 @@ function handleCancel(game: Game, user: User) {
   }
 
   entity.pendingAction = null;
+  entity.pendingResolution = undefined;
+  entity.pendingPromptKind = undefined;
   send(game.room, `/me ${entity.num} cancels ${ability.name}`);
   broadcastPages(game);
 }
@@ -399,6 +485,8 @@ function handleAdvanceTurn(game: Game, user: User) {
   if (!entity) return;
 
   pushSnapshot(game);
+
+  let acted = "";
 
   // Stunned entities can't act — skip their action and clear pending
   if (isStunned(entity)) {
@@ -420,6 +508,8 @@ function handleAdvanceTurn(game: Game, user: User) {
       send(game.room, msg);
     }
 
+    acted = summarizeResult(game, entity, step.result.messages);
+
     // Track kills
     for (const death of step.result.deaths) {
       if (entity.pendingAction === null) {
@@ -437,7 +527,7 @@ function handleAdvanceTurn(game: Game, user: User) {
   game.log.push({
     turn: game.round,
     entity: entity.num,
-    description: `${entity.num} (${entity.name}) -- turn passed`,
+    description: acted || `${entity.num} (${entity.name}) -- turn passed`,
     snapshot: "",
   });
 
@@ -471,6 +561,36 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+function summarizeResult(
+  game: Game,
+  entity: Entity,
+  messages: string[],
+): string {
+  const nm = (n: string) => game.entities.find((e) => e.num === n)?.name ?? n;
+  const head = messages.find((m) => m.startsWith("/me "));
+  let action = head ? head.slice(4).split(", MR")[0] : "action";
+  action = action.replace(
+    /@ (.*)$/,
+    (_, t) => `@ ${t.split(", ").map(nm).join(", ")}`,
+  );
+  const dmg: string[] = [];
+  for (const m of messages) {
+    const d = m.match(/= \*\*(\d+)\*\* -> (\S+) \(/);
+    if (d) {
+      dmg.push(`${nm(d[2])} ${d[1]} dmg`);
+      continue;
+    }
+    const s = m.match(/-> (\S+) \(.*= \*\*(\d+)\*\*$/);
+    if (s) dmg.push(`${nm(s[1])} ${s[2]} dmg`);
+  }
+  const acc = messages
+    .filter((m) => m.includes("**Accuracy**"))
+    .map((m) => (m.includes("HIT") ? "HIT" : "MISS"));
+  const hits = acc.length ? acc.join("/") : "";
+  const tail = [hits, dmg.join(" ")].filter(Boolean).join(" ");
+  return `${entity.name} ${action}${tail ? `: ${tail}` : ""}`;
 }
 
 function handleBack(game: Game, user: User) {
@@ -515,6 +635,31 @@ function handlePremove(game: Game, user: User) {
     premoveSet.add(entity.num);
     send(game.room, `/me ${entity.num} viewing pre-move abilities`);
   }
+  broadcastPages(game);
+}
+
+function handlePassMove(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entity: Entity | null = null;
+  if (isHost) {
+    entity = getCurrentEntity(game);
+  } else {
+    entity = getCurrentEntity(game);
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, "You already moved this turn.");
+  }
+
+  pushSnapshot(game);
+  entity.movementUsed = true;
+  premoveSet.delete(entity.num);
+  send(game.room, `/me ${entity.num} passes movement`);
   broadcastPages(game);
 }
 

@@ -763,7 +763,7 @@ function getBaseStat(entity: Entity, stat: string): number {
 
 export function applyEffects(
   game: Game,
-  caster: Entity,
+  user: Entity,
   target: Entity,
   effects: Effect[],
 ): string[] {
@@ -876,7 +876,7 @@ export function applyEffects(
           );
         } else {
           messages.push(
-            `  ${caster.num} heals ${target.num}. (Manual resolution needed)`,
+            `  ${user.num} heals ${target.num}. (Manual resolution needed)`,
           );
         }
         break;
@@ -909,8 +909,8 @@ export function applyEffects(
       }
 
       case "push": {
-        // Push target away from caster
-        const pushSource = effect.toward === "user" ? caster.pos : target.pos;
+        // Push target away from user
+        const pushSource = effect.toward === "user" ? user.pos : target.pos;
         const { moved: pushMoved, path: pushPath } = pushEntity(
           game,
           target,
@@ -929,11 +929,11 @@ export function applyEffects(
       }
 
       case "pull": {
-        // Pull target towards caster
+        // Pull target towards user
         const { moved: pullMoved, path: pullPath } = pullEntity(
           game,
           target,
-          caster.pos,
+          user.pos,
           effect.amount ?? 1,
         );
         if (pullMoved > 0) {
@@ -949,32 +949,32 @@ export function applyEffects(
 
       case "teleport": {
         messages.push(
-          `  ${caster.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
+          `  ${user.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
         );
         break;
       }
 
       case "swap": {
-        // Swap caster and target positions
-        const tmpPos = [...caster.pos] as [number, number];
-        caster.pos = [...target.pos] as [number, number];
+        // Swap user and target positions
+        const tmpPos = [...user.pos] as [number, number];
+        user.pos = [...target.pos] as [number, number];
         target.pos = tmpPos;
         messages.push(
-          `  ${caster.num} and ${target.num} swap positions -> ${caster.num} at ${caster.pos[0]},${caster.pos[1]}, ${target.num} at ${target.pos[0]},${target.pos[1]}.`,
+          `  ${user.num} and ${target.num} swap positions -> ${user.num} at ${user.pos[0]},${user.pos[1]}, ${target.num} at ${target.pos[0]},${target.pos[1]}.`,
         );
         break;
       }
 
       case "move": {
         messages.push(
-          `  ${caster.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
+          `  ${user.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
         );
         break;
       }
 
       case "resource": {
         const label = `${effect.action} ${effect.amount} ${effect.resource}`;
-        messages.push(`  ${caster.num} ${label}.`);
+        messages.push(`  ${user.num} ${label}.`);
         break;
       }
 
@@ -987,7 +987,7 @@ export function applyEffects(
 
       case "recoil": {
         messages.push(
-          `  ${caster.num} takes ${effect.percent}% recoil on damage dealt.`,
+          `  ${user.num} takes ${effect.percent}% recoil on damage dealt.`,
         );
         break;
       }
@@ -1018,16 +1018,11 @@ export function applyEffects(
         messages.push(
           `  [Conditional: ${effect.condition}] -- needs evaluation.`,
         );
-        const thenMsgs = applyEffects(game, caster, target, effect.thenEffects);
+        const thenMsgs = applyEffects(game, user, target, effect.thenEffects);
         messages.push(...thenMsgs.map((m) => `    ${m}`));
         if (effect.elseEffects) {
           messages.push(`  [Otherwise]`);
-          const elseMsgs = applyEffects(
-            game,
-            caster,
-            target,
-            effect.elseEffects,
-          );
+          const elseMsgs = applyEffects(game, user, target, effect.elseEffects);
           messages.push(...elseMsgs.map((m) => `    ${m}`));
         }
         break;
@@ -1037,14 +1032,14 @@ export function applyEffects(
         messages.push(
           `  [Thirst ${effect.threshold}] -- needs threshold evaluation.`,
         );
-        const thirstMsgs = applyEffects(game, caster, target, effect.effects);
+        const thirstMsgs = applyEffects(game, user, target, effect.effects);
         messages.push(...thirstMsgs.map((m) => `    ${m}`));
         break;
       }
 
       case "apex": {
         messages.push(`  [Apex] -- needs max-range evaluation.`);
-        const apexMsgs = applyEffects(game, caster, target, effect.effects);
+        const apexMsgs = applyEffects(game, user, target, effect.effects);
         messages.push(...apexMsgs.map((m) => `    ${m}`));
         break;
       }
@@ -1053,7 +1048,7 @@ export function applyEffects(
         messages.push(`  [Choose one] -- requires player selection.`);
         for (let i = 0; i < effect.options.length; i++) {
           messages.push(`    Option ${i + 1}:`);
-          const optMsgs = applyEffects(game, caster, target, effect.options[i]);
+          const optMsgs = applyEffects(game, user, target, effect.options[i]);
           messages.push(...optMsgs.map((m) => `      ${m}`));
         }
         break;

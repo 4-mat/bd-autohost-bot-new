@@ -5,7 +5,7 @@ import { rooms, type Room } from "./src/rooms.js";
 import { users } from "./src/users.js";
 import { handleCommand } from "./src/commands/index.js";
 import { setWs, toId } from "./src/utils.js";
-import { games } from "./src/game/state.js";
+import { games, type Game } from "./src/game/state.js";
 
 loadGameData();
 
@@ -19,9 +19,56 @@ interface Session {
   authenticated: boolean;
   tabs: string[];
   spectating: boolean;
+  team: number;
 }
 
 const sessions = new Map<WebSocket, Session>();
+
+const REACTIONS: Record<string, string> = {
+  cheer: "cheers!",
+  boo: "boos.",
+  clap: "claps.",
+  hype: "is hyped!",
+  gg: "says GG!",
+  gasp: "gasps!",
+};
+
+function isTeamBattle(game: Game): boolean {
+  return game.mode.toLowerCase().includes("v");
+}
+
+function getConnectedPlayers() {
+  const players: Array<{ name: string; role: string }> = [];
+
+  for (const session of sessions.values()) {
+    if (!session.authenticated) continue;
+
+    let role = session.tabs.includes("host")
+      ? "Host"
+      : session.tabs.includes("player")
+        ? "Player"
+        : "Spectator";
+
+    if (session.team > 0) role += ` (Team ${session.team})`;
+
+    players.push({ name: session.username, role });
+  }
+
+  return players;
+}
+
+function refreshPlayerList() {
+  const msg = JSON.stringify({
+    type: "playerlist",
+    players: getConnectedPlayers(),
+  });
+
+  for (const [ws, session] of sessions) {
+    if (session.authenticated && ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+    }
+  }
+}
 
 // Stores the latest GUI for every user
 const userGui = new Map<
@@ -41,12 +88,47 @@ function broadcast(msg: string) {
   }
 }
 
+const BTN_STYLE =
+  "padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif";
+
+function findSession(username: string): Session | null {
+  const id = toId(username);
+
+  for (const session of sessions.values()) {
+    if (toId(session.username) === id) return session;
+  }
+  return null;
+}
+
+function spectatorWidget(team: number): string {
+  const teamLabel = team > 0 ? `Team ${team}` : "None";
+
+  const teamBtns = [1, 2, 0]
+    .map(
+      (t) =>
+        `<button name="send" value="%pickteam ${t}" style="${BTN_STYLE}">Team ${t === 0 ? "None" : t}</button>`,
+    )
+    .join(" ");
+
+  const reactBtns = Object.keys(REACTIONS)
+    .map(
+      (r) =>
+        `<button name="send" value="%react ${r}" style="${BTN_STYLE}">${r}</button>`,
+    )
+    .join(" ");
+
+  return `<div style="margin-top:8px;padding:8px;background:#16213e;border:1px solid #333;border-radius:4px">
+<b style="color:#00aaff">Spectator</b> <span style="color:#888">(cheering: ${teamLabel})</span><br>
+${teamBtns}<br>${reactBtns}
+</div>`;
+}
+
 function sendSpectatorGui(username: string) {
   const saved = userGui.get(toId(username));
 
   const html =
-    saved?.spectator ||
-    `
+    (saved?.spectator ||
+      `
 <div style="color:#888;padding:40px;text-align:center">
   No GUI data yet.<br><br>
   <span style="color:#00aaff">Quick start:</span><br>
@@ -56,7 +138,7 @@ function sendSpectatorGui(username: string) {
   %setlevel P1, 3<br>
   %start
 </div>
-`;
+`) + spectatorWidget(findSession(username)?.team ?? 0);
 
   sendToUser(username, {
     type: "gui",
@@ -142,13 +224,14 @@ setWs({
           ws.readyState === WebSocket.OPEN
         ) {
           const specSaved = userGui.get(toId(session.username)) ?? {};
-          specSaved.spectator = stripControls(html);
+          const stripped = stripControls(html);
+          specSaved.spectator = stripped;
           userGui.set(toId(session.username), specSaved);
           ws.send(
             JSON.stringify({
               type: "gui",
               role: "spectator",
-              html: stripControls(html),
+              html: stripped + spectatorWidget(session.team),
             }),
           );
         }
@@ -220,6 +303,14 @@ function getUserTabs(username: string): string[] {
     tabs.push("spectator");
   }
 
+  tabs.push("players");
+
+  // Team chat only appears for players during team battles
+  const game = [...games.values()][0];
+  if (game && isTeamBattle(game) && tabs.includes("player")) {
+    tabs.push("teamchat");
+  }
+
   return tabs;
 }
 
@@ -253,7 +344,35 @@ function ensureUser(name: string) {
   return uid;
 }
 
-const server = http.createServer((_req, res) => {
+const ICON =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%230f3460'/%3E%3Ctext x='96' y='124' font-size='76' font-family='monospace' font-weight='bold' text-anchor='middle' fill='%2300aaff'%3EBD%3C/text%3E%3C/svg%3E";
+
+const MANIFEST = JSON.stringify({
+  name: "BD Autohost Test Client",
+  short_name: "BD Autohost",
+  start_url: "/",
+  display: "standalone",
+  background_color: "#1a1a2e",
+  theme_color: "#0f3460",
+  icons: [
+    { src: ICON, sizes: "192x192", type: "image/svg+xml", purpose: "any" },
+  ],
+});
+
+const IS_RENDER = !!process.env.RENDER;
+const DEPLOYED_AT = new Date().toLocaleString("en-US", {
+  timeZone: "America/New_York",
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+const server = http.createServer((req, res) => {
+  const url = (req.url ?? "/").split("?")[0];
+  if (url === "/manifest.webmanifest") {
+    res.writeHead(200, { "Content-Type": "application/manifest+json" });
+    res.end(MANIFEST);
+    return;
+  }
   res.writeHead(200, { "Content-Type": "text/html" });
   res.end(HTML_PAGE);
 });
@@ -261,6 +380,7 @@ const server = http.createServer((_req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
+  console.log("WEBSOCKET CONNECTED");
   browserClients.add(ws);
 
   const session: Session = {
@@ -268,6 +388,7 @@ wss.on("connection", (ws) => {
     authenticated: false,
     tabs: [],
     spectating: false,
+    team: 0,
   };
   sessions.set(ws, session);
 
@@ -303,6 +424,7 @@ wss.on("connection", (ws) => {
       if (!session) return;
 
       if (msg.type === "login") {
+        console.log("LOGIN RECEIVED:", msg);
         const username = String(msg.username ?? "").trim();
         if (!username) {
           ws.send(
@@ -345,7 +467,7 @@ wss.on("connection", (ws) => {
             JSON.stringify({
               type: "gui",
               role: "spectator",
-              html: specHtml,
+              html: specHtml + spectatorWidget(session.team),
             }),
           );
         }
@@ -385,6 +507,7 @@ wss.on("connection", (ws) => {
             user: username,
           }),
         );
+        refreshPlayerList();
         return;
       }
 
@@ -430,6 +553,50 @@ wss.on("connection", (ws) => {
           return;
         }
 
+        if (text.startsWith("/t ")) {
+          const message = text.slice(3).trim();
+          if (!message) return;
+
+          const game = [...games.values()][0];
+          if (!game || !isTeamBattle(game)) {
+            broadcast(
+              JSON.stringify({
+                type: "system",
+                text: "No team battle active.",
+              }),
+            );
+            return;
+          }
+
+          for (const [ws2, other] of sessions) {
+            if (
+              other.authenticated &&
+              other.tabs.includes("player") &&
+              ws2.readyState === WebSocket.OPEN
+            ) {
+              ws2.send(
+                JSON.stringify({
+                  type: "teamchat",
+                  text: `${session.username}: ${message}`,
+                }),
+              );
+            }
+          }
+          return;
+        }
+
+        if (text.startsWith("/me ")) {
+          const action = text.slice(4).trim();
+          if (!action) return;
+          broadcast(
+            JSON.stringify({
+              type: "action",
+              text: `${session.username} ${action}`,
+            }),
+          );
+          return;
+        }
+
         if (!text.startsWith(PREFIX)) {
           broadcast(
             JSON.stringify({
@@ -448,6 +615,13 @@ wss.on("connection", (ws) => {
         const val = commaIdx >= 0 ? rest.slice(commaIdx + 1).trim() : "";
         const room = rooms.get("battledome")!;
         const user = users.get(toId(session.username))!;
+
+        broadcast(
+          JSON.stringify({
+            type: "chat",
+            text: `<span class="name">${escHtml(session.username)}</span>: <span style="color:#999">${escHtml(text)}</span>`,
+          }),
+        );
 
         // WARNING: This is a temporary hack to allow spectators to view the GUI. HARDCODED COMMAND.
         if (cmd === "spectate") {
@@ -468,6 +642,46 @@ wss.on("connection", (ws) => {
 
           return;
         }
+
+        if (cmd === "pickteam") {
+          const team = parseInt(args);
+          if (isNaN(team) || team < 0 || team > 2) {
+            sendToUser(session.username, {
+              type: "system",
+              text: "Usage: %pickteam <1|2|0>",
+            });
+            return;
+          }
+          session.team = team;
+          sendToUser(session.username, {
+            type: "system",
+            text:
+              team > 0 ? `You are cheering for Team ${team}.` : "Team cleared.",
+          });
+          refreshPlayerList();
+          sendSpectatorGui(session.username);
+          return;
+        }
+
+        if (cmd === "react") {
+          const phrase = REACTIONS[args.trim().toLowerCase()];
+          if (!phrase) {
+            sendToUser(session.username, {
+              type: "system",
+              text: `Unknown reaction. Try: ${Object.keys(REACTIONS).join(", ")}`,
+            });
+            return;
+          }
+          broadcast(
+            JSON.stringify({
+              type: "react",
+              user: session.username,
+              emote: phrase,
+            }),
+          );
+          return;
+        }
+
         handleCommand(room, user, cmd, args, val);
 
         refreshAllTabs();
@@ -477,7 +691,8 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code, reason) => {
+    console.log("Socket closed:", code, reason.toString());
     const username = session.username;
 
     if (session.authenticated && username) {
@@ -492,12 +707,14 @@ wss.on("connection", (ws) => {
     sessions.delete(ws);
     browserClients.delete(ws);
 
+    refreshPlayerList();
+
     console.log(`${username || "Unknown"} disconnected`);
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Test app running at http://localhost:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Test app running on port ${PORT}`);
 });
 
 process.on("SIGTERM", () => {
@@ -510,16 +727,24 @@ const HTML_PAGE = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f3460">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BD Autohost">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="${ICON}">
 <title>BD Autohost - Test Client</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'DejaVu Sans Mono', 'Courier New', monospace; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
+  body { font-family: 'DejaVu Sans Mono', 'Courier New', monospace; background: #1a1a2e; color: #e0e0e0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
   #header { background: #0f3460; padding: 6px 12px; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 12px; font-size: 12px; }
   #header .title { color: #00aaff; font-weight: bold; font-size: 14px; }
   #header .room { color: #ffcc00; }
+  .sep { color: #333; }
   #container { flex: 1; display: flex; overflow: hidden; }
-  #chat-panel { width: 420px; min-width: 250px; display: flex; flex-direction: column; }
+  #chat-panel { width: 420px; min-width: 250px; min-height: 0; display: flex; flex-direction: column; }
   #resize-handle { width: 4px; background: #333; cursor: col-resize; flex-shrink: 0; }
   #resize-handle:hover { background: #00aaff; }
   #gui-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -540,21 +765,35 @@ const HTML_PAGE = `<!DOCTYPE html>
   .msg-chat .name { color: #ffcc00; font-weight: bold; }
   .msg-pm { color: #cccc00; }
   .msg-action { color: #00cc00; }
+  .msg-react { color: #cc66ff; }
   #header-tabs { display:none; align-items:center; gap:6px; }
   #mobile-tabs { display:none; gap:4px; }
   .mtab { display:none; padding:6px 18px; background:#0f3460; border:1px solid #333; border-radius:4px; cursor:pointer; font-size:12px; color:#8888aa; font-family:inherit; }
   .mtab.on { background:#00aaff; color:#fff; border-color:#00aaff; }
+  .chat-badge { display:none; background:#cc0000; color:#fff; border-radius:9px; padding:1px 7px; font-size:13px; font-weight:bold; margin-left:6px; }
+  .chat-badge.show { display:inline-block; }
   .toast-wrap { position:fixed; bottom:70px; left:0; right:0; padding:8px; pointer-events:none; z-index:9999; }
   .toast-msg { background:rgba(0,0,0,.88); color:#fff; padding:10px 14px; border-radius:8px; margin:4px 8px; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,.4); animation:ti .3s ease,to .3s ease 3.7s forwards; }
   @keyframes ti{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
   @keyframes to{from{opacity:1}to{opacity:0;transform:translateY(20px)}}
+  #login-overlay { position:fixed; inset:0; background:rgba(0,0,0,.75); display:none; align-items:center; justify-content:center; z-index:10000; }
+  #login-overlay.show { display:flex; }
+  #login-card { background:#16213e; border:1px solid #333; border-radius:8px; padding:24px; text-align:center; min-width:280px; max-width:90vw; }
+  #login-card h2 { color:#00aaff; font-size:16px; margin-bottom:16px; font-weight:bold; }
+  #login-err { color:#ff6b6b; font-size:12px; min-height:16px; margin-bottom:8px; }
+  #login-input { width:100%; background:#0f3460; border:1px solid #333; color:#e0e0e0; padding:10px 12px; font-family:inherit; font-size:14px; border-radius:3px; outline:none; margin-bottom:12px; }
+  #login-input:focus { border-color:#00aaff; }
+  #login-btn { width:100%; background:#00aaff; color:#fff; border:none; padding:10px 14px; font-family:inherit; font-size:14px; border-radius:3px; cursor:pointer; }
+  #login-btn:hover { background:#0088cc; }
   @media (max-width:600px) {
     #header { padding:10px 12px; font-size:16px; flex-wrap:wrap; gap:8px; }
     #header .title { font-size:18px; }
-    #header-tabs { display:flex; }
+    #header-tabs { display:flex; order:3; flex-basis:100%; justify-content:center; padding-bottom:4px; }
     #gui-header { display:none; }
-    #mobile-tabs { display:flex; flex:1; justify-content:flex-end; }
+    #mobile-tabs { display:flex; margin-left:auto; }
+    .sep { display:none; }
     .mtab { display:block; font-size:18px; padding:10px 28px; }
+    .chat-badge { font-size:14px; padding:2px 8px; }
     #container { flex-direction:column; }
     #chat-panel, #resize-handle { display:none; }
     #container.mobile-chat #chat-panel { display:flex; width:100% !important; flex:1; }
@@ -562,6 +801,7 @@ const HTML_PAGE = `<!DOCTYPE html>
     #container.mobile-game #gui-panel { flex:1; }
     #container.mobile-game #chat-panel { display:none; }
     #chat-messages { font-size:18px !important; padding:12px; padding-bottom:calc(env(safe-area-inset-bottom,0px) + 80px); }
+    #chat-input-area { padding-bottom:calc(env(safe-area-inset-bottom,0px) + 8px); }
     #chat-input { font-size:18px !important; padding:12px !important; }
     #send-btn { font-size:18px !important; padding:12px 28px !important; }
     .gui-tab { font-size:16px !important; padding:8px 20px !important; }
@@ -573,14 +813,15 @@ const HTML_PAGE = `<!DOCTYPE html>
 <body>
 <div id="header">
   <span class="title">BD Autohost Test Client</span>
-  <span style="color:#333">|</span>
+  <span class="sep">|</span>
   <span class="room">#battledome</span>
-  <span style="color:#333">|</span>
+  <span class="sep">|</span>
   <span style="color:#8888aa" id="current-user">HostUser</span>
+  ${IS_RENDER ? `<span style="color:#8888aa;font-size:10px" title="Deployed at">Last Updated: ${DEPLOYED_AT} EST</span>` : ""}
   <div id="header-tabs"></div>
   <div id="mobile-tabs">
     <button class="mtab" data-view="game">Game</button>
-    <button class="mtab" data-view="chat">Chat</button>
+    <button class="mtab" data-view="chat">Chat<span id="chat-badge" class="chat-badge"></span></button>
   </div>
   <span style="flex:1"></span>
   <span style="color:#8888aa;font-size:10px" id="status">connecting...</span>
@@ -612,6 +853,14 @@ const HTML_PAGE = `<!DOCTYPE html>
     </div>
   </div>
 </div>
+<div id="login-overlay">
+  <div id="login-card">
+    <h2>BD Autohost</h2>
+    <div id="login-err"></div>
+    <input id="login-input" type="text" placeholder="Choose a username..." autocomplete="off" spellcheck="false" maxlength="24" />
+    <button id="login-btn">Login</button>
+  </div>
+</div>
 <script>
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
@@ -619,14 +868,46 @@ const sendBtn = document.getElementById('send-btn');
 const guiContent = document.getElementById('gui-content');
 const statusEl = document.getElementById('status');
 const userEl = document.getElementById('current-user');
+const loginOverlay = document.getElementById('login-overlay');
+const loginInput = document.getElementById('login-input');
+const loginBtn = document.getElementById('login-btn');
+const loginErr = document.getElementById('login-err');
 
 let currentNick = 'HostUser';
 let guiPages = {};
 let activeTab = "";
 let mobileView = 'game';
+let connectedPlayers = [];
+let teamChatLines = [];
+let unread = 0;
 const container = document.getElementById('container');
 
+function renderPlayerList() {
+  const rows = connectedPlayers.map(p =>
+    '<div style="padding:3px 0">' + p.name + ' <span style="color:#888">(' + p.role + ')</span></div>'
+  ).join('');
+  guiPages.players = '<div style="padding:10px"><h3 style="color:#00aaff">Connected Players</h3>' +
+    (rows || '<div style="color:#888">No players connected.</div>') + '</div>';
+  if (activeTab === "players") guiContent.innerHTML = guiPages.players;
+}
+
+function renderTeamChat() {
+  const lines = teamChatLines.map(l =>
+    '<div style="padding:3px 0"><span style="color:#00cc00">[TEAM]</span> ' + l + '</div>'
+  ).join('');
+  guiPages.teamchat = '<div style="padding:10px"><h3 style="color:#00aaff">Team Chat</h3>' +
+    (lines || '<div style="color:#888">No team messages yet.</div>') + '</div>';
+  if (activeTab === "teamchat") guiContent.innerHTML = guiPages.teamchat;
+}
+
 function isMobile() { return window.innerWidth <= 600; }
+
+function updateBadge() {
+  const b = document.getElementById('chat-badge');
+  if (!b) return;
+  b.textContent = unread > 9 ? '9+' : unread;
+  b.classList.toggle('show', unread > 0);
+}
 
 function setView(v) {
   mobileView = v;
@@ -635,6 +916,11 @@ function setView(v) {
   document.querySelectorAll('.mtab').forEach(b => {
     b.classList.toggle('on', b.dataset.view === v);
   });
+  if (v === 'chat') {
+    unread = 0;
+    updateBadge();
+    setTimeout(() => chatInput.focus(), 60);
+  }
 }
 
 document.querySelectorAll('.mtab').forEach(b => {
@@ -666,6 +952,7 @@ function addLine(type, raw) {
   if (type === 'system') { div.className = 'msg-system'; div.textContent = raw; }
   else if (type === 'action') { div.className = 'msg-action'; div.textContent = '\\u25B6 ' + raw; }
   else if (type === 'pm') { div.className = 'msg-pm'; div.textContent = raw; }
+  else if (type === 'react') { div.className = 'msg-react'; div.textContent = '\\u2606 ' + raw; }
   else if (type === 'gui') { return; }
   else {
     div.className = 'msg-chat';
@@ -682,7 +969,6 @@ guiContent.addEventListener('click', (e) => {
   const cmd = btn.getAttribute('value');
   if (!cmd) return;
   ws.send(JSON.stringify({ type: 'chat', text: cmd }));
-  addLine('chat', '<span class="name">' + currentNick + '</span>: ' + cmd);
 });
 function createTabs(tabs) {
   const previousTab = activeTab;
@@ -701,6 +987,7 @@ function createTabs(tabs) {
         document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
         activeTab = tab;
         guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
+        if (isMobile() && mobileView === 'chat') setView('game');
       };
       container.appendChild(button);
     });
@@ -719,6 +1006,40 @@ function createTabs(tabs) {
 }
 
 let ws;
+const nickKey = 'bdUser';
+let nick = '';
+
+function loadNick() {
+  try { return localStorage.getItem(nickKey) || ''; } catch (e) { return ''; }
+}
+
+function saveNick(n) {
+  try { localStorage.setItem(nickKey, n); } catch (e) {}
+}
+
+function doLogin(username) {
+  nick = username;
+  saveNick(username);
+  loginOverlay.classList.remove('show');
+  console.log("Sending login:", username);
+  ws.send(JSON.stringify({ type: 'login', username }));
+}
+
+function submitLogin() {
+  const username = loginInput.value.trim();
+  if (!username) {
+    loginErr.textContent = 'Please enter a username.';
+    loginInput.focus();
+    return;
+  }
+  doLogin(username);
+}
+
+loginBtn.addEventListener('click', submitLogin);
+loginInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitLogin();
+});
+
 function connect() {
   statusEl.textContent = 'connecting...';
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -726,8 +1047,11 @@ function connect() {
   ws.onopen = () => {
     statusEl.textContent = 'connected';
     statusEl.style.color = '#00cc00';
-    const username = prompt('Username?') || '';
-    ws.send(JSON.stringify({ type: 'login', username }));
+    const saved = loadNick();
+    if (saved) loginInput.value = saved;
+    loginErr.textContent = '';
+    loginOverlay.classList.add('show');
+    loginInput.focus();
   };
   ws.onclose = () => {
     statusEl.textContent = 'disconnected';
@@ -747,20 +1071,35 @@ function connect() {
     if (activeTab === msg.role) {
       guiContent.innerHTML = msg.html;
     }
-  } else if (msg.type === 'nick') {
+    } else if (msg.type === 'nick') {
       currentNick = msg.user;
       if (userEl) userEl.textContent = msg.user;
+      saveNick(msg.user);
     } else if (msg.type === 'join') {
       addLine('system', msg.user + ' joined.');
     } else if (msg.type === 'leave') {
       addLine('system', msg.user + ' left.');
     } else if (msg.type === 'chat') {
       addLine('chat', msg.text);
-      if (isMobile() && mobileView === 'game') showToast(msg.text);
+      if (isMobile() && mobileView === 'game') {
+        showToast(msg.text);
+        unread++;
+        updateBadge();
+      }
     } else if (msg.type === 'action') {
       addLine('action', msg.text);
     } else if (msg.type === 'pm') {
       addLine('pm', msg.text);
+    } else if (msg.type === 'playerlist') {
+      connectedPlayers = msg.players;
+      renderPlayerList();
+    } else if (msg.type === 'teamchat') {
+      teamChatLines.push(msg.text);
+      if (teamChatLines.length > 100) teamChatLines.shift();
+      addLine('system', '[TEAM] ' + msg.text);
+      renderTeamChat();
+    } else if (msg.type === 'react') {
+      addLine('react', msg.user + ' ' + msg.emote);
     } else {
       addLine('system', msg.text);
     }

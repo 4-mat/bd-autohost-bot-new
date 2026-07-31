@@ -125,7 +125,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move</span></div>`;
       actions = buildMoveButtons(game, entity);
       actions += buildDashButton(entity);
-      actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")}</div>`;
+      actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")} ${btn("%passmove", "Pass Movement")}</div>`;
     } else {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
       actions = buildAbilityButtons(game, entity);
@@ -432,13 +432,19 @@ function buildPreMoveAbilities(game: Game, entity: Entity): string {
     groups[key].push(ab);
   }
 
-  const order = ["Trigger", "Swift", "Free"];
+  const order = ["Trigger", "Reaction", "Swift", "Free"];
   for (const type of order) {
     const abs = groups[type];
     if (!abs || abs.length === 0) continue;
 
     const typeColor =
-      type === "Swift" ? "#0c0" : type === "Trigger" ? "#cc0" : "#888";
+      type === "Swift"
+        ? "#0c0"
+        : type === "Trigger"
+          ? "#cc0"
+          : type === "Reaction"
+            ? "#f60"
+            : "#888";
 
     html += `<div style="margin:4px 0;padding:3px 6px;border-left:2px solid ${typeColor}">`;
     html += `<span style="color:${typeColor};font-size:10px;font-weight:bold">${type.toUpperCase()}</span><br>`;
@@ -571,14 +577,12 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
     )
       return false;
 
-    if (ab.level === "EX1" || ab.level === "EX2") {
-      if (!entity.isJuggernaut) return false;
-    } else if (ab.level > 0) {
+    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
+
+    if (typeof ab.level === "number" && ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
 
     if (entity.cooldowns[ab.name]) return false;
 
@@ -606,18 +610,17 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
       ab.actionType !== "Free" &&
       ab.actionType !== "Swift" &&
       ab.actionType !== "Trigger" &&
-      ab.actionType !== "Movement"
+      ab.actionType !== "Movement" &&
+      !(ab.actionType === "Reaction" && entity.triggered)
     )
       return false;
 
-    if (ab.level === "EX1" || ab.level === "EX2") {
-      if (!entity.isJuggernaut) return false;
-    } else if (ab.level > 0) {
+    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
+
+    if (typeof ab.level === "number" && ab.level > 0) {
       if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
         return false;
     }
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
 
     if (entity.cooldowns[ab.name]) return false;
 
@@ -632,14 +635,10 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
   });
 }
 
-function getValidTargets(
-  game: Game,
-  ab: AbilityData,
-  caster: Entity,
-): Entity[] {
+function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
   return game.entities.filter((e) => {
     if (
-      e.num === caster.num &&
+      e.num === user.num &&
       ab.targetGroup !== "Self" &&
       ab.targetGroup !== "Any"
     )
@@ -648,19 +647,19 @@ function getValidTargets(
 
     switch (ab.targetGroup) {
       case "Foe":
-        if (caster.team === 0) {
-          if (e.num === caster.num) return false;
+        if (user.team === 0) {
+          if (e.num === user.num) return false;
         } else {
-          if (e.team === caster.team) return false;
+          if (e.team === user.team) return false;
         }
         break;
       case "Ally":
-        if (e.num === caster.num) return false;
-        if (caster.team === 0) return false;
-        if (e.team !== caster.team) return false;
+        if (e.num === user.num) return false;
+        if (user.team === 0) return false;
+        if (e.team !== user.team) return false;
         break;
       case "Self":
-        if (e.num !== caster.num) return false;
+        if (e.num !== user.num) return false;
         break;
       case "Any":
         break;
@@ -671,22 +670,22 @@ function getValidTargets(
           ab.targetGroup.includes("Ally") &&
           !ab.targetGroup.includes("Foe")
         ) {
-          if (e.num === caster.num) return true;
-          if (caster.team === 0) return false;
-          if (e.team !== caster.team) return false;
+          if (e.num === user.num) return true;
+          if (user.team === 0) return false;
+          if (e.team !== user.team) return false;
         }
         break;
     }
 
     if (ab.range !== "Global" && ab.range !== "Self") {
-      if (!inRange(game, caster.pos, e.pos, ab.range)) return false;
+      if (!inRange(game, user.pos, e.pos, ab.range)) return false;
     }
 
     return true;
   });
 }
 
-function getValidTiles(game: Game, ab: AbilityData, caster: Entity): string[] {
+function getValidTiles(game: Game, ab: AbilityData, user: Entity): string[] {
   const tiles: string[] = [];
   const rangeStr = ab.range.toLowerCase();
   const rangeMatch = rangeStr.match(/(?:homing|range)\s*(\d+)/);
@@ -695,10 +694,10 @@ function getValidTiles(game: Game, ab: AbilityData, caster: Entity): string[] {
 
   for (let r = 0; r < game.map.length; r++) {
     for (let c = 0; c < game.map[0].length; c++) {
-      const d = dist(caster.pos, [r, c]);
+      const d = dist(user.pos, [r, c]);
       if (d === 0) continue;
       if (d > range) continue;
-      if (needsLoS && !hasLineOfSight(game, caster.pos, [r, c])) continue;
+      if (needsLoS && !hasLineOfSight(game, user.pos, [r, c])) continue;
       tiles.push(posToStr(r, c));
     }
   }
