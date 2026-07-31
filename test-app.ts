@@ -540,6 +540,9 @@ const HTML_PAGE = `<!DOCTYPE html>
   .msg-chat .name { color: #ffcc00; font-weight: bold; }
   .msg-pm { color: #cccc00; }
   .msg-action { color: #00cc00; }
+  #quick-actions { display:none; gap:6px; padding:6px 8px 0; flex-wrap:wrap; }
+  .qbtn { background:#0f3460; border:1px solid #333; color:#00aaff; padding:8px 16px; font-size:14px; border-radius:6px; font-family:inherit; cursor:pointer; }
+  .qbtn:active { background:#00aaff; color:#fff; }
   #header-tabs { display:none; align-items:center; gap:6px; }
   #mobile-tabs { display:none; gap:4px; }
   .mtab { display:none; padding:6px 18px; background:#0f3460; border:1px solid #333; border-radius:4px; cursor:pointer; font-size:12px; color:#8888aa; font-family:inherit; }
@@ -564,6 +567,8 @@ const HTML_PAGE = `<!DOCTYPE html>
     #chat-messages { font-size:18px !important; padding:12px; padding-bottom:calc(env(safe-area-inset-bottom,0px) + 80px); }
     #chat-input { font-size:18px !important; padding:12px !important; }
     #send-btn { font-size:18px !important; padding:12px 28px !important; }
+    .qbtn { font-size:16px; padding:10px 18px; }
+    #quick-actions { display:flex; }
     .gui-tab { font-size:16px !important; padding:8px 20px !important; }
     #gui-content { padding:4px; }
     #status { font-size:12px !important; }
@@ -588,10 +593,33 @@ const HTML_PAGE = `<!DOCTYPE html>
 <div id="container">
   <div id="chat-panel">
     <div id="chat-messages"></div>
+    <div id="quick-actions">
+      <button class="qbtn" data-cmd="%host">Host</button>
+      <button class="qbtn" data-cmd="%addp ">AddP…</button>
+      <button class="qbtn" data-cmd="%start">Start</button>
+      <button class="qbtn" data-cmd="%undo">Undo</button>
+      <button class="qbtn" data-cmd="%help">Help</button>
+    </div>
     <div id="chat-input-area">
-      <input id="chat-input" type="text" placeholder="Type %command or /nick name..." autocomplete="off" spellcheck="false" />
+      <input id="chat-input" type="text" placeholder="Type %command or /nick name..." autocomplete="on" list="cmd-list" spellcheck="false" />
       <button id="send-btn">Send</button>
     </div>
+    <datalist id="cmd-list">
+      <option value="%host"></option>
+      <option value="%addp "></option>
+      <option value="%remp "></option>
+      <option value="%setlevel "></option>
+      <option value="%setmap "></option>
+      <option value="%start"></option>
+      <option value="%undo"></option>
+      <option value="%move "></option>
+      <option value="%dash "></option>
+      <option value="%use "></option>
+      <option value="%confirm"></option>
+      <option value="%cancel"></option>
+      <option value="%help"></option>
+      <option value="%spectate"></option>
+    </datalist>
   </div>
   <div id="resize-handle"></div>
   <div id="gui-panel">
@@ -779,6 +807,20 @@ function sendChat() {
 
 sendBtn.addEventListener('click', sendChat);
 chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+document.querySelectorAll('.qbtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const cmd = btn.dataset.cmd;
+    if (!cmd) return;
+    if (cmd.endsWith(' ')) {
+      chatInput.value = cmd;
+      chatInput.focus();
+    } else {
+      ws.send(JSON.stringify({ type: 'chat', text: cmd }));
+      addLine('chat', '<span class="name">' + currentNick + '</span>: ' + cmd);
+    }
+  });
+});
 
 let dragging = false;
 document.getElementById('resize-handle').addEventListener('mousedown', (e) => {
