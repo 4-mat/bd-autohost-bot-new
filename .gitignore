@@ -6,3 +6,4 @@ config.local.ts
 html-output.txt
 .env
 .todo
+nul
