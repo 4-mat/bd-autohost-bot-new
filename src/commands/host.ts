@@ -196,7 +196,7 @@ function handleAddPlayer(room: Room, user: User, args: string) {
   const name = parts[0];
   const className = parts[1] || "Bard";
   const weaponName = parts[2] || "Crossbow";
-  const team = parts[3] ? parseInt(parts[3]) : 0;
+  const team = parts[3] ? parseInt(parts[3]) : game.entities.length + 1;
   const level = 1;
 
   // Check if already added
@@ -430,6 +430,9 @@ function handleSwitchClass(room: Room, user: User, args: string) {
       hasAbility(a, lvl, !!entity.isJuggernaut),
     ),
     ...(weaponData
+      ? weaponData.abilities.filter(
+        (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+      )
       ? weaponData.abilities.filter((a) =>
           hasAbility(a, lvl, !!entity.isJuggernaut),
         )
@@ -501,6 +504,9 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   const lvl = entity.weaponLevel;
   entity.abilities = [
     ...(classData
+      ? classData.abilities.filter(
+        (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
+      )
       ? classData.abilities.filter((a) =>
           hasAbility(a, lvl, !!entity.isJuggernaut),
         )
