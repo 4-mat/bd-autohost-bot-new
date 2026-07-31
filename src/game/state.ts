@@ -133,6 +133,7 @@ export interface Entity {
   standardUsed: boolean;
   movementUsed: boolean;
   swiftUsed: boolean;
+  triggered?: boolean;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
 }
@@ -196,6 +197,7 @@ function serializeState(game: Game): string {
       standardUsed: e.standardUsed,
       movementUsed: e.movementUsed,
       swiftUsed: e.swiftUsed,
+      triggered: e.triggered,
     })),
     turnIndex: game.turnIndex,
     round: game.round,
@@ -225,6 +227,7 @@ export function popSnapshot(game: Game): boolean {
       ent.standardUsed = e.standardUsed;
       ent.movementUsed = e.movementUsed;
       ent.swiftUsed = e.swiftUsed;
+      ent.triggered = e.triggered;
     }
   }
   game.turnIndex = data.turnIndex;
@@ -1105,6 +1108,7 @@ export function nextTurn(game: Game): {
   entity.standardUsed = false;
   entity.movementUsed = false;
   entity.swiftUsed = false;
+  entity.triggered = false;
   entity.pendingAction = null;
 
   const { messages: startMessages, died } = processStartOfTurn(game, entity);
