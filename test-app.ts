@@ -5,7 +5,7 @@ import { rooms, type Room } from "./src/rooms.js";
 import { users } from "./src/users.js";
 import { handleCommand } from "./src/commands/index.js";
 import { setWs, toId } from "./src/utils.js";
-import { games } from "./src/game/state.js";
+import { games, getCurrentEntity, type Entity } from "./src/game/state.js";
 
 loadGameData();
 
@@ -240,6 +240,33 @@ function refreshAllTabs() {
   }
 }
 
+function controlsEntity(username: string, entity: Entity): boolean {
+  if (toId(entity.name) === toId(username)) return true;
+  const slot = findPlayerSlot(username);
+  return !!slot && toId(entity.num) === toId(slot);
+}
+
+function broadcastTurn() {
+  for (const game of games.values()) {
+    const entity = getCurrentEntity(game);
+    const info = entity
+      ? { num: entity.num.toUpperCase(), name: entity.name }
+      : null;
+
+    for (const [ws, session] of sessions) {
+      if (session.authenticated && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: "turn",
+            entity: info,
+            yours: !!entity && controlsEntity(session.username, entity),
+          }),
+        );
+      }
+    }
+  }
+}
+
 function ensureUser(name: string) {
   const uid = toId(name);
   if (!users.has(uid)) {
@@ -385,6 +412,7 @@ wss.on("connection", (ws) => {
             user: username,
           }),
         );
+        broadcastTurn();
         return;
       }
 
@@ -465,12 +493,14 @@ wss.on("connection", (ws) => {
           );
 
           sendSpectatorGui(session.username);
+          broadcastTurn();
 
           return;
         }
         handleCommand(room, user, cmd, args, val);
 
         refreshAllTabs();
+        broadcastTurn();
       }
     } catch (e) {
       console.error("Bad message:", e);
@@ -540,12 +570,16 @@ const HTML_PAGE = `<!DOCTYPE html>
   .msg-chat .name { color: #ffcc00; font-weight: bold; }
   .msg-pm { color: #cccc00; }
   .msg-action { color: #00cc00; }
+  #turn-indicator { display:none; color:#00aaff; font-size:11px; font-weight:bold; background:#0f3460; border:1px solid #333; border-radius:3px; padding:2px 8px; }
+  #turn-indicator.yours { color:#ffcc00; border-color:#ffcc00; animation:tp 1s ease infinite; }
+  @keyframes tp { 0%,100% { opacity:1 } 50% { opacity:.4 } }
   #header-tabs { display:none; align-items:center; gap:6px; }
   #mobile-tabs { display:none; gap:4px; }
   .mtab { display:none; padding:6px 18px; background:#0f3460; border:1px solid #333; border-radius:4px; cursor:pointer; font-size:12px; color:#8888aa; font-family:inherit; }
   .mtab.on { background:#00aaff; color:#fff; border-color:#00aaff; }
   .toast-wrap { position:fixed; bottom:70px; left:0; right:0; padding:8px; pointer-events:none; z-index:9999; }
   .toast-msg { background:rgba(0,0,0,.88); color:#fff; padding:10px 14px; border-radius:8px; margin:4px 8px; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,.4); animation:ti .3s ease,to .3s ease 3.7s forwards; }
+  .toast-turn { border:2px solid #ffcc00; background:rgba(0,40,20,.94); font-size:16px; font-weight:bold; text-align:center; }
   @keyframes ti{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
   @keyframes to{from{opacity:1}to{opacity:0;transform:translateY(20px)}}
   @media (max-width:600px) {
@@ -567,6 +601,7 @@ const HTML_PAGE = `<!DOCTYPE html>
     .gui-tab { font-size:16px !important; padding:8px 20px !important; }
     #gui-content { padding:4px; }
     #status { font-size:12px !important; }
+    #turn-indicator { font-size:14px; padding:4px 10px; }
   }
 </style>
 </head>
@@ -583,6 +618,7 @@ const HTML_PAGE = `<!DOCTYPE html>
     <button class="mtab" data-view="chat">Chat</button>
   </div>
   <span style="flex:1"></span>
+  <span id="turn-indicator"></span>
   <span style="color:#8888aa;font-size:10px" id="status">connecting...</span>
 </div>
 <div id="container">
@@ -624,6 +660,7 @@ let currentNick = 'HostUser';
 let guiPages = {};
 let activeTab = "";
 let mobileView = 'game';
+let lastTurn = '';
 const container = document.getElementById('container');
 
 function isMobile() { return window.innerWidth <= 600; }
@@ -641,7 +678,7 @@ document.querySelectorAll('.mtab').forEach(b => {
   b.addEventListener('click', () => setView(b.dataset.view));
 });
 
-function showToast(text) {
+function showToast(text, tone) {
   let wrap = document.getElementById("toast-wrap");
   if (!wrap) {
     wrap = document.createElement("div");
@@ -650,10 +687,31 @@ function showToast(text) {
     document.body.appendChild(wrap);
   }
   const t = document.createElement("div");
-  t.className = "toast-msg";
+  t.className = tone ? "toast-msg toast-turn" : "toast-msg";
   t.textContent = text.replace(/<[^>]+>/g, "");
   wrap.appendChild(t);
   setTimeout(() => t.remove(), 4000);
+}
+
+function handleTurn(msg) {
+  const e = msg.entity;
+  const el = document.getElementById('turn-indicator');
+  const key = e ? e.num : '';
+  const label = e ? e.name + ' (' + e.num + ')' : '';
+  if (el) {
+    el.textContent = label;
+    el.style.display = e ? 'inline-block' : 'none';
+    el.classList.toggle('yours', !!e && !!msg.yours);
+  }
+  if (!e || key === lastTurn) {
+    lastTurn = key;
+    return;
+  }
+  lastTurn = key;
+  if (msg.yours && isMobile()) {
+    showToast('Your turn: ' + label, true);
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+  }
 }
 
 window.addEventListener('resize', () => {
@@ -757,6 +815,8 @@ function connect() {
     } else if (msg.type === 'chat') {
       addLine('chat', msg.text);
       if (isMobile() && mobileView === 'game') showToast(msg.text);
+    } else if (msg.type === 'turn') {
+      handleTurn(msg);
     } else if (msg.type === 'action') {
       addLine('action', msg.text);
     } else if (msg.type === 'pm') {
