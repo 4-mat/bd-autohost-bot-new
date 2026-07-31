@@ -174,7 +174,10 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   if (parts.length >= 3) {
     entityName = parts[parts.length - 1];
     posStr = parts.slice(0, -1).join(",");
-  } else if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+  } else if (
+    parts.length === 2 &&
+    (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
+  ) {
     entityName = parts[1];
     posStr = parts[0];
   }
@@ -233,7 +236,10 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (parts.length >= 3) {
     entityName = parts[parts.length - 1];
     abilityTarget = parts.slice(0, -1).join(",");
-  } else if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+  } else if (
+    parts.length === 2 &&
+    (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
+  ) {
     entityName = parts[1];
     abilityTarget = parts[0];
   }
