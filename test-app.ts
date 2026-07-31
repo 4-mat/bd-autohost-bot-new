@@ -719,6 +719,16 @@ function createTabs(tabs) {
 }
 
 let ws;
+const nickKey = 'bdUser';
+
+function loadNick() {
+  try { return localStorage.getItem(nickKey) || ''; } catch (e) { return ''; }
+}
+
+function saveNick(n) {
+  try { localStorage.setItem(nickKey, n); } catch (e) {}
+}
+
 function connect() {
   statusEl.textContent = 'connecting...';
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -726,7 +736,11 @@ function connect() {
   ws.onopen = () => {
     statusEl.textContent = 'connected';
     statusEl.style.color = '#00cc00';
-    const username = prompt('Username?') || '';
+    let username = loadNick();
+    if (!username) {
+      username = prompt('Username?') || '';
+      if (username) saveNick(username);
+    }
     ws.send(JSON.stringify({ type: 'login', username }));
   };
   ws.onclose = () => {
@@ -747,9 +761,10 @@ function connect() {
     if (activeTab === msg.role) {
       guiContent.innerHTML = msg.html;
     }
-  } else if (msg.type === 'nick') {
+    } else if (msg.type === 'nick') {
       currentNick = msg.user;
       if (userEl) userEl.textContent = msg.user;
+      saveNick(msg.user);
     } else if (msg.type === 'join') {
       addLine('system', msg.user + ' joined.');
     } else if (msg.type === 'leave') {
