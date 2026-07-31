@@ -400,6 +400,8 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   pushSnapshot(game);
 
+  let acted = "";
+
   // Stunned entities can't act — skip their action and clear pending
   if (isStunned(entity)) {
     if (entity.pendingAction) {
@@ -420,6 +422,8 @@ function handleAdvanceTurn(game: Game, user: User) {
       send(game.room, msg);
     }
 
+    acted = summarizeResult(entity, step.result.messages);
+
     // Track kills
     for (const death of step.result.deaths) {
       if (entity.pendingAction === null) {
@@ -437,7 +441,7 @@ function handleAdvanceTurn(game: Game, user: User) {
   game.log.push({
     turn: game.round,
     entity: entity.num,
-    description: `${entity.num} (${entity.name}) -- turn passed`,
+    description: acted || `${entity.num} (${entity.name}) -- turn passed`,
     snapshot: "",
   });
 
@@ -471,6 +475,27 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+function summarizeResult(entity: Entity, messages: string[]): string {
+  const head = messages.find((m) => m.startsWith("/me "));
+  const action = head ? head.slice(4).split(", MR")[0] : "action";
+  const dmg: string[] = [];
+  for (const m of messages) {
+    const d = m.match(/= \*\*(\d+)\*\* -> (\S+) \(/);
+    if (d) {
+      dmg.push(`${d[2]} ${d[1]} dmg`);
+      continue;
+    }
+    const s = m.match(/-> (\S+) \(.*= \*\*(\d+)\*\*$/);
+    if (s) dmg.push(`${s[1]} ${s[2]} dmg`);
+  }
+  const acc = messages
+    .filter((m) => m.includes("**Accuracy**"))
+    .map((m) => (m.includes("HIT") ? "HIT" : "MISS"));
+  const hits = acc.length ? acc.join("/") : "";
+  const tail = [hits, dmg.join(" ")].filter(Boolean).join(" ");
+  return `${entity.num} ${action}${tail ? `: ${tail}` : ""}`;
 }
 
 function handleBack(game: Game, user: User) {
