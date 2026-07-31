@@ -1,3 +1,5 @@
+import { applyFrequencyDefaults } from "./frequency.js";
+
 export interface AbilityData {
   name: string;
   level: number | "EX1" | "EX2";
@@ -63,6 +65,8 @@ export function loadGameData() {
   loadBasicClasses();
   loadBasicWeapons();
   loadReferences();
+  for (const c of classes.values()) applyFrequencyDefaults(c.abilities);
+  for (const w of weapons.values()) applyFrequencyDefaults(w.abilities);
   console.log(`Loaded ${classes.size} classes, ${weapons.size} weapons`);
 }
 
