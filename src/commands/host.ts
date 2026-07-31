@@ -430,9 +430,6 @@ function handleSwitchClass(room: Room, user: User, args: string) {
       hasAbility(a, lvl, !!entity.isJuggernaut),
     ),
     ...(weaponData
-      ? weaponData.abilities.filter(
-        (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
-      )
       ? weaponData.abilities.filter((a) =>
           hasAbility(a, lvl, !!entity.isJuggernaut),
         )
@@ -504,9 +501,6 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   const lvl = entity.weaponLevel;
   entity.abilities = [
     ...(classData
-      ? classData.abilities.filter(
-        (a) => a.level === "EX1" || a.level === "EX2" || a.level <= lvl,
-      )
       ? classData.abilities.filter((a) =>
           hasAbility(a, lvl, !!entity.isJuggernaut),
         )
