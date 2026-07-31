@@ -88,14 +88,14 @@ export interface AbilityData {
   roll: string;
   damageType: "Physical" | "Magical" | "";
   actionType:
-  | "Standard"
-  | "Full"
-  | "Movement"
-  | "Swift"
-  | "Free"
-  | "Trigger"
-  | "Reaction"
-  | "Passive";
+    | "Standard"
+    | "Full"
+    | "Movement"
+    | "Swift"
+    | "Free"
+    | "Trigger"
+    | "Reaction"
+    | "Passive";
   targetAmount: number | "AoE";
   targetGroup: string;
   range: string;
@@ -327,7 +327,7 @@ export function hasLineOfSight(
     const y = Math.round(from[0] + sy * i);
     if (x < 0 || y < 0 || y >= game.map.length || x >= game.map[0].length)
       return false;
-    const t = game.map[x][y];
+    const t = game.map[y][x];
     if (isObstruction(t)) return false;
   }
   return true;
@@ -925,18 +925,6 @@ export function processStartOfTurn(
     if (entity.cooldowns[name] <= 0) delete entity.cooldowns[name];
   }
 
-  // Tick buff durations, remove expired
-  entity.buffs = entity.buffs.filter((b) => {
-    b.rounds--;
-    if (b.rounds <= 0) {
-      messages.push(
-        `  ${entity.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
-      );
-      return false;
-    }
-    return true;
-  });
-
   // Apply status damage (DoT)
   for (const status of [...entity.statuses]) {
     if (status.damage > 0) {
@@ -1087,6 +1075,22 @@ export function nextTurn(game: Game): {
     return { entity: null, messages: [], died: false };
   }
 
+  // Tick buffs of the entity whose turn is ending
+  const messages: string[] = [];
+  const prev = getCurrentEntity(game);
+  if (prev) {
+    prev.buffs = prev.buffs.filter((b) => {
+      b.rounds--;
+      if (b.rounds <= 0) {
+        messages.push(
+          `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
+        );
+        return false;
+      }
+      return true;
+    });
+  }
+
   game.turnIndex++;
   if (game.turnIndex >= game.turnOrder.length) {
     game.turnIndex = 0;
@@ -1094,7 +1098,7 @@ export function nextTurn(game: Game): {
   }
 
   const entity = getCurrentEntity(game);
-  if (!entity) return { entity: null, messages: [], died: false };
+  if (!entity) return { entity: null, messages, died: false };
 
   // Reset per-turn flags
   entity.dashUsed = false;
@@ -1103,6 +1107,6 @@ export function nextTurn(game: Game): {
   entity.swiftUsed = false;
   entity.pendingAction = null;
 
-  const { messages, died } = processStartOfTurn(game, entity);
-  return { entity, messages, died };
+  const { messages: startMessages, died } = processStartOfTurn(game, entity);
+  return { entity, messages: [...messages, ...startMessages], died };
 }
