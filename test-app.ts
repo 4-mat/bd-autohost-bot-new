@@ -253,7 +253,28 @@ function ensureUser(name: string) {
   return uid;
 }
 
-const server = http.createServer((_req, res) => {
+const ICON =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%230f3460'/%3E%3Ctext x='96' y='124' font-size='76' font-family='monospace' font-weight='bold' text-anchor='middle' fill='%2300aaff'%3EBD%3C/text%3E%3C/svg%3E";
+
+const MANIFEST = JSON.stringify({
+  name: "BD Autohost Test Client",
+  short_name: "BD Autohost",
+  start_url: "/",
+  display: "standalone",
+  background_color: "#1a1a2e",
+  theme_color: "#0f3460",
+  icons: [
+    { src: ICON, sizes: "192x192", type: "image/svg+xml", purpose: "any" },
+  ],
+});
+
+const server = http.createServer((req, res) => {
+  const url = (req.url ?? "/").split("?")[0];
+  if (url === "/manifest.webmanifest") {
+    res.writeHead(200, { "Content-Type": "application/manifest+json" });
+    res.end(MANIFEST);
+    return;
+  }
   res.writeHead(200, { "Content-Type": "text/html" });
   res.end(HTML_PAGE);
 });
@@ -510,7 +531,14 @@ const HTML_PAGE = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f3460">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BD Autohost">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="${ICON}">
 <title>BD Autohost - Test Client</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
