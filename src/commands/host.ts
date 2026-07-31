@@ -260,7 +260,9 @@ function handleAddPlayer(room: Room, user: User, args: string) {
     mag: statVal(classData.stats.mag) + statVal(weaponData.stats.mag),
     pd: statVal(classData.stats.pd) + statVal(weaponData.stats.pd),
     md: statVal(classData.stats.md) + statVal(weaponData.stats.md),
-    eva: statVal(classData.stats.eva) + statVal(weaponData.stats.eva),
+    eva: Math.floor(
+      statVal(classData.stats.eva) + statVal(weaponData.stats.eva),
+    ),
     mp: statVal(classData.stats.mp) + statVal(weaponData.stats.mp),
     pos,
     team,
@@ -418,8 +420,9 @@ function handleSwitchClass(room: Room, user: User, args: string) {
     sv(classData.stats.pd) + (weaponData ? sv(weaponData.stats.pd) : 0);
   entity.md =
     sv(classData.stats.md) + (weaponData ? sv(weaponData.stats.md) : 0);
-  entity.eva =
-    sv(classData.stats.eva) + (weaponData ? sv(weaponData.stats.eva) : 0);
+  entity.eva = Math.floor(
+    sv(classData.stats.eva) + (weaponData ? sv(weaponData.stats.eva) : 0),
+  );
   entity.mp =
     sv(classData.stats.mp) + (weaponData ? sv(weaponData.stats.mp) : 0);
 
@@ -492,8 +495,9 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
     (classData ? sv(classData.stats.pd) : 0) + sv(weaponData.stats.pd);
   entity.md =
     (classData ? sv(classData.stats.md) : 0) + sv(weaponData.stats.md);
-  entity.eva =
-    (classData ? sv(classData.stats.eva) : 0) + sv(weaponData.stats.eva);
+  entity.eva = Math.floor(
+    (classData ? sv(classData.stats.eva) : 0) + sv(weaponData.stats.eva),
+  );
   entity.mp =
     (classData ? sv(classData.stats.mp) : 0) + sv(weaponData.stats.mp);
 
