@@ -2,6 +2,7 @@ import {
   type Game,
   type Entity,
   type AbilityData,
+  type AbilityCost,
   rollAccuracy,
   dealDamage,
   removeEntity,
@@ -110,9 +111,17 @@ function* resolveAttackFlow(
   // --- Declare Attack ---
   // result.messages.push(`/me declares ${ability.name}`);
 
-  // --- Selection / Choices / Sacrifice / Pay Costs ---
-  // STUB: this is a placeholder. Work on how costs/choices are represented
+  // --- Auto-deduct non-prompted costs ---
+  if (ability.cost && !ability.cost.prompt) {
+    if (!autoDeductCost(user, ability.cost)) {
+      result.messages.push(
+        `${user.num} could not pay the cost for ${ability.name}.`,
+      );
+      return result;
+    }
+  }
 
+  // --- Selection / Choices / Sacrifice / Pay Costs ---
   if (abilityNeedsSelection(ability)) {
     const choiceId = yield {
       kind: "selection",
@@ -301,16 +310,45 @@ function advanceAttack(
   return { done: false, prompt: step.value };
 }
 
-// TODO: implement these once we know how costs/choices will be represented in AbilityData.
+// ---------------------------------------------------------------------------
+// Cost / choice system — reads structured AbilityData.cost and .choices
+// instead of parsing effect text.
+// ---------------------------------------------------------------------------
 
 function abilityNeedsSelection(ability: AbilityData): boolean {
-  // TODO: e.g. `return !!ability.cost || !!ability.choices;`
-  return false;
+  return !!(ability.choices?.length || ability.cost?.prompt);
 }
 
 function buildSelectionOptions(ability: AbilityData): SelectionOption[] {
-  // TODO: map ability.choices (or however they're stored) into buttons.
-  return [];
+  const opts: SelectionOption[] = [];
+  if (ability.choices) {
+    opts.push(...ability.choices);
+  }
+  if (ability.cost?.prompt) {
+    const label = `Pay ${ability.cost.amount} ${ability.cost.type === "Resource" ? (ability.cost.resource ?? "") : ability.cost.type}`;
+    // avoid duplicating if the only choice is the same as the cost
+    if (!opts.some((o) => o.label === label)) {
+      opts.push({ id: "pay_cost", label });
+    }
+  }
+  return opts.length > 0 ? opts : [{ id: "confirm", label: "Confirm" }];
+}
+
+function autoDeductCost(user: Entity, cost: AbilityCost): boolean {
+  if (cost.type === "HP") {
+    if (user.curhp <= cost.amount) return false;
+    user.curhp -= cost.amount;
+    return true;
+  }
+  if (cost.type === "MP") {
+    if (user.mp < cost.amount) return false;
+    user.mp -= cost.amount;
+    return true;
+  }
+  const pool = user.resources[cost.resource ?? ""] ?? 0;
+  if (pool < cost.amount) return false;
+  user.resources[cost.resource ?? ""] = pool - cost.amount;
+  return true;
 }
 
 function applySelection(
@@ -318,7 +356,9 @@ function applySelection(
   ability: AbilityData,
   choiceId: string,
 ): boolean {
-  // TODO: deduct HP/MP/resources for the chosen cost, return false if the user can't actually pay it.
+  if (choiceId === "pay_cost" && ability.cost) {
+    return autoDeductCost(user, ability.cost);
+  }
   return true;
 }
 
