@@ -125,7 +125,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move</span></div>`;
       actions = buildMoveButtons(game, entity);
       actions += buildDashButton(entity);
-      actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")}</div>`;
+      actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")} ${btn("%passmove", "Pass Movement")}</div>`;
     } else {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
       actions = buildAbilityButtons(game, entity);
