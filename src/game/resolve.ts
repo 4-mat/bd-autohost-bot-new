@@ -542,10 +542,10 @@ function resolveSingleTarget(
 function setCooldown(entity: Entity, ability: AbilityData) {
   const freq = ability.frequency.toLowerCase();
   if (freq === "every turn" || freq === "passive") return;
-  if (freq === "eot") {
-    entity.cooldowns[ability.name] = 2;
-  } else if (freq === "e3t") {
+  if (freq.includes("e3t")) {
     entity.cooldowns[ability.name] = 3;
+  } else if (freq.includes("eot")) {
+    entity.cooldowns[ability.name] = 2;
   }
 }
 
