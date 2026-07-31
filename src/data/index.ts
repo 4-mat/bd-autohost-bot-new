@@ -1,3 +1,15 @@
+export interface AbilityCost {
+  type: "HP" | "MP" | "Resource";
+  amount: number;
+  resource?: string;
+  prompt?: boolean;
+}
+
+export interface AbilityChoice {
+  id: string;
+  label: string;
+}
+
 export interface AbilityData {
   name: string;
   level: number | "EX1" | "EX2";
@@ -20,6 +32,8 @@ export interface AbilityData {
   range: string;
   effect: string;
   maxUses?: number;
+  cost?: AbilityCost;
+  choices?: AbilityChoice[];
 }
 
 export interface ClassData {
@@ -150,6 +164,11 @@ function loadBasicClasses() {
         range: "",
         effect:
           "Choose: +3 ATK/MAG, +1 ACC/CR, or +4 DEF. Until next turn, Rising Hope becomes Star 2 and grants all selected Fantasia bonuses. Cannot choose same bonus more than once.",
+        choices: [
+          { id: "atk_mag", label: "+3 ATK/MAG" },
+          { id: "acc_cr", label: "+1 ACC/CR" },
+          { id: "def", label: "+4 DEF" },
+        ],
       },
       {
         name: "Staccato",
@@ -493,6 +512,7 @@ function loadBasicClasses() {
         targetGroup: "Self or Ally",
         range: "Melee",
         effect: "Spend 2+ Qi: gain +1d4+1 DEF per Qi spent./1",
+        cost: { type: "Resource", resource: "Qi", amount: 2, prompt: true },
       },
       {
         name: "Conversion",
@@ -507,6 +527,7 @@ function loadBasicClasses() {
         range: "",
         effect:
           "Spend 1-3 Qi. This turn: attacks become opposite damage type, swap ATK and MAG. Per Qi spent: ignore 5 DEF and gain +1 Range.",
+        cost: { type: "Resource", resource: "Qi", amount: 1, prompt: true },
       },
       {
         name: "Nirvana",
@@ -521,6 +542,7 @@ function loadBasicClasses() {
         range: "",
         effect:
           "Spend any Qi. Next attack: gain +1 dice and +2 DMG per Qi spent.",
+        cost: { type: "Resource", resource: "Qi", amount: 1, prompt: true },
       },
     ],
   };
@@ -751,6 +773,7 @@ function loadBasicClasses() {
         range: "",
         effect:
           "Spend any MP. Until next turn: attacks from max range gain +1 ACC per 2 MP spent.",
+        cost: { type: "MP", amount: 1, prompt: true },
       },
       {
         name: "Quick Thinking",
@@ -2822,6 +2845,12 @@ function loadBasicWeapons() {
         range: "Melee",
         effect:
           "Spend 2 Rage per effect (cost +1 each use). Choose: +4d10 base roll, Splash 2, or -3 MR. -2 ACC on Tile.",
+        cost: { type: "Resource", resource: "Rage", amount: 2, prompt: true },
+        choices: [
+          { id: "d10", label: "+4d10 base roll" },
+          { id: "splash", label: "Splash 2" },
+          { id: "mr", label: "-3 MR" },
+        ],
       },
     ],
   };
@@ -3851,6 +3880,7 @@ function loadBasicWeapons() {
         range: "Melee",
         effect:
           "Spend any Focus: +1 hit per Focus. Each Focus hit: +CR equal to Focus value.",
+        cost: { type: "Resource", resource: "Focus", amount: 1, prompt: true },
       },
       {
         name: "One for All",
@@ -4163,6 +4193,13 @@ function loadBasicWeapons() {
         range: "Range 4\n(Splash 1)",
         effect:
           "Spend 3 Mana. Choose Bleed, Burn, Curse, or Poison. inflict 3 [status]/1. Spend +1 Mana: /2.",
+        cost: { type: "Resource", resource: "Mana", amount: 3 },
+        choices: [
+          { id: "bleed", label: "Bleed" },
+          { id: "burn", label: "Burn" },
+          { id: "curse", label: "Curse" },
+          { id: "poison", label: "Poison" },
+        ],
       },
       {
         name: "Spellweave",
@@ -5218,6 +5255,10 @@ function loadBasicWeapons() {
         range: "Range 3",
         effect:
           "Choose: inflict 6 Poison/2 or 6 Cripple/2. Start of turn: gain +3 DMG/1 per 6 damage from these statuses. Target may remove one status as Swift.",
+        choices: [
+          { id: "poison", label: "Inflict 6 Poison/2" },
+          { id: "cripple", label: "Inflict 6 Cripple/2" },
+        ],
       },
       {
         name: "Shady Bet",

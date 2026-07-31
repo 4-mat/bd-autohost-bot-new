@@ -74,6 +74,7 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | ------------------------------------ | --------------------------------------------- |
 | `%move [pos][,player]`               | Move to a tile. Host can specify player.      |
 | `%dash [,player]`                    | Dash (1.5x MP). Host can specify player.      |
+| `%passmove`                          | Skip movement and go to the action phase.     |
 | `%use [ability] @ [target][,player]` | Use an ability. Host can specify player.      |
 | `%endturn`                           | End current turn. Host bypass available.      |
 | `%next`                              | Resolve current turn and advance (host only). |

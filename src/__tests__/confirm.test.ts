@@ -38,6 +38,7 @@ function makeEntity(
     buffs: [],
     cooldowns: {},
     usesUsed: {},
+    resources: {},
     pendingAction: null,
     dashUsed: false,
     standardUsed: false,
@@ -98,6 +99,7 @@ function makeAbility(
 
 const room: Room = { id: "battledome", type: "battle", users: [] };
 const alice: User = { id: "alice", name: "Alice", rooms: {}, last: 0 };
+const host: User = { id: "host", name: "Host", rooms: {}, last: 0 };
 
 // ---------------------------------------------------------------------------
 // Confirm
@@ -107,7 +109,7 @@ describe("confirm", () => {
   beforeEach(() => games.clear());
 
   it("resolves a pending attack and deals damage", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
@@ -119,21 +121,21 @@ describe("confirm", () => {
       pos: [2, 3],
       team: 1,
     });
-    const game = makeGame({ entities: [caster, target] });
+    const game = makeGame({ entities: [user, target] });
     games.set(game.id, game);
 
     const ability = makeAbility({ name: "Punch", mr: 0 });
-    caster.pendingAction = { type: "attack", ability, target: "P2" };
-    caster.standardUsed = true;
+    user.pendingAction = { type: "attack", ability, target: "P2" };
+    user.standardUsed = true;
 
     gameCommand(room, alice, "confirm", "", "");
 
-    expect(caster.pendingAction).toBeNull();
+    expect(user.pendingAction).toBeNull();
     expect(target.curhp).toBeLessThan(100);
   });
 
   it("clears pendingAction even on miss", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
@@ -147,7 +149,7 @@ describe("confirm", () => {
       pd: 999,
       md: 999,
     });
-    const game = makeGame({ entities: [caster, target] });
+    const game = makeGame({ entities: [user, target] });
     games.set(game.id, game);
 
     const ability = makeAbility({
@@ -155,31 +157,31 @@ describe("confirm", () => {
       mr: 0,
       roll: "1d1+0",
     });
-    caster.pendingAction = { type: "attack", ability, target: "P2" };
-    caster.standardUsed = true;
+    user.pendingAction = { type: "attack", ability, target: "P2" };
+    user.standardUsed = true;
 
     gameCommand(room, alice, "confirm", "", "");
 
-    expect(caster.pendingAction).toBeNull();
+    expect(user.pendingAction).toBeNull();
   });
 
   it("does nothing when no action is pending", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
       team: 0,
     });
-    const game = makeGame({ entities: [caster] });
+    const game = makeGame({ entities: [user] });
     games.set(game.id, game);
 
     gameCommand(room, alice, "confirm", "", "");
 
-    expect(caster.pendingAction).toBeNull();
+    expect(user.pendingAction).toBeNull();
   });
 
   it("kills target when confirm deals lethal damage", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
@@ -198,7 +200,7 @@ describe("confirm", () => {
       md: 0,
       eva: 0,
     });
-    const game = makeGame({ entities: [caster, target] });
+    const game = makeGame({ entities: [user, target] });
     games.set(game.id, game);
 
     const ability = makeAbility({
@@ -206,11 +208,11 @@ describe("confirm", () => {
       mr: 0,
       roll: "1d1+0",
     });
-    caster.pendingAction = { type: "attack", ability, target: "P2" };
+    user.pendingAction = { type: "attack", ability, target: "P2" };
 
     gameCommand(room, alice, "confirm", "", "");
 
-    expect(caster.pendingAction).toBeNull();
+    expect(user.pendingAction).toBeNull();
     expect(game.entities.some((e) => e.num === "P2")).toBe(false);
   });
 });
@@ -223,7 +225,7 @@ describe("cancel", () => {
   beforeEach(() => games.clear());
 
   it("clears pendingAction without dealing damage", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
@@ -235,92 +237,92 @@ describe("cancel", () => {
       pos: [2, 3],
       team: 1,
     });
-    const game = makeGame({ entities: [caster, target] });
+    const game = makeGame({ entities: [user, target] });
     games.set(game.id, game);
 
     const ability = makeAbility({ name: "Punch" });
-    caster.pendingAction = { type: "attack", ability, target: "P2" };
-    caster.standardUsed = true;
+    user.pendingAction = { type: "attack", ability, target: "P2" };
+    user.standardUsed = true;
 
     gameCommand(room, alice, "cancel", "", "");
 
-    expect(caster.pendingAction).toBeNull();
+    expect(user.pendingAction).toBeNull();
     expect(target.curhp).toBe(100);
   });
 
   it("resets standardUsed for Standard ability", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
       team: 0,
     });
-    const game = makeGame({ entities: [caster] });
+    const game = makeGame({ entities: [user] });
     games.set(game.id, game);
 
     const ability = makeAbility({ name: "Slash", actionType: "Standard" });
-    caster.pendingAction = { type: "attack", ability };
-    caster.standardUsed = true;
+    user.pendingAction = { type: "attack", ability };
+    user.standardUsed = true;
 
     gameCommand(room, alice, "cancel", "", "");
 
-    expect(caster.standardUsed).toBe(false);
+    expect(user.standardUsed).toBe(false);
   });
 
   it("resets swiftUsed for Swift ability", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
       team: 0,
     });
-    const game = makeGame({ entities: [caster] });
+    const game = makeGame({ entities: [user] });
     games.set(game.id, game);
 
     const ability = makeAbility({ name: "Quick Strike", actionType: "Swift" });
-    caster.pendingAction = { type: "attack", ability };
-    caster.swiftUsed = true;
+    user.pendingAction = { type: "attack", ability };
+    user.swiftUsed = true;
 
     gameCommand(room, alice, "cancel", "", "");
 
-    expect(caster.swiftUsed).toBe(false);
+    expect(user.swiftUsed).toBe(false);
   });
 
   it("resets both flags for Full ability", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
       team: 0,
     });
-    const game = makeGame({ entities: [caster] });
+    const game = makeGame({ entities: [user] });
     games.set(game.id, game);
 
     const ability = makeAbility({ name: "Ultimate", actionType: "Full" });
-    caster.pendingAction = { type: "attack", ability };
-    caster.standardUsed = true;
-    caster.movementUsed = true;
+    user.pendingAction = { type: "attack", ability };
+    user.standardUsed = true;
+    user.movementUsed = true;
 
     gameCommand(room, alice, "cancel", "", "");
 
-    expect(caster.standardUsed).toBe(false);
-    expect(caster.movementUsed).toBe(false);
+    expect(user.standardUsed).toBe(false);
+    expect(user.movementUsed).toBe(false);
   });
 
   it("does nothing when no action is pending", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
       team: 0,
     });
-    const game = makeGame({ entities: [caster] });
+    const game = makeGame({ entities: [user] });
     games.set(game.id, game);
 
     gameCommand(room, alice, "cancel", "", "");
 
-    expect(caster.pendingAction).toBeNull();
-    expect(caster.standardUsed).toBe(false);
+    expect(user.pendingAction).toBeNull();
+    expect(user.standardUsed).toBe(false);
   });
 });
 
@@ -332,7 +334,7 @@ describe("full select-confirm flow", () => {
   beforeEach(() => games.clear());
 
   it("use then confirm resolves the attack end-to-end", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
@@ -345,23 +347,23 @@ describe("full select-confirm flow", () => {
       team: 1,
     });
     const ability = makeAbility({ name: "Punch", mr: 0 });
-    caster.abilities = [ability];
+    user.abilities = [ability];
 
-    const game = makeGame({ entities: [caster, target] });
+    const game = makeGame({ entities: [user, target] });
     games.set(game.id, game);
 
     gameCommand(room, alice, "use", "Punch @ P2", "");
-    expect(caster.pendingAction).not.toBeNull();
-    expect(caster.pendingAction!.ability.name).toBe("Punch");
-    expect(caster.standardUsed).toBe(true);
+    expect(user.pendingAction).not.toBeNull();
+    expect(user.pendingAction!.ability.name).toBe("Punch");
+    expect(user.standardUsed).toBe(true);
 
     gameCommand(room, alice, "confirm", "", "");
-    expect(caster.pendingAction).toBeNull();
+    expect(user.pendingAction).toBeNull();
     expect(target.curhp).toBeLessThan(100);
   });
 
   it("use then cancel then use again replaces the action", () => {
-    const caster = makeEntity({
+    const user = makeEntity({
       num: "P1",
       name: "Alice",
       pos: [2, 2],
@@ -380,23 +382,322 @@ describe("full select-confirm flow", () => {
       damageType: "Physical",
       roll: "1d1+0",
     });
-    caster.abilities = [punch, kick];
+    user.abilities = [punch, kick];
 
-    const game = makeGame({ entities: [caster, target] });
+    const game = makeGame({ entities: [user, target] });
     games.set(game.id, game);
 
     gameCommand(room, alice, "use", "Punch @ P2", "");
-    expect(caster.pendingAction!.ability.name).toBe("Punch");
+    expect(user.pendingAction!.ability.name).toBe("Punch");
 
     gameCommand(room, alice, "cancel", "", "");
-    expect(caster.pendingAction).toBeNull();
-    expect(caster.standardUsed).toBe(false);
+    expect(user.pendingAction).toBeNull();
+    expect(user.standardUsed).toBe(false);
 
     gameCommand(room, alice, "use", "Kick @ P2", "");
-    expect(caster.pendingAction!.ability.name).toBe("Kick");
+    expect(user.pendingAction!.ability.name).toBe("Kick");
 
     const hpBefore = target.curhp;
     gameCommand(room, alice, "confirm", "", "");
     expect(target.curhp).toBeLessThan(hpBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// %choose / %target prompts
+// ---------------------------------------------------------------------------
+
+describe("choose and target prompts", () => {
+  beforeEach(() => games.clear());
+
+  it("responds to a selection prompt with %choose", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const ability = makeAbility({
+      name: "Rising Hope",
+      mr: 0,
+      choices: [
+        { id: "atk_mag", label: "+3 ATK/MAG" },
+        { id: "def", label: "+4 DEF" },
+      ],
+    });
+    caster.abilities = [ability];
+
+    const game = makeGame({ entities: [caster, target] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Rising Hope", "");
+    expect(caster.pendingAction).not.toBeNull();
+
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.pendingPromptKind).toBe("selection");
+
+    gameCommand(room, alice, "choose", "atk_mag", "");
+    expect(caster.pendingPromptKind).toBe("target");
+
+    gameCommand(room, alice, "target", "P2", "");
+    expect(caster.pendingAction).toBeNull();
+    expect(caster.pendingPromptKind).toBeUndefined();
+    expect(target.curhp).toBeLessThan(100);
+  });
+
+  it("responds to a target prompt with %target", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const punch = makeAbility({ name: "Punch", mr: 0 });
+    caster.abilities = [punch];
+
+    const game = makeGame({ entities: [caster, target] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Punch", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.pendingPromptKind).toBe("target");
+
+    gameCommand(room, alice, "target", "P2", "");
+    expect(caster.pendingAction).toBeNull();
+    expect(target.curhp).toBeLessThan(100);
+  });
+
+  it("rejects %choose with no pending action without crashing", () => {
+    const caster = makeEntity({ num: "P1", name: "Alice", pos: [2, 2] });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    expect(() => {
+      gameCommand(room, alice, "choose", "atk_mag", "");
+    }).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pass movement (Issue #23)
+// ---------------------------------------------------------------------------
+
+describe("passmove", () => {
+  beforeEach(() => games.clear());
+
+  it("skips movement and enters the action phase", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "passmove", "", "");
+
+    expect(caster.movementUsed).toBe(true);
+    expect(caster.pos).toEqual([2, 2]);
+    expect(caster.dashUsed).toBe(false);
+  });
+
+  it("allows a Standard after passing movement", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const punch = makeAbility({ name: "Punch", mr: 0 });
+    caster.abilities = [punch];
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const game = makeGame({ entities: [caster, target] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "passmove", "", "");
+    gameCommand(room, alice, "use", "Punch @ P2", "");
+
+    expect(caster.pendingAction).not.toBeNull();
+    expect(caster.pendingAction!.ability.name).toBe("Punch");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Action type enforcement (Issue #3)
+// ---------------------------------------------------------------------------
+
+describe("action type enforcement", () => {
+  beforeEach(() => games.clear());
+
+  function setup() {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const standard = makeAbility({ name: "Punch", actionType: "Standard" });
+    const free = makeAbility({ name: "Stance", actionType: "Free" });
+    const swift = makeAbility({ name: "Dash Strikes", actionType: "Swift" });
+    const trigger = makeAbility({ name: "Parry", actionType: "Trigger" });
+    const reaction = makeAbility({ name: "Riposte", actionType: "Reaction" });
+    caster.abilities = [standard, free, swift, trigger, reaction];
+
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+    return { caster, free, swift, trigger, reaction };
+  }
+
+  it("allows Free/Swift/Trigger before a Standard", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Stance", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Stance");
+    expect(caster.standardUsed).toBe(false);
+    expect(caster.swiftUsed).toBe(false);
+
+    gameCommand(room, alice, "cancel", "", "");
+    gameCommand(room, alice, "use", "Dash Strikes", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Dash Strikes");
+    expect(caster.swiftUsed).toBe(true);
+
+    gameCommand(room, alice, "cancel", "", "");
+    gameCommand(room, alice, "use", "Parry", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Parry");
+    expect(caster.standardUsed).toBe(false);
+  });
+
+  it("blocks Free/Swift/Trigger after a Standard is used", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Punch", "");
+    expect(caster.standardUsed).toBe(true);
+
+    gameCommand(room, alice, "use", "Stance", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Punch");
+
+    gameCommand(room, alice, "use", "Dash Strikes", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Punch");
+
+    gameCommand(room, alice, "use", "Parry", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Punch");
+  });
+
+  it("allows Trigger without consuming the Swift slot", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Parry", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Parry");
+    gameCommand(room, alice, "cancel", "", "");
+
+    gameCommand(room, alice, "use", "Dash Strikes", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Dash Strikes");
+    expect(caster.swiftUsed).toBe(true);
+  });
+
+  it("blocks Reaction use until a Trigger is active", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Riposte", "");
+    expect(caster.pendingAction).toBeNull();
+  });
+
+  it("allows Reaction use manually once a Trigger has been used", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Parry", "");
+    expect(caster.triggered).toBe(true);
+    gameCommand(room, alice, "cancel", "", "");
+
+    gameCommand(room, alice, "use", "Riposte", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Riposte");
+    expect(caster.standardUsed).toBe(false);
+    expect(caster.swiftUsed).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ability/entity name parsing (numeric entity names like "4mat")
+// ---------------------------------------------------------------------------
+
+describe("command parsing", () => {
+  beforeEach(() => games.clear());
+
+  it("parses %use Duet,4mat as ability + entity", () => {
+    const duet = makeAbility({ name: "Duet", mr: 0, actionType: "Standard" });
+    const fourmat = makeEntity({
+      num: "P1",
+      name: "4mat",
+      pos: [2, 2],
+      team: 0,
+      abilities: [duet],
+    });
+    const game = makeGame({ entities: [fourmat] });
+    games.set(game.id, game);
+
+    gameCommand(room, host, "use", "Duet,4mat", "");
+
+    expect(fourmat.pendingAction).not.toBeNull();
+    expect(fourmat.pendingAction!.ability.name).toBe("Duet");
+  });
+
+  it("parses %use Duet @ P2,4mat as ability + target + entity", () => {
+    const duet = makeAbility({ name: "Duet", mr: 0, actionType: "Standard" });
+    const fourmat = makeEntity({
+      num: "P1",
+      name: "4mat",
+      pos: [2, 2],
+      team: 0,
+      abilities: [duet],
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const game = makeGame({ entities: [fourmat, target] });
+    games.set(game.id, game);
+
+    gameCommand(room, host, "use", "Duet @ P2,4mat", "");
+
+    expect(fourmat.pendingAction).not.toBeNull();
+    expect(fourmat.pendingAction!.ability.name).toBe("Duet");
+    expect(fourmat.pendingAction!.target).toBe("P2");
+  });
+
+  it("parses %move a3,4mat as position + entity", () => {
+    const fourmat = makeEntity({
+      num: "P1",
+      name: "4mat",
+      pos: [2, 2],
+      team: 0,
+      mp: 3,
+    });
+    const game = makeGame({ entities: [fourmat] });
+    games.set(game.id, game);
+
+    gameCommand(room, host, "move", "a3,4mat", "");
+
+    expect(fourmat.pos).toEqual([0, 2]);
+    expect(fourmat.movementUsed).toBe(true);
   });
 });
