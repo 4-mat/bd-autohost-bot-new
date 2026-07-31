@@ -7,3 +7,5 @@ html-output.txt
 .env
 .todo
 nul
+*.log
+logs/
