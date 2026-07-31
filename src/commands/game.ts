@@ -400,8 +400,6 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   pushSnapshot(game);
 
-  let acted = "";
-
   // Stunned entities can't act — skip their action and clear pending
   if (isStunned(entity)) {
     if (entity.pendingAction) {
@@ -422,8 +420,6 @@ function handleAdvanceTurn(game: Game, user: User) {
       send(game.room, msg);
     }
 
-    acted = summarizeResult(game, entity, step.result.messages);
-
     // Track kills
     for (const death of step.result.deaths) {
       if (entity.pendingAction === null) {
@@ -441,7 +437,7 @@ function handleAdvanceTurn(game: Game, user: User) {
   game.log.push({
     turn: game.round,
     entity: entity.num,
-    description: acted || `${entity.num} (${entity.name}) -- turn passed`,
+    description: `${entity.num} (${entity.name}) -- turn passed`,
     snapshot: "",
   });
 
@@ -475,36 +471,6 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
-}
-
-function summarizeResult(
-  game: Game,
-  entity: Entity,
-  messages: string[],
-): string {
-  const nm = (n: string) => game.entities.find((e) => e.num === n)?.name ?? n;
-  const head = messages.find((m) => m.startsWith("/me "));
-  let action = head ? head.slice(4).split(", MR")[0] : "action";
-  action = action.replace(
-    /@ (.*)$/,
-    (_, t) => `@ ${t.split(", ").map(nm).join(", ")}`,
-  );
-  const dmg: string[] = [];
-  for (const m of messages) {
-    const d = m.match(/= \*\*(\d+)\*\* -> (\S+) \(/);
-    if (d) {
-      dmg.push(`${nm(d[2])} ${d[1]} dmg`);
-      continue;
-    }
-    const s = m.match(/-> (\S+) \(.*= \*\*(\d+)\*\*$/);
-    if (s) dmg.push(`${nm(s[1])} ${s[2]} dmg`);
-  }
-  const acc = messages
-    .filter((m) => m.includes("**Accuracy**"))
-    .map((m) => (m.includes("HIT") ? "HIT" : "MISS"));
-  const hits = acc.length ? acc.join("/") : "";
-  const tail = [hits, dmg.join(" ")].filter(Boolean).join(" ");
-  return `${entity.name} ${action}${tail ? `: ${tail}` : ""}`;
 }
 
 function handleBack(game: Game, user: User) {
