@@ -202,15 +202,32 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   if (isRooted(entity)) {
     return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
   }
-  if (entity.movementUsed && cmd === "move") {
+  if (entity.movementUsed) {
     return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+  if (cmd === "dash" && entity.dashUsed) {
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
+  if (cmd === "dash" && entity.standardUsed) {
+    return sendPm(
+      user.name,
+      `${entity.num} already used their Standard — Dash is a Full action.`,
+    );
   }
 
   const pos = parsePos(posStr);
   if (!pos)
     return sendPm(user.name, "Invalid position. Use: %move e4[,entity]");
 
-  const reachable = getReachableTiles(game, entity.pos, entity.mp, entity);
+  // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
+  const dash = cmd === "dash";
+  const mp = dash ? Math.floor(getEffectiveMp(entity) * 1.5) : entity.mp;
+  const reachable = getReachableTiles(
+    game,
+    entity.pos,
+    mp,
+    dash ? undefined : entity,
+  );
   const key = posToStr(pos[0], pos[1]);
 
   if (!reachable.has(key)) {
@@ -220,7 +237,10 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   pushSnapshot(game);
   entity.pos = pos;
   entity.movementUsed = true;
-  if (cmd === "dash") entity.dashUsed = true;
+  if (cmd === "dash") {
+    entity.dashUsed = true;
+    entity.standardUsed = true;
+  }
   premoveSet.delete(entity.num);
 
   send(game.room, `/me moves ${entity.num} to ${key}`);
