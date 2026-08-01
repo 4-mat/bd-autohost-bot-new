@@ -9,6 +9,7 @@
     "build:bot": "bun build src/index.ts --target=bun --outfile=dist/index.js",
     "start": "bun run dist/test-app.js",
     "dev": "tsx watch test-app.ts",
+    "testapp": "tsx watch test-app.ts",
     "bot": "bun src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",

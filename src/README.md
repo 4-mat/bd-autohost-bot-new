@@ -303,7 +303,7 @@ pushEntity(game, target, source, amount): { moved, path }
 pullEntity(game, target, source, amount): { moved, path }
 ```
 
-Slides an entity along the axis from source → target (push) or target →
+Involuntarily moves an entity along the axis from source → target (push) or target →
 source (pull). Diagonal movement preserves the diagonal line. Each step
 checks `isPassable` (in bounds, not obstruction, not lava). Returns the
 number of tiles actually moved and the path taken.
@@ -445,11 +445,11 @@ Where `AttackPrompt` is either:
 `resolveAttackFlow` processes these stages in order:
 
 ```
-Declare → Selection/Costs → Target → Accuracy → Damage → Post-Damage
+Declare → Selection/Costs → Target → Accuracy → Splash → Damage → Post-Damage
                                                           ↓
                                                     Effects (from effects.ts)
                                                           ↓
-                                                    Push/Pull → Splash
+                                                    Push/Pull 
                                                           ↓
                                                     Cooldowns + Uses
                                                           ↓
