@@ -578,7 +578,7 @@ export function getStarTiles(
   return tiles;
 }
 
-// Get all entity positions in a Cone from caster in a cardinal direction
+// Get all entity positions in a Cone from user in a cardinal direction
 export function getConeTiles(
   from: [number, number],
   range: number,
@@ -611,7 +611,7 @@ export function getConeTiles(
   return tiles;
 }
 
-// Get all tiles in a Line from caster in the closest matching direction
+// Get all tiles in a Line from user in the closest matching direction
 export function getLineTiles(
   from: [number, number],
   range: number,
@@ -639,7 +639,7 @@ export function getLineTiles(
   return tiles;
 }
 
-// Get all tiles in a Pierce from caster (same as Line)
+// Get all tiles in a Pierce from user (same as Line)
 export function getPierceTiles(
   from: [number, number],
   range: number,
@@ -681,7 +681,7 @@ export function getBeamTiles(
 // Get all valid entities in an AoE pattern
 export function getAoETargets(
   game: Game,
-  caster: Entity,
+  user: Entity,
   range: string,
   group: string,
 ): Entity[] {
@@ -690,32 +690,32 @@ export function getAoETargets(
 
   const burstMatch = rangeStr.match(/^burst\s*(\d+)/);
   if (burstMatch) {
-    tiles = getBurstTiles(caster.pos, parseInt(burstMatch[1]));
+    tiles = getBurstTiles(user.pos, parseInt(burstMatch[1]));
   }
 
   const starMatch = rangeStr.match(/^star\s*(\d+)/);
   if (starMatch) {
-    tiles = getStarTiles(caster.pos, parseInt(starMatch[1]));
+    tiles = getStarTiles(user.pos, parseInt(starMatch[1]));
   }
 
   const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
   if (coneMatch) {
-    tiles = getConeTiles(caster.pos, parseInt(coneMatch[1]));
+    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]));
   }
 
   const lineMatch = rangeStr.match(/^line\s*(\d+)/);
   if (lineMatch) {
-    tiles = getLineTiles(caster.pos, parseInt(lineMatch[1]));
+    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]));
   }
 
   const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
   if (pierceMatch) {
-    tiles = getPierceTiles(caster.pos, parseInt(pierceMatch[1]));
+    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]));
   }
 
   const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
   if (beamMatch) {
-    tiles = getBeamTiles(caster.pos, parseInt(beamMatch[1]));
+    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]));
   }
 
   if (tiles.length === 0) return [];
@@ -725,7 +725,7 @@ export function getAoETargets(
 
   return game.entities.filter((e) => {
     if (e.curhp <= 0) return false;
-    if (!isValidGroupTarget(caster, e, groupLower)) return false;
+    if (!isValidGroupTarget(user, e, groupLower)) return false;
     return tileSet.has(posToStr(e.pos[0], e.pos[1]));
   });
 }
@@ -733,7 +733,7 @@ export function getAoETargets(
 // Get Splash targets around a primary target (Burst X from the target)
 export function getSplashTargets(
   game: Game,
-  caster: Entity,
+  user: Entity,
   primary: Entity,
   splashRadius: number,
   group: string,
@@ -745,28 +745,28 @@ export function getSplashTargets(
   return game.entities.filter((e) => {
     if (e.curhp <= 0) return false;
     if (e.num === primary.num) return false; // primary is already targeted
-    if (!isValidGroupTarget(caster, e, groupLower)) return false;
+    if (!isValidGroupTarget(user, e, groupLower)) return false;
     return tileSet.has(posToStr(e.pos[0], e.pos[1]));
   });
 }
 
 // Check if entity is valid for a target group
 function isValidGroupTarget(
-  caster: Entity,
+  user: Entity,
   target: Entity,
   group: string,
 ): boolean {
-  if (group === "self") return target.num === caster.num;
+  if (group === "self") return target.num === user.num;
   if (group === "ally")
-    return target.team === caster.team && target.num !== caster.num;
-  if (group === "foe") return target.team !== caster.team;
+    return target.team === user.team && target.num !== user.num;
+  if (group === "foe") return target.team !== user.team;
   if (group === "any") return true;
   if (group === "tile") return false;
-  if (group.includes("self and allies")) return target.team === caster.team;
-  if (group.includes("self or ally")) return target.team === caster.team;
+  if (group.includes("self and allies")) return target.team === user.team;
+  if (group.includes("self or ally")) return target.team === user.team;
   if (group.includes("self or foe"))
-    return target.team === caster.team || target.team !== caster.team;
-  if (group.includes("foe or ally")) return target.num !== caster.num;
+    return target.team === user.team || target.team !== user.team;
+  if (group.includes("foe or ally")) return target.num !== user.num;
   if (group.includes("self, foes, allies")) return true;
   return true;
 }

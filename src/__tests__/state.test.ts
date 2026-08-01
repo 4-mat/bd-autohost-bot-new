@@ -468,21 +468,21 @@ describe("getAoETargets", () => {
 
 describe("getSplashTargets", () => {
   it("finds nearby enemies around primary target", () => {
-    const caster = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
+    const user = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
     const primary = makeEntity({ num: "P2", name: "B", pos: [2, 2], team: 1 });
     const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 3], team: 1 });
     const p4 = makeEntity({ num: "P4", name: "D", pos: [4, 4], team: 1 });
-    const game = makeGame({ entities: [caster, primary, p3, p4] });
-    const splash = getSplashTargets(game, caster, primary, 1, "Foe");
+    const game = makeGame({ entities: [user, primary, p3, p4] });
+    const splash = getSplashTargets(game, user, primary, 1, "Foe");
     expect(splash.map((t) => t.num)).toContain("P3");
     expect(splash.map((t) => t.num)).not.toContain("P4");
   });
 
   it("excludes the primary target itself", () => {
-    const caster = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
+    const user = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
     const primary = makeEntity({ num: "P2", name: "B", pos: [2, 2], team: 1 });
-    const game = makeGame({ entities: [caster, primary] });
-    const splash = getSplashTargets(game, caster, primary, 2, "Foe");
+    const game = makeGame({ entities: [user, primary] });
+    const splash = getSplashTargets(game, user, primary, 2, "Foe");
     expect(splash.some((t) => t.num === "P2")).toBe(false);
   });
 });
