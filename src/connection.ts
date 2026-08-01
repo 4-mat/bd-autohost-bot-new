@@ -2,7 +2,7 @@ import WebSocket from "ws";
 import { EventEmitter } from "events";
 import config from "./config.js";
 import { login } from "./login.js";
-import { setWs } from "./utils.js";
+import { setWs, toId } from "./utils.js";
 
 export const bot = new EventEmitter();
 
@@ -17,17 +17,31 @@ export function connect() {
 
   ws.on("message", (data) => {
     const msg = data.toString();
-    if (!msg.startsWith("|")) return;
+    const lines = msg.split("\n");
+    let room = "";
 
-    const parts = msg.split("|");
-    const event = parts[1];
+    for (const line of lines) {
+      if (!line) continue;
+      if (line.startsWith(">")) {
+        room = toId(line.slice(1).trim());
+        continue;
+      }
+      if (!line.startsWith("|")) continue;
 
-    if (event === "challstr") {
-      const challstr = parts.slice(2).join("|");
-      login(challstr);
+      const parts = line.split("|");
+      const event = parts[1];
+
+      if (event === "challstr") {
+        const challstr = parts.slice(2).join("|");
+        login(challstr);
+      }
+
+      if (room) {
+        bot.emit(event, [room, ...parts.slice(1)]);
+      } else {
+        bot.emit(event, parts);
+      }
     }
-
-    bot.emit(event, parts);
   });
 
   ws.on("close", () => {

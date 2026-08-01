@@ -12,9 +12,14 @@ import {
   getAoETargets,
   getSplashTargets,
   isConfused,
+  placeTerrain,
+  needsDirection,
+  getDirectionCandidates,
+  DIRECTION_LABELS,
 } from "./state.js";
 import { parseEffects, applyEffects } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
+import { Terrain } from "./state.js";
 
 export interface ResolutionResult {
   messages: string[];
@@ -83,9 +88,20 @@ export type AttackPrompt =
       options: SelectionOption[];
     }
   | {
+      kind: "direction";
+      message: string;
+      candidates: string[];
+    }
+  | {
       kind: "target";
       message: string;
       candidates: Entity[];
+    }
+  | {
+      kind: "tile";
+      message: string;
+      validTiles: [number, number][];
+      dir?: [number, number];
     };
 
 export type PromptResponse = string;
@@ -105,8 +121,10 @@ function* resolveAttackFlow(
   user: Entity,
   ability: AbilityData,
   initialTarget?: string,
+  initialDir?: [number, number],
 ): Generator<AttackPrompt, ResolutionResult, PromptResponse> {
   const result = newResult();
+  let dir: [number, number] | undefined = initialDir;
 
   // --- Declare Attack ---
   // result.messages.push(`/me declares ${ability.name}`);
@@ -137,12 +155,79 @@ function* resolveAttackFlow(
     }
   }
 
+  // --- Direction (for directional AoE abilities like Cone, Line, Beam, Pierce) ---
+  if (needsDirection(ability.range)) {
+    const candidates = getDirectionCandidates(ability.range);
+    if (candidates.length > 0 && !dir) {
+      const dirLabel: string = yield {
+        kind: "direction",
+        message: `Choose a direction for ${ability.name}`,
+        candidates,
+      };
+      dir = DIRECTION_LABELS[dirLabel.toUpperCase()];
+      if (!dir) {
+        result.messages.push(
+          `${user.num} chose an invalid direction for ${ability.name}.`,
+        );
+        return result;
+      }
+    }
+  }
+
   // --- Target (attack may not continue if nothing can be chosen) ---
+  const isTileTarget = ability.targetGroup.toLowerCase().trim() === "tile";
+
+  if (isTileTarget) {
+    // Tile targeting: prompt for a tile position
+    const tileCandidates = getTileCandidates(game, user, ability, dir);
+    if (tileCandidates.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but no valid tiles in range.`,
+      );
+      return result;
+    }
+
+    const tileRef: string =
+      initialTarget ??
+      (yield {
+        kind: "tile",
+        message: `Choose a tile for ${ability.name}`,
+        validTiles: tileCandidates,
+        dir,
+      });
+
+    const tilePos = parseTileRef(tileRef);
+    if (
+      !tilePos ||
+      !tileCandidates.some(([r, c]) => r === tilePos[0] && c === tilePos[1])
+    ) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} on an invalid tile.`,
+      );
+      return result;
+    }
+
+    result.messages.push(
+      `/me ${ability.name} @ ${posToStr(tilePos[0], tilePos[1])}, MR ${ability.mr}`,
+    );
+
+    // Apply effects at the tile position
+    const effects = parseEffects(ability.effect);
+    const tileMsgs = applyTileEffects(game, user, tilePos, effects);
+    result.messages.push(...tileMsgs);
+
+    setCooldown(user, ability);
+    if (ability.maxUses) {
+      user.usesUsed[ability.name] = (user.usesUsed[ability.name] ?? 0) + 1;
+    }
+    return result;
+  }
+
   const {
     hits: hitCount,
     isAoE,
     targets: autoTargets,
-  } = prepareTargeting(game, user, ability);
+  } = prepareTargeting(game, user, ability, dir);
   let targets = autoTargets;
   if (targets.length === 0) {
     const candidates = getTargetCandidates(game, user, ability);
@@ -253,8 +338,9 @@ export function startAttack(
   user: Entity,
   ability: AbilityData,
   target?: string,
+  dir?: [number, number],
 ): AttackStep {
-  const flow = resolveAttackFlow(game, user, ability, target);
+  const flow = resolveAttackFlow(game, user, ability, target, dir);
   user.pendingResolution = flow;
   return advanceAttack(user, flow, undefined as unknown as PromptResponse);
 }
@@ -267,6 +353,67 @@ export function respondToChoice(user: Entity, choiceId: string): AttackStep {
 // %target <ref> -- only valid while a "target" prompt is pending.
 export function respondToTarget(user: Entity, targetRef: string): AttackStep {
   return respondToPromptOfKind(user, "target", targetRef, "%target");
+}
+
+// %tile <pos> -- only valid while a "tile" prompt is pending.
+export function respondToTile(user: Entity, tileRef: string): AttackStep {
+  return respondToPromptOfKind(user, "tile", tileRef, "%tile");
+}
+
+// %dir <label> -- only valid while a "direction" prompt is pending.
+export function respondToDir(user: Entity, dirLabel: string): AttackStep {
+  return respondToPromptOfKind(user, "direction", dirLabel, "%dir");
+}
+
+function parseTileRef(ref: string): [number, number] | null {
+  const m = ref.toLowerCase().match(/^([a-z])\s*[, ]\s*(\d+)$/);
+  if (!m) return null;
+  const r = m[1].charCodeAt(0) - 97;
+  const c = parseInt(m[2]) - 1;
+  return r >= 0 && c >= 0 ? [r, c] : null;
+}
+
+// Apply effects for tile-targeted abilities (place terrain, etc.)
+function applyTileEffects(
+  game: Game,
+  user: Entity,
+  tilePos: [number, number],
+  effects: import("./effects.js").Effect[],
+): string[] {
+  const msgs: string[] = [];
+  for (const e of effects) {
+    if (e.type === "tile") {
+      const t = terrainFromName(e.terrain);
+      if (t !== null) {
+        placeTerrain(game, tilePos, t);
+        msgs.push(
+          `  ${user.num} places ${e.terrain} at ${posToStr(tilePos[0], tilePos[1])}.`,
+        );
+      }
+    } else {
+      msgs.push(`  ${e.type}: ${JSON.stringify(e)}`);
+    }
+  }
+  return msgs;
+}
+
+function terrainFromName(name: string): Terrain | null {
+  const map: Record<string, Terrain> = {
+    normal: Terrain.Normal,
+    stop: Terrain.Stop,
+    water: Terrain.Water,
+    forest: Terrain.Forest,
+    ice: Terrain.Ice,
+    air: Terrain.Air,
+    sticky: Terrain.Sticky,
+    lava: Terrain.Lava,
+    broken: Terrain.Broken,
+    bone: Terrain.Bone,
+    stone: Terrain.Stone,
+    hearth: Terrain.Hearth,
+    boost: Terrain.Boost,
+  };
+  return map[name.toLowerCase()] ?? null;
 }
 
 function respondToPromptOfKind(
@@ -283,7 +430,13 @@ function respondToPromptOfKind(
   }
   if (user.pendingPromptKind !== expectedKind) {
     const wants =
-      user.pendingPromptKind === "selection" ? "%choose" : "%target";
+      user.pendingPromptKind === "selection"
+        ? "%choose"
+        : user.pendingPromptKind === "direction"
+          ? "%dir"
+          : user.pendingPromptKind === "tile"
+            ? "%tile"
+            : "%target";
     throw new Error(
       `${user.num}'s pending action expects ${wants}, not ${commandName}.`,
     );
@@ -385,6 +538,31 @@ function getTargetCandidates(
   });
 }
 
+// Returns valid tiles for tile-targeted abilities
+function getTileCandidates(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  _dir?: [number, number],
+): [number, number][] {
+  const rangeParts = ability.range.toLowerCase().includes(" or ")
+    ? ability.range.split(/\s+or\s+/i)
+    : [ability.range];
+
+  const tiles: [number, number][] = [];
+  for (let r = 0; r < game.map.length; r++) {
+    for (let c = 0; c < game.map[0].length; c++) {
+      for (const rp of rangeParts) {
+        if (inRange(game, user.pos, [r, c], rp.trim())) {
+          tiles.push([r, c]);
+          break;
+        }
+      }
+    }
+  }
+  return tiles;
+}
+
 // ---------------------------
 // Targeting / hit resolution
 // ---------------------------
@@ -393,6 +571,7 @@ function prepareTargeting(
   game: Game,
   user: Entity,
   ability: AbilityData,
+  dir?: [number, number],
 ): { hits: number; isAoE: boolean; targets: Entity[] } {
   const hits = parseMultiHit(ability);
   const range = ability.range.toLowerCase().trim();
@@ -407,7 +586,13 @@ function prepareTargeting(
 
   let targets: Entity[] = [];
   if (isAoE) {
-    targets = getAoETargets(game, user, ability.range, ability.targetGroup);
+    targets = getAoETargets(
+      game,
+      user,
+      ability.range,
+      ability.targetGroup,
+      dir,
+    );
   }
   return { hits, isAoE, targets };
 }
@@ -753,5 +938,5 @@ export function resolveAction(game: Game, user: Entity): AttackStep {
     };
   }
 
-  return startAttack(game, user, action.ability, action.target);
+  return startAttack(game, user, action.ability, action.target, action.dir);
 }

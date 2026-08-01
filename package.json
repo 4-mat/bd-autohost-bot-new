@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/test-app.js",
-    "dev": "tsx watch test-app.ts",
+    "testapp": "tsx watch test-app.ts",
     "bot": "bun src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",

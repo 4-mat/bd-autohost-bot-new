@@ -23,13 +23,32 @@ function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
   return a.level === "EX1" || a.level === "EX2" ? exOk : a.level <= lvl;
 }
 
+function findGameForHost(user: User): Game | null {
+  const uid = toId(user.name);
+  for (const game of games.values()) {
+    if (toId(game.host) === uid) return game;
+  }
+  return null;
+}
+
 export function hostCommand(
   room: Room | null,
   user: User,
   cmd: string,
   args: string,
   val: string,
+  pm = false,
 ) {
+  // In PM mode, find the game where user is host
+  if (!room && pm) {
+    const game = findGameForHost(user);
+    if (!game) {
+      sendPm(user.name, "No active game. This command must be used in a room.");
+      return;
+    }
+    room = { id: game.room, type: "chat", users: [] };
+  }
+
   if (!room) {
     sendPm(user.name, "This command must be used in a room.");
     return;
@@ -39,10 +58,14 @@ export function hostCommand(
 
   switch (cmd) {
     case "host":
-      handleHost(room, user);
-      break;
     case "dehost":
-      handleDehost(room, user);
+      // host/dehost need the actual room context, not PM
+      if (pm) {
+        sendPm(user.name, `${cmd} cannot be used via PM.`);
+        return;
+      }
+      if (cmd === "host") handleHost(room, user);
+      else handleDehost(room, user);
       break;
     case "setgame":
       handleSetGame(room, user, full);
