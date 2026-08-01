@@ -150,6 +150,7 @@ export interface Entity {
   resources: Record<string, number>;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
+  pendingPrompt?: AttackPrompt;
 }
 
 export interface PendingAction {

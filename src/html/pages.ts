@@ -84,6 +84,22 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 
   let phase = "";
   let actions = "";
+  let prompt = "";
+
+  if (entity.pendingPrompt) {
+    const pp = entity.pendingPrompt;
+    if (pp.kind === "selection") {
+      const opts = pp.options
+        .map((o) => btn(`%choose ${o.id}`, o.label))
+        .join("");
+      prompt = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #a0c;background:rgba(160,0,204,0.10)"><b style="color:#a0c">CHOOSE</b> ${esc(pp.message)}<div style="margin-top:4px">${opts}</div></div>`;
+    } else {
+      const opts = pp.candidates
+        .map((e) => btn(`%target ${e.num}`, e.num))
+        .join("");
+      prompt = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #a0c;background:rgba(160,0,204,0.10)"><b style="color:#a0c">TARGET</b> ${esc(pp.message)}<div style="margin-top:4px">${opts}</div></div>`;
+    }
+  }
 
   if (isTurn) {
     const inPremove = premoveSet.has(entity.num);
@@ -101,7 +117,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
       actions = buildAbilityButtons(game, entity);
     }
-    if (entity.pendingAction) {
+    if (entity.pendingAction && !entity.pendingPrompt) {
       const pa = entity.pendingAction;
       const targetStr = pa.target ? ` targeting ${pa.target}` : "";
       actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #0c0;background:rgba(0,204,0,0.10)"><b style="color:#0c0">PENDING:</b> ${esc(pa.ability.name)}${targetStr}</div>`;
@@ -121,6 +137,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   ${map}
   <hr>
   ${phase}
+  ${prompt}
   ${actions}
 </div>`;
 }
@@ -245,8 +262,8 @@ function buildPlayerDataTable(game: Game): string {
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
-        .map((n) => game.entities.find((e) => e.num === n))
-        .filter((e): e is Entity => !!e)
+          .map((n) => game.entities.find((e) => e.num === n))
+          .filter((e): e is Entity => !!e)
       : game.entities;
   for (const e of ordered) {
     html += `<tr style="height:22px">`;

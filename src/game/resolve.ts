@@ -303,10 +303,12 @@ function advanceAttack(
   if (step.done === true) {
     user.pendingResolution = undefined;
     user.pendingPromptKind = undefined;
+    user.pendingPrompt = undefined;
     return { done: true, result: step.value };
   }
 
   user.pendingPromptKind = step.value.kind;
+  user.pendingPrompt = step.value;
   return { done: false, prompt: step.value };
 }
 
