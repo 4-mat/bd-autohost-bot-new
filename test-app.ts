@@ -360,7 +360,11 @@ const MANIFEST = JSON.stringify({
 });
 
 const IS_RENDER = !!process.env.RENDER;
-const DEPLOYED_AT = new Date().toISOString();
+const DEPLOYED_AT = new Date().toLocaleString("en-US", {
+  timeZone: "UTC",
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 const server = http.createServer((req, res) => {
   const url = (req.url ?? "/").split("?")[0];
