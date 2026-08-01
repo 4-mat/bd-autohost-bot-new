@@ -80,6 +80,18 @@ export interface StatusEffect {
   removable: boolean;
 }
 
+export interface AbilityCost {
+  type: "HP" | "MP" | "Resource";
+  amount: number;
+  resource?: string;
+  prompt?: boolean;
+}
+
+export interface AbilityChoice {
+  id: string;
+  label: string;
+}
+
 export interface AbilityData {
   name: string;
   level: number | "EX1" | "EX2";
@@ -101,6 +113,8 @@ export interface AbilityData {
   range: string;
   effect: string;
   maxUses?: number;
+  cost?: AbilityCost;
+  choices?: AbilityChoice[];
 }
 
 export interface Entity {
@@ -133,6 +147,7 @@ export interface Entity {
   standardUsed: boolean;
   movementUsed: boolean;
   swiftUsed: boolean;
+  resources: Record<string, number>;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
 }

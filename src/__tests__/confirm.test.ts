@@ -38,6 +38,7 @@ function makeEntity(
     buffs: [],
     cooldowns: {},
     usesUsed: {},
+    resources: {},
     pendingAction: null,
     dashUsed: false,
     standardUsed: false,
@@ -398,6 +399,93 @@ describe("full select-confirm flow", () => {
     const hpBefore = target.curhp;
     gameCommand(room, alice, "confirm", "", "");
     expect(target.curhp).toBeLessThan(hpBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// %choose / %target prompts
+// ---------------------------------------------------------------------------
+
+describe("choose and target prompts", () => {
+  beforeEach(() => games.clear());
+
+  it("responds to a selection prompt with %choose", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const ability = makeAbility({
+      name: "Rising Hope",
+      mr: 0,
+      choices: [
+        { id: "atk_mag", label: "+3 ATK/MAG" },
+        { id: "def", label: "+4 DEF" },
+      ],
+    });
+    caster.abilities = [ability];
+
+    const game = makeGame({ entities: [caster, target] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Rising Hope", "");
+    expect(caster.pendingAction).not.toBeNull();
+
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.pendingPromptKind).toBe("selection");
+
+    gameCommand(room, alice, "choose", "atk_mag", "");
+    expect(caster.pendingPromptKind).toBe("target");
+
+    gameCommand(room, alice, "target", "P2", "");
+    expect(caster.pendingAction).toBeNull();
+    expect(caster.pendingPromptKind).toBeUndefined();
+    expect(target.curhp).toBeLessThan(100);
+  });
+
+  it("responds to a target prompt with %target", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const punch = makeAbility({ name: "Punch", mr: 0 });
+    caster.abilities = [punch];
+
+    const game = makeGame({ entities: [caster, target] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Punch", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.pendingPromptKind).toBe("target");
+
+    gameCommand(room, alice, "target", "P2", "");
+    expect(caster.pendingAction).toBeNull();
+    expect(target.curhp).toBeLessThan(100);
+  });
+
+  it("rejects %choose with no pending action without crashing", () => {
+    const caster = makeEntity({ num: "P1", name: "Alice", pos: [2, 2] });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    expect(() => {
+      gameCommand(room, alice, "choose", "atk_mag", "");
+    }).not.toThrow();
   });
 });
 

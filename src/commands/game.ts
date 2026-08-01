@@ -25,7 +25,12 @@ import {
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
 import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
-import { resolveAction } from "../game/resolve.js";
+import {
+  resolveAction,
+  respondToChoice,
+  respondToTarget,
+  type AttackStep,
+} from "../game/resolve.js";
 
 export function gameCommand(
   room: Room | null,
@@ -60,6 +65,16 @@ export function gameCommand(
     case "cancel":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleCancel(game, user);
+      break;
+
+    case "target":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleTarget(game, user, full);
+      break;
+
+    case "choose":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleChoose(game, user, full);
       break;
 
     case "endturn":
@@ -343,7 +358,46 @@ function handleConfirm(game: Game, user: User) {
 
   pushSnapshot(game);
   const step = resolveAction(game, entity);
+  finishStep(game, entity, step);
+}
 
+function handleTarget(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!args) return sendPm(user.name, "Usage: %target <target>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToTarget(entity, args);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function handleChoose(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!args) return sendPm(user.name, "Usage: %choose <option>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToChoice(entity, args);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
 
@@ -351,6 +405,11 @@ function handleConfirm(game: Game, user: User) {
       send(
         game.room,
         `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+      );
+    } else if (step.prompt.kind === "selection") {
+      send(
+        game.room,
+        `Use %choose <option>. Options: ${step.prompt.options.map((o) => o.id).join(", ")}`,
       );
     }
 
@@ -392,6 +451,8 @@ function handleCancel(game: Game, user: User) {
   }
 
   entity.pendingAction = null;
+  entity.pendingResolution = undefined;
+  entity.pendingPromptKind = undefined;
   send(game.room, `/me ${entity.num} cancels ${ability.name}`);
   broadcastPages(game);
 }
