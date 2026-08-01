@@ -12,6 +12,7 @@ import {
   getAoETargets,
   getSplashTargets,
   isConfused,
+  parseFrequency,
 } from "./state.js";
 import { parseEffects, applyEffects } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
@@ -229,7 +230,8 @@ function* resolveAttackFlow(
 
   // --- After Resolving (cooldowns, use tracking, win check) ---
   setCooldown(user, ability);
-  if (ability.maxUses) {
+  const { uses } = parseFrequency(ability.frequency);
+  if (ability.maxUses ?? uses) {
     user.usesUsed[ability.name] = (user.usesUsed[ability.name] ?? 0) + 1;
   }
   // Bug fix carried over: check win condition once after all deaths this
@@ -580,13 +582,8 @@ function resolveSingleTarget(
 }
 
 function setCooldown(entity: Entity, ability: AbilityData) {
-  const freq = ability.frequency.toLowerCase();
-  if (freq === "every turn" || freq === "passive") return;
-  if (freq === "eot") {
-    entity.cooldowns[ability.name] = 2;
-  } else if (freq === "e3t") {
-    entity.cooldowns[ability.name] = 3;
-  }
+  const { cooldown } = parseFrequency(ability.frequency);
+  if (cooldown) entity.cooldowns[ability.name] = cooldown;
 }
 
 function isWinCondition(game: Game): boolean {
