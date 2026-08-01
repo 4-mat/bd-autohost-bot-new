@@ -400,3 +400,53 @@ describe("full select-confirm flow", () => {
     expect(target.curhp).toBeLessThan(hpBefore);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pass movement (Issue #23)
+// ---------------------------------------------------------------------------
+
+describe("passmove", () => {
+  beforeEach(() => games.clear());
+
+  it("skips movement and enters the action phase", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "passmove", "", "");
+
+    expect(caster.movementUsed).toBe(true);
+    expect(caster.pos).toEqual([2, 2]);
+    expect(caster.dashUsed).toBe(false);
+  });
+
+  it("allows a Standard after passing movement", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const punch = makeAbility({ name: "Punch", mr: 0 });
+    caster.abilities = [punch];
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const game = makeGame({ entities: [caster, target] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "passmove", "", "");
+    gameCommand(room, alice, "use", "Punch @ P2", "");
+
+    expect(caster.pendingAction).not.toBeNull();
+    expect(caster.pendingAction!.ability.name).toBe("Punch");
+  });
+});

@@ -94,6 +94,12 @@ export function gameCommand(
       handlePremove(game, user);
       break;
 
+    case "passmove":
+    case "pass":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handlePassMove(game, user);
+      break;
+
     case "pl":
       if (!game) return sendPm(user.name, "No active game in this room.");
       sendPm(user.name, buildPlayerList(game));
@@ -549,6 +555,31 @@ function handlePremove(game: Game, user: User) {
     premoveSet.add(entity.num);
     send(game.room, `/me ${entity.num} viewing pre-move abilities`);
   }
+  broadcastPages(game);
+}
+
+function handlePassMove(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entity: Entity | null = null;
+  if (isHost) {
+    entity = getCurrentEntity(game);
+  } else {
+    entity = getCurrentEntity(game);
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, "You already moved this turn.");
+  }
+
+  pushSnapshot(game);
+  entity.movementUsed = true;
+  premoveSet.delete(entity.num);
+  send(game.room, `/me ${entity.num} passes movement`);
   broadcastPages(game);
 }
 
