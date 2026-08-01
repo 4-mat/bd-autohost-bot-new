@@ -168,6 +168,11 @@ export interface ActionLogEntry {
   snapshot: string;
 }
 
+export interface ChatEntry {
+  user: string;
+  message: string;
+}
+
 export interface Game {
   id: string;
   room: string;
@@ -185,6 +190,8 @@ export interface Game {
   started: boolean;
   kills: Record<string, number>; // entity num -> kill count
   winner: string | null; // winning entity num or team
+  chatLog: ChatEntry[];
+  toasts: ChatEntry[];
 }
 
 export const games = new Map<string, Game>();
@@ -320,7 +327,7 @@ export function getReachableTiles(
 // Line of sight check for range rule
 export function hasLineOfSight(
   game: Game,
-  from: [number, number],
+  from: [number, number], // [row, col]
   to: [number, number],
 ): boolean {
   const dx = to[1] - from[1];
@@ -331,7 +338,7 @@ export function hasLineOfSight(
   const sx = dx / steps;
   const sy = dy / steps;
 
-  for (let i = 1; i < steps; i++) {
+  for (let i = 1; i <= steps; i++) {
     const x = Math.round(from[1] + sx * i);
     const y = Math.round(from[0] + sy * i);
     if (x < 0 || y < 0 || y >= game.map.length || x >= game.map[0].length)
@@ -934,18 +941,6 @@ export function processStartOfTurn(
     if (entity.cooldowns[name] <= 0) delete entity.cooldowns[name];
   }
 
-  // Tick buff durations, remove expired
-  entity.buffs = entity.buffs.filter((b) => {
-    b.rounds--;
-    if (b.rounds <= 0) {
-      messages.push(
-        `  ${entity.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
-      );
-      return false;
-    }
-    return true;
-  });
-
   // Apply status damage (DoT)
   for (const status of [...entity.statuses]) {
     if (status.damage > 0) {
@@ -1096,6 +1091,22 @@ export function nextTurn(game: Game): {
     return { entity: null, messages: [], died: false };
   }
 
+  // Tick buffs of the entity whose turn is ending
+  const messages: string[] = [];
+  const prev = getCurrentEntity(game);
+  if (prev) {
+    prev.buffs = prev.buffs.filter((b) => {
+      b.rounds--;
+      if (b.rounds <= 0) {
+        messages.push(
+          `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
+        );
+        return false;
+      }
+      return true;
+    });
+  }
+
   game.turnIndex++;
   if (game.turnIndex >= game.turnOrder.length) {
     game.turnIndex = 0;
@@ -1103,7 +1114,7 @@ export function nextTurn(game: Game): {
   }
 
   const entity = getCurrentEntity(game);
-  if (!entity) return { entity: null, messages: [], died: false };
+  if (!entity) return { entity: null, messages, died: false };
 
   // Reset per-turn flags
   entity.dashUsed = false;
@@ -1112,6 +1123,6 @@ export function nextTurn(game: Game): {
   entity.swiftUsed = false;
   entity.pendingAction = null;
 
-  const { messages, died } = processStartOfTurn(game, entity);
-  return { entity, messages, died };
+  const { messages: startMessages, died } = processStartOfTurn(game, entity);
+  return { entity, messages: [...messages, ...startMessages], died };
 }

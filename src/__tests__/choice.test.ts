@@ -76,6 +76,8 @@ function makeGame(opts: { entities?: Entity[]; mode?: string } = {}): Game {
     started: true,
     kills: {},
     winner: null,
+    chatLog: [],
+    toasts: [],
   };
 }
 

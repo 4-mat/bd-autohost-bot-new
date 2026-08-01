@@ -23,13 +23,26 @@ function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
   return a.level === "EX1" || a.level === "EX2" ? exOk : a.level <= lvl;
 }
 
+function findGameForHost(username: string): Game | null {
+  for (const game of games.values()) {
+    if (toId(game.host) === toId(username)) return game;
+  }
+  return null;
+}
+
 export function hostCommand(
   room: Room | null,
   user: User,
   cmd: string,
   args: string,
   val: string,
+  pm = false,
 ) {
+  if (pm && (cmd === "host" || cmd === "dehost")) {
+    sendPm(user.name, `${cmd} must be used in a room.`);
+    return;
+  }
+
   if (!room) {
     sendPm(user.name, "This command must be used in a room.");
     return;
@@ -125,6 +138,8 @@ function handleHost(room: Room, user: User) {
     started: false,
     kills: {},
     winner: null,
+    chatLog: [],
+    toasts: [],
   };
 
   games.set(id, game);
@@ -181,7 +196,7 @@ function handleAddPlayer(room: Room, user: User, args: string) {
   const name = parts[0];
   const className = parts[1] || "Bard";
   const weaponName = parts[2] || "Crossbow";
-  const team = parts[3] ? parseInt(parts[3]) : 0;
+  const team = parts[3] ? parseInt(parts[3]) : game.entities.length + 1;
   const level = 1;
 
   // Check if already added
