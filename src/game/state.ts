@@ -117,6 +117,34 @@ export interface AbilityData {
   choices?: AbilityChoice[];
 }
 
+// Parse an ability frequency into a per-battle use limit and a cooldown in turns.
+// Handles both compact data forms ("Once", "Twice/EoT", "E3T") and spec forms
+// ("Twice, Every Other Turn", "Once (Permanent)", "X per Game: 3").
+export function parseFrequency(frequency: string) {
+  const f = frequency.toLowerCase().replace(/\s*,\s*/g, "/");
+  let uses: number | null = null;
+  let cooldown: number | null = null;
+
+  const perGame = f.match(/(\d+)\s*per game/);
+  if (perGame) {
+    uses = parseInt(perGame[1]);
+  } else if (f.includes("once")) {
+    uses = 1;
+  } else if (f.includes("twice")) {
+    uses = 2;
+  } else if (f.includes("thrice")) {
+    uses = 3;
+  }
+
+  if (f.includes("every other turn") || f.includes("eot")) {
+    cooldown = 2;
+  } else if (f.includes("every third turn") || f.includes("e3t")) {
+    cooldown = 3;
+  }
+
+  return { uses, cooldown };
+}
+
 export interface Entity {
   num: string; // P1, P2, M1, M2...
   name: string;

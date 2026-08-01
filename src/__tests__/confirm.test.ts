@@ -538,3 +538,89 @@ describe("passmove", () => {
     expect(caster.pendingAction!.ability.name).toBe("Punch");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Frequency / uses enforcement (issues #25, #26)
+// ---------------------------------------------------------------------------
+
+describe("frequency and uses", () => {
+  beforeEach(() => games.clear());
+
+  function setup(frequency: string, name = "Strike") {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const ability = makeAbility({
+      name,
+      frequency,
+      mr: 0,
+      roll: "1d1+0",
+    });
+    caster.abilities = [ability];
+    const game = makeGame({ entities: [caster, target] });
+    games.set(game.id, game);
+    return { caster, target, ability };
+  }
+
+  it("blocks a Once ability after a single resolved use (#26)", () => {
+    const { caster } = setup("Once", "Maelstrom");
+
+    gameCommand(room, alice, "use", "Maelstrom @ P2", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.usesUsed["Maelstrom"]).toBe(1);
+
+    caster.standardUsed = false;
+    gameCommand(room, alice, "use", "Maelstrom @ P2", "");
+    expect(caster.pendingAction).toBeNull();
+    expect(caster.usesUsed["Maelstrom"]).toBe(1);
+  });
+
+  it("allows a Twice ability exactly twice per battle", () => {
+    const { caster } = setup("Twice");
+
+    gameCommand(room, alice, "use", "Strike @ P2", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.usesUsed["Strike"]).toBe(1);
+
+    caster.standardUsed = false;
+    gameCommand(room, alice, "use", "Strike @ P2", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.usesUsed["Strike"]).toBe(2);
+
+    caster.standardUsed = false;
+    gameCommand(room, alice, "use", "Strike @ P2", "");
+    expect(caster.pendingAction).toBeNull();
+    expect(caster.usesUsed["Strike"]).toBe(2);
+  });
+
+  it("sets a cooldown for a plain EoT ability", () => {
+    const { caster } = setup("EoT");
+
+    gameCommand(room, alice, "use", "Strike @ P2", "");
+    gameCommand(room, alice, "confirm", "", "");
+
+    expect(caster.cooldowns["Strike"]).toBe(2);
+  });
+
+  it("sets a cooldown for a Twice/EoT ability and blocks an immediate repeat (#25)", () => {
+    const { caster } = setup("Twice/EoT", "Chase Arrow");
+
+    gameCommand(room, alice, "use", "Chase Arrow @ P2", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.usesUsed["Chase Arrow"]).toBe(1);
+    expect(caster.cooldowns["Chase Arrow"]).toBe(2);
+
+    caster.standardUsed = false;
+    gameCommand(room, alice, "use", "Chase Arrow @ P2", "");
+    expect(caster.pendingAction).toBeNull();
+  });
+});
