@@ -25,7 +25,12 @@ import {
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
 import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
-import { resolveAction } from "../game/resolve.js";
+import {
+  resolveAction,
+  respondToChoice,
+  respondToTarget,
+  type AttackStep,
+} from "../game/resolve.js";
 
 export function gameCommand(
   room: Room | null,
@@ -128,6 +133,16 @@ export function gameCommand(
     case "regp":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleRegp(game, user, full);
+      break;
+
+    case "target":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleTarget(game, user, args);
+      break;
+
+    case "choose":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleChoice(game, user, args);
       break;
 
     default:
@@ -336,29 +351,27 @@ function handleConfirm(game: Game, user: User) {
   }
 
   pushSnapshot(game);
-  const step = resolveAction(game, entity);
+  sendStep(game, entity, resolveAction(game, entity));
+}
 
-if (step.done === false) {
-  send(
-    game.room,
-    `${entity.num}: ${step.prompt.message}`,
-  );
+function sendStep(game: Game, entity: Entity, step: AttackStep) {
+  if (step.done === false) {
+    send(game.room, `${entity.num}: ${step.prompt.message}`);
 
-  if (step.prompt.kind === "target") {
-    send(
-      game.room,
-      `Use %target <target>. Options: ${step.prompt.candidates.map(e => e.num).join(", ")}`
-    );
+    if (step.prompt.kind === "target") {
+      send(
+        game.room,
+        `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+      );
+    }
+    return;
   }
 
-  return;
-}
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
 
-for (const msg of step.result.messages) {
-  send(game.room, msg);
-}
-
-entity.pendingAction = null;
+  entity.pendingAction = null;
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
@@ -367,6 +380,52 @@ entity.pendingAction = null;
   }
 
   broadcastPages(game);
+}
+
+function handleTarget(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!entity.pendingResolution) {
+    return sendPm(user.name, "No action awaiting a response.");
+  }
+  if (entity.pendingPromptKind !== "target") {
+    return sendPm(
+      user.name,
+      `Your pending action expects ${
+        entity.pendingPromptKind === "selection" ? "%choose" : "%target"
+      }.`,
+    );
+  }
+
+  pushSnapshot(game);
+  sendStep(game, entity, respondToTarget(entity, args));
+}
+
+function handleChoice(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!entity.pendingResolution) {
+    return sendPm(user.name, "No action awaiting a response.");
+  }
+  if (entity.pendingPromptKind !== "selection") {
+    return sendPm(
+      user.name,
+      `Your pending action expects ${
+        entity.pendingPromptKind === "target" ? "%target" : "%choose"
+      }.`,
+    );
+  }
+
+  pushSnapshot(game);
+  sendStep(game, entity, respondToChoice(entity, args));
 }
 
 function handleCancel(game: Game, user: User) {
@@ -414,18 +473,14 @@ function handleAdvanceTurn(game: Game, user: User) {
   } else if (entity.pendingAction) {
     const step = resolveAction(game, entity);
 
-  if (step.done === false) {
-    sendPm(
-      user.name,
-      step.prompt.message
-    );
-    return;
-  }
-  
-  for (const msg of step.result.messages) {
-    send(game.room, msg);
-  }
-  
+    if (step.done === false) {
+      sendPm(user.name, step.prompt.message);
+      return;
+    }
+
+    for (const msg of step.result.messages) {
+      send(game.room, msg);
+    }
 
     // Track kills
     for (const death of step.result.deaths) {
