@@ -970,4 +970,6 @@ export function broadcastPages(game: Game) {
       sendPm(entity.name, `/pminfobox ${playerHtml}`);
     }
   }
+
+  game.toasts = [];
 }

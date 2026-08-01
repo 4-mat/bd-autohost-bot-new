@@ -110,6 +110,8 @@ function makeGame(
     started: true,
     kills: {},
     winner: null,
+    chatLog: [],
+    toasts: [],
   };
 }
 
@@ -872,7 +874,7 @@ describe("processStartOfTurn", () => {
     expect(e.cooldowns["Heal"]).toBeUndefined();
   });
 
-  it("ticks buff durations and removes expired", () => {
+  it("ticks buff durations and removes expired at end of turn", () => {
     const e = makeEntity({
       num: "P1",
       name: "A",
@@ -881,11 +883,17 @@ describe("processStartOfTurn", () => {
         { stat: "pd", amount: 3, rounds: 1 },
       ],
     });
-    const game = makeGame();
-    processStartOfTurn(game, e);
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [e, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    const result = nextTurn(game);
     expect(e.buffs.length).toBe(1);
     expect(e.buffs[0].stat).toBe("atk");
     expect(e.buffs[0].rounds).toBe(1);
+    expect(result.entity?.num).toBe("P2");
   });
 
   it("ticks status durations and removes expired", () => {

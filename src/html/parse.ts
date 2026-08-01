@@ -199,6 +199,8 @@ export function handleKyubsInfo(roomid: string, html: string) {
       started: true,
       kills: {},
       winner: null,
+      chatLog: [],
+      toasts: [],
     };
     games.set(game.id, game);
   } else {

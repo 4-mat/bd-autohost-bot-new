@@ -496,6 +496,68 @@ function resolveSingleTarget(
     `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
+  // --- Hit resolves first (damage to target first) ---
+  if (hit) {
+    const damageRoll = rollDice(ability.roll);
+    const userOff = offensiveStat(user, ability.damageType);
+    let baseDamage =
+      damageRoll.total + userOff - defensiveStat(target, ability.damageType);
+
+    if (crit) {
+      const critRoll = rollDice(ability.roll);
+      baseDamage += critRoll.total;
+      result.messages.push(
+        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+      );
+    }
+
+    const finalDamage = Math.max(0, baseDamage);
+    const dmgResult = dealDamage(target, finalDamage);
+    result.messages.push(
+      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    );
+
+    if (dmgResult.shieldAbsorbed > 0) {
+      result.messages.push(
+        `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+      );
+    }
+
+    const effects = parseEffects(ability.effect);
+    const effectMsgs = applyEffects(game, user, target, effects);
+    result.messages.push(...effectMsgs);
+
+    // Apply recoil damage after hit damage
+    for (const e of parseEffects(ability.effect)) {
+      if (e.type === "recoil") {
+        const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
+        dealDamage(user, recoilDmg);
+        result.messages.push(
+          `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
+        );
+      }
+    }
+
+    if (target.curhp <= 0) {
+      result.messages.push(
+        `  **${target.num} (${target.name}) has been defeated!**`,
+      );
+      removeEntity(game, target);
+      result.deaths.push(target);
+    }
+
+    // Check if recoil killed the user (after target death is recorded)
+    if (user.curhp <= 0) {
+      result.messages.push(
+        `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
+      );
+      removeEntity(game, user);
+      result.deaths.push(user);
+      return result;
+    }
+  }
+
+  // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
   if (isConfused(user) && accRoll >= 16 && !confusionAlreadyApplied) {
     const offStat = Math.max(
       getEffectiveStat(user, "atk"),
@@ -513,47 +575,7 @@ function resolveSingleTarget(
       );
       removeEntity(game, user);
       result.deaths.push(user);
-      // Bug fix: don't keep resolving a hit for an entity that just died.
-      return result;
     }
-  }
-
-  if (!hit) return result;
-
-  const damageRoll = rollDice(ability.roll);
-  const userOff = offensiveStat(user, ability.damageType); // #5: computed once, reused below
-  let baseDamage =
-    damageRoll.total + userOff - defensiveStat(target, ability.damageType);
-
-  if (crit) {
-    const critRoll = rollDice(ability.roll);
-    baseDamage += critRoll.total;
-    result.messages.push(
-      `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
-    );
-  }
-
-  const finalDamage = Math.max(0, baseDamage);
-  const dmgResult = dealDamage(target, finalDamage);
-  result.messages.push(
-    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
-  );
-
-  if (dmgResult.shieldAbsorbed > 0) {
-    result.messages.push(
-      `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
-    );
-  }
-
-  const effects = parseEffects(ability.effect);
-  result.messages.push(...applyEffects(game, user, target, effects));
-
-  if (target.curhp <= 0) {
-    result.messages.push(
-      `  **${target.num} (${target.name}) has been defeated!**`,
-    );
-    removeEntity(game, target);
-    result.deaths.push(target);
   }
 
   return result;
