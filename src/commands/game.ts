@@ -25,7 +25,14 @@ import {
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
 import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
-import { resolveAction } from "../game/resolve.js";
+import {
+  type AttackStep,
+  resolveAction,
+  respondToChoice,
+  respondToTarget,
+  respondToTile,
+  respondToDir,
+} from "../game/resolve.js";
 
 export function gameCommand(
   room: Room | null,
@@ -35,7 +42,8 @@ export function gameCommand(
   val: string,
   pm = false,
 ) {
-  const game = room ? findGameForRoom(room.id) : null;
+  let game: Game | null = room ? findGameForRoom(room.id) : null;
+  if (!game && pm) game = findGameForUser(user);
 
   const full = val ? `${args},${val}` : args;
 
@@ -71,6 +79,16 @@ export function gameCommand(
     case "back":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleBack(game, user);
+      break;
+
+    case "tile":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleTileChoice(game, user, full);
+      break;
+
+    case "dir":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleDirChoice(game, user, args);
       break;
 
     case "r":
@@ -139,6 +157,17 @@ export function gameCommand(
 function findGameForRoom(roomid: string): Game | null {
   for (const game of games.values()) {
     if (game.room === roomid) return game;
+  }
+  return null;
+}
+
+function findGameForUser(user: User): Game | null {
+  const uid = toId(user.name);
+  for (const game of games.values()) {
+    if (toId(game.host) === uid) return game;
+    for (const e of game.entities) {
+      if (toId(e.name) === uid || toId(e.id) === uid) return game;
+    }
   }
   return null;
 }
@@ -274,6 +303,18 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     }
   }
 
+  // Free/Swift/Trigger only before Standard
+  const isPreStandard =
+    ability.actionType === "Free" ||
+    ability.actionType === "Swift" ||
+    ability.actionType === "Trigger";
+  if (isPreStandard && entity.standardUsed) {
+    return sendPm(
+      user.name,
+      `${ability.actionType} abilities must be used before your Standard action.`,
+    );
+  }
+
   // Action type enforcement
   if (ability.actionType === "Standard" && entity.standardUsed) {
     return sendPm(user.name, "You already used your Standard action.");
@@ -291,14 +332,11 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     );
   }
   if (ability.actionType === "Free") {
-    // Free actions always allowed (no slot consumed)
-  } else if (
-    ability.actionType === "Trigger" ||
-    ability.actionType === "Reaction"
-  ) {
+    // Free actions always allowed before Standard (checked above)
+  } else if (ability.actionType === "Reaction") {
     return sendPm(
       user.name,
-      `${ability.actionType} abilities resolve automatically, not manually.`,
+      "Reaction abilities resolve automatically, not manually.",
     );
   } else if (ability.actionType === "Passive") {
     return sendPm(user.name, "Passive abilities cannot be used manually.");
@@ -338,27 +376,38 @@ function handleConfirm(game: Game, user: User) {
   pushSnapshot(game);
   const step = resolveAction(game, entity);
 
-if (step.done === false) {
-  send(
-    game.room,
-    `${entity.num}: ${step.prompt.message}`,
-  );
+  if (step.done === false) {
+    send(game.room, `${entity.num}: ${step.prompt.message}`);
 
-  if (step.prompt.kind === "target") {
-    send(
-      game.room,
-      `Use %target <target>. Options: ${step.prompt.candidates.map(e => e.num).join(", ")}`
-    );
+    if (step.prompt.kind === "direction") {
+      send(
+        game.room,
+        `Use %dir <dir>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
+    }
+
+    if (step.prompt.kind === "target") {
+      send(
+        game.room,
+        `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+      );
+    }
+
+    if (step.prompt.kind === "tile") {
+      send(
+        game.room,
+        `Use %tile <pos>. Valid tiles: ${step.prompt.validTiles.map((p) => posToStr(p[0], p[1])).join(", ")}`,
+      );
+    }
+
+    return;
   }
 
-  return;
-}
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
 
-for (const msg of step.result.messages) {
-  send(game.room, msg);
-}
-
-entity.pendingAction = null;
+  entity.pendingAction = null;
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
@@ -389,7 +438,122 @@ function handleCancel(game: Game, user: User) {
   }
 
   entity.pendingAction = null;
+  entity.pendingResolution = undefined;
+  entity.pendingPromptKind = undefined;
   send(game.room, `/me ${entity.num} cancels ${ability.name}`);
+  broadcastPages(game);
+}
+
+function handleTileChoice(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+
+  const tileRef = args.trim();
+  if (!tileRef) {
+    return sendPm(user.name, "Usage: %tile <pos> (e.g. %tile c,4)");
+  }
+
+  let step: AttackStep;
+  try {
+    step = respondToTile(entity, tileRef);
+  } catch (e: any) {
+    return sendPm(user.name, e.message);
+  }
+
+  if (step.done === false) {
+    send(game.room, `${entity.num}: ${step.prompt.message}`);
+    if (step.prompt.kind === "tile") {
+      send(
+        game.room,
+        `Use %tile <pos>. Valid tiles: ${step.prompt.validTiles.map((p) => posToStr(p[0], p[1])).join(", ")}`,
+      );
+    }
+    if (step.prompt.kind === "target") {
+      send(
+        game.room,
+        `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+      );
+    }
+    return;
+  }
+
+  // Done — apply results
+  entity.pendingAction = null;
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
+
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return;
+  }
+
+  broadcastPages(game);
+}
+
+function handleDirChoice(game: Game, user: User, dirLabel: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+
+  const label = dirLabel.trim().toUpperCase();
+  if (!label || !["N", "S", "E", "W", "NE", "NW", "SE", "SW"].includes(label)) {
+    return sendPm(
+      user.name,
+      "Usage: %dir <direction> (N, S, E, W, NE, NW, SE, SW)",
+    );
+  }
+
+  let step: AttackStep;
+  try {
+    step = respondToDir(entity, label);
+  } catch (e: any) {
+    return sendPm(user.name, e.message);
+  }
+
+  if (step.done === false) {
+    send(game.room, `${entity.num}: ${step.prompt.message}`);
+    if (step.prompt.kind === "direction") {
+      send(
+        game.room,
+        `Use %dir <dir>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
+    }
+    if (step.prompt.kind === "target") {
+      send(
+        game.room,
+        `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+      );
+    }
+    if (step.prompt.kind === "tile") {
+      send(
+        game.room,
+        `Use %tile <pos>. Valid tiles: ${step.prompt.validTiles.map((p) => posToStr(p[0], p[1])).join(", ")}`,
+      );
+    }
+    return;
+  }
+
+  // Done — apply results
+  entity.pendingAction = null;
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
+
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return;
+  }
+
   broadcastPages(game);
 }
 
@@ -414,18 +578,14 @@ function handleAdvanceTurn(game: Game, user: User) {
   } else if (entity.pendingAction) {
     const step = resolveAction(game, entity);
 
-  if (step.done === false) {
-    sendPm(
-      user.name,
-      step.prompt.message
-    );
-    return;
-  }
-  
-  for (const msg of step.result.messages) {
-    send(game.room, msg);
-  }
-  
+    if (step.done === false) {
+      sendPm(user.name, step.prompt.message);
+      return;
+    }
+
+    for (const msg of step.result.messages) {
+      send(game.room, msg);
+    }
 
     // Track kills
     for (const death of step.result.deaths) {

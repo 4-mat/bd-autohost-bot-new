@@ -158,6 +158,7 @@ export interface PendingAction {
   target?: string; // entity num
   targetPos?: [number, number];
   position?: [number, number];
+  dir?: [number, number]; // direction for directional AoEs
 }
 
 export interface ActionLogEntry {
@@ -571,29 +572,29 @@ export function getStarTiles(
   return tiles;
 }
 
-// Get all entity positions in a Cone from caster in a cardinal direction
+// Get all entity positions in a Cone from user in a cardinal direction
 export function getConeTiles(
   from: [number, number],
   range: number,
+  dir?: [number, number],
 ): [number, number][] {
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-  ];
+  const dirs: [number, number][] = dir
+    ? [dir]
+    : [
+        [0, 1],
+        [0, -1],
+        [1, 0],
+        [-1, 0],
+      ];
   for (const [dr, dc] of dirs) {
     for (let d = 1; d <= range; d++) {
-      // At distance d, width extends d tiles perpendicular
       for (let w = -d; w <= d; w++) {
         let tr: number, tc: number;
         if (dr !== 0) {
-          // Vertical cone
           tr = from[0] + dr * d;
           tc = from[1] + w;
         } else {
-          // Horizontal cone
           tr = from[0] + w;
           tc = from[1] + dc * d;
         }
@@ -604,26 +605,28 @@ export function getConeTiles(
   return tiles;
 }
 
-// Get all tiles in a Line from caster in the closest matching direction
+// Get all tiles in a Line from user in the closest matching direction
 export function getLineTiles(
   from: [number, number],
   range: number,
+  dir?: [number, number],
 ): [number, number][] {
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-    [1, 1],
-    [1, -1],
-    [-1, 1],
-    [-1, -1],
-  ];
+  const dirs: [number, number][] = dir
+    ? [dir]
+    : [
+        [0, 1],
+        [0, -1],
+        [1, 0],
+        [-1, 0],
+        [1, 1],
+        [1, -1],
+        [-1, 1],
+        [-1, -1],
+      ];
   for (const [dr, dc] of dirs) {
     for (let d = 1; d <= range; d++) {
       if (dr !== 0 && dc !== 0) {
-        // Diagonal: max distance is ceil(range/2)
         if (d > Math.ceil(range / 2)) break;
       }
       tiles.push([from[0] + dr * d, from[1] + dc * d]);
@@ -632,29 +635,32 @@ export function getLineTiles(
   return tiles;
 }
 
-// Get all tiles in a Pierce from caster (same as Line)
+// Get all tiles in a Pierce from user (same as Line)
 export function getPierceTiles(
   from: [number, number],
   range: number,
+  dir?: [number, number],
 ): [number, number][] {
-  return getLineTiles(from, range);
+  return getLineTiles(from, range, dir);
 }
 
 // Get all tiles in a Beam (3 wide, X deep in each cardinal direction)
 export function getBeamTiles(
   from: [number, number],
   range: number,
+  dir?: [number, number],
 ): [number, number][] {
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-  ];
+  const dirs: [number, number][] = dir
+    ? [dir]
+    : [
+        [0, 1],
+        [0, -1],
+        [1, 0],
+        [-1, 0],
+      ];
   for (const [dr, dc] of dirs) {
     for (let d = 1; d <= range; d++) {
-      // 3 wide perpendicular
       for (let w = -1; w <= 1; w++) {
         let tr: number, tc: number;
         if (dr !== 0) {
@@ -671,44 +677,86 @@ export function getBeamTiles(
   return tiles;
 }
 
+// Direction labels for directional AoE prompts
+export const DIRECTION_LABELS: Record<string, [number, number]> = {
+  N: [-1, 0],
+  S: [1, 0],
+  E: [0, 1],
+  W: [0, -1],
+  NE: [-1, 1],
+  NW: [-1, -1],
+  SE: [1, 1],
+  SW: [1, -1],
+};
+
+// Reverse mapping
+const DIR_TO_LABEL: Record<string, string> = {};
+for (const [label, [dr, dc]] of Object.entries(DIRECTION_LABELS)) {
+  DIR_TO_LABEL[`${dr},${dc}`] = label;
+}
+
+// Get direction candidates for a given range type
+export function getDirectionCandidates(range: string): string[] {
+  const r = range.toLowerCase().trim();
+  if (r.startsWith("cone") || r.startsWith("beam")) {
+    return ["N", "S", "E", "W"];
+  }
+  if (r.startsWith("line") || r.startsWith("pierce")) {
+    return ["N", "S", "E", "W", "NE", "NW", "SE", "SW"];
+  }
+  return [];
+}
+
+// Check if an ability range needs a direction picked
+export function needsDirection(range: string): boolean {
+  const r = range.toLowerCase().trim();
+  return (
+    r.startsWith("cone ") ||
+    r.startsWith("beam ") ||
+    r.startsWith("line ") ||
+    r.startsWith("pierce ")
+  );
+}
+
 // Get all valid entities in an AoE pattern
 export function getAoETargets(
   game: Game,
-  caster: Entity,
+  user: Entity,
   range: string,
   group: string,
+  dir?: [number, number],
 ): Entity[] {
   const rangeStr = range.toLowerCase().trim();
   let tiles: [number, number][] = [];
 
   const burstMatch = rangeStr.match(/^burst\s*(\d+)/);
   if (burstMatch) {
-    tiles = getBurstTiles(caster.pos, parseInt(burstMatch[1]));
+    tiles = getBurstTiles(user.pos, parseInt(burstMatch[1]));
   }
 
   const starMatch = rangeStr.match(/^star\s*(\d+)/);
   if (starMatch) {
-    tiles = getStarTiles(caster.pos, parseInt(starMatch[1]));
+    tiles = getStarTiles(user.pos, parseInt(starMatch[1]));
   }
 
   const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
   if (coneMatch) {
-    tiles = getConeTiles(caster.pos, parseInt(coneMatch[1]));
+    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]), dir);
   }
 
   const lineMatch = rangeStr.match(/^line\s*(\d+)/);
   if (lineMatch) {
-    tiles = getLineTiles(caster.pos, parseInt(lineMatch[1]));
+    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]), dir);
   }
 
   const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
   if (pierceMatch) {
-    tiles = getPierceTiles(caster.pos, parseInt(pierceMatch[1]));
+    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]), dir);
   }
 
   const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
   if (beamMatch) {
-    tiles = getBeamTiles(caster.pos, parseInt(beamMatch[1]));
+    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]), dir);
   }
 
   if (tiles.length === 0) return [];
@@ -718,7 +766,7 @@ export function getAoETargets(
 
   return game.entities.filter((e) => {
     if (e.curhp <= 0) return false;
-    if (!isValidGroupTarget(caster, e, groupLower)) return false;
+    if (!isValidGroupTarget(user, e, groupLower)) return false;
     return tileSet.has(posToStr(e.pos[0], e.pos[1]));
   });
 }
@@ -726,7 +774,7 @@ export function getAoETargets(
 // Get Splash targets around a primary target (Burst X from the target)
 export function getSplashTargets(
   game: Game,
-  caster: Entity,
+  user: Entity,
   primary: Entity,
   splashRadius: number,
   group: string,
@@ -738,28 +786,28 @@ export function getSplashTargets(
   return game.entities.filter((e) => {
     if (e.curhp <= 0) return false;
     if (e.num === primary.num) return false; // primary is already targeted
-    if (!isValidGroupTarget(caster, e, groupLower)) return false;
+    if (!isValidGroupTarget(user, e, groupLower)) return false;
     return tileSet.has(posToStr(e.pos[0], e.pos[1]));
   });
 }
 
 // Check if entity is valid for a target group
 function isValidGroupTarget(
-  caster: Entity,
+  user: Entity,
   target: Entity,
   group: string,
 ): boolean {
-  if (group === "self") return target.num === caster.num;
+  if (group === "self") return target.num === user.num;
   if (group === "ally")
-    return target.team === caster.team && target.num !== caster.num;
-  if (group === "foe") return target.team !== caster.team;
+    return target.team === user.team && target.num !== user.num;
+  if (group === "foe") return target.team !== user.team;
   if (group === "any") return true;
   if (group === "tile") return false;
-  if (group.includes("self and allies")) return target.team === caster.team;
-  if (group.includes("self or ally")) return target.team === caster.team;
+  if (group.includes("self and allies")) return target.team === user.team;
+  if (group.includes("self or ally")) return target.team === user.team;
   if (group.includes("self or foe"))
-    return target.team === caster.team || target.team !== caster.team;
-  if (group.includes("foe or ally")) return target.num !== caster.num;
+    return target.team === user.team || target.team !== user.team;
+  if (group.includes("foe or ally")) return target.num !== user.num;
   if (group.includes("self, foes, allies")) return true;
   return true;
 }
@@ -837,6 +885,26 @@ function isPassable(game: Game, r: number, c: number): boolean {
     return false;
   const t = game.map[r][c];
   return !isObstruction(t) && t !== Terrain.Lava;
+}
+
+// Place terrain on the map at a position (for tile placement abilities)
+export function placeTerrain(
+  game: Game,
+  pos: [number, number],
+  terrain: Terrain,
+): void {
+  const [r, c] = pos;
+  if (r >= 0 && r < game.map.length && c >= 0 && c < game.map[0].length) {
+    game.map[r][c] = terrain;
+  }
+}
+
+// Check if an entity stands on a given tile
+export function entityOnTile(game: Game, pos: [number, number]): Entity | null {
+  return (
+    game.entities.find((e) => e.pos[0] === pos[0] && e.pos[1] === pos[1]) ??
+    null
+  );
 }
 
 // Roll accuracy check

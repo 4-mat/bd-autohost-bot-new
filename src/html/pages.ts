@@ -107,6 +107,40 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
       actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #0c0;background:rgba(0,204,0,0.10)"><b style="color:#0c0">PENDING:</b> ${esc(pa.ability.name)}${targetStr}</div>`;
       actions += `<div style="margin-top:4px">${btn("%confirm", "Confirm")} ${btn("%cancel", "Cancel")}</div>`;
     }
+
+    // Tile prompt — show clickable tile buttons
+    if (entity.pendingPromptKind === "tile" && entity.pendingAction?.ability) {
+      const tiles = getValidTiles(game, entity.pendingAction.ability, entity);
+      if (tiles.length > 0) {
+        actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #f80;background:rgba(255,136,0,0.10)"><b style="color:#f80">CHOOSE TILE</b><br>`;
+        for (const t of tiles) {
+          actions += btn(`%tile ${t}`, t, "font-size:11px;padding:2px 6px");
+        }
+        actions += `</div>`;
+      }
+    }
+
+    // Direction prompt — show direction buttons for cone/line/beam/pierce
+    if (
+      entity.pendingPromptKind === "direction" &&
+      entity.pendingAction?.ability
+    ) {
+      const ab = entity.pendingAction.ability;
+      const dirs = ["N", "S", "E", "W", "NE", "NW", "SE", "SW"];
+      const isCardinal =
+        ab.range.toLowerCase().startsWith("cone") ||
+        ab.range.toLowerCase().startsWith("beam");
+      const candidates = isCardinal ? dirs.slice(0, 4) : dirs;
+      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #a0f;background:rgba(160,0,255,0.10)"><b style="color:#a0f">CHOOSE DIRECTION</b><br>`;
+      for (const d of candidates) {
+        actions += btn(
+          `%dir ${d}`,
+          d,
+          "font-size:13px;padding:3px 10px;font-weight:bold",
+        );
+      }
+      actions += `</div>`;
+    }
     actions += `<div style="margin-top:6px">${btn("%endturn", "End Turn")}</div>`;
   } else {
     const cur = getCurrentTurnEntity(game);
@@ -562,6 +596,13 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
       if (used >= ab.maxUses) return false;
     }
 
+    // Free/Swift must be used before Standard
+    if (
+      (ab.actionType === "Free" || ab.actionType === "Swift") &&
+      entity.standardUsed
+    )
+      return false;
+
     if (ab.actionType === "Standard" && entity.standardUsed) return false;
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;
     if (ab.actionType === "Movement" && entity.movementUsed) return false;
@@ -576,6 +617,9 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
 }
 
 function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
+  // Free/Swift/Trigger only before Standard
+  if (entity.standardUsed) return [];
+
   return entity.abilities.filter((ab) => {
     if (
       ab.actionType !== "Free" &&
@@ -607,14 +651,10 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
   });
 }
 
-function getValidTargets(
-  game: Game,
-  ab: AbilityData,
-  caster: Entity,
-): Entity[] {
+function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
   return game.entities.filter((e) => {
     if (
-      e.num === caster.num &&
+      e.num === user.num &&
       ab.targetGroup !== "Self" &&
       ab.targetGroup !== "Any"
     )
@@ -623,19 +663,19 @@ function getValidTargets(
 
     switch (ab.targetGroup) {
       case "Foe":
-        if (caster.team === 0) {
-          if (e.num === caster.num) return false;
+        if (user.team === 0) {
+          if (e.num === user.num) return false;
         } else {
-          if (e.team === caster.team) return false;
+          if (e.team === user.team) return false;
         }
         break;
       case "Ally":
-        if (e.num === caster.num) return false;
-        if (caster.team === 0) return false;
-        if (e.team !== caster.team) return false;
+        if (e.num === user.num) return false;
+        if (user.team === 0) return false;
+        if (e.team !== user.team) return false;
         break;
       case "Self":
-        if (e.num !== caster.num) return false;
+        if (e.num !== user.num) return false;
         break;
       case "Any":
         break;
@@ -646,22 +686,22 @@ function getValidTargets(
           ab.targetGroup.includes("Ally") &&
           !ab.targetGroup.includes("Foe")
         ) {
-          if (e.num === caster.num) return true;
-          if (caster.team === 0) return false;
-          if (e.team !== caster.team) return false;
+          if (e.num === user.num) return true;
+          if (user.team === 0) return false;
+          if (e.team !== user.team) return false;
         }
         break;
     }
 
     if (ab.range !== "Global" && ab.range !== "Self") {
-      if (!inRange(game, caster.pos, e.pos, ab.range)) return false;
+      if (!inRange(game, user.pos, e.pos, ab.range)) return false;
     }
 
     return true;
   });
 }
 
-function getValidTiles(game: Game, ab: AbilityData, caster: Entity): string[] {
+function getValidTiles(game: Game, ab: AbilityData, user: Entity): string[] {
   const tiles: string[] = [];
   const rangeStr = ab.range.toLowerCase();
   const rangeMatch = rangeStr.match(/(?:homing|range)\s*(\d+)/);
@@ -670,10 +710,10 @@ function getValidTiles(game: Game, ab: AbilityData, caster: Entity): string[] {
 
   for (let r = 0; r < game.map.length; r++) {
     for (let c = 0; c < game.map[0].length; c++) {
-      const d = dist(caster.pos, [r, c]);
+      const d = dist(user.pos, [r, c]);
       if (d === 0) continue;
       if (d > range) continue;
-      if (needsLoS && !hasLineOfSight(game, caster.pos, [r, c])) continue;
+      if (needsLoS && !hasLineOfSight(game, user.pos, [r, c])) continue;
       tiles.push(posToStr(r, c));
     }
   }
