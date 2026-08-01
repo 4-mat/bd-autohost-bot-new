@@ -5,6 +5,7 @@ import {
   hasLineOfSight,
   inRange,
   dist,
+  parseFrequency,
   type Game,
   type Entity,
   type AbilityData,
@@ -510,12 +511,11 @@ function buildAbilityButton(
   entity: Entity,
   ab: AbilityData,
 ): string {
-  const usesLeft = ab.maxUses
-    ? ab.maxUses - (entity.usesUsed[ab.name] ?? 0)
-    : null;
+  const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
+  const usesLeft = maxUses ? maxUses - (entity.usesUsed[ab.name] ?? 0) : null;
   const cooldown = entity.cooldowns[ab.name] ?? 0;
 
-  const usesStr = usesLeft !== null ? ` [${usesLeft}/${ab.maxUses}]` : "";
+  const usesStr = usesLeft !== null ? ` [${usesLeft}/${maxUses}]` : "";
   const cdStr = cooldown > 0 ? ` CD:${cooldown}` : "";
 
   const targets = getValidTargets(game, ab, entity);
@@ -586,9 +586,10 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
 
     if (entity.cooldowns[ab.name]) return false;
 
-    if (ab.maxUses) {
+    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
+    if (maxUses) {
       const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= ab.maxUses) return false;
+      if (used >= maxUses) return false;
     }
 
     if (ab.actionType === "Standard" && entity.standardUsed) return false;
@@ -624,9 +625,10 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
 
     if (entity.cooldowns[ab.name]) return false;
 
-    if (ab.maxUses) {
+    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
+    if (maxUses) {
       const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= ab.maxUses) return false;
+      if (used >= maxUses) return false;
     }
 
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;
