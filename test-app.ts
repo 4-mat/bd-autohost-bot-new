@@ -709,12 +709,12 @@ const HTML_PAGE = `<!DOCTYPE html>
 <title>BD Autohost - Test Client</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'DejaVu Sans Mono', 'Courier New', monospace; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
+  body { font-family: 'DejaVu Sans Mono', 'Courier New', monospace; background: #1a1a2e; color: #e0e0e0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
   #header { background: #0f3460; padding: 6px 12px; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 12px; font-size: 12px; }
   #header .title { color: #00aaff; font-weight: bold; font-size: 14px; }
   #header .room { color: #ffcc00; }
   #container { flex: 1; display: flex; overflow: hidden; }
-  #chat-panel { width: 420px; min-width: 250px; display: flex; flex-direction: column; }
+  #chat-panel { width: 420px; min-width: 250px; min-height: 0; display: flex; flex-direction: column; }
   #resize-handle { width: 4px; background: #333; cursor: col-resize; flex-shrink: 0; }
   #resize-handle:hover { background: #00aaff; }
   #gui-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -758,6 +758,7 @@ const HTML_PAGE = `<!DOCTYPE html>
     #container.mobile-game #gui-panel { flex:1; }
     #container.mobile-game #chat-panel { display:none; }
     #chat-messages { font-size:18px !important; padding:12px; padding-bottom:calc(env(safe-area-inset-bottom,0px) + 80px); }
+    #chat-input-area { padding-bottom:calc(env(safe-area-inset-bottom,0px) + 8px); }
     #chat-input { font-size:18px !important; padding:12px !important; }
     #send-btn { font-size:18px !important; padding:12px 28px !important; }
     .gui-tab { font-size:16px !important; padding:8px 20px !important; }
