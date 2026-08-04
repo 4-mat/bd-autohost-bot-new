@@ -962,15 +962,30 @@ function connect() {
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   ws = new WebSocket(proto + location.host);
   ws.onopen = () => {
-    statusEl.textContent = 'connected';
-    statusEl.style.color = '#00cc00';
-    let username = loadNick();
-    if (!username) {
-      username = prompt('Username?') || '';
-      if (username) saveNick(username);
-    }
-    ws.send(JSON.stringify({ type: 'login', username }));
-  };
+  statusEl.textContent = 'connected';
+  statusEl.style.color = '#00cc00';
+
+  let username = loadNick();
+
+  if (!username) {
+    username = window.prompt('Username?');
+  }
+
+  if (!username || !username.trim()) {
+    addLine('system', 'No username entered. Refresh and try again.');
+    return;
+  }
+
+  username = username.trim();
+  saveNick(username);
+
+  console.log("Sending login:", username);
+
+  ws.send(JSON.stringify({
+    type: 'login',
+    username
+  }));
+};
   ws.onclose = () => {
     statusEl.textContent = 'disconnected';
     statusEl.style.color = '#cc0000';
