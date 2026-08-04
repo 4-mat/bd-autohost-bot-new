@@ -965,12 +965,8 @@ function connect() {
   statusEl.textContent = 'connected';
   statusEl.style.color = '#00cc00';
 
-  let username = loadNick();
-
-  if (!username) {
-    username = window.prompt('Username?');
-  }
-
+  let username = window.prompt('Username?');
+  
   if (!username || !username.trim()) {
     addLine('system', 'No username entered. Refresh and try again.');
     return;
