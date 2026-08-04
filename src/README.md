@@ -481,11 +481,6 @@ For each target, for each hit (1 for single, 2 for double, 3 for triple):
 resolveSingleTarget(game, user, ability, target, hitLabel, confusionAlreadyApplied)
 ```
 
-**Stage 5: Confusion check**
-Before accuracy, if the attacker is Confused and rolled ≥ 16 on the
-accuracy die, they take self-damage equal to the higher of their own
-ATK or MAG. This only triggers once per attack (not per hit).
-
 **Stage 6: Accuracy**
 `rollAccuracy(ability.mr, target.eva, user.accBonus)` → hit/miss/crit.
 Miss means no damage, no effects.
