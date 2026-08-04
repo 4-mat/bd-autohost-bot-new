@@ -380,6 +380,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
+  console.log("WEBSOCKET CONNECTED");
   browserClients.add(ws);
 
   const session: Session = {
@@ -691,8 +692,8 @@ wss.on("connection", (ws) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Test app running at http://localhost:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Test app running on port ${PORT}`);
 });
 
 process.on("SIGTERM", () => {
