@@ -424,6 +424,7 @@ wss.on("connection", (ws) => {
       if (!session) return;
 
       if (msg.type === "login") {
+        console.log("LOGIN RECEIVED:", msg);
         const username = String(msg.username ?? "").trim();
         if (!username) {
           ws.send(
