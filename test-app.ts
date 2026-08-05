@@ -585,6 +585,18 @@ wss.on("connection", (ws) => {
           return;
         }
 
+        if (text.startsWith("/me ")) {
+          const action = text.slice(4).trim();
+          if (!action) return;
+          broadcast(
+            JSON.stringify({
+              type: "action",
+              text: `${session.username} ${action}`,
+            }),
+          );
+          return;
+        }
+
         if (!text.startsWith(PREFIX)) {
           broadcast(
             JSON.stringify({
@@ -920,7 +932,7 @@ window.addEventListener('resize', () => {
 function addLine(type, raw) {
   const div = document.createElement('div');
   if (type === 'system') { div.className = 'msg-system'; div.textContent = raw; }
-  else if (type === 'action') { div.className = 'msg-action'; div.textContent = '\\u25B6 ' + raw; }
+  else if (type === 'action') { div.className = 'msg-action'; div.textContent = '* ' + raw; }
   else if (type === 'pm') { div.className = 'msg-pm'; div.textContent = raw; }
   else if (type === 'react') { div.className = 'msg-react'; div.textContent = '\\u2606 ' + raw; }
   else if (type === 'gui') { return; }
