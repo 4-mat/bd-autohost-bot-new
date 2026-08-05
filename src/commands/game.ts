@@ -311,16 +311,28 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
       "Full action requires both Standard and Movement unused.",
     );
   }
-  if (ability.actionType === "Free") {
-    // Free actions always allowed (no slot consumed)
-  } else if (
-    ability.actionType === "Trigger" ||
-    ability.actionType === "Reaction"
+  // Issue #3: Free/Swift/Trigger must be used before the Standard action.
+  if (
+    entity.standardUsed &&
+    (ability.actionType === "Free" ||
+      ability.actionType === "Swift" ||
+      ability.actionType === "Trigger")
   ) {
     return sendPm(
       user.name,
-      `${ability.actionType} abilities resolve automatically, not manually.`,
+      `${ability.actionType} abilities must be used before your Standard action.`,
     );
+  }
+  if (ability.actionType === "Trigger") {
+    // Trigger abilities are free-like: manual use, no slot consumed.
+    // Using a trigger lets the entity manually resolve Reactions this turn.
+  } else if (ability.actionType === "Reaction") {
+    if (!entity.triggered) {
+      return sendPm(
+        user.name,
+        "No trigger active this turn — Reaction abilities cannot be used manually.",
+      );
+    }
   } else if (ability.actionType === "Passive") {
     return sendPm(user.name, "Passive abilities cannot be used manually.");
   }
@@ -332,6 +344,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     entity.standardUsed = true;
     entity.movementUsed = true;
   }
+  if (ability.actionType === "Trigger") entity.triggered = true;
   entity.pendingAction = {
     type: "attack",
     ability,
