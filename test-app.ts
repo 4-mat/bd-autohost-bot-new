@@ -361,7 +361,7 @@ const MANIFEST = JSON.stringify({
 
 const IS_RENDER = !!process.env.RENDER;
 const DEPLOYED_AT = new Date().toLocaleString("en-US", {
-  timeZone: "UTC",
+  timeZone: "America/New_York",
   dateStyle: "medium",
   timeStyle: "short",
 });
@@ -792,7 +792,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   <span class="room">#battledome</span>
   <span style="color:#333">|</span>
   <span style="color:#8888aa" id="current-user">HostUser</span>
-  ${IS_RENDER ? `<span style="color:#8888aa;font-size:10px" title="Deployed at">Last Updated: ${DEPLOYED_AT}</span>` : ""}
+  ${IS_RENDER ? `<span style="color:#8888aa;font-size:10px" title="Deployed at">Last Updated: ${DEPLOYED_AT} EST</span>` : ""}
   <div id="header-tabs"></div>
   <div id="mobile-tabs">
     <button class="mtab" data-view="game">Game</button>
