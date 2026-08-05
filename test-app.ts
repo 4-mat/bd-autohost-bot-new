@@ -939,7 +939,6 @@ guiContent.addEventListener('click', (e) => {
   const cmd = btn.getAttribute('value');
   if (!cmd) return;
   ws.send(JSON.stringify({ type: 'chat', text: cmd }));
-  addLine('chat', '<span class="name">' + currentNick + '</span>: ' + cmd);
 });
 function createTabs(tabs) {
   const previousTab = activeTab;
