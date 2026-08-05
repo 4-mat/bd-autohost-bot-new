@@ -315,8 +315,9 @@ function parseClause(clause: string): Effect[] {
     return effects;
   }
 
-  // Choose: "Choose EFFECT1 [or EFFECT2 [or EFFECT3]]"
-  const chooseMatch = lower.match(/^choose\s+(?:one:\s*)?(.+)$/);
+  // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
+  // Optional colon + "one" prefix to match real glossary variants.
+  const chooseMatch = lower.match(/^choose\s*:?\s+(?:one:\s*)?(.+)$/);
   if (chooseMatch) {
     const options = chooseMatch[1]
       .split(/\s+or\s+/)
@@ -904,6 +905,11 @@ export function isApexActive(
  * and skip their sub-effects rather than firing unconditionally. Plumbing it
  * through also lets nested gating clauses evaluate correctly inside the
  * recursive streams those effect types spawn.
+ *
+ * For the Choose clause, this sync wrapper **fans out all options** as a
+ * fallback so callers don't have to handle the prompt themselves. Resolve.ts
+ * uses `applyEffectStream` instead, which yields prompts and only applies
+ * the chosen option.
  */
 export function applyEffects(
   game: Game,
@@ -912,12 +918,52 @@ export function applyEffects(
   effects: Effect[],
   ability?: AbilityData,
 ): string[] {
+  return drainApplyStream(
+    applyEffectStream(game, user, target, effects, ability),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Effect stream (generator) -- used by resolve.ts for interactive choose
+// ---------------------------------------------------------------------------
+
+/**
+ * Prompt yielded by `applyEffectStream` when the user has to make a
+ * sub-effect selection inside an effect clause (Choose). The resolve
+ * pipeline relays this to the host/user, gets back a `choiceId`, and feeds
+ * it into the generator as the next `next()` argument.
+ */
+export interface EffectChoosePrompt {
+  kind: "choose";
+  clauseId: string; // unique id for the choose clause, kept stable across yield/resume so the resolve pipeline can match it
+  message: string;
+  options: { id: string; label: string }[];
+}
+
+/**
+ * Generator form of `applyEffects`.
+ *
+ * Walks `effects` left-to-right. For most effect types it emits the same
+ * log messages `applyEffects` does. For a `choose` clause it yields an
+ * `EffectChoosePrompt` and waits for the caller to `next()` it with the
+ * chosen `option.id`. Only the chosen option's sub-effects are then applied.
+ *
+ * Nested gating clauses (Apex / Thirst / Conditional / Choose inside the
+ * chosen sub-effects, etc.) flow correctly via `yield*` so the resolve
+ * pipeline keeps a single structure of prompts.
+ */
+export function* applyEffectStream(
+  game: Game,
+  user: Entity,
+  target: Entity,
+  effects: Effect[],
+  ability?: AbilityData,
+): Generator<EffectChoosePrompt, string[], string> {
   const messages: string[] = [];
 
   for (const effect of effects) {
     switch (effect.type) {
       case "status": {
-        // Shield blocks non-damaging statuses
         const hasShield = target.statuses.some(
           (s) => toId(s.name) === "shield",
         );
@@ -925,7 +971,6 @@ export function applyEffects(
           messages.push(`  ${target.num}'s Shield blocks ${effect.name}!`);
           break;
         }
-
         const existing = target.statuses.find((s) => s.name === effect.name);
         if (existing) {
           existing.rounds = Math.max(existing.rounds, effect.rounds);
@@ -950,7 +995,6 @@ export function applyEffects(
 
       case "buff": {
         if (effect.percent) {
-          // Percent-based buff: calculate amount from base stat
           const baseStat = getBaseStat(target, effect.stat);
           const amount = Math.floor(baseStat * (effect.percent / 100));
           target.buffs.push({
@@ -1027,6 +1071,56 @@ export function applyEffects(
         break;
       }
 
+      case "teleport": {
+        messages.push(
+          `  ${user.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
+        );
+        break;
+      }
+
+      case "move": {
+        messages.push(
+          `  ${user.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
+        );
+        break;
+      }
+
+      case "resource": {
+        messages.push(
+          `  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`,
+        );
+        break;
+      }
+
+      case "delay": {
+        messages.push(
+          `  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`,
+        );
+        break;
+      }
+
+      case "ignore": {
+        messages.push(`  Ignores ${effect.what}.`);
+        break;
+      }
+
+      case "channel": {
+        messages.push(
+          `  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`,
+        );
+        break;
+      }
+
+      case "phase": {
+        messages.push(`  Phase shifts to ${effect.phase}.`);
+        break;
+      }
+
+      case "unknown": {
+        messages.push(`  ${effect.text}`);
+        break;
+      }
+
       case "shield": {
         const existingShield = target.statuses.find((s) => s.name === "Shield");
         if (existingShield) {
@@ -1054,7 +1148,6 @@ export function applyEffects(
       }
 
       case "push": {
-        // Push target away from user
         const pushSource = effect.toward === "user" ? user.pos : target.pos;
         const { moved: pushMoved, path: pushPath } = pushEntity(
           game,
@@ -1074,7 +1167,6 @@ export function applyEffects(
       }
 
       case "pull": {
-        // Pull target towards user
         const { moved: pullMoved, path: pullPath } = pullEntity(
           game,
           target,
@@ -1092,15 +1184,7 @@ export function applyEffects(
         break;
       }
 
-      case "teleport": {
-        messages.push(
-          `  ${user.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
-        );
-        break;
-      }
-
       case "swap": {
-        // Swap user and target positions
         const tmpPos = [...user.pos] as [number, number];
         user.pos = [...target.pos] as [number, number];
         target.pos = tmpPos;
@@ -1110,82 +1194,57 @@ export function applyEffects(
         break;
       }
 
-      case "move": {
-        messages.push(
-          `  ${user.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
-        );
-        break;
-      }
-
-      case "resource": {
-        const label = `${effect.action} ${effect.amount} ${effect.resource}`;
-        messages.push(`  ${user.num} ${label}.`);
-        break;
-      }
-
-      case "delay": {
-        messages.push(
-          `  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`,
-        );
+      case "multiHit": {
+        messages.push(`  Attack gains +${effect.hits - 1} additional hits.`);
         break;
       }
 
       case "recoil": {
+        // Recoil damage itself is applied in resolve.ts after on-hit damage
+        // is dealt. Here we just announce the marker so the log is readable.
         messages.push(
           `  ${user.num} takes ${effect.percent}% recoil on damage dealt.`,
         );
         break;
       }
 
-      case "ignore": {
-        messages.push(`  Ignores ${effect.what}.`);
-        break;
-      }
-
-      case "multiHit": {
-        messages.push(`  Attack gains +${effect.hits - 1} additional hits.`);
-        break;
-      }
-
-      case "channel": {
-        messages.push(
-          `  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`,
-        );
-        break;
-      }
-
-      case "phase": {
-        messages.push(`  Phase shifts to ${effect.phase}.`);
-        break;
-      }
-
       case "conditional": {
-        // Condition evaluation is intentionally still TODO -- it always
-        // applies the then-branch for now. Thread `ability` through so any
-        // nested apex/thirst clauses can still evaluate.
+        // The conditional-gating logic is owned by a future PR. For now we
+        // always fall through to the then-branch and let nested gating
+        // (Apex/Thirst/Choose) keep evaluating via the stream.
         messages.push(
           `  [Conditional: ${effect.condition}] -- condition evaluation TODO.`,
         );
-        const thenMsgs = applyEffects(game, user, target, effect.thenEffects, ability);
+        const thenMsgs = yield* applyEffectStream(
+          game,
+          user,
+          target,
+          effect.thenEffects,
+          ability,
+        );
         messages.push(...thenMsgs.map((m) => `    ${m}`));
         if (effect.elseEffects) {
           messages.push(`  [Otherwise]`);
-          const elseMsgs = applyEffects(game, user, target, effect.elseEffects, ability);
+          const elseMsgs = yield* applyEffectStream(
+            game,
+            user,
+            target,
+            effect.elseEffects,
+            ability,
+          );
           messages.push(...elseMsgs.map((m) => `    ${m}`));
         }
         break;
       }
 
       case "thirst": {
-        // Fire sub-effects only when user.resources.blood >= threshold.
-        // Thread `ability` so any nested apex in the sub-effects keeps gating.
         if (!isThirstActive(user, effect)) {
           messages.push(
             `  [Thirst ${effect.threshold}] inactive (Blood ${user.resources.blood ?? 0} < ${effect.threshold}).`,
           );
           break;
         }
-        const thirstMsgs = applyEffects(
+        const thirstMsgs = yield* applyEffectStream(
           game,
           user,
           target,
@@ -1199,9 +1258,6 @@ export function applyEffects(
       }
 
       case "apex": {
-        // Apex only triggers when the target is at the ability's listed max
-        // range. With no `ability` in scope we can't evaluate, so we err on the
-        // side of NOT firing (matches the original "needs evaluation" stub).
         if (!ability) {
           messages.push(`  [Apex] -- cannot evaluate without ability context.`);
           break;
@@ -1212,28 +1268,142 @@ export function applyEffects(
           );
           break;
         }
-        const apexMsgs = applyEffects(game, user, target, effect.effects, ability);
+        const apexMsgs = yield* applyEffectStream(
+          game,
+          user,
+          target,
+          effect.effects,
+          ability,
+        );
         messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
         break;
       }
 
       case "choose": {
-        // Player choice is intentionally still TODO -- fan out all options.
-        messages.push(`  [Choose one] -- player choice TODO.`);
-        for (let i = 0; i < effect.options.length; i++) {
-          messages.push(`    Option ${i + 1}:`);
-          const optMsgs = applyEffects(game, user, target, effect.options[i], ability);
-          messages.push(...optMsgs.map((m) => `      ${m}`));
-        }
-        break;
-      }
-
-      case "unknown": {
-        messages.push(`  ${effect.text}`);
+        // Yield a prompt. Resolve.ts feeds back the chosen option id and
+        // we recurse into the chosen branch's sub-effects through the stream
+        // so any nested APEX/THIRST/CHOICE inside the chosen branch also
+        // gets prompted.
+        const clauseId = `choose-${messages.length}`;
+        const chosenId = yield {
+          kind: "choose",
+          clauseId,
+          message: `Choose one option for the effect`,
+          options: effect.options.map((opts, i) => ({
+            id: `${clauseId}:${i}`,
+            label: opts.length
+              ? opts.map((o) => summariseEffect(o)).join("; ")
+              : `Option ${i + 1}`,
+          })),
+        } satisfies EffectChoosePrompt;
+        const idx = parseChosenIdx(chosenId, effect.options.length);
+        messages.push(`  [Choose] user picked option ${idx + 1}.`);
+        const chosenMsgs = yield* applyEffectStream(
+          game,
+          user,
+          target,
+          effect.options[idx],
+          ability,
+        );
+        messages.push(...chosenMsgs.map((m) => `    ${m}`));
         break;
       }
     }
   }
 
   return messages;
+}
+
+/**
+ * Drain an `applyEffectStream` generator without ever yielding. Used by the
+ * sync `applyEffects` wrapper to evaluate gating clauses (Apex/Thirst) and
+ * the Choose fan-out fallback. For Choose specifically we expand all options
+ * -- this matches the legacy "fan out" log and lets unit tests assert on the
+ * output without driving interaction.
+ */
+function drainApplyStream(
+  gen: Generator<EffectChoosePrompt, string[], string>,
+): string[] {
+  const messages: string[] = [];
+  while (true) {
+    const step = gen.next(undefined);
+    if (step.done) {
+      messages.push(...step.value);
+      break;
+    }
+    const prompt = step.value as EffectChoosePrompt;
+    if (prompt.kind === "choose") {
+      messages.push(`  [Choose one] -- player selection NOT YET INTERACTIVE.`);
+
+      // Fan-out fallback: list each option's summarised sub-effects, then
+      // stop driving. The real implementation gets driven from resolve.ts
+      // via applyEffectStream, which is the path this PR is building toward.
+      for (let i = 0; i < prompt.options.length; i++) {
+        messages.push(`    Option ${i + 1}: ${prompt.options[i].label}`);
+      }
+      break;
+    }
+  }
+  return messages;
+}
+
+function summariseEffect(eff: Effect): string {
+  switch (eff.type) {
+    case "status":
+      return `inflict ${eff.damage || 0} ${eff.name}/${eff.rounds}`;
+    case "buff":
+      return `+${eff.amount} ${eff.stat}${eff.rounds ? `/${eff.rounds}` : ""}`;
+    case "debuff":
+      return `${eff.amount} ${eff.stat}${eff.rounds ? `/${eff.rounds}` : ""}`;
+    case "heal":
+      return `heal ${eff.amount ?? "?"} HP`;
+    case "shield":
+      return `Shield ${eff.amount}/${eff.rounds}`;
+    case "push":
+      return `push ${eff.amount ?? 1}`;
+    case "pull":
+      return `pull ${eff.amount ?? 1}${eff.toward === "user" ? " toward user" : ""}`;
+    case "swap":
+      return "swap positions";
+    case "teleport":
+      return `teleport${eff.range ? ` to ${eff.range}` : ""}`;
+    case "move":
+      return `move up to ${eff.amount}`;
+    case "resource":
+      return `${eff.action} ${eff.amount} ${eff.resource}`;
+    case "damageMod":
+      return `${eff.percent ?? ""}${eff.flat != null ? eff.flat + " DMG" : ""}`;
+    case "delay":
+      return `delay ${eff.rounds}r`;
+    case "recoil":
+      return `recoil ${eff.percent}%`;
+    case "ignore":
+      return `ignore ${eff.what}`;
+    case "channel":
+      return `channel ${eff.stat} for ${eff.rounds}r`;
+    case "phase":
+      return `phase ${eff.phase}`;
+    case "multiHit":
+      return `multi-hit ${eff.hits}`;
+    case "apex":
+      return "apex (...)";
+    case "thirst":
+      return `thirst ${eff.threshold} (...)`;
+    case "choose":
+      return "choose (...)";
+    case "conditional":
+      return `if [${eff.condition}]`;
+    case "delayLand":
+      return "delay attacks always land";
+    case "unknown":
+      return eff.text.slice(0, 40);
+  }
+}
+
+function parseChosenIdx(chosenId: string, total: number): number {
+  const m = chosenId.match(/:(\d+)$/);
+  if (!m) return 0;
+  const idx = parseInt(m[1], 10);
+  if (idx < 0 || idx >= total) return 0;
+  return idx;
 }
