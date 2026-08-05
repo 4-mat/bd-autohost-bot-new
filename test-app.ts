@@ -672,7 +672,8 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code, reason) => {
+    console.log("Socket closed:", code, reason.toString());
     const username = session.username;
 
     if (session.authenticated && username) {
