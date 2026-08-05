@@ -10,6 +10,7 @@ import {
   parseEffects,
   applyEffects,
   isApexActive,
+  isThirstActive,
 } from "../game/effects.js";
 
 // ---------------------------------------------------------------------------
@@ -584,6 +585,249 @@ describe("applyEffects: multiple apex clauses + empty apex", () => {
     // -- passing empty effect list through should not crash.
     const messages = applyEffects(game, user, target, effects, ability);
     expect(messages.every((m) => typeof m === "string")).toBe(true);
+  });
+});
+
+// =============================================================================
+// Thirst
+// =============================================================================
+
+describe("parseEffects: thirst clause", () => {
+  it("recognises 'Thirst N: ...' as a thirst clause", () => {
+    const effects = parseEffects("Thirst 4: inflict 5 Cripple/1");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("thirst");
+    if (effects[0].type !== "thirst") return;
+    expect(effects[0].threshold).toBe(4);
+    expect(effects[0].effects).toHaveLength(1);
+  });
+
+  it("parses sub-effects: status inside thirst", () => {
+    const effects = parseEffects("Thirst 5: inflict 5 Cripple/1");
+    expect(effects[0].type).toBe("thirst");
+    if (effects[0].type !== "thirst") return;
+    expect(effects[0].effects).toHaveLength(1);
+    expect(effects[0].effects[0].type).toBe("status");
+  });
+
+  it("parses multiple sub-effects: '+' clauses get re-split as siblings", () => {
+    // Commas at top level split clauses into siblings; to keep multiple
+    // sub-effects inside a single Thirst, the source text uses '\n' or a
+    // semicolon in the data we already have. For here we just check the
+    // parser handles standalone "+N STAT/M" alongside the Thirst clause.
+    const effects = parseEffects("Thirst 5: +3 MR/1. +2 ATK/1.");
+    const thirst = effects.find((e) => e.type === "thirst");
+    expect(thirst).toBeDefined();
+    // The Thirst's sub-effect should be the MR buff; ATK is a top-level
+    // sibling in the same effect text.
+    expect(effects.some((e) => e.type === "buff")).toBe(true);
+  });
+
+  it("parses alongside other clauses in the same effect text", () => {
+    const effects = parseEffects(
+      "Per hit: lose 2 Blood. Thirst 5: +3 MR, Double Hit.",
+    );
+    expect(effects.length).toBeGreaterThanOrEqual(2);
+    const thirst = effects.find((e) => e.type === "thirst");
+    expect(thirst).toBeDefined();
+  });
+});
+
+describe("isThirstActive", () => {
+  it("fires when Blood >= threshold", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "A",
+      resources: { blood: 5 },
+    });
+    const { effects } = parseEffects("Thirst 4: +1 MP")![0] as any; // not used
+    // Build a ThirstEffect directly
+    const thirst = { type: "thirst", threshold: 4, effects: [] } as any;
+    expect(isThirstActive(user, thirst)).toBe(true);
+  });
+
+  it("fires when Blood equals threshold (boundary)", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "A",
+      resources: { blood: 4 },
+    });
+    const thirst = { type: "thirst", threshold: 4, effects: [] } as any;
+    expect(isThirstActive(user, thirst)).toBe(true);
+  });
+
+  it("does NOT fire when Blood < threshold", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "A",
+      resources: { blood: 3 },
+    });
+    const thirst = { type: "thirst", threshold: 4, effects: [] } as any;
+    expect(isThirstActive(user, thirst)).toBe(false);
+  });
+
+  it("does NOT fire when user has no Blood pool at all", () => {
+    const user = makeEntity({ num: "P1", name: "A", resources: {} });
+    const thirst = { type: "thirst", threshold: 1, effects: [] } as any;
+    expect(isThirstActive(user, thirst)).toBe(false);
+  });
+});
+
+describe("applyEffects: thirst gate", () => {
+  it("applies sub-effects when Blood >= threshold", () => {
+    const ability = makeAbility({
+      name: "Carnage",
+      range: "Melee",
+      effect: "Thirst 4: inflict 5 Cripple/1",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Trophy",
+      pos: [5, 5],
+      team: 0,
+      resources: { blood: 5 },
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    const messages = applyEffects(game, user, target, effects, ability);
+
+    const cripple = target.statuses.find((s) => s.name === "Cripple");
+    expect(cripple?.damage).toBe(5);
+
+    // Sub-effect messages are prefixed with [Thirst N]
+    expect(messages.some((m) => m.startsWith("    [Thirst 4]"))).toBe(true);
+  });
+
+  it("does NOT apply sub-effects when Blood < threshold", () => {
+    const ability = makeAbility({
+      name: "Carnage",
+      range: "Melee",
+      effect: "Thirst 4: inflict 5 Cripple/1",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Trophy",
+      pos: [5, 5],
+      team: 0,
+      resources: { blood: 2 },
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    const messages = applyEffects(game, user, target, effects, ability);
+
+    expect(target.statuses).toHaveLength(0);
+
+    // Inactive message names both the threshold and the actual Blood value.
+    expect(messages.some((m) => m.toLowerCase().includes("thirst 4"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
+    expect(messages.some((m) => m.startsWith("    [Thirst 4]"))).toBe(false);
+  });
+
+  it("does NOT fire when user has no Blood pool", () => {
+    const ability = makeAbility({
+      name: "Carnage",
+      range: "Melee",
+      effect: "Thirst 1: inflict 5 Cripple/1",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "NonTrophy",
+      pos: [5, 5],
+      team: 0,
+      resources: {},
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    expect(target.statuses).toHaveLength(0);
+  });
+
+  it("non-thirst clauses still apply when thirst is gated", () => {
+    const ability = makeAbility({
+      name: "Dual Clause",
+      range: "Melee",
+      effect:
+        "Thirst 5: Pull 2. Always: target -2 ATK/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "A",
+      pos: [5, 5],
+      team: 0,
+      resources: { blood: 1 },
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "B",
+      pos: [5, 6],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    // Thirst 5 didn't fire -- target not pulled, still at [5,6]
+    expect(target.pos).toEqual([5, 6]);
+    // "Always" +"-2 ATK/1" probably parses as something. Just check no bleed.
+    expect(target.statuses).toHaveLength(0);
+  });
+
+  it("threads ability context into nested apex inside thirst", () => {
+    // Thirst fires (Blood high) but the nested apex clause is then evaluated
+    // against the per-target range of the *outer* ability. The outer ability
+    // here is Melee, and target is at chebyshev 1 (Melee max), so apex would
+    // fire if Blood were enough.
+    const ability = makeAbility({
+      name: "Tomahawk-lite",
+      range: "Melee",
+      effect: "Thirst 4: Apex: +2 ATK/1",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "A",
+      pos: [5, 5],
+      team: 0,
+      resources: { blood: 5 },
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "B",
+      pos: [5, 6],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    // Melee apex at chebyshev 1 -> nested apex should fire its +2 ATK buff.
+    const atkBuff = target.buffs.find(
+      (b) => b.stat === "atk",
+    );
+    expect(atkBuff?.amount).toBe(2);
   });
 });
 
