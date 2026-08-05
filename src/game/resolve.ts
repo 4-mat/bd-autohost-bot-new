@@ -13,7 +13,14 @@ import {
   getSplashTargets,
   isConfused,
 } from "./state.js";
-import { parseEffects, applyEffects, applyEffectStream, type EffectChoosePrompt } from "./effects.js";
+import {
+  parseEffects,
+  applyEffects,
+  applyEffectStream,
+  extractCombatMetadata,
+  type CombatMetadata,
+  type EffectChoosePrompt,
+} from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
 export interface ResolutionResult {
@@ -222,16 +229,30 @@ function* resolveAttackFlow(
   const isHeal = ability.effect.toLowerCase().includes("heal") && !isAttack;
   const pushPullResult = parsePushPull(ability);
 
+  // Combat metadata walks the whole effect tree once for `Multi-Hit: N`,
+  // `+N% damage`, `+N DMG`, and `Ignores …` clauses. The base hit count
+  // already reflects roll-field keywords like "Double Hit" via
+  // parseMultiHit(); meta.additionalHits adds the effect-driven extra hits
+  // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
+  // effect still rolls the highest of the two.
+  const effects = parseEffects(ability.effect);
+  const combat = extractCombatMetadata(effects);
+  const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
+
   for (const target of targets) {
     if (isAttack) {
       let confusionApplied = false;
-      for (let h = 0; h < hitCount; h++) {
-        const label = hitCount > 1 ? ` (Hit ${h + 1}/${hitCount})` : "";
+      for (let h = 0; h < effectiveHitCount; h++) {
+        const label =
+          effectiveHitCount > 1
+            ? ` (Hit ${h + 1}/${effectiveHitCount})`
+            : "";
         const singleResult: ResolutionResult = yield* resolveSingleTarget(
           game,
           user,
           ability,
           target,
+          combat,
           label,
           confusionApplied,
         );
@@ -265,7 +286,13 @@ function* resolveAttackFlow(
   }
 
   if (isAttack && !isAoE && targets.length > 0) {
-    const splashResult = resolveSplash(game, user, ability, targets[0]);
+    const splashResult = resolveSplash(
+      game,
+      user,
+      ability,
+      targets[0],
+      combat,
+    );
     result.messages.push(...splashResult.messages);
     result.deaths.push(...splashResult.deaths);
   }
@@ -520,6 +547,7 @@ function* resolveSingleTarget(
   user: Entity,
   ability: AbilityData,
   target: Entity,
+  combat: CombatMetadata,
   hitLabel = "",
   confusionAlreadyApplied = false,
 ): Generator<AttackPrompt, ResolutionResult, string> {
@@ -540,9 +568,15 @@ function* resolveSingleTarget(
   // --- Hit resolves first (damage to target first) ---
   if (hit) {
     const damageRoll = rollDice(ability.roll);
-    const userOff = offensiveStat(user, ability.damageType);
-    let baseDamage =
-      damageRoll.total + userOff - defensiveStat(target, ability.damageType);
+    const userOff = combat.ignore.atkMag
+      ? 0
+      : offensiveStat(user, ability.damageType);
+    const targetDef = applyIgnoreToDefense(
+      defensiveStat(target, ability.damageType),
+      combat.ignore,
+    );
+
+    let baseDamage = damageRoll.total + userOff - targetDef;
 
     if (crit) {
       const critRoll = rollDice(ability.roll);
@@ -552,11 +586,19 @@ function* resolveSingleTarget(
       );
     }
 
-    const finalDamage = Math.max(0, baseDamage);
+    // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
+    // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
+    // multiplicative 1.69x. extractCombatMetadata already summed the
+    // percent values additively.
+    let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
+    finalDamage += combat.flatDamage;
+    finalDamage = Math.max(0, Math.floor(finalDamage));
+
     const dmgResult = dealDamage(target, finalDamage);
     result.messages.push(
-      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
     );
+    emitDamageModTrail(result.messages, combat, finalDamage);
 
     if (dmgResult.shieldAbsorbed > 0) {
       result.messages.push(
@@ -570,8 +612,11 @@ function* resolveSingleTarget(
     );
     result.messages.push(...effectMsgs);
 
-    // Apply recoil damage after hit damage
-    for (const e of parseEffects(ability.effect)) {
+    // Apply recoil damage after hit damage (reuse the parsed `effects`
+    // array rather than re-running the regex-based clause splitter).
+    // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
+    // Recoil 25%" combo reflects the boosted total.
+    for (const e of effects) {
       if (e.type === "recoil") {
         const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
         dealDamage(user, recoilDmg);
@@ -622,6 +667,108 @@ function* resolveSingleTarget(
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Damage-mod math helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply ignore-clause semantics to a target's defensive stat (PD or MD).
+ *
+ * Order of precedence (deepest reduction wins):
+ *   1. "Ignores DEF"                       -> 0
+ *   2. "Ignores 1/4 DEF"                   -> floor(raw / 4)
+ *   3. "Ignores 1/2 DEF" / "half DEF"      -> floor(raw / 2)
+ *   4. "Ignores X DEF" / "ignores up to …
+ *      DEF"                                -> max(0, raw - X)
+ *
+ * If multiple reductions appear in a single effect ("Ignores DEF AND 5
+ * DEF") the strongest (full-zero) wins; a clause that mixes a fraction
+ * and a numeric subtract is rare in real data and we conservatively
+ * apply the fraction first and then subtract.
+ */
+function applyIgnoreToDefense(
+  raw: number,
+  ignore: CombatMetadata["ignore"],
+): number {
+  if (ignore.def) return 0;
+  let def = raw;
+  if (ignore.quarterDef) def = Math.floor(def / 4);
+  else if (ignore.halfDef) def = Math.floor(def / 2);
+  def = Math.max(0, def - ignore.defReduction);
+  return def;
+}
+
+/**
+ * Build a short trace line that the **Damage** log can append after the
+ * base = dice + OFF - DEF equation, so the player can see adjustments.
+ * Returns "" when no modifier changed the math.
+ */
+function formatDamageModsLine(combat: CombatMetadata): string {
+  const parts: string[] = [];
+  if (combat.ignore.atkMag) parts.push("no OFF (Ignores ATK/MAG)");
+  if (combat.ignore.def) parts.push("no DEF (Ignores DEF)");
+  else if (combat.ignore.quarterDef) parts.push("1/4 DEF");
+  else if (combat.ignore.halfDef) parts.push("1/2 DEF");
+  else if (combat.ignore.defReduction > 0)
+    parts.push(`-${combat.ignore.defReduction} DEF`);
+  if (combat.damagePercent !== 0) {
+    const sign = combat.damagePercent > 0 ? "+" : "";
+    parts.push(`${sign}${combat.damagePercent}% damage`);
+  }
+  if (combat.flatDamage !== 0) {
+    const sign = combat.flatDamage > 0 ? "+" : "";
+    parts.push(`${sign}${combat.flatDamage} flat`);
+  }
+  if (parts.length === 0) return "";
+  return ` [${parts.join(", ")}]`;
+}
+
+/**
+ * Push a follow-up log line so the operator can see the breakdown after
+ * a "+30% damage" or "Ignores 5 DEF" kick in. Includes a clause-by-clause
+ * echo for transparency even when the resulting damage has no fractional
+ * pieces.
+ */
+function emitDamageModTrail(
+  log: string[],
+  combat: CombatMetadata,
+  finalDamage: number,
+): void {
+  if (
+    combat.damagePercent === 0 &&
+    combat.flatDamage === 0 &&
+    !combat.ignore.atkMag &&
+    !combat.ignore.def &&
+    !combat.ignore.halfDef &&
+    !combat.ignore.quarterDef &&
+    combat.ignore.defReduction === 0 &&
+    combat.ignore.other.length === 0 &&
+    !combat.ignore.outsideFactors
+  )
+    return;
+  const tags: string[] = [];
+  if (combat.damagePercent !== 0) {
+    const sign = combat.damagePercent > 0 ? "+" : "";
+    tags.push(`${sign}${combat.damagePercent}% damage`);
+  }
+  if (combat.flatDamage !== 0) {
+    const sign = combat.flatDamage > 0 ? "+" : "";
+    tags.push(`${sign}${combat.flatDamage} DMG`);
+  }
+  if (combat.ignore.atkMag) tags.push("Ignores ATK/MAG");
+  if (combat.ignore.def) tags.push("Ignores DEF");
+  else if (combat.ignore.quarterDef) tags.push("Ignores 1/4 DEF");
+  else if (combat.ignore.halfDef) tags.push("Ignores half DEF");
+  if (combat.ignore.defReduction > 0)
+    tags.push(`Ignores ${combat.ignore.defReduction} DEF`);
+  if (combat.ignore.outsideFactors)
+    tags.push("Ignores outside damage factors");
+  for (const o of combat.ignore.other) tags.push(`Ignores ${o}`);
+  log.push(
+    `  *Damage Modifiers applied:* ${tags.join(", ")} -> **${finalDamage}**`,
+  );
 }
 
 function setCooldown(entity: Entity, ability: AbilityData) {
@@ -758,6 +905,7 @@ function resolveSplash(
   user: Entity,
   ability: AbilityData,
   primary: Entity,
+  combat: CombatMetadata,
 ): ResolutionResult {
   const result = newResult();
 
@@ -781,16 +929,26 @@ function resolveSplash(
   for (const target of splashTargets) {
     const damageRoll = rollDice(ability.roll);
     const half = (v: number) => Math.floor(v / 2);
-    const baseDamage =
-      damageRoll.total +
-      offensiveStat(user, ability.damageType) -
-      half(defensiveStat(target, ability.damageType));
+    // Splash halves defense by default per the home page ("half target
+    // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores
+    // DEF" on the parent ability should still wipe the remaining half.
+    const rawDef = half(defensiveStat(target, ability.damageType));
+    const targetDef = applyIgnoreToDefense(rawDef, combat.ignore);
+    const userOff = combat.ignore.atkMag
+      ? 0
+      : offensiveStat(user, ability.damageType);
 
-    const finalDamage = Math.max(0, baseDamage);
+    const baseDamage = damageRoll.total + userOff - targetDef;
+
+    let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
+    finalDamage += combat.flatDamage;
+    finalDamage = Math.max(0, Math.floor(finalDamage));
+
     const dmgResult = dealDamage(target, finalDamage);
     result.messages.push(
-      `  **Splash Damage**: -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**`,
+      `  **Splash Damage**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - half DEF(${targetDef})${formatDamageModsLine(combat)} -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**`,
     );
+    emitDamageModTrail(result.messages, combat, finalDamage);
 
     if (dmgResult.shieldAbsorbed > 0) {
       result.messages.push(
