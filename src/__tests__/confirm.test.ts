@@ -538,3 +538,97 @@ describe("passmove", () => {
     expect(caster.pendingAction!.ability.name).toBe("Punch");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Action type enforcement (Issue #3)
+// ---------------------------------------------------------------------------
+
+describe("action type enforcement", () => {
+  beforeEach(() => games.clear());
+
+  function setup() {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const standard = makeAbility({ name: "Punch", actionType: "Standard" });
+    const free = makeAbility({ name: "Stance", actionType: "Free" });
+    const swift = makeAbility({ name: "Dash Strikes", actionType: "Swift" });
+    const trigger = makeAbility({ name: "Parry", actionType: "Trigger" });
+    const reaction = makeAbility({ name: "Riposte", actionType: "Reaction" });
+    caster.abilities = [standard, free, swift, trigger, reaction];
+
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+    return { caster, free, swift, trigger, reaction };
+  }
+
+  it("allows Free/Swift/Trigger before a Standard", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Stance", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Stance");
+    expect(caster.standardUsed).toBe(false);
+    expect(caster.swiftUsed).toBe(false);
+
+    gameCommand(room, alice, "cancel", "", "");
+    gameCommand(room, alice, "use", "Dash Strikes", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Dash Strikes");
+    expect(caster.swiftUsed).toBe(true);
+
+    gameCommand(room, alice, "cancel", "", "");
+    gameCommand(room, alice, "use", "Parry", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Parry");
+    expect(caster.standardUsed).toBe(false);
+  });
+
+  it("blocks Free/Swift/Trigger after a Standard is used", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Punch", "");
+    expect(caster.standardUsed).toBe(true);
+
+    gameCommand(room, alice, "use", "Stance", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Punch");
+
+    gameCommand(room, alice, "use", "Dash Strikes", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Punch");
+
+    gameCommand(room, alice, "use", "Parry", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Punch");
+  });
+
+  it("allows Trigger without consuming the Swift slot", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Parry", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Parry");
+    gameCommand(room, alice, "cancel", "", "");
+
+    gameCommand(room, alice, "use", "Dash Strikes", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Dash Strikes");
+    expect(caster.swiftUsed).toBe(true);
+  });
+
+  it("blocks Reaction use until a Trigger is active", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Riposte", "");
+    expect(caster.pendingAction).toBeNull();
+  });
+
+  it("allows Reaction use manually once a Trigger has been used", () => {
+    const { caster } = setup();
+
+    gameCommand(room, alice, "use", "Parry", "");
+    expect(caster.triggered).toBe(true);
+    gameCommand(room, alice, "cancel", "", "");
+
+    gameCommand(room, alice, "use", "Riposte", "");
+    expect(caster.pendingAction!.ability!.name).toBe("Riposte");
+    expect(caster.standardUsed).toBe(false);
+    expect(caster.swiftUsed).toBe(false);
+  });
+});
