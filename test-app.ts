@@ -585,6 +585,18 @@ wss.on("connection", (ws) => {
           return;
         }
 
+        if (text.startsWith("/me ")) {
+          const action = text.slice(4).trim();
+          if (!action) return;
+          broadcast(
+            JSON.stringify({
+              type: "action",
+              text: `${session.username} ${action}`,
+            }),
+          );
+          return;
+        }
+
         if (!text.startsWith(PREFIX)) {
           broadcast(
             JSON.stringify({
