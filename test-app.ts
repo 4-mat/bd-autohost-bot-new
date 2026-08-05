@@ -753,6 +753,15 @@ const HTML_PAGE = `<!DOCTYPE html>
   .toast-msg { background:rgba(0,0,0,.88); color:#fff; padding:10px 14px; border-radius:8px; margin:4px 8px; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,.4); animation:ti .3s ease,to .3s ease 3.7s forwards; }
   @keyframes ti{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
   @keyframes to{from{opacity:1}to{opacity:0;transform:translateY(20px)}}
+  #login-overlay { position:fixed; inset:0; background:rgba(0,0,0,.75); display:none; align-items:center; justify-content:center; z-index:10000; }
+  #login-overlay.show { display:flex; }
+  #login-card { background:#16213e; border:1px solid #333; border-radius:8px; padding:24px; text-align:center; min-width:280px; max-width:90vw; }
+  #login-card h2 { color:#00aaff; font-size:16px; margin-bottom:16px; font-weight:bold; }
+  #login-err { color:#ff6b6b; font-size:12px; min-height:16px; margin-bottom:8px; }
+  #login-input { width:100%; background:#0f3460; border:1px solid #333; color:#e0e0e0; padding:10px 12px; font-family:inherit; font-size:14px; border-radius:3px; outline:none; margin-bottom:12px; }
+  #login-input:focus { border-color:#00aaff; }
+  #login-btn { width:100%; background:#00aaff; color:#fff; border:none; padding:10px 14px; font-family:inherit; font-size:14px; border-radius:3px; cursor:pointer; }
+  #login-btn:hover { background:#0088cc; }
   @media (max-width:600px) {
     #header { padding:10px 12px; font-size:16px; flex-wrap:wrap; gap:8px; }
     #header .title { font-size:18px; }
@@ -819,6 +828,14 @@ const HTML_PAGE = `<!DOCTYPE html>
     </div>
   </div>
 </div>
+<div id="login-overlay">
+  <div id="login-card">
+    <h2>BD Autohost</h2>
+    <div id="login-err"></div>
+    <input id="login-input" type="text" placeholder="Choose a username..." autocomplete="off" spellcheck="false" maxlength="24" />
+    <button id="login-btn">Login</button>
+  </div>
+</div>
 <script>
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
@@ -826,6 +843,10 @@ const sendBtn = document.getElementById('send-btn');
 const guiContent = document.getElementById('gui-content');
 const statusEl = document.getElementById('status');
 const userEl = document.getElementById('current-user');
+const loginOverlay = document.getElementById('login-overlay');
+const loginInput = document.getElementById('login-input');
+const loginBtn = document.getElementById('login-btn');
+const loginErr = document.getElementById('login-err');
 
 let currentNick = 'HostUser';
 let guiPages = {};
@@ -948,6 +969,7 @@ function createTabs(tabs) {
 
 let ws;
 const nickKey = 'bdUser';
+let nick = '';
 
 function loadNick() {
   try { return localStorage.getItem(nickKey) || ''; } catch (e) { return ''; }
@@ -957,31 +979,45 @@ function saveNick(n) {
   try { localStorage.setItem(nickKey, n); } catch (e) {}
 }
 
+function doLogin(username) {
+  nick = username;
+  saveNick(username);
+  loginOverlay.classList.remove('show');
+  console.log("Sending login:", username);
+  ws.send(JSON.stringify({ type: 'login', username }));
+}
+
+function submitLogin() {
+  const username = loginInput.value.trim();
+  if (!username) {
+    loginErr.textContent = 'Please enter a username.';
+    loginInput.focus();
+    return;
+  }
+  doLogin(username);
+}
+
+loginBtn.addEventListener('click', submitLogin);
+loginInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitLogin();
+});
+
 function connect() {
   statusEl.textContent = 'connecting...';
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   ws = new WebSocket(proto + location.host);
   ws.onopen = () => {
-  statusEl.textContent = 'connected';
-  statusEl.style.color = '#00cc00';
-
-  let username = window.prompt('Username?');
-  
-  if (!username || !username.trim()) {
-    addLine('system', 'No username entered. Refresh and try again.');
-    return;
-  }
-
-  username = username.trim();
-  saveNick(username);
-
-  console.log("Sending login:", username);
-
-  ws.send(JSON.stringify({
-    type: 'login',
-    username
-  }));
-};
+    statusEl.textContent = 'connected';
+    statusEl.style.color = '#00cc00';
+    if (!nick) nick = loadNick();
+    if (nick) {
+      doLogin(nick);
+    } else {
+      loginErr.textContent = '';
+      loginOverlay.classList.add('show');
+      loginInput.focus();
+    }
+  };
   ws.onclose = () => {
     statusEl.textContent = 'disconnected';
     statusEl.style.color = '#cc0000';
