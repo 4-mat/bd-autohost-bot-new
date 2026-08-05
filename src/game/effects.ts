@@ -1646,3 +1646,190 @@ function parseChosenIdx(chosenId: string, total: number): number {
   if (idx < 0 || idx >= total) return 0;
   return idx;
 }
+
+// ---------------------------------------------------------------------------
+// Combat metadata
+// ---------------------------------------------------------------------------
+//
+// The damage pipeline in resolve.ts only consults a few parsed effect types:
+//   - DamageMod   ("+50% damage", "10 DMG", "+30% healing")
+//   - MultiHit    ("Multi-Hit: N") -- rolls N-1 extra accuracy/damage pairs
+//   - Ignore      ("Ignores DEF", "Ignores half DEF", "Ignores ATK/MAG",
+//                  "Ignores outside damage factors", ...)
+//   - Buff / Debuff on stat: "dmg"  -- emitted by parseStatMods for
+//                  "+50% damage" / "+5 DMG" / "-10% damage" clauses.
+//                  These arrive here because the regex matches "damage"
+//                  as a stat name and folds it onto the dmg alias.
+//
+// Note: Apex / Thirst / Conditional / Choose are intentionally NOT
+// descended into. Each of their sub-effects runs only on a successful
+// gate. Walking them would over-apply e.g. "Apex: +50% damage" at all
+// ranges. The resolve layer re-evaluates any per-target buff or status
+// during applyEffectStream and the sub-effect's buff lands on
+// target.buffs / statuses with the correct lifecycle.
+export interface CombatMetadata {
+  /**
+   * Additive damagePercent bonus. Combat math treats a +50% and a +25%
+   * clause together as +75% (NOT a multiplicative +1.5 * +1.25), matching
+   * BD 4.4's additive stacking rule for "outside factors".
+   */
+  damagePercent: number;
+  /**
+   * Additive flat damage bonus per hit, drawn from "+N DMG" clauses.
+   * "+N DMG/M" round-limited clauses still contribute the current
+   * buff's amount once -- the resolve layer applies them through the
+   * buff path (target.buffs.amount) so the round countdown lives on
+   * the entity.buffs lifecycle.
+   */
+  flatDamage: number;
+  /**
+   * Number of EXTRA accuracy+damage passes beyond the base hit.
+   * `Multi-Hit: N` -> additionalHits = N-1. Combined with the existing
+   * parseMultiHit() helper (which reads "Double Hit" / "Triple Hit"
+   * keywords in the roll field) the engine uses `baseHitCount =
+   * max(rollBased, 1 + metaAddition)` per target.
+   */
+  additionalHits: number;
+  ignore: CombatIgnoreMetadata;
+}
+
+export interface CombatIgnoreMetadata {
+  /** "Ignores ATK/MAG" -- userOff becomes 0 (damage from dice only). */
+  atkMag: boolean;
+  /** Plain "Ignores DEF" -- target defensive stat becomes 0. */
+  def: boolean;
+  /** "Ignores 1/2 DEF" -- target defensive stat is halved (floor). */
+  halfDef: boolean;
+  /** "Ignores 1/4 DEF" -- target defensive stat is quartered (floor). */
+  quarterDef: boolean;
+  /**
+   * Subtract-N from the defensive stat after any fraction rule. E.g.
+   * "Ignores 5 DEF" -> defReduction: 5. "Ignores DEF AND 5 DEF" -> 0 via
+   * the full-zero path (def: true) so this stays 0.
+   */
+  defReduction: number;
+  /**
+   * "Ignores outside damage factors" -- reserved for the wider BD rule
+   * system. We don't yet model outside damage factors, so this is
+   * surfaced as a flag the log can name rather than a math input.
+   */
+  outsideFactors: boolean;
+  /** Anything else we don't model yet, surfaced to the log. */
+  other: string[];
+}
+
+export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
+  const out: CombatMetadata = {
+    damagePercent: 0,
+    flatDamage: 0,
+    additionalHits: 0,
+    ignore: freshIgnoreMetadata(),
+  };
+
+  // We intentionally do NOT descend into Apex, Thirst, Conditional, or
+  // Choose sub-trees. All four are *gated* clauses whose sub-effects run
+  // only when their gate succeeds, so any metadata extracted from their
+  // children is conditional on the gate firing. resolveSingleTarget
+  // re-evaluates each gate per hit and only contributes the matching
+  // buff / status / sub-effect to the damage path through the existing
+  // entity.buffs / statuses / extra-rolls infrastructure. Surfacing
+  // gated metadata here would over-apply -- e.g. "Apex: +50% damage"
+  // would otherwise turn the ability into +50% at any range.
+  for (const e of effects) {
+    if (e.type === "damageMod") {
+      if (e.percent) out.damagePercent += e.percent;
+      if (typeof e.flat === "number") out.flatDamage += e.flat;
+    } else if (e.type === "multiHit") {
+      out.additionalHits = Math.max(out.additionalHits, e.hits - 1);
+    } else if (e.type === "ignore") {
+      classifyIgnore(e.what, out.ignore);
+    } else if (e.type === "buff" || e.type === "debuff") {
+      // parseStatMods emits a "buff"/"debuff" with stat: "dmg" for the
+      // every-day "+50% damage", "+5 DMG", "-10% damage" clauses --
+      // because the regex matches "damage" / "dmg" as a stat name and
+      // folds them onto the dmg alias. Those are damage modifiers, not
+      // self-buffs, so the resolve layer reads them here. The
+      // buff/debuff still lands on `target.buffs` so legacy code that
+      // scans entity.buffs for damage modifiers keeps working too.
+      if (e.stat === "dmg") {
+        // parseStatMods bakes the sign into percent / amount, so a
+        // debuff for "-10% damage" arrives here with percent = -10.
+        if (typeof e.percent === "number") {
+          out.damagePercent += e.percent;
+        } else if (
+          typeof e.amount === "number" &&
+          e.percent === undefined
+        ) {
+          out.flatDamage += e.amount;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function freshIgnoreMetadata(): CombatIgnoreMetadata {
+  return {
+    atkMag: false,
+    def: false,
+    halfDef: false,
+    quarterDef: false,
+    defReduction: 0,
+    outsideFactors: false,
+    other: [],
+  };
+}
+
+function classifyIgnore(what: string, out: CombatIgnoreMetadata): void {
+  const lower = what.toLowerCase().trim();
+
+  if (
+    /\batk\/?mag\b/.test(lower) ||
+    lower === "atk" ||
+    lower === "mag" ||
+    lower === "magical"
+  ) {
+    out.atkMag = true;
+    return;
+  }
+  if (lower.includes("outside damage factor") || lower.includes("outside factor")) {
+    out.outsideFactors = true;
+    return;
+  }
+
+  if (lower.includes("def")) {
+    // Order matters: a fractional "1/2 DEF" / "1/4 DEF" / "half DEF" /
+    // "quarter DEF" overrides a plain "5 DEF" -> the latter reads as
+    // "Ignores half DEF AND 5 DEF" which means (def/2 - 5). But BD's text
+    // typically gives them in a single clause. Without a clean
+    // multi-clause parser we take the strongest effect (full-zero >
+    // quarter > half > numeric subtract). If you see both strongest and
+    // subtract in real data, file an issue and we'll revisit.
+    if (lower.includes("half") || lower.includes("1/2")) {
+      out.halfDef = true;
+      return;
+    }
+    if (lower.includes("quarter") || lower.includes("1/4")) {
+      out.quarterDef = true;
+      return;
+    }
+    if (/^\s*\d+\s*$/.test(lower)) {
+      out.defReduction = Math.max(out.defReduction, parseInt(lower));
+      return;
+    }
+    const num = lower.match(/(\d+)/);
+    if (num) {
+      out.defReduction = Math.max(out.defReduction, parseInt(num[1]));
+      return;
+    }
+    out.def = true;
+    return;
+  }
+
+  if (lower.includes("non-target") || lower.includes("obstruction")) {
+    out.other.push(what);
+    return;
+  }
+
+  out.other.push(what);
+}
