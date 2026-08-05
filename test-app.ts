@@ -607,7 +607,7 @@ wss.on("connection", (ws) => {
         broadcast(
           JSON.stringify({
             type: "chat",
-            text: `<span style="color:#999">${escHtml(text)}</span>`,
+            text: `<span class="name">${escHtml(session.username)}</span>: <span style="color:#999">${escHtml(text)}</span>`,
           }),
         );
 
