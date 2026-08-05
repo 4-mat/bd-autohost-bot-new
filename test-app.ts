@@ -604,6 +604,13 @@ wss.on("connection", (ws) => {
         const room = rooms.get("battledome")!;
         const user = users.get(toId(session.username))!;
 
+        broadcast(
+          JSON.stringify({
+            type: "chat",
+            text: `<span class="name">${escHtml(session.username)}</span>: <span style="color:#999">${escHtml(text)}</span>`,
+          }),
+        );
+
         // WARNING: This is a temporary hack to allow spectators to view the GUI. HARDCODED COMMAND.
         if (cmd === "spectate") {
           session.spectating = true;
