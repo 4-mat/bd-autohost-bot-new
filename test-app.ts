@@ -932,7 +932,7 @@ window.addEventListener('resize', () => {
 function addLine(type, raw) {
   const div = document.createElement('div');
   if (type === 'system') { div.className = 'msg-system'; div.textContent = raw; }
-  else if (type === 'action') { div.className = 'msg-action'; div.textContent = '* ' + raw; }
+  else if (type === 'action') { div.className = 'msg-action'; div.textContent = '\\u25B6 ' + raw; }
   else if (type === 'pm') { div.className = 'msg-pm'; div.textContent = raw; }
   else if (type === 'react') { div.className = 'msg-react'; div.textContent = '\\u2606 ' + raw; }
   else if (type === 'gui') { return; }
