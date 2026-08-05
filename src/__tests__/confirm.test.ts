@@ -99,6 +99,7 @@ function makeAbility(
 
 const room: Room = { id: "battledome", type: "battle", users: [] };
 const alice: User = { id: "alice", name: "Alice", rooms: {}, last: 0 };
+const host: User = { id: "host", name: "Host", rooms: {}, last: 0 };
 
 // ---------------------------------------------------------------------------
 // Confirm
@@ -630,5 +631,73 @@ describe("action type enforcement", () => {
     expect(caster.pendingAction!.ability!.name).toBe("Riposte");
     expect(caster.standardUsed).toBe(false);
     expect(caster.swiftUsed).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ability/entity name parsing (numeric entity names like "4mat")
+// ---------------------------------------------------------------------------
+
+describe("command parsing", () => {
+  beforeEach(() => games.clear());
+
+  it("parses %use Duet,4mat as ability + entity", () => {
+    const duet = makeAbility({ name: "Duet", mr: 0, actionType: "Standard" });
+    const fourmat = makeEntity({
+      num: "P1",
+      name: "4mat",
+      pos: [2, 2],
+      team: 0,
+      abilities: [duet],
+    });
+    const game = makeGame({ entities: [fourmat] });
+    games.set(game.id, game);
+
+    gameCommand(room, host, "use", "Duet,4mat", "");
+
+    expect(fourmat.pendingAction).not.toBeNull();
+    expect(fourmat.pendingAction!.ability.name).toBe("Duet");
+  });
+
+  it("parses %use Duet @ P2,4mat as ability + target + entity", () => {
+    const duet = makeAbility({ name: "Duet", mr: 0, actionType: "Standard" });
+    const fourmat = makeEntity({
+      num: "P1",
+      name: "4mat",
+      pos: [2, 2],
+      team: 0,
+      abilities: [duet],
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const game = makeGame({ entities: [fourmat, target] });
+    games.set(game.id, game);
+
+    gameCommand(room, host, "use", "Duet @ P2,4mat", "");
+
+    expect(fourmat.pendingAction).not.toBeNull();
+    expect(fourmat.pendingAction!.ability.name).toBe("Duet");
+    expect(fourmat.pendingAction!.target).toBe("P2");
+  });
+
+  it("parses %move a3,4mat as position + entity", () => {
+    const fourmat = makeEntity({
+      num: "P1",
+      name: "4mat",
+      pos: [2, 2],
+      team: 0,
+      mp: 3,
+    });
+    const game = makeGame({ entities: [fourmat] });
+    games.set(game.id, game);
+
+    gameCommand(room, host, "move", "a3,4mat", "");
+
+    expect(fourmat.pos).toEqual([0, 2]);
+    expect(fourmat.movementUsed).toBe(true);
   });
 });
