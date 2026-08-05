@@ -522,7 +522,7 @@ function resolveSingleTarget(
     }
 
     const effects = parseEffects(ability.effect);
-    const effectMsgs = applyEffects(game, user, target, effects);
+    const effectMsgs = applyEffects(game, user, target, effects, ability);
     result.messages.push(...effectMsgs);
 
     // Apply recoil damage after hit damage
@@ -690,7 +690,7 @@ function resolveNonDamaging(
 ): ResolutionResult {
   const result = newResult();
   const effects = parseEffects(ability.effect);
-  const effectMsgs = applyEffects(game, user, target, effects);
+  const effectMsgs = applyEffects(game, user, target, effects, ability);
 
   if (effectMsgs.length > 0) {
     result.messages.push(
