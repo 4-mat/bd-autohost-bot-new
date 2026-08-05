@@ -1009,14 +1009,11 @@ function connect() {
   ws.onopen = () => {
     statusEl.textContent = 'connected';
     statusEl.style.color = '#00cc00';
-    if (!nick) nick = loadNick();
-    if (nick) {
-      doLogin(nick);
-    } else {
-      loginErr.textContent = '';
-      loginOverlay.classList.add('show');
-      loginInput.focus();
-    }
+    const saved = loadNick();
+    if (saved) loginInput.value = saved;
+    loginErr.textContent = '';
+    loginOverlay.classList.add('show');
+    loginInput.focus();
   };
   ws.onclose = () => {
     statusEl.textContent = 'disconnected';
