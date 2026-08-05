@@ -199,6 +199,19 @@ const RESOURCE_NAMES = [
   "enrage",
 ];
 
+/**
+ * Maps a subset of resource name variants (singular / plural / case
+ * differences) into the canonical RESOURCE_NAMES list. Returns `null`
+ * for tokens that aren't a known resource, so callers can still treat
+ * an unrecognised word as part of a higher-level pattern.
+ */
+function canonicalResource(name: string): string | null {
+  const lower = name.toLowerCase();
+  if (RESOURCE_NAMES.includes(lower)) return lower;
+  if (RESOURCE_NAMES.includes(lower.replace(/s$/, ""))) return lower.replace(/s$/, "");
+  return null;
+}
+
 export function parseEffects(text: string): Effect[] {
   if (!text || !text.trim()) return [];
 
@@ -208,6 +221,30 @@ export function parseEffects(text: string): Effect[] {
     .replace(/\\n/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  // Conditional statements span multiple splitClauses pieces, so try the
+  // whole normalized text as a single conditional effect first. If the WHOLE
+  // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return
+  // one effect rather than splitting on the inner period and losing context.
+  // The regex tolerates either ", " or ". " before "Otherwise", and an
+  // optional trailing period at the end of the else-branch.
+  const lowerFull = normalized.toLowerCase();
+  const fullIfMatch = lowerFull.match(
+    /^if\s+(.+?),\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+  );
+  if (fullIfMatch) {
+    const thenEffects = parseEffects(fullIfMatch[2].trim());
+    const elseEffects = fullIfMatch[3]
+      ? parseEffects(fullIfMatch[3].trim())
+      : undefined;
+    const conditional: ConditionalEffect = {
+      type: "conditional",
+      condition: fullIfMatch[1].trim(),
+      thenEffects,
+      elseEffects,
+    };
+    return [conditional];
+  }
 
   const clauses = splitClauses(normalized);
   const effects: Effect[] = [];
@@ -763,6 +800,29 @@ function getBaseStat(entity: Entity, stat: string): number {
   }
 }
 
+// Local copy of `getEffectiveStat` -- same logic that resolve.ts inlines,
+// kept local so effects.ts stays self-contained. Used in places where a
+// clamped (>= 0) stat is what we need, e.g. damage scaling.
+function getEffStat(entity: Entity, stat: string): number {
+  let base = getBaseStat(entity, stat);
+  for (const b of entity.buffs) {
+    if (b.stat === stat) base += b.amount;
+  }
+  return Math.max(0, base);
+}
+
+// Unclamped variant -- used by condition evaluation so the sign check can
+// detect a stat that has debuffed below zero. The clamped helper would mask
+// negatives back to 0 and cause "Stat is negative" to misfire on heavily
+// debuffed targets.
+function getRawStat(entity: Entity, stat: string): number {
+  let base = getBaseStat(entity, stat);
+  for (const b of entity.buffs) {
+    if (b.stat === stat) base += b.amount;
+  }
+  return base;
+}
+
 // ---------------------------------------------------------------------------
 // Thirst gate
 // ---------------------------------------------------------------------------
@@ -921,6 +981,186 @@ export function applyEffects(
   return drainApplyStream(
     applyEffectStream(game, user, target, effects, ability),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Conditional gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns "then" when the parsed condition holds, "else" when it doesn't,
+ * "unknown" when the condition text can't be evaluated (e.g. it depends on
+ * future state we don't track yet -- "target Dashes before user's next turn").
+ *
+ * Supported patterns (case-insensitive):
+ *   - "target is alive" / "target is dead" / "target dies"
+ *   - "user has Status" / "target has Status" (matches STATUS_NAMES list)
+ *   - "user has N Resource" / "target has N Resource" (resource pool >= N)
+ *   - "user Stat is (positive|negative|zero)"
+ *   - "user Stat > N" / "user Stat >= N" / etc. with stats or numerical values
+ *   - "0 Campaigns" / "10 Blood" -- resource threshold shorthand
+ *   - "user Stat greater than N" / "less than N" / "equal to N" (word variants)
+ *   - "not ..." / "no ..." -- wraps any of the above
+ *
+ * Unknown outcomes defer to the caller; in applyEffectStream that means the
+ * then-branch still runs (legacy fallback) with a "condition evaluation TODO"
+ * log so human readers can see what didn't get auto-routed.
+ */
+export type ConditionOutcome = "then" | "else" | "unknown";
+
+export function evaluateCondition(
+  text: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome {
+  const lower = text.toLowerCase().trim();
+
+  // Resource equalities like "5 Blood" / "0 Campaigns" / "no Campaigns" --
+  // checked *before* the generic "not / no" negation wrapper so that
+  // "no Campaigns" reads as "<user> has Campaigns == 0" rather than
+  // "negation(<something unknown>)". We require the bare resource token
+  // to be a known resource name (or its plural form, e.g. "Campaigns" ->
+  // "Campaign") to avoid swallowing natural-language phrases like
+  // "no target has Stun" as a resource lookup.
+  const resourceEqMatch = lower.match(/^(\d+|zero|no)\s+([a-z]+)$/);
+  if (resourceEqMatch) {
+    const raw = resourceEqMatch[1];
+    const value = raw === "zero" || raw === "no" ? 0 : parseInt(raw);
+    const resource = canonicalResource(resourceEqMatch[2]);
+    if (resource) {
+      return (user.resources[resource] ?? 0) >= value ? "then" : "else";
+    }
+  }
+
+  // Negation wrappers
+  const negateMatch = lower.match(/^(?:not|no)\s+(.+)$/);
+  if (negateMatch) {
+    const inner = evaluateCondition(negateMatch[1], user, target);
+    if (inner === "then") return "else";
+    if (inner === "else") return "then";
+    return "unknown";
+  }
+
+  // target is alive / dead / dies
+  const aliveMatch = lower.match(/^target is (alive|dead)$/);
+  if (aliveMatch) {
+    const wantAlive = aliveMatch[1] === "alive";
+    return (target.curhp > 0) === wantAlive ? "then" : "else";
+  }
+  if (lower === "target dies" || /target has been (killed|defeated)/.test(lower)) {
+    return target.curhp <= 0 ? "then" : "else";
+  }
+
+  // user/target has Status (matches any STATUS_NAMES)
+  const statusMatch = lower.match(/^(user|target) has (?:a |an )?([a-z ]+?)$/);
+  if (statusMatch) {
+    const which = statusMatch[1];
+    const candidates = statusMatch[2]
+      .trim()
+      .split(/\s+or\s+|\s*,\s*/)
+      .map((s) => s.trim().split(/\s+/).pop()!)
+      .filter(Boolean);
+    const entity = which === "user" ? user : target;
+    for (const cand of candidates) {
+      const has = entity.statuses.some(
+        (s) => toId(s.name) === toId(cand),
+      );
+      if (has) return "then";
+    }
+    return "else";
+  }
+
+  // user/target has N <resource>
+  const resourceMatch = lower.match(/^(user|target) has (\d+)\s+([a-z]+)$/);
+  if (resourceMatch) {
+    const which = resourceMatch[1];
+    const amount = parseInt(resourceMatch[2]);
+    const resource = resourceMatch[3];
+    const entity = which === "user" ? user : target;
+    return (entity.resources[resource] ?? 0) >= amount ? "then" : "else";
+  }
+
+  // user/target Stat positive|negative|zero
+  const signMatch = lower.match(
+    /^(user|target)\s+(atk|mag|pd|md|eva|mp|acc|cr)\s+(positive|negative|zero)$/,
+  );
+  if (signMatch) {
+    const which = signMatch[1];
+    const stat = signMatch[2];
+    const sign = signMatch[3];
+    const entity = which === "user" ? user : target;
+    const v = getRawStat(entity, stat);
+    if (sign === "positive") return v > 0 ? "then" : "else";
+    if (sign === "negative") return v < 0 ? "then" : "else";
+    return v === 0 ? "then" : "else";
+  }
+
+  // user Stat > N / < N / >= / <= / =
+  const cmpMatch = lower.match(
+    /^(user|target)\s+(atk|mag|pd|md|eva|mp|acc|cr)\s*(>=|<=|>|<|=)\s*(-?\d+)$/,
+  );
+  if (cmpMatch) {
+    const which = cmpMatch[1];
+    const stat = cmpMatch[2];
+    const op = cmpMatch[3];
+    const value = parseInt(cmpMatch[4]);
+    const entity = which === "user" ? user : target;
+    const v = getRawStat(entity, stat);
+    if (op === ">") return v > value ? "then" : "else";
+    if (op === ">=") return v >= value ? "then" : "else";
+    if (op === "<") return v < value ? "then" : "else";
+    if (op === "<=") return v <= value ? "then" : "else";
+    return v === value ? "then" : "else";
+  }
+
+  // user Stat greater than / less than N (word variant)
+  const wordCmpMatch = lower.match(
+    /^(user|target)'?s?\s+(atk|mag|pd|md|eva|mp|acc|cr)\s+(greater than|less than|equal to)\s+(-?\d+)$/,
+  );
+  if (wordCmpMatch) {
+    const which = wordCmpMatch[1];
+    const stat = wordCmpMatch[2];
+    const op = wordCmpMatch[3];
+    const value = parseInt(wordCmpMatch[4]);
+    const entity = which === "user" ? user : target;
+    const v = getRawStat(entity, stat);
+    if (op === "greater than") return v > value ? "then" : "else";
+    if (op === "less than") return v < value ? "then" : "else";
+    return v === value ? "then" : "else";
+  }
+
+  return "unknown";
+}
+
+/**
+ * Routes a ConditionalEffect based on `evaluateCondition`. Used by both
+ * the sync `applyEffects` and the generator `applyEffectStream` so the
+ * observable log semantics stay consistent across both code paths.
+ *
+ * - "then" outcome: then-branch runs
+ * - "else" outcome: else-branch runs if present, otherwise nothing
+ * - "unknown" outcome: then-branch runs (legacy fallback) and a
+ *   "[Conditional: X] -- condition evaluation TODO." line is logged
+ */
+function applyConditional(
+  user: Entity,
+  target: Entity,
+  effect: ConditionalEffect,
+): { messages: string[]; outcome: ConditionOutcome } {
+  const outcome = evaluateCondition(effect.condition, user, target);
+  const messages: string[] = [];
+  if (outcome === "unknown") {
+    messages.push(
+      `  [Conditional: ${effect.condition}] -- condition evaluation TODO.`,
+    );
+  } else if (outcome === "else" && effect.elseEffects) {
+    messages.push(`  [Conditional: ${effect.condition}] = false. Otherwise:`);
+  } else {
+    messages.push(
+      `  [Conditional: ${effect.condition}] = ${outcome === "then" ? "true" : "false"}.`,
+    );
+  }
+  return { messages, outcome };
 }
 
 // ---------------------------------------------------------------------------
@@ -1209,22 +1449,21 @@ export function* applyEffectStream(
       }
 
       case "conditional": {
-        // The conditional-gating logic is owned by a future PR. For now we
-        // always fall through to the then-branch and let nested gating
-        // (Apex/Thirst/Choose) keep evaluating via the stream.
-        messages.push(
-          `  [Conditional: ${effect.condition}] -- condition evaluation TODO.`,
-        );
-        const thenMsgs = yield* applyEffectStream(
-          game,
-          user,
-          target,
-          effect.thenEffects,
-          ability,
-        );
-        messages.push(...thenMsgs.map((m) => `    ${m}`));
-        if (effect.elseEffects) {
-          messages.push(`  [Otherwise]`);
+        const { outcome, messages: condMsgs } = applyConditional(user, target, effect);
+        messages.push(...condMsgs);
+        // "unknown" defaults to then-branch (legacy fallback). "else" without
+        // an else-branch drops the sub-effects entirely.
+        if (outcome === "then" || outcome === "unknown") {
+          const thenMsgs = yield* applyEffectStream(
+            game,
+            user,
+            target,
+            effect.thenEffects,
+            ability,
+          );
+          messages.push(...thenMsgs.map((m) => `    ${m}`));
+        }
+        if (outcome === "else" && effect.elseEffects) {
           const elseMsgs = yield* applyEffectStream(
             game,
             user,
