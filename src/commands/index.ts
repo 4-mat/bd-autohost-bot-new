@@ -7,6 +7,7 @@ import { gameCommand } from "./game.js";
 import { infoCommand } from "./info.js";
 import { playerCommand } from "./player.js";
 import { sheetsCommand } from "./sheets.js";
+import { calcCommand } from "./calc.js";
 
 export function handleCommand(
   room: Room | null,
@@ -40,6 +41,11 @@ export function handleCommand(
       "**Sheets**: %sheets, %sheets all",
     ];
     sendPm(user.name, help.join("\n"));
+    return;
+  }
+
+  if (id === "calc") {
+    calcCommand(user, (args || val).trim());
     return;
   }
 
