@@ -248,7 +248,15 @@ setWs({
 
     const text = raw.replace(/^\|/, "");
     if (text.startsWith("/me ")) {
-      broadcast(JSON.stringify({ type: "action", text: text.slice(4) }));
+      broadcast(
+        JSON.stringify({
+          type: "action",
+          name: escHtml("HostUser"),
+          text: escHtml(text.slice(4)),
+        }),
+      );
+    } else if (text.startsWith(">")) {
+      broadcast(JSON.stringify({ type: "quote", text: escHtml(text) }));
     } else {
       broadcast(JSON.stringify({ type: "chat", text }));
     }
@@ -627,7 +635,18 @@ wss.on("connection", (ws) => {
           broadcast(
             JSON.stringify({
               type: "action",
-              text: `${session.username} ${action}`,
+              name: escHtml(session.username),
+              text: escHtml(action),
+            }),
+          );
+          return;
+        }
+
+        if (text.startsWith(">")) {
+          broadcast(
+            JSON.stringify({
+              type: "quote",
+              text: `<span class="name">${escHtml(session.username)}</span>: ${escHtml(text)}`,
             }),
           );
           return;
@@ -803,7 +822,11 @@ const HTML_PAGE = `<!DOCTYPE html>
   .msg-chat { color: #e0e0e0; }
   .msg-chat .name { color: #ffcc00; font-weight: bold; }
   .msg-pm { color: #cccc00; }
-  .msg-action { color: #00cc00; }
+  .msg-action { color: #9635d7; font-style: italic; }
+  .msg-action .name { font-weight: bold; }
+  .msg-action .time { color: #666666; font-style: normal; font-size: 11px; }
+  .msg-quote { color: #00cc00; border-left: 3px solid #00cc00; padding-left: 6px; }
+  .msg-quote .name { font-weight: bold; }
   .msg-react { color: #cc66ff; }
   #turn-indicator { display:none; color:#00aaff; font-size:11px; font-weight:bold; background:#0f3460; border:1px solid #333; border-radius:3px; padding:2px 8px; }
   #turn-indicator.yours { color:#ffcc00; border-color:#ffcc00; animation:tp 1s ease infinite; }
@@ -1016,16 +1039,22 @@ window.addEventListener('resize', () => {
   else container.className = '';
 });
 
-function addLine(type, raw) {
+function addLine(type, raw, name) {
   const div = document.createElement('div');
   if (type === 'system') { div.className = 'msg-system'; div.textContent = raw; }
-  else if (type === 'action') { div.className = 'msg-action'; div.textContent = '\\u25B6 ' + raw; }
+  else if (type === 'action') {
+    div.className = 'msg-action';
+    const now = new Date();
+    const ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    div.innerHTML = '<small class="time">[' + ts + ']</small> \u2022 <span class="name">' + (name || '') + '</span> ' + raw;
+  }
+  else if (type === 'quote') { div.className = 'msg-quote'; div.innerHTML = raw.replace(/\*\*(.+?)\*\*/g, '<b style="color:#00cc00">$1</b>'); }
   else if (type === 'pm') { div.className = 'msg-pm'; div.textContent = raw; }
-  else if (type === 'react') { div.className = 'msg-react'; div.textContent = '\\u2606 ' + raw; }
+  else if (type === 'react') { div.className = 'msg-react'; div.textContent = '\u2606 ' + raw; }
   else if (type === 'gui') { return; }
   else {
     div.className = 'msg-chat';
-    div.innerHTML = raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:#ffcc00">$1</b>');
+    div.innerHTML = raw.replace(/\*\*(.+?)\*\*/g, '<b style="color:#ffcc00">$1</b>');
   }
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1157,8 +1186,8 @@ function connect() {
       addLine('system', msg.user + ' joined.');
     } else if (msg.type === 'leave') {
       addLine('system', msg.user + ' left.');
-    } else if (msg.type === 'chat') {
-      addLine('chat', msg.text);
+    } else if (msg.type === 'chat' || msg.type === 'quote') {
+      addLine(msg.type, msg.text);
       if (isMobile() && mobileView === 'game') {
         showToast(msg.text);
         unread++;
@@ -1167,7 +1196,7 @@ function connect() {
     } else if (msg.type === 'turn') {
       handleTurn(msg);
     } else if (msg.type === 'action') {
-      addLine('action', msg.text);
+      addLine('action', msg.text, msg.name);
     } else if (msg.type === 'pm') {
       addLine('pm', msg.text);
     } else if (msg.type === 'playerlist') {
