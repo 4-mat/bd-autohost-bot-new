@@ -122,8 +122,8 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%vs [player]`                      | View player stats.      |
 | `%vl [player]`                      | View player levels.     |
 | `%vi [player]`                      | View player items.      |
-| `%sc [player], [class]`             | Change player class.    |
-| `%sw [player], [weapon]`            | Change player weapon.   |
+| `%sc [player], [class]`             | Change player class (host any time; players can change their own until the game starts).    |
+| `%sw [player], [weapon]`            | Change player weapon (host any time; players can change their own until the game starts).   |
 | `%sco [player], [amount]`           | Set player class level. |
 | `%regp [player], [class], [weapon]` | Register a player.      |
 

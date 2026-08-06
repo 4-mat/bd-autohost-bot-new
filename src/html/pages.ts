@@ -13,6 +13,7 @@ import {
   type AbilityData,
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
+import { classes, weapons } from "../data/index.js";
 import { runoffOptions, tallyVotes, voteOptionsFor } from "../data/gamemodes.js";
 
 // -- Premove Mode Tracking -----------------------------------------------------
@@ -256,10 +257,34 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
 
+  // Until the game starts, players can change their own class/weapon
+  // (e.g. after the gamemode vote decides the mode, before the map is set).
+  let loadout = "";
+  if (!game.started) {
+    const classOpts = [...classes.values()]
+      .map(
+        (c) =>
+          `<option value="${esc(c.name)}"${c.name === entity.className ? " selected" : ""}>${esc(c.name)}</option>`,
+      )
+      .join("");
+    const weaponOpts = [...weapons.values()]
+      .map(
+        (w) =>
+          `<option value="${esc(w.name)}"${w.name === entity.weaponName ? " selected" : ""}>${esc(w.name)}</option>`,
+      )
+      .join("");
+    loadout = `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #57a;border-radius:4px"><b style="color:#8af">Change Loadout</b> <span style="color:#888">(until the game starts)</span><br>
+<select id="loadout-class" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${classOpts}</select>
+<select id="loadout-weapon" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${weaponOpts}</select>
+<button name="loadout" data-num="${esc(entity.num)}" style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif">Apply</button>
+</div>`;
+  }
+
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   ${map}${pl}
   <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
   ${buildVotePanel(game, entity)}
+  ${loadout}
   <hr>${phase}${prompt}${actions}
   ${log}
   ${buildToasts(game)}

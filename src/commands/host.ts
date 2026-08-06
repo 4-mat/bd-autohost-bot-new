@@ -994,10 +994,6 @@ function handleAddMonster(room: Room, user: User, args: string) {
 function handleSwitchClass(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
   if (!game) return sendPm(user.name, "No active game in this room.");
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can use %sc.");
-  }
-
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 2 || !parts[0] || !parts[1]) {
     return sendPm(user.name, "Usage: %sc <entity>, <class>");
@@ -1005,6 +1001,14 @@ function handleSwitchClass(room: Room, user: User, args: string) {
 
   const entity = getEntity(game, parts[0]);
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+
+  // Players may change their OWN class until the game starts (e.g. after the
+  // gamemode vote, before the map is set); hosts can change anyone anytime.
+  if (toId(user.name) !== toId(game.host)) {
+    if (game.started || toId(entity.name) !== toId(user.name)) {
+      return sendPm(user.name, "Only the host can use %sc.");
+    }
+  }
 
   const newClass = parts[1];
   const classData = classes.get(toId(newClass));
@@ -1066,10 +1070,6 @@ function handleSwitchClass(room: Room, user: User, args: string) {
 function handleSwitchWeapon(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
   if (!game) return sendPm(user.name, "No active game in this room.");
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can use %sw.");
-  }
-
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 2 || !parts[0] || !parts[1]) {
     return sendPm(user.name, "Usage: %sw <entity>, <weapon>");
@@ -1077,6 +1077,14 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
 
   const entity = getEntity(game, parts[0]);
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+
+  // Players may change their OWN weapon until the game starts; hosts can
+  // change anyone anytime.
+  if (toId(user.name) !== toId(game.host)) {
+    if (game.started || toId(entity.name) !== toId(user.name)) {
+      return sendPm(user.name, "Only the host can use %sw.");
+    }
+  }
 
   const newWeapon = parts[1];
   const weaponData = weapons.get(toId(newWeapon));
