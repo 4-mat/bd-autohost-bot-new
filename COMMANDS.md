@@ -66,11 +66,12 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | ------------------------------------------ | -------------------------------------- |
 | `%host`                                    | Create a new game in the current room. |
 | `%dehost`                                  | Close and remove the game.             |
-| `%setgame [mode]`                          | Set game mode (FFA, 2v2, 3v3, etc.).   |
+| `%setgame [mode]`                          | Set mode AND complete setup: random map from the mode's pool (if none set), teams (NvM), positions, turn order — then %start. |
 | `%addp [name], [class], [weapon], [level]` | Add a player to the game.              |
 | `%remp [name]`                             | Remove a player from the game.         |
 | `%setmap [name\|gamemode\|gen [12\|16\|20]]` | Set a curated map, a random map from a gamemode pool (pvp, 1v1...), or generate a procedural map (gen). `%start` requires a map. |
 | `%listmaps [mode]`                         | List maps; shows recommended maps for the game mode (or a specific mode). |
+| `%genpos [4pffa\|2v2\|3v3...]`           | Set starting positions: FFA spread symmetrically, or team matches (NvM) on mirrored halves with auto-teams + mode. |
 | `%gento`                                   | Generate turn order.                   |
 | `%start`                                   | Start the game.                        |
 

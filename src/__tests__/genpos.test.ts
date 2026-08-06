@@ -1,5 +1,10 @@
 import { describe, it, expect } from "bun:test";
-import { genPosSlots, placePlayers } from "../commands/host.js";
+import {
+  genPosSlots,
+  genTeamSlots,
+  placePlayers,
+  placeTeamPlayers,
+} from "../commands/host.js";
 import { type Entity, Terrain, type Game } from "../game/state.js";
 
 function makeEntity(num: string, pos: [number, number] = [0, 0]): Entity {
@@ -90,6 +95,63 @@ describe("genPosSlots", () => {
     expect(slots).toHaveLength(5);
     expect(slots[4]).toEqual([5, 5]);
     expect(new Set(slots.map(([r, c]) => `${r},${c}`)).size).toBe(5);
+  });
+});
+
+describe("genTeamSlots", () => {
+  it("mirrors team 2 anchors against team 1 (2v2)", () => {
+    expect(genTeamSlots(10, 10, 2, 2)).toEqual([
+      [
+        [0, 3],
+        [0, 6],
+      ],
+      [
+        [9, 3],
+        [9, 6],
+      ],
+    ]);
+  });
+
+  it("places 1v1 at the top/bottom centre", () => {
+    expect(genTeamSlots(10, 10, 1, 1)).toEqual([[[0, 5]], [[9, 5]]]);
+  });
+
+  it("supports uneven teams (1v2)", () => {
+    expect(genTeamSlots(10, 10, 1, 2)).toEqual([
+      [[0, 5]],
+      [
+        [9, 3],
+        [9, 6],
+      ],
+    ]);
+  });
+});
+
+describe("placeTeamPlayers", () => {
+  it("places team 1 in the top half and team 2 in the bottom half", () => {
+    const teamA = [makeEntity("P1"), makeEntity("P2")];
+    const teamB = [makeEntity("P3"), makeEntity("P4")];
+    const game = makeGame([...teamA, ...teamB]);
+    const out = placeTeamPlayers(game, teamA, teamB);
+    expect(out).not.toBeNull();
+
+    const keys = new Set<string>();
+    for (const [e, pos] of [...out![0], ...out![1]]) {
+      expect(game.map[pos[0]][pos[1]]).toBe(Terrain.Normal);
+      const key = `${pos[0]},${pos[1]}`;
+      expect(keys.has(key)).toBe(false);
+      keys.add(key);
+      expect(e.pos).toEqual(pos);
+    }
+    for (const [, pos] of out![0]) expect(pos[0]).toBeLessThan(5); // top half
+    for (const [, pos] of out![1]) expect(pos[0]).toBeGreaterThanOrEqual(5); // bottom half
+  });
+
+  it("returns null when no open tiles exist", () => {
+    const teamA = [makeEntity("P1")];
+    const teamB = [makeEntity("P2")];
+    const game = makeGame([...teamA, ...teamB], Terrain.Stop);
+    expect(placeTeamPlayers(game, teamA, teamB)).toBeNull();
   });
 });
 
