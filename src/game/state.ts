@@ -495,36 +495,26 @@ function inBeam(
   const dr = to[0] - from[0];
   const dc = to[1] - from[1];
 
-  // Beam only works cardinally (up/down/left/right)
-  // 3 tiles wide = perpendicular offset of -1, 0, or +1
-  if (dr === 0) {
-    // Horizontal beam
+  if (dr === 0 && dc === 0) return false;
+
+  // Horizontal beam: perpendicular (row) offset <= 1, column distance 1..range
+  if (Math.abs(dr) <= 1 && dc !== 0) {
     const colDist = Math.abs(dc);
-    if (colDist < 1 || colDist > range) return false;
-    // Check perpendicular (row offset must be 0 or +/-1)
-    return Math.abs(dr) <= 0; // already checked dr===0
+    return colDist >= 1 && colDist <= range;
   }
-  if (dc === 0) {
-    // Vertical beam
+
+  // Vertical beam: perpendicular (col) offset <= 1, row distance 1..range
+  if (Math.abs(dc) <= 1 && dr !== 0) {
     const rowDist = Math.abs(dr);
-    if (rowDist < 1 || rowDist > range) return false;
-    return true;
+    return rowDist >= 1 && rowDist <= range;
   }
 
-  // Diagonal beams: treat the diagonal as the center line
-  if (Math.abs(dr) === Math.abs(dc)) {
-    const diagDist = Math.abs(dr);
-    if (diagDist < 1 || diagDist > range) return false;
-    // Beam width perpendicular to diagonal = 1 tile on each side
-    // For a diagonal beam, the "3 wide" means the two adjacent diagonal columns
-    // We check if the target is on the center diagonal or one tile off
-    return true; // on the diagonal center line, within range
+  // Diagonal beams: center line where |dr| = |dc|, width where they differ by 1
+  const absDr = Math.abs(dr);
+  const absDc = Math.abs(dc);
+  if (Math.abs(absDr - absDc) <= 1 && absDr >= 1 && absDc >= 1) {
+    return Math.max(absDr, absDc) <= range;
   }
-
-  // Off-diagonal: check if within 1 tile perpendicular of the center line
-  // For cardinal beams, perpendicular offset of +/-1 is allowed
-  if (Math.abs(dr) <= range && dc === 0) return Math.abs(dc) <= 0;
-  if (Math.abs(dc) <= range && dr === 0) return Math.abs(dr) <= 0;
 
   return false;
 }
