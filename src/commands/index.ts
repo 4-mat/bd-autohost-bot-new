@@ -7,6 +7,7 @@ import { gameCommand } from "./game.js";
 import { infoCommand } from "./info.js";
 import { playerCommand } from "./player.js";
 import { sheetsCommand } from "./sheets.js";
+import { calcCommand } from "./calc.js";
 
 export function handleCommand(
   room: Room | null,
@@ -34,12 +35,17 @@ export function handleCommand(
     const help = [
       "**Host Commands**: %host, %setgame, %addp, %addm, %remp, %setmap, %setlevel, %setteam, %setjugg, %gento, %start, %dehost, %listmaps",
       "**In-Game (Host)**: %info, %map, %pl, %to, %status, %regp, %hp, %cut, %cr",
-      "**In-Game (Player)**: %move, %use, %dash, %endturn, %premove, %r",
+      "**In-Game (Player)**: %move, %use, %dash, %target, %choose, %confirm, %cancel, %endturn, %premove, %r",
       "**Character**: %vs, %vl, %vi, %sc, %sw, %sco",
       "**Reference**: %wt, %rf, %wtm",
       "**Sheets**: %sheets, %sheets all",
     ];
     sendPm(user.name, help.join("\n"));
+    return;
+  }
+
+  if (id === "calc") {
+    calcCommand(user, (args || val).trim());
     return;
   }
 
@@ -79,7 +85,12 @@ export function handleCommand(
     id === "gento" ||
     id === "start" ||
     id === "sc" ||
-    id === "sw"
+    id === "sw" ||
+    id === "open" ||
+    id === "openbsu" ||
+    id === "close" ||
+    id === "join" ||
+    id === "genpos"
   ) {
     hostCommand(room, user, id, args, val, pm);
     return;
@@ -97,6 +108,8 @@ export function handleCommand(
     id === "dash" ||
     id === "confirm" ||
     id === "cancel" ||
+    id === "target" ||
+    id === "choose" ||
     id === "endturn" ||
     id === "next" ||
     id === "back" ||
@@ -108,6 +121,8 @@ export function handleCommand(
     id === "checkrange" ||
     id === "cr" ||
     id === "premove" ||
+    id === "passmove" ||
+    id === "pass" ||
     id === "status" ||
     id === "regp"
   ) {
