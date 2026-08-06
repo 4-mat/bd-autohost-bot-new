@@ -20,6 +20,7 @@ import {
   isSealed,
   isConfused,
   getEffectiveMp,
+  parseFrequency,
   type Game,
   type Entity,
 } from "../game/state.js";
@@ -294,9 +295,10 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   }
 
   // Max uses check
-  if (ability.maxUses) {
+  const maxUses = ability.maxUses ?? parseFrequency(ability.frequency).uses;
+  if (maxUses) {
     const used = entity.usesUsed[ability.name] ?? 0;
-    if (used >= ability.maxUses) {
+    if (used >= maxUses) {
       return sendPm(user.name, `${ability.name} has no uses remaining.`);
     }
   }
