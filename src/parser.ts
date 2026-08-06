@@ -36,7 +36,7 @@ function handleChatMessage(roomid: string, username: string, message: string) {
   if (!message.startsWith(PREFIX)) {
     for (const game of games.values()) {
       if (game.room === roomid) {
-        const entry = { user: username, message };
+        const entry = { user: username, message, time: Date.now() };
         game.chatLog.push(entry);
         game.toasts.push(entry);
         break;
