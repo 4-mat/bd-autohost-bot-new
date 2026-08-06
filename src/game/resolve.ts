@@ -632,7 +632,7 @@ function findTargets(
   });
 }
 
-export function isValidTarget(user: Entity, target: Entity, group: string): boolean {
+function isValidTarget(user: Entity, target: Entity, group: string): boolean {
   if (target.curhp <= 0) return false;
   const g = group.toLowerCase();
 
