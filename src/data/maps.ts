@@ -1,4 +1,5 @@
 import { Terrain } from "../game/state.js";
+import { volunteerMaps } from "./volunteer-maps.js";
 
 export interface MapDef {
   name: string;
@@ -3774,6 +3775,10 @@ MAPS.set("l", {
     [0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0]
   ],
 });
+
+for (const m of volunteerMaps) {
+  MAPS.set(m.name, m);
+}
 
 export function getMapByName(name: string): MapDef | undefined {
   const id = name.toLowerCase().replace(/\s+/g, "");

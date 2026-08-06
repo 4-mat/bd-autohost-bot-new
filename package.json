@@ -14,7 +14,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "check-updates": "tsx src/sheets/check-updates.ts"
+    "check-updates": "tsx src/sheets/check-updates.ts",
+    "maps": "bun scripts/import-volunteer-maps.ts"
   },
   "dependencies": {
     "ws": "^8.18.0",

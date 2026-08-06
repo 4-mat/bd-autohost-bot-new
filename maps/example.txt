@@ -1,0 +1,15 @@
+# Example volunteer map. Copy this file to add your own.
+# This map is symmetric on both axes.
+
+name: example
+display: Example
+
+nwsfnfswn
+wlnnnnnlw
+snhnnnhns
+fnnnnnnnf
+nnnnnnnnn
+fnnnnnnnf
+snhnnnhns
+wlnnnnnlw
+nwsfnfswn
