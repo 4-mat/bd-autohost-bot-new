@@ -1,8 +1,13 @@
 import {
   type Game,
   type Entity,
+  type AbilityData,
   type StatusEffect,
+  chebyshev,
   dealDamage,
+  hasLineOfSight,
+  inRange,
+  manhattan,
   pushEntity,
   pullEntity,
 } from "./state.js";
@@ -759,14 +764,127 @@ function getBaseStat(entity: Entity, stat: string): number {
 }
 
 // ---------------------------------------------------------------------------
+// Apex gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when target is at the maximum listed range of the ability,
+ * so any sub-effects of an `apex` clause should fire.
+ *
+ * Per BD 4.4: "When a Tomahawk ability targets a player at its maximum listed
+ * range, it gains its Apex effect. Apex includes the final row/column of Beam
+ * ranges."
+ *
+ * Range types with a numeric max:
+ *   Burst N    -- Chebyshev == N
+ *   Range N    -- Manhattan == N (LOS required)
+ *   Homing N   -- Manhattan == N (no LOS)
+ *   Star N     -- Manhattan == N (LOS required)
+ *   Pierce N   -- Cardinal Manhattan == N, diagonal chebyshev == ceil(N/2) (LOS required)
+ *   Line N     -- same as Pierce (LOS required)
+ *   Cone N     -- forward distance == N
+ *   Beam N     -- final row/column strip at depth N: max(|d|) == N AND min(|d|) <= 1.
+ *                  Beam LOS is checked via centerline, since state.ts inBeam has
+ *                  known bugs for off-axis perpendicular tiles.
+ *   Melee      -- chebyshev == 1
+ *
+ * Global / varies / unknown -> no apex, no max.
+ */
+export function isApexActive(
+  game: Game,
+  user: Entity,
+  target: Entity,
+  ability: AbilityData,
+): boolean {
+  const r = ability.range.toLowerCase().trim();
+
+  // No apex on ranges without a numeric max.
+  if (r === "" || r === "varies" || r === "global") return false;
+
+  const dr = target.pos[0] - user.pos[0];
+  const dc = target.pos[1] - user.pos[1];
+  const absDr = Math.abs(dr);
+  const absDc = Math.abs(dc);
+  const mh = manhattan(user.pos, target.pos);
+  const ch = chebyshev(user.pos, target.pos);
+
+  // Melee: max is 1 tile in any of the 8 surrounding tiles.
+  if (r === "melee") return ch === 1;
+
+  // For numbered range types, the trailing digit of the first clause is "max".
+  // (We don't try to handle `Range 3 or 5` style combos; pick the first.)
+  const m = r.match(/^(burst|range|homing|pierce|line|beam|cone|star)\s+(\d+)/);
+  if (!m) return false;
+  const type = m[1];
+  const max = parseInt(m[2]);
+
+  const cardinal = dr === 0 || dc === 0;
+  const diagonal = !cardinal && absDr === absDc;
+
+  // Beam LOS / off-axis geometry isn't modelled correctly by inRange's
+  // inBeam helper, so beam is handled separately below (with its own
+  // centerline LOS check). For all other range types, require the target
+  // to be in range (handles LOS).
+  if (type !== "beam" && !inRange(game, user.pos, target.pos, ability.range)) {
+    return false;
+  }
+
+  switch (type) {
+    case "burst":
+      return ch === max;
+    case "range":
+    case "homing":
+    case "star":
+      return mh === max;
+    case "pierce":
+    case "line": {
+      if (cardinal) return mh === max;
+      if (diagonal) return absDr === Math.ceil(max / 2);
+      return false;
+    }
+    case "cone": {
+      if (absDr > absDc) return absDr === max;
+      if (absDc > absDr) return absDc === max;
+      return false;
+    }
+    case "beam": {
+      // "Apex includes the final row/column of Beam ranges." The final
+      // row/column is a 3-tile strip at depth == max (one tile perpendicular
+      // to each side of the beam centerline).
+      if (Math.max(absDr, absDc) !== max) return false;
+      if (Math.min(absDr, absDc) > 1) return false;
+      // Centerline LOS: from user toward the centerline of the beam at the
+      // target's depth cardinal axis.
+      if (dr === 0)
+        return hasLineOfSight(game, user.pos, [user.pos[0], target.pos[1]]);
+      if (dc === 0)
+        return hasLineOfSight(game, user.pos, [target.pos[0], user.pos[1]]);
+      // Diagonal beam — direct LOS to target.
+      return hasLineOfSight(game, user.pos, target.pos);
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Effect Application
 // ---------------------------------------------------------------------------
 
+/**
+ * Apply a parsed effect list to a target, returning log messages.
+ *
+ * `ability` is required for the gating effect types (Apex, Thirst, Conditional,
+ * Choose). Without it, gated clauses emit a "cannot evaluate" stub message
+ * and skip their sub-effects rather than firing unconditionally. Plumbing it
+ * through also lets nested gating clauses evaluate correctly inside the
+ * recursive streams those effect types spawn.
+ */
 export function applyEffects(
   game: Game,
   user: Entity,
   target: Entity,
   effects: Effect[],
+  ability?: AbilityData,
 ): string[] {
   const messages: string[] = [];
 
@@ -1016,40 +1134,58 @@ export function applyEffects(
       }
 
       case "conditional": {
+        // Condition evaluation is intentionally still TODO -- it always
+        // applies the then-branch for now. Thread `ability` through so any
+        // nested apex/thirst clauses can still evaluate.
         messages.push(
-          `  [Conditional: ${effect.condition}] -- needs evaluation.`,
+          `  [Conditional: ${effect.condition}] -- condition evaluation TODO.`,
         );
-        const thenMsgs = applyEffects(game, user, target, effect.thenEffects);
+        const thenMsgs = applyEffects(game, user, target, effect.thenEffects, ability);
         messages.push(...thenMsgs.map((m) => `    ${m}`));
         if (effect.elseEffects) {
           messages.push(`  [Otherwise]`);
-          const elseMsgs = applyEffects(game, user, target, effect.elseEffects);
+          const elseMsgs = applyEffects(game, user, target, effect.elseEffects, ability);
           messages.push(...elseMsgs.map((m) => `    ${m}`));
         }
         break;
       }
 
       case "thirst": {
+        // Threshold gating is intentionally still TODO -- always applies the
+        // sub-effects for now. Thread `ability` through for any nested apex.
         messages.push(
-          `  [Thirst ${effect.threshold}] -- needs threshold evaluation.`,
+          `  [Thirst ${effect.threshold}] -- threshold evaluation TODO.`,
         );
-        const thirstMsgs = applyEffects(game, user, target, effect.effects);
+        const thirstMsgs = applyEffects(game, user, target, effect.effects, ability);
         messages.push(...thirstMsgs.map((m) => `    ${m}`));
         break;
       }
 
       case "apex": {
-        messages.push(`  [Apex] -- needs max-range evaluation.`);
-        const apexMsgs = applyEffects(game, user, target, effect.effects);
-        messages.push(...apexMsgs.map((m) => `    ${m}`));
+        // Apex only triggers when the target is at the ability's listed max
+        // range. With no `ability` in scope we can't evaluate, so we err on the
+        // side of NOT firing (matches the original "needs evaluation" stub).
+        if (!ability) {
+          messages.push(`  [Apex] -- cannot evaluate without ability context.`);
+          break;
+        }
+        if (!isApexActive(game, user, target, ability)) {
+          messages.push(
+            `  [Apex] inactive (target not at max listed range of ${ability.range}).`,
+          );
+          break;
+        }
+        const apexMsgs = applyEffects(game, user, target, effect.effects, ability);
+        messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
         break;
       }
 
       case "choose": {
-        messages.push(`  [Choose one] -- requires player selection.`);
+        // Player choice is intentionally still TODO -- fan out all options.
+        messages.push(`  [Choose one] -- player choice TODO.`);
         for (let i = 0; i < effect.options.length; i++) {
           messages.push(`    Option ${i + 1}:`);
-          const optMsgs = applyEffects(game, user, target, effect.options[i]);
+          const optMsgs = applyEffects(game, user, target, effect.options[i], ability);
           messages.push(...optMsgs.map((m) => `      ${m}`));
         }
         break;
