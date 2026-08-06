@@ -560,11 +560,8 @@ function handleAdvanceTurn(game: Game, user: User) {
 
     acted = summarizeResult(game, entity, step.result.messages);
 
-    // Track kills
-    for (const death of step.result.deaths) {
-      if (entity.pendingAction === null) {
-        // Only track kills from the attacker (not DoT deaths)
-      }
+    for (const _ of step.result.deaths) {
+      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
     }
 
     const winner = checkGameOver(game);
