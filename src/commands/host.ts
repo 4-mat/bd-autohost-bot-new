@@ -14,6 +14,8 @@ import {
   Terrain,
 } from "../game/state.js";
 import { classes, weapons, loadGameData } from "../data/index.js";
+import { getVersionData } from "../data/version43.js";
+import type { GameVersion } from "../data/version43.js";
 import { getMapByName, listMaps } from "../data/maps.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
@@ -52,7 +54,7 @@ export function hostCommand(
 
   switch (cmd) {
     case "host":
-      handleHost(room, user);
+      handleHost(room, user, args);
       break;
     case "dehost":
       handleDehost(room, user);
@@ -124,7 +126,15 @@ function findGameForRoom(roomid: string): Game | null {
 
 // -- .host - Create a new game -------------------------------------------------
 
-function handleHost(room: Room, user: User) {
+function handleHost(room: Room, user: User, args: string) {
+  const version = parseVersion(args);
+  if (!version) {
+    return sendPm(
+      user.name,
+      "Invalid version. Use %host for BD 4.4 or %host 4.3 for BD 4.3.",
+    );
+  }
+
   const existing = findGameForRoom(room.id);
   if (existing) {
     return sendPm(
@@ -138,6 +148,7 @@ function handleHost(room: Room, user: User) {
     id,
     room: room.id,
     host: user.name,
+    version,
     entities: [],
     map: generateDefaultMap(),
     mapName: "Default",
@@ -157,8 +168,18 @@ function handleHost(room: Room, user: User) {
   };
 
   games.set(id, game);
-  send(room.id, `**${user.name}** is now hosting! (Game ID: ${id})`);
+  send(
+    room.id,
+    `**${user.name}** is now hosting **BD ${version}**! (Game ID: ${id})`,
+  );
   sendPm(user.name, "Use %setgame, %addp, %setmap to configure, then %start.");
+}
+
+function parseVersion(arg: string): GameVersion | null {
+  const v = arg.trim().toLowerCase();
+  if (v === "" || v === "4.4") return "4.4";
+  if (v === "4.3") return "4.3";
+  return null;
 }
 
 // -- .dehost - Remove the game -------------------------------------------------
@@ -457,8 +478,9 @@ function createPlayerEntity(
     return { err: `${name} is already in the game.` };
   }
 
-  const classData = classes.get(toId(className));
-  const weaponData = weapons.get(toId(weaponName));
+  const data = getVersionData(game.version);
+  const classData = data.classes.get(toId(className));
+  const weaponData = data.weapons.get(toId(weaponName));
 
   if (!classData) {
     return { err: `Unknown class: ${className}. Use %wt to look up.` };
@@ -632,7 +654,8 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
   const newClass = parts[1];
-  const classData = classes.get(toId(newClass));
+  const data = getVersionData(game.version);
+  const classData = data.classes.get(toId(newClass));
   if (!classData) {
     return sendPm(user.name, `Unknown class: ${newClass}. Use %wt to look up.`);
   }
@@ -640,7 +663,7 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   pushSnapshot(game);
 
   // Recalculate HP: old weapon + new class
-  const weaponData = weapons.get(toId(entity.weaponName));
+  const weaponData = data.weapons.get(toId(entity.weaponName));
   const newMaxhp =
     parseInt(classData.stats.hp) +
     (weaponData ? parseInt(weaponData.stats.hp) : 0);
@@ -704,7 +727,8 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
   const newWeapon = parts[1];
-  const weaponData = weapons.get(toId(newWeapon));
+  const data = getVersionData(game.version);
+  const weaponData = data.weapons.get(toId(newWeapon));
   if (!weaponData) {
     return sendPm(
       user.name,
@@ -715,7 +739,7 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   pushSnapshot(game);
 
   // Recalculate HP: existing class + new weapon
-  const classData = classes.get(toId(entity.className));
+  const classData = data.classes.get(toId(entity.className));
   const newMaxhp =
     (classData ? parseInt(classData.stats.hp) : 0) +
     parseInt(weaponData.stats.hp);
@@ -785,8 +809,9 @@ function handleSetLevel(room: Room, user: User, args: string) {
   }
 
   // Recalculate HP from class + weapon base
-  const classData = classes.get(toId(entity.className));
-  const weaponData = weapons.get(toId(entity.weaponName));
+  const data = getVersionData(game.version);
+  const classData = data.classes.get(toId(entity.className));
+  const weaponData = data.weapons.get(toId(entity.weaponName));
   if (!classData || !weaponData) {
     return sendPm(user.name, "Could not look up class/weapon data.");
   }
@@ -858,8 +883,9 @@ function handleSetJugg(room: Room, user: User, args: string) {
   entity.isJuggernaut = !entity.isJuggernaut;
 
   // Re-filter abilities to include/exclude EX
-  const classData = classes.get(toId(entity.className));
-  const weaponData = weapons.get(toId(entity.weaponName));
+  const data = getVersionData(game.version);
+  const classData = data.classes.get(toId(entity.className));
+  const weaponData = data.weapons.get(toId(entity.weaponName));
   const lvl = entity.classLevel;
   if (classData && weaponData) {
     entity.abilities = [
