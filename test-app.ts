@@ -233,7 +233,6 @@ Class:<br>
 Weapon:<br>
 <select id="signin-weapon" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${weaponOpts}</select><br><br>
 ${joinBtn}
-<div style="color:#888;font-size:11px;margin-top:6px">Host opens signups with %open / %openbsu.</div>
 </div>`;
 }
 
