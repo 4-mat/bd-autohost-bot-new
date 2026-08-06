@@ -299,10 +299,8 @@ setWs({
 
       const hostId = toId(hostName);
 
-      const saved = userGui.get(hostId) ?? {};
-      saved.host = html;
-      userGui.set(hostId, saved);
-
+      // The host page is NOT cached: %host and host logins regenerate it fresh
+      // (see handleHost + the login path) so a previous game can never surface.
       sendToUser(hostName, {
         type: "gui",
         role: "host",
@@ -667,14 +665,14 @@ wss.on("connection", (ws) => {
 
         const savedGui = userGui.get(toId(username));
 
-        if (savedGui?.host && session.tabs.includes("host")) {
-          ws.send(
-            JSON.stringify({
-              type: "gui",
-              role: "host",
-              html: savedGui.host,
-            }),
+        // Regenerate the host page fresh — never replay a cached page, which
+        // may belong to a previous game (the cache is only updated by
+        // /addhtmlbox broadcasts and is not invalidated on %dehost).
+        if (session.tabs.includes("host")) {
+          const hostGame = [...games.values()].find(
+            (g) => toId(g.host) === toId(username),
           );
+          if (hostGame) broadcastPages(hostGame);
         }
 
         if (savedGui?.player && session.tabs.includes("player")) {

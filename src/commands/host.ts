@@ -265,6 +265,8 @@ function handleHost(room: Room, user: User) {
     user.name,
     "Use %setgame, %addp, %setmap to configure, then %start. Pick a map with %setmap <name> (see %listmaps) or %setmap gen.",
   );
+  // Push a fresh (empty) host page so the GUI never shows a previous game.
+  broadcastPages(game);
 }
 
 // -- .dehost - Remove the game -------------------------------------------------
