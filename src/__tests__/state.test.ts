@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import {
   Terrain,
   isObstruction,
+  isStandable,
   moveCost,
   chebyshev,
   manhattan,
@@ -125,20 +126,40 @@ function makeGame(
 // ---------------------------------------------------------------------------
 
 describe("Terrain", () => {
-  it("isObstruction returns true for Stop, Bone, Ice, Stone, Broken", () => {
+  it("isObstruction returns true for Stop, Bone, Ice, Stone, Hearth (glossary)", () => {
     expect(isObstruction(Terrain.Stop)).toBe(true);
     expect(isObstruction(Terrain.Bone)).toBe(true);
     expect(isObstruction(Terrain.Ice)).toBe(true);
     expect(isObstruction(Terrain.Stone)).toBe(true);
-    expect(isObstruction(Terrain.Broken)).toBe(true);
+    expect(isObstruction(Terrain.Hearth)).toBe(true);
   });
 
-  it("isObstruction returns false for Normal, Water, Forest, etc.", () => {
+  it("isObstruction returns false for Broken and passable tiles", () => {
+    // Broken is impassable to movement but is NOT an obstruction per the
+    // glossary ("Broken tiles cannot be moved through...").
+    expect(isObstruction(Terrain.Broken)).toBe(false);
     expect(isObstruction(Terrain.Normal)).toBe(false);
     expect(isObstruction(Terrain.Water)).toBe(false);
     expect(isObstruction(Terrain.Forest)).toBe(false);
     expect(isObstruction(Terrain.Lava)).toBe(false);
     expect(isObstruction(Terrain.Air)).toBe(false);
+    expect(isObstruction(Terrain.Sticky)).toBe(false);
+    expect(isObstruction(Terrain.Boost)).toBe(false);
+  });
+
+  it("isStandable excludes obstructions, Broken, and Lava", () => {
+    expect(isStandable(Terrain.Stop)).toBe(false);
+    expect(isStandable(Terrain.Bone)).toBe(false);
+    expect(isStandable(Terrain.Ice)).toBe(false);
+    expect(isStandable(Terrain.Stone)).toBe(false);
+    expect(isStandable(Terrain.Hearth)).toBe(false);
+    expect(isStandable(Terrain.Broken)).toBe(false);
+    expect(isStandable(Terrain.Lava)).toBe(false);
+    expect(isStandable(Terrain.Normal)).toBe(true);
+    expect(isStandable(Terrain.Water)).toBe(true);
+    expect(isStandable(Terrain.Forest)).toBe(true);
+    expect(isStandable(Terrain.Sticky)).toBe(true);
+    expect(isStandable(Terrain.Boost)).toBe(true);
   });
 
   it("moveCost returns base+1 for Sticky", () => {

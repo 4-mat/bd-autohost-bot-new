@@ -26,8 +26,12 @@ const Lava = 7;
 const Broken = 8;
 const Bone = 9;
 const Stone = 10;
+const Hearth = 11;
 
-const OBSTRUCTIONS = new Set<number>([Stop, Bone, Ice, Stone, Broken]);
+// Obstructions per the BD 4.4 glossary (Stop/Bone, Ice, Stone, Hearth) plus
+// Broken, which is impassable to movement even though it is not itself called
+// an obstruction. Lava is excluded separately: it damages on entry.
+const OBSTRUCTIONS = new Set<number>([Stop, Bone, Ice, Stone, Hearth, Broken]);
 
 function isPassable(t: number): boolean {
   return !OBSTRUCTIONS.has(t) && t !== Lava;
