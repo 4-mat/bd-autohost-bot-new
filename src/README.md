@@ -101,6 +101,7 @@ All game setup commands, routed by `hostCommand()`:
 | `%unvote`            | `handleUnvote`       | Withdraws a player's gamemode vote                                                                                                                   |
 | `%endvote`           | `handleEndVote`      | Closes voting, applies the winning mode; on a tie, keeps voting open as a runoff restricted to the tied modes (`game.voteRunoff`)   |
 | `%join`              | `handleJoin`         | Self-service join with a chosen class/weapon while signups are open                                                                      |
+| `%leave`             | `handleLeave`        | Player leaves the game: removes their entity, drops them from the turn order, withdraws their vote (`removeEntity`); host must use `%dehost` |
 | `%genpos`            | `handleGenPos`       | Sets competitive starting positions: FFA `%genpos <N><mode>` (e.g. `4pffa`) spread symmetrically, or teams `%genpos <N>v<M>` (e.g. `2v2`) on mirrored halves with auto-assigned teams + mode |
 | `%start`             | `handleStart`        | Starts the game, auto-gentos if needed, broadcasts HTML pages                                                                            |
 

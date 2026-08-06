@@ -35,7 +35,7 @@ export function handleCommand(
     const help = [
       "**Host Commands**: %host, %setgame, %addp, %addm, %remp, %setmap, %setlevel, %setteam, %setjugg, %gento, %start, %dehost, %listmaps, %close, %endvote, %nudge",
       "**In-Game (Host)**: %info, %map, %pl, %to, %status, %regp, %hp, %cut, %cr",
-      "**In-Game (Player)**: %move, %use, %dash, %target, %choose, %confirm, %cancel, %endturn, %premove, %r, %vote, %votestatus, %unvote",
+      "**In-Game (Player)**: %move, %use, %dash, %target, %choose, %confirm, %cancel, %endturn, %premove, %r, %vote, %votestatus, %unvote, %leave",
       "**Character**: %vs, %vl, %vi, %sc, %sw, %sco",
       "**Reference**: %wt, %rf, %wtm",
       "**Sheets**: %sheets, %sheets all",
@@ -115,6 +115,7 @@ export function handleCommand(
     id === "vote" ||
     id === "votestatus" ||
     id === "unvote" ||
+    id === "leave" ||
     id === "endturn" ||
     id === "next" ||
     id === "back" ||
