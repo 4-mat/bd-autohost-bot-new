@@ -319,6 +319,7 @@ for (const m of maps) {
 // Generate TypeScript
 const out: string[] = [];
 out.push(`import { Terrain } from "../game/state.js";`);
+out.push(`import { volunteerMaps } from "./volunteer-maps.js";`);
 out.push(``);
 out.push(`export interface MapDef {`);
 out.push(`  name: string;`);
@@ -345,6 +346,10 @@ for (const m of maps) {
   out.push(``);
 }
 
+out.push(`for (const m of volunteerMaps) {`);
+out.push(`  MAPS.set(m.name, m);`);
+out.push(`}`);
+out.push(``);
 out.push(`export function getMapByName(name: string): MapDef | undefined {`);
 out.push(`  const id = name.toLowerCase().replace(/\\s+/g, "");`);
 out.push(`  return MAPS.get(id);`);

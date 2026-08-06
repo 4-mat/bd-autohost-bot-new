@@ -1,0 +1,27 @@
+name: Maps
+
+on:
+  pull_request:
+    paths:
+      - "maps/**"
+      - "src/data/parse-map-file.ts"
+      - "scripts/import-volunteer-maps.ts"
+      - "src/data/volunteer-maps.ts"
+      - ".github/workflows/maps.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run maps
+      - run: bun test
+      - run: bun run typecheck
+      - name: Generated file in sync
+        run: |
+          git diff --exit-code src/data/volunteer-maps.ts || {
+            echo "::error::src/data/volunteer-maps.ts is out of date. Run 'bun run maps' and commit the result."
+            exit 1
+          }
