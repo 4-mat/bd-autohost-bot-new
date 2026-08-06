@@ -100,3 +100,14 @@ export function recommendedMaps(mode: string): string[] | undefined {
   const id = modeIdFor(mode);
   return id ? [...GAMEMODE_MAPS[id]] : undefined;
 }
+
+/**
+ * Pick a random map name from the designated pool for a mode string, or
+ * undefined when the mode has no pool. Used by `%setmap <gamemode>`.
+ */
+export function randomMapForMode(mode: string): string | undefined {
+  const id = modeIdFor(mode);
+  if (!id) return undefined;
+  const pool = GAMEMODE_MAPS[id];
+  return pool[Math.floor(Math.random() * pool.length)];
+}

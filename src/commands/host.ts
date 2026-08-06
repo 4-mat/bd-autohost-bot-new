@@ -15,7 +15,12 @@ import {
 } from "../game/state.js";
 import { classes, weapons, loadGameData } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
-import { GAMEMODE_MAPS, modeIdFor, recommendedMaps } from "../data/gamemodes.js";
+import {
+  GAMEMODE_MAPS,
+  modeIdFor,
+  randomMapForMode,
+  recommendedMaps,
+} from "../data/gamemodes.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
 import type { AbilityData } from "../data/index.js";
@@ -933,17 +938,29 @@ function handleSetMap(room: Room, user: User, args: string) {
 
   const lower = mapName.toLowerCase();
 
+  // %setmap <gamemode> — set a random curated map from that mode's pool
+  // (e.g. %setmap pvp, %setmap 1v1, %setmap 2v2).
+  const modeId = modeIdFor(lower);
+  if (modeId) {
+    let pick = randomMapForMode(lower)!;
+    // Avoid instantly re-setting the same map when the pool has options.
+    if (GAMEMODE_MAPS[modeId].length > 1 && game.mapName) {
+      for (let tries = 0; tries < 4; tries++) {
+        if (getMapByName(pick)?.displayName !== game.mapName) break;
+        pick = randomMapForMode(lower)!;
+      }
+    }
+    const modeDef = getMapByName(pick);
+    if (modeDef) {
+      applyMap(game, modeDef, ` — random ${modeId.toUpperCase()} pick`);
+      return;
+    }
+  }
+
   // Curated map database
   const def = getMapByName(lower);
   if (def) {
-    game.map = def.grid.map((row) => [...row]);
-    game.mapName = def.displayName;
-    repositionEntities(game);
-    broadcastPages(game);
-    send(
-      room.id,
-      `Map set to **${def.displayName}** (${def.rows}x${def.cols}).`,
-    );
+    applyMap(game, def);
     return;
   }
 
@@ -956,22 +973,24 @@ function handleSetMap(room: Room, user: User, args: string) {
     ) {
       return sendPm(user.name, "Usage: %setmap gen [12|16|20].");
     }
+    let grid: Terrain[][];
+    let displayName: string;
     if (size === 16) {
-      game.map = generateMediumMap();
-      game.mapName = "Procedural (16x16)";
+      grid = generateMediumMap();
+      displayName = "Procedural (16x16)";
     } else if (size === 20) {
-      game.map = generateLargeMap();
-      game.mapName = "Procedural (20x20)";
+      grid = generateLargeMap();
+      displayName = "Procedural (20x20)";
     } else {
-      game.map = generateDefaultMap();
-      game.mapName = "Procedural (12x12)";
+      grid = generateDefaultMap();
+      displayName = "Procedural (12x12)";
     }
-    repositionEntities(game);
-    broadcastPages(game);
-    send(
-      room.id,
-      `Map set to **${game.mapName}** (${game.map.length}x${game.map[0].length}).`,
-    );
+    applyMap(game, {
+      grid,
+      displayName,
+      rows: grid.length,
+      cols: grid[0]?.length ?? 0,
+    });
     return;
   }
 
@@ -1234,6 +1253,24 @@ function repositionEntities(game: Game): void {
   for (const e of game.entities) {
     e.pos = findSpawnPosition(game);
   }
+}
+
+// Apply a new map to the game: copy the grid, remember the name, re-place any
+// entities, refresh the pages, and announce it. `note` is appended to the
+// announcement (e.g. " — random PVP pick").
+function applyMap(
+  game: Game,
+  def: { grid: Terrain[][]; displayName: string; rows: number; cols: number },
+  note = "",
+): void {
+  game.map = def.grid.map((row) => [...row]);
+  game.mapName = def.displayName;
+  repositionEntities(game);
+  broadcastPages(game);
+  send(
+    game.room,
+    `Map set to **${def.displayName}** (${def.rows}x${def.cols})${note}.`,
+  );
 }
 
 function findSpawnPosition(game: Game): [number, number] {
