@@ -1106,13 +1106,13 @@ function addLine(type, raw, name) {
     const ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     div.innerHTML = '<small class="time">[' + ts + ']</small> \u2022 <span class="name">' + (name || '') + '</span> ' + raw;
   }
-  else if (type === 'quote') { div.className = 'msg-quote'; div.innerHTML = raw.replace(/\*\*(.+?)\*\*/g, '<b style="color:#00cc00">$1</b>'); }
+  else if (type === 'quote') { div.className = 'msg-quote'; div.innerHTML = raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:#00cc00">$1</b>'); }
   else if (type === 'pm') { div.className = 'msg-pm'; div.textContent = raw; }
   else if (type === 'react') { div.className = 'msg-react'; div.textContent = '\u2606 ' + raw; }
   else if (type === 'gui') { return; }
   else {
     div.className = 'msg-chat';
-    div.innerHTML = raw.replace(/\*\*(.+?)\*\*/g, '<b style="color:#ffcc00">$1</b>');
+    div.innerHTML = raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:#ffcc00">$1</b>');
   }
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
