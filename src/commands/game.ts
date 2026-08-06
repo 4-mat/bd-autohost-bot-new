@@ -17,7 +17,6 @@ import {
   pushSnapshot,
   popSnapshot,
   nextTurn,
-  dealDamage,
   removeEntity,
   checkGameOver,
   calculateLoot,
@@ -44,6 +43,12 @@ import {
   type AttackStep,
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
+import {    normalizeVoteMode,
+    pendingVoterIds,
+    runoffOptions,
+    tallyVotes,
+  voteOptionsFor,
+} from "../data/gamemodes.js";
 
 export function gameCommand(
   room: Room | null,
@@ -93,6 +98,26 @@ export function gameCommand(
     case "choose":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleChoose(game, user, full);
+      break;
+
+    case "vote":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleVote(game, user, full);
+      break;
+
+    case "votestatus":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleVoteStatus(game, user);
+      break;
+
+    case "unvote":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleUnvote(game, user);
+      break;
+
+    case "leave":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleLeave(game, user);
       break;
 
     case "endturn":
@@ -156,6 +181,10 @@ export function gameCommand(
     case "cut":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleCut(game, user, full);
+      break;
+    case "timer":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleTimer(game, user, full);
       break;
 
     case "checkrange":
@@ -537,6 +566,153 @@ function handleChoose(game: Game, user: User, args: string) {
   }
 }
 
+function handleVote(game: Game, user: User, args: string) {
+  if (game.started) return sendPm(user.name, "Game already started.");
+  if (!game.voteOpen) {
+    return sendPm(
+      user.name,
+      "No gamemode vote is open. The host closes signups (%close) to start one.",
+    );
+  }
+
+  // Only joined players may vote — keyed by their entity.
+  const entity = game.entities.find(
+    (e) => !e.isMonster && toId(e.name) === toId(user.name),
+  );
+  if (!entity) {
+    return sendPm(user.name, "You're not in this game. Join first (%join).");
+  }
+
+  const arg = args.trim();
+  const players = game.entities.filter((e) => !e.isMonster);
+  // During a runoff only the tied modes are votable.
+  const options = game.voteRunoff
+    ? runoffOptions(game.voteRunoff)
+    : voteOptionsFor(players.length);
+
+  // Bare %vote: show current status + tallies + available options.
+  if (!arg) {
+    const lines = [buildVoteStatus(game)];
+    const myVote = game.votes[entity.id];
+    if (myVote) lines.push(`You voted: **${myVote}** (use %unvote to withdraw).`);
+    const list = options.map((o) => o.id).join(", ");
+    lines.push(`Vote with %vote <mode>${list ? ` — available: ${list}` : ""}.`);
+    return sendPm(user.name, lines.join("\n"));
+  }
+
+  const mode = normalizeVoteMode(arg);
+  if (!mode || !options.some((o) => o.id === mode)) {
+    const list = options.map((o) => o.id).join(", ");
+    return sendPm(
+      user.name,
+      `"${arg}" is not a valid mode${options.length ? ` for ${players.length} players` : ""}. Available: ${list}`,
+    );
+  }
+
+  // Key by stable entity id — %gento renumbers nums, ids never change.
+  const changed = game.votes[entity.id] !== undefined;
+  const allVotedBefore = Object.keys(game.votes).length >= players.length;
+  game.votes[entity.id] = mode;
+  send(
+    game.room,
+    `${entity.num} (${entity.name}) ${changed ? "changed their vote to" : "voted for"} **${mode}**.`,
+  );
+
+  // Nudge the host only on the transition to everyone-voted (not on re-votes).
+  const allVotedAfter = Object.keys(game.votes).length >= players.length;
+  if (!allVotedBefore && allVotedAfter) {
+    send(
+      game.room,
+      `**All ${players.length} player(s) have voted!** Host, run %endvote to apply the winning mode.`,
+    );
+  }
+
+  broadcastPages(game);
+}
+
+function handleUnvote(game: Game, user: User) {
+  if (game.started) return sendPm(user.name, "Game already started.");
+  if (!game.voteOpen) {
+    return sendPm(user.name, "No gamemode vote is open right now.");
+  }
+
+  const entity = game.entities.find(
+    (e) => !e.isMonster && toId(e.name) === toId(user.name),
+  );
+  if (!entity) {
+    return sendPm(user.name, "You're not in this game. Join first (%join).");
+  }
+
+  if (game.votes[entity.id] === undefined) {
+    return sendPm(user.name, "You haven't voted yet.");
+  }
+
+  delete game.votes[entity.id];
+  send(game.room, `${entity.num} (${entity.name}) withdrew their vote.`);
+  broadcastPages(game);
+}
+
+/**
+ * %leave — a player leaves the game they're in: removes their entity, drops
+ * them from the turn order, and withdraws any vote they cast. The host must
+ * use %dehost instead.
+ */
+function handleLeave(game: Game, user: User) {
+  if (toId(user.name) === toId(game.host)) {
+    return sendPm(
+      user.name,
+      "You're the host — use %dehost to close the game.",
+    );
+  }
+  const entity = game.entities.find(
+    (e) => !e.isMonster && toId(e.name) === toId(user.name),
+  );
+  if (!entity) {
+    return sendPm(user.name, "You're not in this game. Join first (%join).");
+  }
+  removeEntity(game, entity);
+  send(game.room, `**${entity.num} (${entity.name})** has left the game.`);
+  broadcastPages(game);
+}
+
+// Chat status line for the open gamemode vote: tallies + the requester's vote.
+function buildVoteStatus(game: Game): string {
+  const players = game.entities.filter((e) => !e.isMonster);
+  const tally = tallyVotes(game.votes);
+  const summary =
+    tally.length > 0
+      ? tally.map((t) => `${t.mode}: ${t.count}`).join(" | ")
+      : "no votes yet";
+  const runoff = game.voteRunoff
+    ? ` (RUNOFF: only **${game.voteRunoff.join(" / ")}** count)`
+    : "";
+  const pending = pendingVoterIds(
+    game.votes,
+    players.map((p) => p.id),
+  );
+  const pendingNames = pending
+    .map((id) => players.find((p) => p.id === id)?.name ?? id)
+    .join(", ");
+  const pendingPart = pending.length
+    ? ` | not voted: ${pendingNames}`
+    : " | everyone has voted!";
+  return `**Gamemode vote** (${Object.keys(game.votes).length}/${players.length} voted): ${summary}.${runoff}${pendingPart}`;
+}
+
+/**
+ * %votestatus — anyone can check the live tally, runoff state, and who still
+ * hasn't voted, without casting a vote themselves.
+ */
+function handleVoteStatus(game: Game, user: User) {
+  if (!game.voteOpen) {
+    return sendPm(
+      user.name,
+      "No gamemode vote is open. The host closes signups (%close) to start one.",
+    );
+  }
+  sendPm(user.name, buildVoteStatus(game));
+}
+
 function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
@@ -892,6 +1068,7 @@ function handleInfo(game: Game, user: User, args: string) {
       `Host: ${game.host} | Map: ${game.mapName || "(none)"}`,
       `Players: ${game.entities.length} | Round: ${game.round}`,
     ];
+    if (game.voteOpen) lines.push(buildVoteStatus(game));
     if (game.turnOrder.length > 0) {
       const cur = getCurrentEntity(game);
       if (cur) lines.push(`Current turn: ${cur.num} (${cur.name})`);
@@ -975,59 +1152,84 @@ function handleHp(game: Game, user: User, args: string) {
   broadcastPages(game);
 }
 
+// Active shot-clock timers. %cut puts one on a player, %timer starts a global
+// countdown; the test-app server ticks the countdown and announces expiry.
+const DEFAULT_TIMER_SECONDS = 120;
+
+// %cut 1 -> P1, %cut 2 -> M2, etc.: match an entity by bare digits.
+// When digits are ambiguous (P2 vs M2), prefer the player entity.
+function resolveEntityRef(game: Game, ref: string): Entity | null {
+  const direct = getEntity(game, ref);
+  if (direct) return direct;
+  const digits = ref.replace(/[^0-9]/g, "");
+  if (!digits) return null;
+  return (
+    game.entities.find(
+      (e) => !e.isMonster && e.num.replace(/[^0-9]/g, "") === digits,
+    ) ??
+    game.entities.find((e) => e.num.replace(/[^0-9]/g, "") === digits) ??
+    null
+  );
+}
+
+function setGameTimer(game: Game, entity: Entity | null, seconds: number) {
+  game.timer = {
+    entity: entity?.num ?? null,
+    endAt: Date.now() + seconds * 1000,
+  };
+  send(
+    game.room,
+    `**Timer: ${entity ? `${entity.num} (${entity.name}) — ${seconds}s` : `${seconds}s`}.** %cut off / %timer off to cancel.`,
+  );
+  broadcastPages(game);
+}
+
 function handleCut(game: Game, user: User, args: string) {
-  // %cut <damage>, [entity] -- host deals raw damage
+  // %cut <player> [seconds] — shot clock on a player (default 120s); %cut off cancels
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %cut.");
   }
-
   const parts = args.split(",").map((s) => s.trim());
-  let entity: Entity | null = null;
-  let damage: number;
-
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    // %cut 10, P1
-    damage = parseInt(parts[0]);
-    entity = getEntity(game, parts[1]);
-  } else if (parts.length === 1) {
-    // %cut 10 (current entity)
-    damage = parseInt(parts[0]);
-    entity = getCurrentEntity(game);
-  } else {
-    return sendPm(user.name, "Usage: %cut <damage>, [entity]");
+  const ref = parts[0];
+  if (toId(ref ?? "") === "off") {
+    game.timer = null;
+    send(game.room, "**Timer cancelled.**");
+    broadcastPages(game);
+    return;
   }
-
-  if (!entity) return sendPm(user.name, "No active entity.");
-  if (isNaN(damage) || damage < 0)
-    return sendPm(user.name, "Invalid damage amount.");
-
-  pushSnapshot(game);
-  const dmgResult = dealDamage(entity, damage);
-
-  send(
-    game.room,
-    `${entity.num} takes **${damage}** damage -> ${entity.curhp}/${entity.maxhp} HP`,
-  );
-
-  if (dmgResult.shieldAbsorbed > 0) {
-    send(
-      game.room,
-      `**Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+  const entity = ref ? resolveEntityRef(game, ref) : getCurrentEntity(game);
+  if (!entity) {
+    return sendPm(
+      user.name,
+      ref ? `Unknown entity: ${ref}` : "No active entity.",
     );
   }
+  const seconds = parseInt(parts[1] ?? "");
+  const secs = isNaN(seconds) || seconds <= 0 ? DEFAULT_TIMER_SECONDS : seconds;
+  setGameTimer(game, entity, secs);
+}
 
-  if (entity.curhp <= 0) {
-    removeEntity(game, entity);
-    send(game.room, `**${entity.num} (${entity.name}) has been defeated!**`);
-
-    const winner = checkGameOver(game);
-    if (game.phase === "ended") {
-      announceGameOver(game, winner);
-      return;
-    }
+function handleTimer(game: Game, user: User, args: string) {
+  // %timer [X] — global countdown of X seconds (default 120s); %timer off cancels
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %timer.");
   }
-
-  broadcastPages(game);
+  const arg = args.trim();
+  if (toId(arg) === "off") {
+    game.timer = null;
+    send(game.room, "**Timer cancelled.**");
+    broadcastPages(game);
+    return;
+  }
+  if (!arg) {
+    setGameTimer(game, null, DEFAULT_TIMER_SECONDS);
+    return;
+  }
+  const seconds = parseInt(arg);
+  if (isNaN(seconds) || seconds <= 0) {
+    return sendPm(user.name, "Usage: %timer <seconds> (e.g. %timer 60)");
+  }
+  setGameTimer(game, null, seconds);
 }
 
 function handleCheckRange(game: Game, user: User, args: string) {

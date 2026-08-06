@@ -8,18 +8,32 @@ import {
   type WeaponData,
 } from "../data/index.js";
 import { WhatIs, Reference } from "../data/index.js";
+import { modeDescription, describeModes } from "../data/gamemodes.js";
 
 export function infoCommand(user: User, cmd: string, args: string) {
   const target = user.name;
 
   if (cmd === "wt") {
     const id = toId(args);
-    if (!id) return sendPm(target, "Usage: %wt [ability/item/status/tile]");
+    if (!id) return sendPm(target, "Usage: %wt [ability/item/status/tile/mode]");
+
+    // List every game mode (the doc's "/rfaq modes").
+    if (id === "modes" || id === "gamemodes") {
+      sendPm(target, describeModes());
+      return;
+    }
 
     // Check WhatIs database
     const entry = WhatIs.get(id);
     if (entry) {
       sendPm(target, entry);
+      return;
+    }
+
+    // Single mode lookup (e.g. %wt pvpj, %wt ntr).
+    const mode = modeDescription(args);
+    if (mode) {
+      sendPm(target, mode);
       return;
     }
 
