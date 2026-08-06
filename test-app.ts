@@ -226,8 +226,17 @@ function buildSigninPage(game: Game): string {
     ? `<button name="join" style="${BTN_STYLE}">Join</button>`
     : `<button name="join" disabled style="${BTN_STYLE}">Join (signups closed)</button>`;
 
+  const signedIn = game.entities
+    .filter((e) => !e.isMonster)
+    .map(
+      (e) =>
+        `${escHtml(e.num)} ${escHtml(e.name)} (${escHtml(e.className)}/${escHtml(e.weaponName)})`,
+    )
+    .join(", ");
+
   return `<div style="padding:12px;background:#16213e;border:1px solid #333;border-radius:4px">
-<b style="color:#00aaff">Battle Sign-up</b> <span style="color:#888">(signups: ${status})</span><br><br>
+<b style="color:#00aaff">Battle Sign-up</b> <span style="color:#888">(signups: ${status})</span><br>
+<span style="color:#888">Signed in:</span> ${signedIn || `<span style="color:#888">none yet</span>`}<br><br>
 Class:<br>
 <select id="signin-class" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${classOpts}</select><br><br>
 Weapon:<br>
@@ -1237,6 +1246,18 @@ guiContent.addEventListener('click', (e) => {
     const wpn = document.getElementById('signin-weapon');
     if (cls && wpn) {
       ws.send(JSON.stringify({ type: 'chat', text: '%join ' + cls.value + ', ' + wpn.value }));
+    }
+    return;
+  }
+  const loadout = e.target.closest('button[name="loadout"]');
+  if (loadout) {
+    e.preventDefault();
+    const num = loadout.getAttribute('data-num');
+    const cls = document.getElementById('loadout-class');
+    const wpn = document.getElementById('loadout-weapon');
+    if (num && cls && wpn) {
+      ws.send(JSON.stringify({ type: 'chat', text: '%sc ' + num + ', ' + cls.value }));
+      ws.send(JSON.stringify({ type: 'chat', text: '%sw ' + num + ', ' + wpn.value }));
     }
     return;
   }

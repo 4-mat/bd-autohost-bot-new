@@ -87,8 +87,8 @@ All game setup commands, routed by `hostCommand()`:
 | `%addp`              | `handleAddPlayer`    | Creates an `Entity` from a class + weapon + team, assigned a spawn position                                                              |
 | `%addm`              | `handleAddMonster`   | Creates a monster entity with raw stats                                                                                                  |
 | `%remp`              | `handleRemPlayer`    | Removes an entity                                                                                                                        |
-| `%sc`                | `handleSwitchClass`  | Changes an entity's class mid-game, recalculates stats + abilities                                                                       |
-| `%sw`                | `handleSwitchWeapon` | Changes an entity's weapon, recalculates stats + abilities                                                                               |
+| `%sc`                | `handleSwitchClass`  | Changes an entity's class, recalculates stats + abilities; host any time, players may change their own until the game starts             |
+| `%sw`                | `handleSwitchWeapon` | Changes an entity's weapon, recalculates stats + abilities; host any time, players may change their own until the game starts             |
 | `%setlevel` / `%sl`  | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level                                                                                 |
 | `%setteam`           | `handleSetTeam`      | Changes an entity's team number                                                                                                          |
 | `%setmap`            | `handleSetMap`       | Sets a curated map by name, a random map from a gamemode pool (`%setmap pvp`), or `%setmap gen` for a procedural map (host starts with no map; %start requires one)                                                                             |
