@@ -256,6 +256,7 @@ function handleHost(room: Room, user: User) {
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    timer: null,
   };
 
   games.set(id, game);

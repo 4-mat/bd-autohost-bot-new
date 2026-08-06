@@ -17,7 +17,6 @@ import {
   pushSnapshot,
   popSnapshot,
   nextTurn,
-  dealDamage,
   removeEntity,
   checkGameOver,
   calculateLoot,
@@ -182,6 +181,10 @@ export function gameCommand(
     case "cut":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleCut(game, user, full);
+      break;
+    case "timer":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleTimer(game, user, full);
       break;
 
     case "checkrange":
@@ -1149,59 +1152,84 @@ function handleHp(game: Game, user: User, args: string) {
   broadcastPages(game);
 }
 
+// Active shot-clock timers. %cut puts one on a player, %timer starts a global
+// countdown; the test-app server ticks the countdown and announces expiry.
+const DEFAULT_TIMER_SECONDS = 120;
+
+// %cut 1 -> P1, %cut 2 -> M2, etc.: match an entity by bare digits.
+// When digits are ambiguous (P2 vs M2), prefer the player entity.
+function resolveEntityRef(game: Game, ref: string): Entity | null {
+  const direct = getEntity(game, ref);
+  if (direct) return direct;
+  const digits = ref.replace(/[^0-9]/g, "");
+  if (!digits) return null;
+  return (
+    game.entities.find(
+      (e) => !e.isMonster && e.num.replace(/[^0-9]/g, "") === digits,
+    ) ??
+    game.entities.find((e) => e.num.replace(/[^0-9]/g, "") === digits) ??
+    null
+  );
+}
+
+function setGameTimer(game: Game, entity: Entity | null, seconds: number) {
+  game.timer = {
+    entity: entity?.num ?? null,
+    endAt: Date.now() + seconds * 1000,
+  };
+  send(
+    game.room,
+    `**Timer: ${entity ? `${entity.num} (${entity.name}) — ${seconds}s` : `${seconds}s`}.** %cut off / %timer off to cancel.`,
+  );
+  broadcastPages(game);
+}
+
 function handleCut(game: Game, user: User, args: string) {
-  // %cut <damage>, [entity] -- host deals raw damage
+  // %cut <player> [seconds] — shot clock on a player (default 120s); %cut off cancels
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %cut.");
   }
-
   const parts = args.split(",").map((s) => s.trim());
-  let entity: Entity | null = null;
-  let damage: number;
-
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    // %cut 10, P1
-    damage = parseInt(parts[0]);
-    entity = getEntity(game, parts[1]);
-  } else if (parts.length === 1) {
-    // %cut 10 (current entity)
-    damage = parseInt(parts[0]);
-    entity = getCurrentEntity(game);
-  } else {
-    return sendPm(user.name, "Usage: %cut <damage>, [entity]");
+  const ref = parts[0];
+  if (toId(ref ?? "") === "off") {
+    game.timer = null;
+    send(game.room, "**Timer cancelled.**");
+    broadcastPages(game);
+    return;
   }
-
-  if (!entity) return sendPm(user.name, "No active entity.");
-  if (isNaN(damage) || damage < 0)
-    return sendPm(user.name, "Invalid damage amount.");
-
-  pushSnapshot(game);
-  const dmgResult = dealDamage(entity, damage);
-
-  send(
-    game.room,
-    `${entity.num} takes **${damage}** damage -> ${entity.curhp}/${entity.maxhp} HP`,
-  );
-
-  if (dmgResult.shieldAbsorbed > 0) {
-    send(
-      game.room,
-      `**Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+  const entity = ref ? resolveEntityRef(game, ref) : getCurrentEntity(game);
+  if (!entity) {
+    return sendPm(
+      user.name,
+      ref ? `Unknown entity: ${ref}` : "No active entity.",
     );
   }
+  const seconds = parseInt(parts[1] ?? "");
+  const secs = isNaN(seconds) || seconds <= 0 ? DEFAULT_TIMER_SECONDS : seconds;
+  setGameTimer(game, entity, secs);
+}
 
-  if (entity.curhp <= 0) {
-    removeEntity(game, entity);
-    send(game.room, `**${entity.num} (${entity.name}) has been defeated!**`);
-
-    const winner = checkGameOver(game);
-    if (game.phase === "ended") {
-      announceGameOver(game, winner);
-      return;
-    }
+function handleTimer(game: Game, user: User, args: string) {
+  // %timer [X] — global countdown of X seconds (default 120s); %timer off cancels
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %timer.");
   }
-
-  broadcastPages(game);
+  const arg = args.trim();
+  if (toId(arg) === "off") {
+    game.timer = null;
+    send(game.room, "**Timer cancelled.**");
+    broadcastPages(game);
+    return;
+  }
+  if (!arg) {
+    setGameTimer(game, null, DEFAULT_TIMER_SECONDS);
+    return;
+  }
+  const seconds = parseInt(arg);
+  if (isNaN(seconds) || seconds <= 0) {
+    return sendPm(user.name, "Usage: %timer <seconds> (e.g. %timer 60)");
+  }
+  setGameTimer(game, null, seconds);
 }
 
 function handleCheckRange(game: Game, user: User, args: string) {

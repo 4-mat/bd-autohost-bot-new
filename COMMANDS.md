@@ -11,7 +11,7 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%readmail`                         | Shows the first message in your inbox.                                                                                  |
 | `%rename [old name], [new name]`    | Renames a user. Staff only.                                                                                             |
 | `%regp [player], [class], [weapon]` | Registers a player. Voice and up only.                                                                                  |
-| `%timer [X]`                        | Starts a timer counting down X seconds.                                                                                 |
+| `%timer [X]`                        | (Host) global countdown of X seconds (default 120). `%timer off` cancels.                                                |
 | `%stop`                             | Stop a started timer.                                                                                                   |
 | `%modchat [+/ac/off]`               | Turn on (or off) modchat with the specified settings. Staff only.                                                       |
 | `%host [user]`                      | Gives the specified user hosting powers. Voices and up only. Approved hosts can use this command on themselves.         |
@@ -104,7 +104,7 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | ------------------------- | ------------------------------------- |
 | `%r [XdY+Z]`              | Roll dice.                            |
 | `%hp [entity], [amount]`  | Host manually adjusts HP.             |
-| `%cut [entity], [damage]` | Host deals raw damage.                |
+| `%cut [entity], [seconds]` | (Host) shot clock on a player (default 120s). `%cut off` cancels. |
 | `%cr [from], [to]`        | Check distance between two positions. |
 
 ### Reference Commands

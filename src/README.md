@@ -138,7 +138,8 @@ In-play actions routed by `gameCommand()`:
 | `%pl`                    | inline              | Player list via PM                                                                                   |
 | `%to`                    | inline              | Turn order via PM                                                                                    |
 | `%hp`                    | `handleHp`          | (Host) manually adjust HP                                                                            |
-| `%cut`                   | `handleCut`         | (Host) deal raw damage through shield                                                                |
+| `%cut`                   | `handleCut`         | (Host) shot clock on a player; `%cut off` cancels                                                    |
+| `%timer`                 | `handleTimer`       | (Host) global countdown; `%timer off` cancels                                                         |
 | `%cr` / `%checkrange`    | `handleCheckRange`  | Manhattan distance between two positions/entities                                                    |
 | `%status`                | `handleStatus`      | (Host) add/remove/list status effects                                                                |
 | `%regp`                  | `handleRegp`        | (Host) reassign an entity to a PS user                                                               |
