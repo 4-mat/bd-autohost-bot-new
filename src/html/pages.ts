@@ -87,13 +87,12 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
     html += '<span style="color:#888"><i>No valid modes for this lobby size (modes are defined for up to 8 players).</i></span>';
   }
 
-  for (const opt of options) {
-    const count = tally.get(opt.id) ?? 0;
-    const mine = entity !== null && game.votes[entity.id] === opt.id;
-    const suffix = count > 0 ? ` (${count})` : "";
-
-    if (entity !== null) {
-      // Player view: clickable vote button (tooltip explains the mode).
+  if (entity !== null) {
+    // Player view: clickable vote button (tooltip explains the mode).
+    for (const opt of options) {
+      const count = tally.get(opt.id) ?? 0;
+      const mine = game.votes[entity.id] === opt.id;
+      const suffix = count > 0 ? ` (${count})` : "";
       const style = mine
         ? "background:#a0c;color:#fff;border-color:#a0c;font-weight:bold;"
         : "";
@@ -103,23 +102,33 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
         style,
         opt.description,
       );
-    } else {
-      // Host view: per-mode tally with voter names + a one-line description.
-      const voters = game.entities
-        .filter((e) => !e.isMonster && game.votes[e.id] === opt.id)
-        .map((e) => e.num);
-      html += `<div style="margin:2px 0"><b>${esc(opt.label)}</b>: ${count}${voters.length ? ` (${esc(voters.join(", "))})` : ""}<br><span style="color:#888;font-size:10px">${esc(opt.description)}</span></div>`;
     }
-  }
 
-  if (entity !== null) {
     // Player view: show their current vote and let them retract it.
     const myVote = game.votes[entity.id];
     if (myVote) {
       html += `<div style="margin-top:4px;color:#a0c"><b>Your vote:</b> ${esc(myVote)} ${btn("%unvote", "Unvote")}</div>`;
     }
   } else {
-    html += `<div style="margin-top:6px">${btn("%endvote", "End Vote & Apply Winner")}</div>`;
+    // Host view: per-mode tally summary.
+    const tallySummary =
+      tally.size > 0
+        ? [...tally.entries()].map(([m, c]) => `${esc(m)}: ${c}`).join(" &nbsp;|")
+        : "no votes yet";
+    html += `<div style="margin:4px 0"><b>Tally:</b> ${tallySummary}</div>`;
+
+    // Host view: a table of every player and their vote status.
+    html += `<table style="border-collapse:collapse;margin:4px 0"><tr style="height:20px"><th style="padding:0px 8px;text-align:left">Player</th><th style="padding:0px 8px;text-align:left">Vote</th></tr>`;
+    for (const p of players) {
+      const v = game.votes[p.id];
+      const voteCell = v
+        ? `<span style="color:#0c0">&#10003; ${esc(v)}</span>`
+        : `<span style="color:#c33">&#10007; not voted</span>`;
+      html += `<tr style="height:20px"><td style="padding:0px 8px"><b>${esc(p.num)}</b> ${esc(p.name)}</td><td style="padding:0px 8px">${voteCell}</td></tr>`;
+    }
+    html += `</table>`;
+
+    html += `<div style="margin-top:6px">${btn("%endvote", "End Vote & Apply Winner")} ${btn("%nudge", "Nudge Unvoted")}</div>`;
   }
   html += "</div>";
   return html;
@@ -514,10 +523,7 @@ function buildControls(game: Game): string {
   ${btn("%next", "Next Turn")}
   ${btn("%back", "Undo")}
   <span style="color:#888;margin:0 4px">|</span>
-  ${btn("%r 1d20", "1d20")}
-  ${btn("%r 2d8+5", "2d8+5")}
-  ${btn("%r 1d10+2", "1d10+2")}
-  ${btn("%r 2d6+0", "2d6")}
+  ${btn("%r 1d20", "d20")}
 </div>`;
 }
 
