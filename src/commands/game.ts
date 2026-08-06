@@ -562,7 +562,6 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
         `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
       );
     }
-
     return;
   }
 

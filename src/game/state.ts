@@ -179,6 +179,7 @@ export interface Entity {
   triggered?: boolean;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
+  pendingPrompt?: AttackPrompt;
 }
 
 export interface PendingAction {
