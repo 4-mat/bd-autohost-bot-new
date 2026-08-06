@@ -1177,21 +1177,23 @@ function addLine(type, raw, name) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return;
   }
+  const now = new Date();
+  const ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  const timeTag = '<small class="time">[' + ts + ']</small> ';
+  const timeText = '[' + ts + '] ';
   const div = document.createElement('div');
-  if (type === 'system') { div.className = 'msg-system'; div.textContent = raw; }
+  if (type === 'system') { div.className = 'msg-system'; div.textContent = timeText + raw; }
   else if (type === 'action') {
     div.className = 'msg-action';
-    const now = new Date();
-    const ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-    div.innerHTML = '<small class="time">[' + ts + ']</small> \u2022 <span class="name">' + (name || '') + '</span> ' + raw;
+    div.innerHTML = timeTag + ' \u2022 <span class="name">' + (name || '') + '</span> ' + raw;
   }
-  else if (type === 'quote') { div.className = 'msg-quote'; div.innerHTML = raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:#00cc00">$1</b>'); }
-  else if (type === 'pm') { div.className = 'msg-pm'; div.textContent = raw; }
-  else if (type === 'react') { div.className = 'msg-react'; div.textContent = '\u2606 ' + raw; }
+  else if (type === 'quote') { div.className = 'msg-quote'; div.innerHTML = timeTag + raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:#00cc00">$1</b>'); }
+  else if (type === 'pm') { div.className = 'msg-pm'; div.textContent = timeText + raw; }
+  else if (type === 'react') { div.className = 'msg-react'; div.textContent = timeText + '\u2606 ' + raw; }
   else if (type === 'gui') { return; }
   else {
     div.className = 'msg-chat';
-    div.innerHTML = raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:#ffcc00">$1</b>');
+    div.innerHTML = timeTag + raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:#ffcc00">$1</b>');
   }
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;

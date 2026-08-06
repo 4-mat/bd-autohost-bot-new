@@ -147,8 +147,9 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   }
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
-  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})
-  <hr>${stats}${pl}${map}<hr>${phase}${actions}
+  ${map}${pl}
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
+  <hr>${phase}${actions}
   ${buildToasts(game)}
 </div>`;
 }
