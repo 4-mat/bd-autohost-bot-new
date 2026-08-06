@@ -398,6 +398,12 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     for (const msg of step.result.messages) {
       send(game.room, msg);
     }
+    game.log.push({
+      turn: game.round,
+      entity: entity.num,
+      description: summarizeResult(game, entity, step.result.messages),
+      snapshot: "",
+    });
     entity.pendingAction = null;
     send(game.room, `**${ability.name}** resolved. Use %back to undo.`);
     broadcastPages(game);

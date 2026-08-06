@@ -244,6 +244,7 @@ function serializeState(game: Game): string {
     })),
     turnIndex: game.turnIndex,
     round: game.round,
+    log: game.log,
   });
 }
 
@@ -275,6 +276,7 @@ export function popSnapshot(game: Game): boolean {
   }
   game.turnIndex = data.turnIndex;
   game.round = data.round;
+  if (data.log) game.log = data.log;
   return true;
 }
 
@@ -948,18 +950,12 @@ export function dealDamage(
   return { actual, shieldAbsorbed, shieldBreaks };
 }
 
-// Damage statuses deal damage before entity's turn
+// Damage statuses deal damage just before the affected entity's turn
 export function processStartOfTurn(
   game: Game,
   entity: Entity,
 ): { messages: string[]; died: boolean } {
   const messages: string[] = [];
-
-  // Tick cooldowns
-  for (const [name, turns] of Object.entries(entity.cooldowns)) {
-    entity.cooldowns[name] = turns - 1;
-    if (entity.cooldowns[name] <= 0) delete entity.cooldowns[name];
-  }
 
   // Apply status damage (DoT)
   for (const status of [...entity.statuses]) {
@@ -969,21 +965,6 @@ export function processStartOfTurn(
         `  ${entity.num} takes **${status.damage}** ${status.name} damage (${entity.curhp}/${entity.maxhp} HP).`,
       );
     }
-    // Tick status duration
-    status.rounds--;
-    if (status.rounds <= 0) {
-      messages.push(`  ${entity.num}'s ${status.name} wore off.`);
-      entity.statuses = entity.statuses.filter((s) => s !== status);
-    }
-  }
-
-  // Lava damage
-  const terrain = game.map[entity.pos[0]]?.[entity.pos[1]];
-  if (terrain === Terrain.Lava) {
-    dealDamage(entity, 30);
-    messages.push(
-      `  ${entity.num} takes **30** lava damage (${entity.curhp}/${entity.maxhp} HP).`,
-    );
   }
 
   // Announce status restrictions
@@ -998,6 +979,46 @@ export function processStartOfTurn(
   }
   if (isSealed(entity)) {
     messages.push(`  **${entity.num} is sealed and cannot use abilities!**`);
+  }
+
+  const died = entity.curhp <= 0;
+  if (died) {
+    messages.push(`  **${entity.num} (${entity.name}) has been defeated!**`);
+    removeEntity(game, entity);
+  }
+
+  return { messages, died };
+}
+
+// Cooldowns, status durations, and lava resolve at the end of the entity's turn
+export function processEndOfTurn(
+  game: Game,
+  entity: Entity,
+): { messages: string[]; died: boolean } {
+  const messages: string[] = [];
+
+  // Tick cooldowns
+  for (const [name, turns] of Object.entries(entity.cooldowns)) {
+    entity.cooldowns[name] = turns - 1;
+    if (entity.cooldowns[name] <= 0) delete entity.cooldowns[name];
+  }
+
+  // Tick status durations
+  for (const status of [...entity.statuses]) {
+    status.rounds--;
+    if (status.rounds <= 0) {
+      messages.push(`  ${entity.num}'s ${status.name} wore off.`);
+      entity.statuses = entity.statuses.filter((s) => s !== status);
+    }
+  }
+
+  // Lava damage
+  const terrain = game.map[entity.pos[0]]?.[entity.pos[1]];
+  if (terrain === Terrain.Lava) {
+    dealDamage(entity, 30);
+    messages.push(
+      `  ${entity.num} takes **30** lava damage (${entity.curhp}/${entity.maxhp} HP).`,
+    );
   }
 
   const died = entity.curhp <= 0;
@@ -1114,6 +1135,7 @@ export function nextTurn(game: Game): {
   // Tick buffs of the entity whose turn is ending
   const messages: string[] = [];
   const prev = getCurrentEntity(game);
+  const prevIndex = game.turnIndex;
   if (prev) {
     prev.buffs = prev.buffs.filter((b) => {
       b.rounds--;
@@ -1133,8 +1155,20 @@ export function nextTurn(game: Game): {
     game.round++;
   }
 
+  // Resolve end-of-turn effects for the entity whose turn just ended
+  let died = false;
+  if (prev) {
+    const end = processEndOfTurn(game, prev);
+    messages.push(...end.messages);
+    died = end.died;
+    if (end.died) {
+      // prev was removed from turnOrder; keep the pointer on the next entity
+      game.turnIndex = prevIndex >= game.turnOrder.length ? 0 : prevIndex;
+    }
+  }
+
   const entity = getCurrentEntity(game);
-  if (!entity) return { entity: null, messages, died: false };
+  if (!entity) return { entity: null, messages, died };
 
   // Reset per-turn flags
   entity.dashUsed = false;
@@ -1144,6 +1178,13 @@ export function nextTurn(game: Game): {
   entity.triggered = false;
   entity.pendingAction = null;
 
-  const { messages: startMessages, died } = processStartOfTurn(game, entity);
-  return { entity, messages: [...messages, ...startMessages], died };
+  const { messages: startMessages, died: startDied } = processStartOfTurn(
+    game,
+    entity,
+  );
+  return {
+    entity,
+    messages: [...messages, ...startMessages],
+    died: died || startDied,
+  };
 }

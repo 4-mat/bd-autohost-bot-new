@@ -87,7 +87,17 @@ const userGui = new Map<
   }
 >();
 
+const MAX_LOG = 100;
+const CHAT_LOG: Array<Record<string, string>> = [];
+
 function broadcast(msg: string) {
+  try {
+    const m = JSON.parse(msg);
+    if (["chat", "action", "quote", "react"].includes(m.type)) {
+      CHAT_LOG.push(m);
+      if (CHAT_LOG.length > MAX_LOG) CHAT_LOG.shift();
+    }
+  } catch {}
   for (const client of browserClients) {
     if (client.readyState === WebSocket.OPEN) {
       client.send(msg);
@@ -477,6 +487,7 @@ wss.on("connection", (ws) => {
     });
   }
 
+  ws.send(JSON.stringify({ type: "history", lines: CHAT_LOG.slice() }));
   broadcast(
     JSON.stringify({
       type: "system",
@@ -877,6 +888,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   #send-btn { background: #00aaff; color: #fff; border: none; padding: 5px 14px; font-family: inherit; font-size: 12px; border-radius: 3px; cursor: pointer; }
   #send-btn:hover { background: #0088cc; }
   .msg-system { color: #8888aa; font-style: italic; }
+  .msg-divider { border-top: 1px solid #555; margin: 6px 0; }
   .msg-chat { color: #e0e0e0; }
   .msg-chat .name { color: #ffcc00; font-weight: bold; }
   .msg-pm { color: #cccc00; }
@@ -1098,6 +1110,13 @@ window.addEventListener('resize', () => {
 });
 
 function addLine(type, raw, name) {
+  if (type === 'divider') {
+    const hr = document.createElement('div');
+    hr.className = 'msg-divider';
+    chatMessages.appendChild(hr);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return;
+  }
   const div = document.createElement('div');
   if (type === 'system') { div.className = 'msg-system'; div.textContent = raw; }
   else if (type === 'action') {
@@ -1129,6 +1148,14 @@ guiContent.addEventListener('click', (e) => {
 function createTabs(tabs) {
   const previousTab = activeTab;
 
+  function activateTab(tab, fromUser) {
+    document.querySelectorAll(".gui-tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
+    activeTab = tab;
+    guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
+    if (isMobile() && mobileView === 'chat' && fromUser) setView('game');
+  }
+
   function makeButton(tab) {
     guiPages[tab] ??= "";
     const button = document.createElement("div");
@@ -1137,13 +1164,7 @@ function createTabs(tabs) {
     const label = tab === "players" ? "Connected users" : isMobile() && tab === "player" ? "Game" : tab.charAt(0).toUpperCase() + tab.slice(1);
     button.textContent = label;
     if (tab === "players") button.style.order = -1;
-    button.onclick = () => {
-      document.querySelectorAll(".gui-tab").forEach(t => t.classList.remove("active"));
-      document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
-      activeTab = tab;
-      guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
-      if (isMobile() && mobileView === 'chat') setView('game');
-    };
+    button.onclick = () => activateTab(tab, true);
     return button;
   }
 
@@ -1164,9 +1185,9 @@ function createTabs(tabs) {
   if (hc) renderTabs(hc);
 
   if (previousTab && tabs.includes(previousTab)) {
-    document.querySelector('.gui-tab[data-role="' + previousTab + '"]')?.click();
+    activateTab(previousTab, false);
   } else if (tabs.length > 0) {
-    document.querySelector('.gui-tab[data-role="' + tabs[0] + '"]')?.click();
+    activateTab(tabs[0], false);
   }
 }
 
@@ -1227,6 +1248,19 @@ function connect() {
   ws.onmessage = (e) => {
   const msg = JSON.parse(e.data);
 
+  if (msg.type === 'history') {
+    if (msg.lines.length > 0) {
+      msg.lines.forEach((line) => {
+        if (line.type === 'chat' || line.type === 'quote') addLine(line.type, line.text);
+        else if (line.type === 'action') addLine('action', line.text, line.name);
+        else if (line.type === 'react') addLine('react', line.user + ' ' + line.emote);
+        else if (line.type === 'join') addLine('system', line.user + ' joined.');
+        else if (line.type === 'leave') addLine('system', line.user + ' left.');
+      });
+      addLine('divider', '');
+    }
+    return;
+  }
   if (msg.type === 'tabs') {
     createTabs(msg.tabs);
     return;
