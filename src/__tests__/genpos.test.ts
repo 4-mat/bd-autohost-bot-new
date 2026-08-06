@@ -74,35 +74,58 @@ describe("genPosSlots", () => {
     expect(genPosSlots(10, 10, 1)).toEqual([[5, 5]]);
   });
 
-  it("places 2 players in opposite corners", () => {
+  it("places 2 players on opposite corners of the perimeter", () => {
     expect(genPosSlots(10, 10, 2)).toEqual([
       [0, 0],
       [9, 9],
     ]);
   });
 
-  it("places 3 players in a balanced triangle (top corners + bottom-center)", () => {
+  it("places 3 players equidistantly around the perimeter", () => {
+    // 36-cell ring: 0 -> top-left, 12 -> (3,9), 24 -> (9,3).
     expect(genPosSlots(10, 10, 3)).toEqual([
       [0, 0],
-      [0, 9],
-      [9, 5],
+      [3, 9],
+      [9, 3],
     ]);
   });
 
   it("places 4 players in all corners", () => {
     expect(genPosSlots(10, 10, 4)).toEqual([
       [0, 0],
-      [9, 9],
       [0, 9],
+      [9, 9],
       [9, 0],
     ]);
   });
 
-  it("places 5 players in corners plus center", () => {
-    const slots = genPosSlots(10, 10, 5);
-    expect(slots).toHaveLength(5);
-    expect(slots[4]).toEqual([5, 5]);
-    expect(new Set(slots.map(([r, c]) => `${r},${c}`)).size).toBe(5);
+  it("keeps every player on the perimeter for larger lobbies", () => {
+    // Mirror of perimeterRing() in host.ts: ordered ring starting top-left.
+    const ring: string[] = [];
+    for (let c = 0; c <= 9; c++) ring.push(`0,${c}`);
+    for (let r = 1; r < 9; r++) ring.push(`${r},9`);
+    for (let c = 9; c >= 0; c--) ring.push(`9,${c}`);
+    for (let r = 8; r > 0; r--) ring.push(`${r},0`);
+
+    for (const n of [2, 3, 4, 5, 6, 7, 8, 9]) {
+      const slots = genPosSlots(10, 10, n);
+      expect(slots).toHaveLength(n);
+      // Distinct positions.
+      expect(new Set(slots.map(([r, c]) => `${r},${c}`)).size).toBe(n);
+      // All on the perimeter ring.
+      for (const [r, c] of slots) {
+        expect(ring.includes(`${r},${c}`)).toBe(true);
+      }
+      // Roughly equidistant: adjacent players are at least total/n - 2 apart
+      // along the ring (allow rounding slack).
+      const idxs = slots.map(([r, c]) => ring.indexOf(`${r},${c}`));
+      const sorted = [...idxs].sort((a, b) => a - b);
+      const gaps = [];
+      for (let i = 1; i < sorted.length; i++) gaps.push(sorted[i] - sorted[i - 1]);
+      gaps.push(ring.length - sorted[sorted.length - 1] + sorted[0]);
+      const minGap = Math.min(...gaps);
+      expect(minGap).toBeGreaterThanOrEqual(Math.floor(ring.length / n) - 2);
+    }
   });
 });
 

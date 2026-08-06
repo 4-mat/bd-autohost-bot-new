@@ -12,6 +12,7 @@ import {
   type Game,
   type Entity,
   Terrain,
+  isStandable,
 } from "../game/state.js";
 import { classes, weapons, loadGameData } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
@@ -736,43 +737,56 @@ export function placePlayers(
   return out;
 }
 
+// Build the perimeter ring of a map as an ordered list of [row, col] anchors,
+// starting at the top-left corner and walking clockwise. Corner cells appear
+// once; degenerate 1-row/1-col maps are deduped so no cell repeats. Used to
+// place FFA players equidistantly around the map edge.
+function perimeterRing(rows: number, cols: number): [number, number][] {
+  const bottom = Math.max(0, rows - 1);
+  const right = Math.max(0, cols - 1);
+  const ring: [number, number][] = [];
+  const seen = new Set<string>();
+  const push = (r: number, c: number) => {
+    const key = `${r},${c}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    ring.push([r, c]);
+  };
+  for (let c = 0; c <= right; c++) push(0, c); // top edge
+  for (let r = 1; r <= bottom; r++) push(r, right); // right edge
+  for (let c = right - 1; c >= 0; c--) push(bottom, c); // bottom edge (skip corner)
+  for (let r = bottom - 1; r > 0; r--) push(r, 0); // left edge (skip corners)
+  return ring;
+}
+
 export function genPosSlots(
   rows: number,
   cols: number,
   n: number,
 ): [number, number][] {
-  const top = 0;
-  const bottom = Math.max(0, rows - 1);
-  const left = 0;
-  const right = Math.max(0, cols - 1);
   const midR = Math.floor(rows / 2);
   const midC = Math.floor(cols / 2);
-  const corners: [number, number][] = [
-    [top, left],
-    [bottom, right],
-    [top, right],
-    [bottom, left],
-  ];
-  const edges: [number, number][] = [
-    [top, midC],
-    [bottom, midC],
-    [midR, left],
-    [midR, right],
-  ];
-  const center: [number, number] = [midR, midC];
+  if (n === 1) return [[midR, midC]];
 
-  if (n === 1) return [center];
-  if (n === 2) return corners.slice(0, 2);
-  if (n === 3)
-    // Balanced triangle: top corners + bottom-center — spreads 3 players
-    // more evenly than three corners (9/13/13 instead of 9/9/18 on 10x10).
-    return [corners[0], corners[2], [bottom, midC]];
-  if (n === 4) return corners;
-  if (n === 5) return [...corners, center];
-  if (n === 6) return [...corners, edges[0], edges[1]];
-  if (n === 7) return [...corners, edges[0], edges[1], center];
-  if (n === 8) return [...corners, ...edges];
-  return [...corners, ...edges, center];
+  // FFA: everyone starts ON the perimeter, spaced as evenly as the ring
+  // allows — adjacent players are always ~perimeter/n apart, so all players
+  // are equidistant from their neighbors around the map edge.
+  const ring = perimeterRing(rows, cols);
+  const total = ring.length;
+  const out: [number, number][] = [];
+  const used = new Set<string>();
+  // Never claim more slots than the ring has cells (degenerate maps).
+  const count = Math.min(n, total);
+  for (let i = 0; i < count; i++) {
+    let idx = Math.round((i * total) / count);
+    // Avoid double-claiming a corner when rounding collides.
+    while (idx >= total || used.has(`${ring[idx][0]},${ring[idx][1]}`)) {
+      idx = (idx + 1) % total;
+    }
+    used.add(`${ring[idx][0]},${ring[idx][1]}`);
+    out.push(ring[idx]);
+  }
+  return out;
 }
 
 /**
@@ -867,7 +881,7 @@ export function findNearestOpenTile(
   while (q.length > 0) {
     const [cr, cc] = q.shift()!;
     if (
-      game.map[cr][cc] === Terrain.Normal &&
+      isStandable(game.map[cr][cc]) &&
       !used.has(`${cr},${cc}`) &&
       !game.entities.some(
         (e) =>
@@ -1837,7 +1851,7 @@ function findSpawnPosition(game: Game): [number, number] {
         const r = centerR + dr;
         const c = centerC + dc;
         if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
-        if (game.map[r][c] !== Terrain.Normal) continue;
+        if (!isStandable(game.map[r][c])) continue;
         if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c))
           continue;
         return [r, c];

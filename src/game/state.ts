@@ -56,14 +56,26 @@ export const TERRAIN_NAMES: Record<number, string> = {
   [Terrain.Boost]: "Boost",
 };
 
+// Per the BD 4.4 glossary (Map -> Obstructions): "Stop/Bone, Ice, Stone, and
+// Hearth tiles, as well as foes, are considered obstructions." Obstructions
+// block movement, targeting (Range Rule), and cannot be ended turns on.
+// NOTE: Broken is NOT an obstruction — it is merely impassable to movement
+// ("cannot be moved through, and turns cannot be ended on them").
 export function isObstruction(t: Terrain): boolean {
   return (
     t === Terrain.Stop ||
     t === Terrain.Bone ||
     t === Terrain.Ice ||
     t === Terrain.Stone ||
-    t === Terrain.Broken
+    t === Terrain.Hearth
   );
+}
+
+// Tiles that cannot be moved through or stood on: obstructions (glossary) plus
+// Broken (impassable per the glossary, though not itself an obstruction) and
+// Lava (damages on entry — never a valid destination).
+export function isStandable(t: Terrain): boolean {
+  return !isObstruction(t) && t !== Terrain.Broken && t !== Terrain.Lava;
 }
 
 export function moveCost(t: Terrain, base = 1): number {
@@ -391,8 +403,8 @@ export function getReachableTiles(
         continue;
 
       const terrain = game.map[nr][nc];
-      if (isObstruction(terrain)) continue;
-      if (terrain === Terrain.Lava) continue; // don't pathfind through lava
+      // Obstructions + Broken (impassable) + Lava (damages on entry).
+      if (!isStandable(terrain)) continue;
 
       const tileCost = moveCost(terrain);
       const newCost = cost + tileCost;
@@ -919,8 +931,7 @@ function moveEntityInLine(
 function isPassable(game: Game, r: number, c: number): boolean {
   if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length)
     return false;
-  const t = game.map[r][c];
-  return !isObstruction(t) && t !== Terrain.Lava;
+  return isStandable(game.map[r][c]);
 }
 
 // Roll accuracy check
