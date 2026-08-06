@@ -44,6 +44,17 @@ describe("modeIdFor", () => {
     expect(modeIdFor("3v3")).toBe("pvp");
     expect(modeIdFor("1v1")).toBe("1v1");
     expect(modeIdFor("duel")).toBe("1v1");
+    // BD 4.4 modes
+    expect(modeIdFor("4v4")).toBe("pvp");
+    expect(modeIdFor("2v2v2")).toBe("pvp");
+    expect(modeIdFor("2v2v2v2")).toBe("pvp");
+    expect(modeIdFor("2vj")).toBe("jugg");
+    expect(modeIdFor("3vj")).toBe("jugg");
+    expect(modeIdFor("4vj")).toBe("jugg");
+    expect(modeIdFor("pvpj")).toBe("pvp");
+    expect(modeIdFor("pvp juggernaut")).toBe("pvp");
+    expect(modeIdFor("pvpntr")).toBe("ntr");
+    expect(modeIdFor("pvp ntr")).toBe("ntr");
   });
 
   test("returns undefined for unknown modes", () => {
@@ -97,19 +108,42 @@ describe("voteOptionsFor", () => {
       "2v2",
       "NTR",
       "JUGG",
+      "3vJ",
+      "PvPNTR",
     ]);
     expect(voteOptionsFor(6).map((o) => o.id)).toEqual([
       "FFA",
       "3v3",
+      "2v2v2",
       "NTR",
       "JUGG",
+      "PvPNTR",
     ]);
+    expect(voteOptionsFor(8).map((o) => o.id)).toEqual([
+      "FFA",
+      "4v4",
+      "2v2v2v2",
+      "NTR",
+      "JUGG",
+      "PvPNTR",
+    ]);
+  });
+
+  test("offers Juggernaut formats at their exact sizes", () => {
+    expect(voteOptionsFor(3).map((o) => o.id)).toContain("2vJ");
+    expect(voteOptionsFor(4).map((o) => o.id)).toContain("3vJ");
+    expect(voteOptionsFor(5).map((o) => o.id)).toContain("4vJ");
+    expect(voteOptionsFor(5).map((o) => o.id)).toContain("PvPJ");
+    expect(voteOptionsFor(7).map((o) => o.id)).toContain("PvPJ");
+    expect(voteOptionsFor(5).map((o) => o.id)).not.toContain("3vJ");
+    expect(voteOptionsFor(7).map((o) => o.id)).not.toContain("4vJ");
   });
 
   test("never offers a team mode the lobby can't fill", () => {
     expect(voteOptionsFor(3).map((o) => o.id)).not.toContain("1v1");
     expect(voteOptionsFor(3).map((o) => o.id)).not.toContain("2v2");
     expect(voteOptionsFor(4).map((o) => o.id)).not.toContain("3v3");
+    expect(voteOptionsFor(4).map((o) => o.id)).not.toContain("2v2v2");
     expect(voteOptionsFor(1).length).toBe(0);
   });
 });
@@ -122,6 +156,12 @@ describe("normalizeVoteMode", () => {
     expect(normalizeVoteMode("duel")).toBe("1v1");
     expect(normalizeVoteMode("juggernaut")).toBe("JUGG");
     expect(normalizeVoteMode("ntr")).toBe("NTR");
+    expect(normalizeVoteMode("pvpj")).toBe("PvPJ");
+    expect(normalizeVoteMode("pvp juggernaut")).toBe("PvPJ");
+    expect(normalizeVoteMode("pvp ntr")).toBe("PvPNTR");
+    expect(normalizeVoteMode("2vj")).toBe("2vJ");
+    expect(normalizeVoteMode("4v4")).toBe("4v4");
+    expect(normalizeVoteMode("2v2v2")).toBe("2v2v2");
   });
 
   test("returns undefined for unknown modes", () => {
