@@ -1,4 +1,12 @@
-import { send, sendPm, toId, parseArgs, parsePos, posToStr } from "../utils.js";
+import {
+  send,
+  sendPm,
+  sendPmChunks,
+  toId,
+  parseArgs,
+  parsePos,
+  posToStr,
+} from "../utils.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
 import {
@@ -121,6 +129,11 @@ export function gameCommand(
       sendPm(user.name, buildPlayerList(game));
       break;
 
+    case "log":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleLog(game, user, args);
+      break;
+
     case "to":
       if (!game) return sendPm(user.name, "No active game in this room.");
       sendPm(user.name, buildTurnOrder(game));
@@ -165,6 +178,19 @@ function findGameForRoom(roomid: string): Game | null {
   return null;
 }
 
+function logEntry(game: Game, entity: Entity, description: string) {
+  game.log.push({
+    turn: game.round,
+    entity: entity.num,
+    description,
+    snapshot: "",
+  });
+}
+
+function failAct(game: Game, entity: Entity, reason: string) {
+  logEntry(game, entity, `${entity.num} (${entity.name}) idles (${reason})`);
+}
+
 function handleMove(game: Game, user: User, cmd: string, args: string) {
   const isHost = toId(user.name) === toId(game.host);
 
@@ -197,18 +223,23 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
     return sendPm(user.name, "It's not your turn.");
   }
   if (isStunned(entity)) {
+    failAct(game, entity, "Stunned");
     return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
   }
   if (isRooted(entity)) {
+    failAct(game, entity, "Rooted");
     return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
   }
   if (entity.movementUsed) {
+    failAct(game, entity, "already moved");
     return sendPm(user.name, `${entity.num} already moved this turn.`);
   }
   if (cmd === "dash" && entity.dashUsed) {
+    failAct(game, entity, "already dashed");
     return sendPm(user.name, `${entity.num} already dashed this turn.`);
   }
   if (cmd === "dash" && entity.standardUsed) {
+    failAct(game, entity, "Dash is a Full action");
     return sendPm(
       user.name,
       `${entity.num} already used their Standard — Dash is a Full action.`,
@@ -231,6 +262,7 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   const key = posToStr(pos[0], pos[1]);
 
   if (!reachable.has(key)) {
+    failAct(game, entity, "tile not reachable");
     return sendPm(user.name, "That tile is not reachable with remaining MP.");
   }
 
@@ -243,6 +275,11 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   }
   premoveSet.delete(entity.num);
 
+  logEntry(
+    game,
+    entity,
+    `${entity.num} (${entity.name}) ${dash ? "dashes" : "moves"} to ${key}`,
+  );
   send(game.room, `/me moves ${entity.num} to ${key}`);
   broadcastPages(game);
 }
@@ -279,12 +316,14 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     return sendPm(user.name, "It's not your turn.");
   }
   if (isStunned(entity)) {
+    failAct(game, entity, "Stunned");
     return sendPm(
       user.name,
       `${entity.num} is Stunned and cannot use abilities.`,
     );
   }
   if (isSealed(entity)) {
+    failAct(game, entity, "Sealed");
     return sendPm(
       user.name,
       `${entity.num} is Sealed and cannot use abilities.`,
@@ -308,6 +347,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 
   // Cooldown check
   if (entity.cooldowns[ability.name]) {
+    failAct(game, entity, `${ability.name} on cooldown`);
     return sendPm(
       user.name,
       `${ability.name} is on cooldown (${entity.cooldowns[ability.name]} turns left).`,
@@ -319,21 +359,25 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (maxUses) {
     const used = entity.usesUsed[ability.name] ?? 0;
     if (used >= maxUses) {
+      failAct(game, entity, `${ability.name} out of uses`);
       return sendPm(user.name, `${ability.name} has no uses remaining.`);
     }
   }
 
   // Action type enforcement
   if (ability.actionType === "Standard" && entity.standardUsed) {
+    failAct(game, entity, "Standard already used");
     return sendPm(user.name, "You already used your Standard action.");
   }
   if (ability.actionType === "Swift" && entity.swiftUsed) {
+    failAct(game, entity, "Swift already used");
     return sendPm(user.name, "You already used your Swift action this turn.");
   }
   if (
     ability.actionType === "Full" &&
     (entity.standardUsed || entity.movementUsed)
   ) {
+    failAct(game, entity, "Full action needs Movement+Standard");
     return sendPm(
       user.name,
       "Full action requires both Standard and Movement unused.",
@@ -346,6 +390,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
       ability.actionType === "Swift" ||
       ability.actionType === "Trigger")
   ) {
+    failAct(game, entity, "Free/Swift must come before Standard");
     return sendPm(
       user.name,
       `${ability.actionType} abilities must be used before your Standard action.`,
@@ -356,12 +401,14 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     // Using a trigger lets the entity manually resolve Reactions this turn.
   } else if (ability.actionType === "Reaction") {
     if (!entity.triggered) {
+      failAct(game, entity, "no trigger active");
       return sendPm(
         user.name,
         "No trigger active this turn — Reaction abilities cannot be used manually.",
       );
     }
   } else if (ability.actionType === "Passive") {
+    failAct(game, entity, "Passive cannot be used manually");
     return sendPm(user.name, "Passive abilities cannot be used manually.");
   }
 
@@ -398,12 +445,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     for (const msg of step.result.messages) {
       send(game.room, msg);
     }
-    game.log.push({
-      turn: game.round,
-      entity: entity.num,
-      description: summarizeResult(game, entity, step.result.messages),
-      snapshot: "",
-    });
+    logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
     entity.pendingAction = null;
     send(game.room, `**${ability.name}** resolved. Use %back to undo.`);
     broadcastPages(game);
@@ -488,12 +530,7 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
     send(game.room, msg);
   }
 
-  game.log.push({
-    turn: game.round,
-    entity: entity.num,
-    description: summarizeResult(game, entity, step.result.messages),
-    snapshot: "",
-  });
+  logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
 
   entity.pendingAction = null;
 
@@ -581,12 +618,11 @@ function handleAdvanceTurn(game: Game, user: User) {
     acted ||
     !game.log.some((e) => e.turn === game.round && e.entity === entity.num)
   ) {
-    game.log.push({
-      turn: game.round,
-      entity: entity.num,
-      description: acted || `${entity.num} (${entity.name}) -- turn passed`,
-      snapshot: "",
-    });
+    logEntry(
+      game,
+      entity,
+      acted || `${entity.num} (${entity.name}) -- turn passed`,
+    );
   }
 
   const result = nextTurn(game);
@@ -662,6 +698,50 @@ function handleBack(game: Game, user: User) {
   }
 }
 
+function handleLog(game: Game, user: User, args: string) {
+  if (game.log.length === 0) {
+    sendPm(user.name, "Action log is empty.");
+    return;
+  }
+
+  const text = game.log
+    .map((e) => `[R${e.turn}] ${e.entity}: ${e.description}`)
+    .join("\n");
+
+  if (args === "paste" || args === "share") {
+    void (async () => {
+      const url = await pasteLog(text);
+      if (url) {
+        send(game.room, `${user.name} shared the action log: ${url}`);
+      } else {
+        sendPm(
+          user.name,
+          "Paste service unreachable — sending the log directly:",
+        );
+        sendPmChunks(user.name, text);
+      }
+    })();
+    return;
+  }
+
+  sendPmChunks(user.name, text);
+}
+
+async function pasteLog(text: string): Promise<string | null> {
+  try {
+    const res = await fetch("https://paste.rs/", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: text,
+    });
+    if (!res.ok) return null;
+    const url = (await res.text()).trim();
+    return url.startsWith("http") ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 function handleRoll(target: string, args: string) {
   const formula = args.trim() || "1d20";
   const result = rollDice(formula);
@@ -719,6 +799,7 @@ function handlePassMove(game: Game, user: User) {
   pushSnapshot(game);
   entity.movementUsed = true;
   premoveSet.delete(entity.num);
+  logEntry(game, entity, `${entity.num} (${entity.name}) passes movement`);
   send(game.room, `/me ${entity.num} passes movement`);
   broadcastPages(game);
 }

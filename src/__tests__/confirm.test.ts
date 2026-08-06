@@ -1075,3 +1075,99 @@ describe("status passive effects", () => {
     expect(getEffectiveStat(e, "eva")).toBe(0);
   });
 });
+
+describe("action log", () => {
+  it("logs a successful move", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const game = makeGame({ entities: [user] });
+    games.set(game.id, game);
+
+    gameCommand(room, host, "move", "d4,P1", "");
+
+    expect(game.log.length).toBe(1);
+    const entry = game.log[game.log.length - 1];
+    expect(entry.entity).toBe("P1");
+    expect(entry.description).toContain("moves to");
+    expect(user.pos).toEqual([3, 3]);
+  });
+
+  it("logs a failed move as an idle", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const game = makeGame({ entities: [user] });
+    games.set(game.id, game);
+    user.movementUsed = true;
+
+    gameCommand(room, host, "move", "d4,P1", "");
+
+    expect(game.log.length).toBe(1);
+    const entry = game.log[game.log.length - 1];
+    expect(entry.description).toContain("idles");
+    expect(user.pos).toEqual([2, 2]);
+  });
+
+  it("logs pass movement", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const game = makeGame({ entities: [user] });
+    games.set(game.id, game);
+
+    gameCommand(room, host, "passmove", "", "");
+
+    expect(game.log.length).toBe(1);
+    expect(game.log[0].description).toContain("passes movement");
+  });
+
+  it("logs a failed ability use as an idle", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const game = makeGame({ entities: [user] });
+    games.set(game.id, game);
+
+    const ability = makeAbility({ name: "Punch", actionType: "Standard" });
+    user.abilities = [ability];
+    user.cooldowns = { Punch: 2 };
+
+    gameCommand(room, host, "use", "Punch @ P2", "");
+
+    expect(game.log.length).toBe(1);
+    const entry = game.log[game.log.length - 1];
+    expect(entry.description).toContain("idles");
+    expect(entry.description).toContain("Punch on cooldown");
+  });
+
+  it("logs a dashed move", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const game = makeGame({ entities: [user] });
+    games.set(game.id, game);
+
+    gameCommand(room, host, "dash", "e5,P1", "");
+
+    expect(game.log.length).toBe(1);
+    const entry = game.log[game.log.length - 1];
+    expect(entry.description).toContain("dashes to");
+    expect(user.dashUsed).toBe(true);
+  });
+});

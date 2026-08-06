@@ -113,6 +113,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   const map = buildMiniMap(game, entity);
   const stats = buildEntityStats(entity);
   const pl = buildPlayerDataTable(game);
+  const log = buildActionLog(game, true);
 
   let phase = "";
   let actions = "";
@@ -150,6 +151,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   ${map}${pl}
   <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
   <hr>${phase}${actions}
+  ${log}
   ${buildToasts(game)}
 </div>`;
 }
@@ -376,20 +378,24 @@ Turn Order: ${turnParts.map(esc).join(", ")}
 
 // -- Action Log ---------------------------------------------------------------
 
-function buildActionLog(game: Game): string {
-  let html = `<b>Action Log</b>`;
-  if (game.log.length === 0) {
-    html += `<div style="color:#888"><i>(empty)</i></div>`;
-    return html;
-  }
+function buildActionLog(game: Game, collapsed = false): string {
+  const body =
+    game.log.length === 0
+      ? `<div style="color:#888"><i>(empty)</i></div>`
+      : `<table class="log" align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">` +
+        game.log
+          .slice(-15)
+          .map(
+            (entry) =>
+              `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
+          )
+          .join("") +
+        `</table>`;
 
-  const recent = game.log.slice(-15);
-  html += `<table class="log" align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">`;
-  for (const entry of recent) {
-    html += `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`;
+  if (collapsed) {
+    return `<details style="margin:4px 0"><summary style="cursor:pointer"><b>Action Log</b></summary>${body}</details>`;
   }
-  html += "</table>";
-  return html;
+  return `<b>Action Log</b>${body}`;
 }
 
 // -- Controls (Host) ----------------------------------------------------------
