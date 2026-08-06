@@ -99,29 +99,29 @@ describe("genPosSlots", () => {
 });
 
 describe("genTeamSlots", () => {
-  it("mirrors team 2 anchors against team 1 (2v2)", () => {
+  it("mirrors team 2 into the opposite corner (2v2)", () => {
     expect(genTeamSlots(10, 10, 2, 2)).toEqual([
       [
-        [0, 3],
-        [0, 6],
+        [0, 0],
+        [0, 1],
       ],
       [
-        [9, 3],
-        [9, 6],
+        [9, 9],
+        [9, 8],
       ],
     ]);
   });
 
-  it("places 1v1 at the top/bottom centre", () => {
-    expect(genTeamSlots(10, 10, 1, 1)).toEqual([[[0, 5]], [[9, 5]]]);
+  it("places 1v1 in opposite corners", () => {
+    expect(genTeamSlots(10, 10, 1, 1)).toEqual([[[0, 0]], [[9, 9]]]);
   });
 
   it("supports uneven teams (1v2)", () => {
     expect(genTeamSlots(10, 10, 1, 2)).toEqual([
-      [[0, 5]],
+      [[0, 0]],
       [
-        [9, 3],
-        [9, 6],
+        [9, 9],
+        [9, 8],
       ],
     ]);
   });
