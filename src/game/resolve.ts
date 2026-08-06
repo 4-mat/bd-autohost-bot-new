@@ -61,10 +61,12 @@ export function getEffectiveStat(entity: Entity, stat: string): number {
   }
   for (const b of entity.buffs) {
     if (b.stat === stat) base += b.amount;
+    // DEF raises both physical and magical defense
+    if (b.stat === "def" && (stat === "pd" || stat === "md")) base += b.amount;
   }
   // Status passive effects
   if (stat === "eva" && hasStatus(entity, "poison")) base -= 2;
-  if (stat === "pd" && hasStatus(entity, "curse")) base -= 4;
+  if ((stat === "pd" || stat === "md") && hasStatus(entity, "curse")) base -= 4;
   return Math.max(0, base);
 }
 
