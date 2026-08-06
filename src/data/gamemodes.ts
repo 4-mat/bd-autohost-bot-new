@@ -144,6 +144,8 @@ export interface VoteOption {
    * count or a list of allowed counts (e.g. PvPJ supports 5 or 7).
    */
   exactPlayers?: number | number[];
+  /** Maximum joined players for this option (default: unbounded). */
+  maxPlayers?: number;
 }
 
 export const VOTE_OPTIONS: VoteOption[] = [
@@ -153,6 +155,7 @@ export const VOTE_OPTIONS: VoteOption[] = [
     description: "Everyone for themselves — last player standing wins.",
     // With only 2 players FFA is just a 1v1, so it's not offered.
     minPlayers: 3,
+    maxPlayers: 8,
   },
   {
     id: "1v1",
@@ -201,6 +204,7 @@ export const VOTE_OPTIONS: VoteOption[] = [
     label: "NTR",
     description: "Nowhere To Run — players must stay near the centre of the map.",
     minPlayers: 2,
+    maxPlayers: 8,
   },
   {
     id: "JUGG",
@@ -208,6 +212,7 @@ export const VOTE_OPTIONS: VoteOption[] = [
     description: "One player is a super-powered Juggernaut; everyone else works together to take them down.",
     // Needs at least a Juggernaut + two fielders — 2 players would just be a 1v1.
     minPlayers: 3,
+    maxPlayers: 8,
   },
   {
     id: "2vJ",
@@ -305,6 +310,7 @@ export function normalizeVoteMode(arg: string): string | undefined {
 export function voteOptionsFor(playerCount: number): VoteOption[] {
   return VOTE_OPTIONS.filter((o) => {
     if (playerCount < o.minPlayers) return false;
+    if (o.maxPlayers !== undefined && playerCount > o.maxPlayers) return false;
     if (o.exactPlayers !== undefined) {
       const allowed = Array.isArray(o.exactPlayers)
         ? o.exactPlayers
