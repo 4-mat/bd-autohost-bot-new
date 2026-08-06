@@ -8,6 +8,7 @@ import { setWs, toId } from "./src/utils.js";
 import {
   games,
   getCurrentEntity,
+  getEntity,
   type Entity,
   type Game,
 } from "./src/game/state.js";
@@ -108,6 +109,7 @@ function findSession(username: string): Session | null {
 
 function spectatorWidget(team: number): string {
   const teamLabel = team > 0 ? `Team ${team}` : "None";
+  const game = [...games.values()][0];
 
   const teamBtns = [1, 2, 0]
     .map(
@@ -115,6 +117,27 @@ function spectatorWidget(team: number): string {
         `<button name="send" value="%pickteam ${t}" style="${BTN_STYLE}">Team ${t === 0 ? "None" : t}</button>`,
     )
     .join(" ");
+
+  const cheerTeamBtns = game
+    ? [...new Set(game.entities.map((e) => e.team))]
+        .filter((t) => t > 0)
+        .sort()
+        .map(
+          (t) =>
+            `<button name="send" value="%cheer ${t}" style="${BTN_STYLE}">Cheer Team ${t}</button>`,
+        )
+        .join(" ")
+    : "";
+
+  const cheerPlayerBtns = game
+    ? game.entities
+        .filter((e) => e.num.startsWith("P"))
+        .map(
+          (e) =>
+            `<button name="send" value="%cheer ${e.num}" style="${BTN_STYLE}">Cheer ${e.num}</button>`,
+        )
+        .join(" ")
+    : "";
 
   const reactBtns = Object.keys(REACTIONS)
     .map(
@@ -125,7 +148,9 @@ function spectatorWidget(team: number): string {
 
   return `<div style="margin-top:8px;padding:8px;background:#16213e;border:1px solid #333;border-radius:4px">
 <b style="color:#00aaff">Spectator</b> <span style="color:#888">(cheering: ${teamLabel})</span><br>
-${teamBtns}<br>${reactBtns}
+${teamBtns}<br>
+${cheerTeamBtns} ${cheerPlayerBtns}<br>
+${reactBtns}
 </div>`;
 }
 
@@ -404,7 +429,6 @@ const MANIFEST = JSON.stringify({
 
 const IS_RENDER = !!process.env.RENDER;
 const DEPLOYED_AT = new Date().toLocaleString("en-US", {
-  timeZone: "America/New_York",
   dateStyle: "medium",
   timeStyle: "short",
 });
@@ -738,6 +762,40 @@ wss.on("connection", (ws) => {
           return;
         }
 
+        if (cmd === "cheer") {
+          const game = [...games.values()][0];
+          let team = 0;
+          let label = "";
+          if (args === "0" || args === "1" || args === "2") {
+            team = parseInt(args);
+            label = team > 0 ? `Team ${team}` : "nobody";
+          } else if (game) {
+            const entity = getEntity(game, args);
+            if (entity) {
+              team = entity.team;
+              label = `${entity.name} (${entity.num})`;
+            }
+          }
+          if (!label) {
+            sendToUser(session.username, {
+              type: "system",
+              text: `Could not find "${args}". Usage: %cheer <1|2|player>`,
+            });
+            return;
+          }
+          session.team = team;
+          broadcast(
+            JSON.stringify({
+              type: "react",
+              user: session.username,
+              emote: `cheers for ${label}!`,
+            }),
+          );
+          refreshPlayerList();
+          sendSpectatorGui(session.username);
+          return;
+        }
+
         handleCommand(room, user, cmd, args, val);
 
         refreshAllTabs();
@@ -822,8 +880,8 @@ const HTML_PAGE = `<!DOCTYPE html>
   .msg-chat { color: #e0e0e0; }
   .msg-chat .name { color: #ffcc00; font-weight: bold; }
   .msg-pm { color: #cccc00; }
-  .msg-action { color: #9635d7; font-style: italic; }
-  .msg-action .name { font-weight: bold; }
+  .msg-action { font-style: italic; }
+  .msg-action .name { color: #9635d7; font-weight: bold; }
   .msg-action .time { color: #666666; font-style: normal; font-size: 11px; }
   .msg-quote { color: #00cc00; border-left: 3px solid #00cc00; padding-left: 6px; }
   .msg-quote .name { font-weight: bold; }
