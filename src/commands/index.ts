@@ -112,6 +112,7 @@ export function handleCommand(
     id === "target" ||
     id === "choose" ||
     id === "vote" ||
+    id === "unvote" ||
     id === "endturn" ||
     id === "next" ||
     id === "back" ||

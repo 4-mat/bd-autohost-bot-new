@@ -101,7 +101,13 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
     }
   }
 
-  if (entity === null) {
+  if (entity !== null) {
+    // Player view: show their current vote and let them retract it.
+    const myVote = game.votes[entity.id];
+    if (myVote) {
+      html += `<div style="margin-top:4px;color:#a0c"><b>Your vote:</b> ${esc(myVote)} ${btn("%unvote", "Unvote")}</div>`;
+    }
+  } else {
     html += `<div style="margin-top:6px">${btn("%endvote", "End Vote & Apply Winner")}</div>`;
   }
   html += "</div>";

@@ -1079,6 +1079,8 @@ export function removeEntity(game: Game, entity: Entity) {
   if (game.turnIndex >= game.turnOrder.length) {
     game.turnIndex = 0;
   }
+  // Drop any gamemode vote the removed entity had cast.
+  delete game.votes[entity.id];
 }
 
 /** Check if the game is over. Returns the winner entity or null. */

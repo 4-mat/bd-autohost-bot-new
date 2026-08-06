@@ -44,7 +44,11 @@ import {
   type AttackStep,
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
-import { normalizeVoteMode, voteOptionsFor } from "../data/gamemodes.js";
+import {
+  normalizeVoteMode,
+  tallyVotes,
+  voteOptionsFor,
+} from "../data/gamemodes.js";
 
 export function gameCommand(
   room: Room | null,
@@ -99,6 +103,11 @@ export function gameCommand(
     case "vote":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleVote(game, user, full);
+      break;
+
+    case "unvote":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleUnvote(game, user);
       break;
 
     case "endturn":
@@ -564,9 +573,14 @@ function handleVote(game: Game, user: User, args: string) {
   const players = game.entities.filter((e) => !e.isMonster);
   const options = voteOptionsFor(players.length);
 
+  // Bare %vote: show current status + tallies + available options.
   if (!arg) {
+    const lines = [buildVoteStatus(game)];
+    const myVote = game.votes[entity.id];
+    if (myVote) lines.push(`You voted: **${myVote}** (use %unvote to withdraw).`);
     const list = options.map((o) => o.id).join(", ");
-    return sendPm(user.name, `Vote with %vote <mode>. Available: ${list}`);
+    lines.push(`Vote with %vote <mode>${list ? ` — available: ${list}` : ""}.`);
+    return sendPm(user.name, lines.join("\n"));
   }
 
   const mode = normalizeVoteMode(arg);
@@ -579,12 +593,57 @@ function handleVote(game: Game, user: User, args: string) {
   }
 
   // Key by stable entity id — %gento renumbers nums, ids never change.
+  const changed = game.votes[entity.id] !== undefined;
+  const allVotedBefore = Object.keys(game.votes).length >= players.length;
   game.votes[entity.id] = mode;
   send(
     game.room,
-    `${entity.num} (${entity.name}) voted for **${mode}**.`,
+    `${entity.num} (${entity.name}) ${changed ? "changed their vote to" : "voted for"} **${mode}**.`,
   );
+
+  // Nudge the host only on the transition to everyone-voted (not on re-votes).
+  const allVotedAfter = Object.keys(game.votes).length >= players.length;
+  if (!allVotedBefore && allVotedAfter) {
+    send(
+      game.room,
+      `**All ${players.length} player(s) have voted!** Host, run %endvote to apply the winning mode.`,
+    );
+  }
+
   broadcastPages(game);
+}
+
+function handleUnvote(game: Game, user: User) {
+  if (game.started) return sendPm(user.name, "Game already started.");
+  if (!game.voteOpen) {
+    return sendPm(user.name, "No gamemode vote is open right now.");
+  }
+
+  const entity = game.entities.find(
+    (e) => !e.isMonster && toId(e.name) === toId(user.name),
+  );
+  if (!entity) {
+    return sendPm(user.name, "You're not in this game. Join first (%join).");
+  }
+
+  if (game.votes[entity.id] === undefined) {
+    return sendPm(user.name, "You haven't voted yet.");
+  }
+
+  delete game.votes[entity.id];
+  send(game.room, `${entity.num} (${entity.name}) withdrew their vote.`);
+  broadcastPages(game);
+}
+
+// Chat status line for the open gamemode vote: tallies + the requester's vote.
+function buildVoteStatus(game: Game): string {
+  const players = game.entities.filter((e) => !e.isMonster);
+  const tally = tallyVotes(game.votes);
+  const summary =
+    tally.length > 0
+      ? tally.map((t) => `${t.mode}: ${t.count}`).join(" | ")
+      : "no votes yet";
+  return `**Gamemode vote** (${Object.keys(game.votes).length}/${players.length} voted): ${summary}.`;
 }
 
 function finishStep(game: Game, entity: Entity, step: AttackStep) {
@@ -942,6 +1001,7 @@ function handleInfo(game: Game, user: User, args: string) {
       `Host: ${game.host} | Map: ${game.mapName || "(none)"}`,
       `Players: ${game.entities.length} | Round: ${game.round}`,
     ];
+    if (game.voteOpen) lines.push(buildVoteStatus(game));
     if (game.turnOrder.length > 0) {
       const cur = getCurrentEntity(game);
       if (cur) lines.push(`Current turn: ${cur.num} (${cur.name})`);

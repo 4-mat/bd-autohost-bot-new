@@ -246,9 +246,12 @@ function handleClose(room: Room, user: User) {
   if (players.length >= 2) {
     game.voteOpen = true;
     game.votes = {};
+    const options = voteOptionsFor(players.length)
+      .map((o) => o.id)
+      .join(", ");
     send(
       room.id,
-      "**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote <mode> (e.g. %vote 2v2).",
+      `**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote <mode> (available: ${options}).`, 
     );
   } else {
     send(room.id, "**Signups are now closed.**");

@@ -48,7 +48,8 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%open`                              | Opens signups for your squad. Hosts only.                                          |
 | `%openbsu`                           | Same as open, but automatically highlights the room. Hosts only.                   |
 | `%close`                             | Closes signups for your squad AND opens gamemode voting. Hosts only.              |
-| `%vote [mode]`                        | Cast/change your gamemode vote (FFA, 1v1, 2v2, 3v3, NTR, Juggernaut) while voting is open. |
+| `%vote [mode]`                        | Cast/change your gamemode vote (FFA, 1v1, 2v2, 3v3, NTR, Juggernaut) while voting is open; bare `%vote` shows tallies. |
+| `%unvote`                             | Withdraw your gamemode vote.                                                          |
 | `%endvote`                            | Closes voting and applies the winning mode. Hosts only.                            |
 | `%autoclose [value]`                 | Autoclose the game after the specified time in seconds. Hosts only.                |
 | `%setgame [gamemode]`                | Sets up the game for the desired gamemode. Hosts only.                             |
