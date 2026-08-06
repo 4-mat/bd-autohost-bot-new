@@ -581,6 +581,22 @@ describe("choose and target prompts", () => {
       gameCommand(room, alice, "choose", "atk_mag", "");
     }).not.toThrow();
   });
+
+  it("cleans up a resolution generator that throws mid-stream", () => {
+    const caster = makeEntity({ num: "P1", name: "Alice", pos: [2, 2] });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    caster.pendingResolution = (function* () {
+      throw new Error("boom");
+    })() as typeof caster.pendingResolution;
+    caster.pendingPromptKind = "target";
+
+    gameCommand(room, alice, "target", "P2", "");
+
+    expect(caster.pendingResolution).toBeUndefined();
+    expect(caster.pendingPromptKind).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

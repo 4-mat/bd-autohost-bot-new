@@ -205,6 +205,13 @@ function buildMapTable(game: Game, self: Entity | null): string {
   const curNum = game.turnOrder[game.turnIndex];
 
   let html = `<b>Map</b>`;
+
+  // No map chosen yet (host must %setmap before %start).
+  if (rows === 0 || cols === 0) {
+    html += `<div style="margin:4px 0;padding:10px;border:1px dashed #888;color:#888;text-align:center">No map selected. Host: %setmap &lt;name&gt; (see %listmaps) or %setmap gen.</div>`;
+    return html;
+  }
+
   html += `<div style="overflow-x:auto">`;
   html += `<table align="center" ${TABLE_BORDER}>`;
 
@@ -794,9 +801,10 @@ function getValidTiles(game: Game, ab: AbilityData, user: Entity): string[] {
   const rangeMatch = rangeStr.match(/(?:homing|range)\s*(\d+)/);
   const range = rangeMatch ? parseInt(rangeMatch[1]) : 3;
   const needsLoS = rangeStr.startsWith("range");
+  const cols = game.map[0]?.length ?? 0;
 
   for (let r = 0; r < game.map.length; r++) {
-    for (let c = 0; c < game.map[0].length; c++) {
+    for (let c = 0; c < cols; c++) {
       const d = dist(user.pos, [r, c]);
       if (d === 0) continue;
       if (d > range) continue;

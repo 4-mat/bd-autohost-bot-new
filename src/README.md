@@ -91,8 +91,8 @@ All game setup commands, routed by `hostCommand()`:
 | `%sw`                | `handleSwitchWeapon` | Changes an entity's weapon, recalculates stats + abilities                                                                               |
 | `%setlevel` / `%sl`  | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level                                                                                 |
 | `%setteam`           | `handleSetTeam`      | Changes an entity's team number                                                                                                          |
-| `%setmap`            | `handleSetMap`       | Sets a curated map by name, or procedural small/medium/large                                                                             |
-| `%listmaps`          | `handleListMaps`     | Lists available maps, optionally filtered by size                                                                                        |
+| `%setmap`            | `handleSetMap`       | Sets a curated map by name, or `%setmap gen` for a procedural map (host starts with no map; %start requires one)                                                                             |
+| `%listmaps`          | `handleListMaps`     | Lists available maps (filterable by size); shows recommended maps for the game mode                                                                                        |
 | `%gento`             | `handleGenTurnOrder` | Rolls 1d20 + MP for each entity, sorts descending                                                                                        |
 | `%open` / `%openbsu` | `handleOpen`         | Opens signups (`signupsOpen = true`), enabling `%join`; `openbsu` highlights                                                             |
 | `%close`             | `handleClose`        | Closes signups (`signupsOpen = false`)                                                                                                   |
