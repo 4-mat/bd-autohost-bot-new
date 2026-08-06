@@ -8,6 +8,7 @@ import {
   dist,
   hasLineOfSight,
   inRange,
+  formatChatTime,
   getReachableTiles,
   getBurstTiles,
   getStarTiles,
@@ -1042,5 +1043,19 @@ describe("removeEntity", () => {
     expect(game.entities.length).toBe(1);
     expect(game.entities[0].num).toBe("P2");
     expect(game.turnOrder).toEqual(["P2"]);
+  });
+});
+
+describe("formatChatTime", () => {
+  it("formats an epoch timestamp as [HH:MM]", () => {
+    // 09:05 local time (any timezone)
+    const ts = new Date();
+    ts.setHours(9, 5, 0, 0);
+    expect(formatChatTime(ts.getTime())).toBe("[09:05]");
+  });
+
+  it("returns an empty string when no timestamp is present (old snapshots)", () => {
+    expect(formatChatTime(undefined)).toBe("");
+    expect(formatChatTime(0)).toBe("");
   });
 });

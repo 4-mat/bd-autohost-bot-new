@@ -237,6 +237,17 @@ export interface ActionLogEntry {
 export interface ChatEntry {
   user: string;
   message: string;
+  /** Epoch ms when the message was received. Optional for snapshot compat. */
+  time?: number;
+}
+
+/** Format an epoch-ms timestamp as "[HH:MM]" (empty string when missing). */
+export function formatChatTime(ts?: number): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `[${hh}:${mm}]`;
 }
 
 export interface Game {
