@@ -2,6 +2,7 @@ import {
   type Game,
   type Entity,
   type AbilityData,
+  type AbilityCost,
   rollAccuracy,
   dealDamage,
   removeEntity,
@@ -11,13 +12,22 @@ import {
   getAoETargets,
   getSplashTargets,
   isConfused,
+  hasStatus,
+  parseFrequency,
   needsDirection,
   getDirectionCandidates,
   DIRECTION_LABELS,
   placeTerrain,
   TERRAIN_NAMES,
 } from "./state.js";
-import { parseEffects, applyEffects } from "./effects.js";
+import {
+  parseEffects,
+  applyEffects,
+  applyEffectStream,
+  extractCombatMetadata,
+  type CombatMetadata,
+  type EffectChoosePrompt,
+} from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
 export interface ResolutionResult {
@@ -39,7 +49,7 @@ function defensiveStat(entity: Entity, damageType: string): number {
   return getEffectiveStat(entity, damageType === "Physical" ? "pd" : "md");
 }
 
-function getEffectiveStat(entity: Entity, stat: string): number {
+export function getEffectiveStat(entity: Entity, stat: string): number {
   let base = 0;
   switch (stat) {
     case "atk":
@@ -63,15 +73,22 @@ function getEffectiveStat(entity: Entity, stat: string): number {
   }
   for (const b of entity.buffs) {
     if (b.stat === stat) base += b.amount;
+    // DEF raises both physical and magical defense
+    if (b.stat === "def" && (stat === "pd" || stat === "md")) base += b.amount;
   }
+  // Status passive effects
+  if (stat === "eva" && hasStatus(entity, "poison")) base -= 2;
+  if ((stat === "pd" || stat === "md") && hasStatus(entity, "curse")) base -= 4;
   return Math.max(0, base);
 }
 
-function getStatBonus(entity: Entity, stat: string): number {
+export function getStatBonus(entity: Entity, stat: string): number {
   let bonus = 0;
   for (const b of entity.buffs) {
     if (b.stat === stat) bonus += b.amount;
   }
+  // Status passive effects
+  if (stat === "acc" && hasStatus(entity, "burn")) bonus -= 2;
   return bonus;
 }
 
@@ -109,6 +126,44 @@ export type AttackStep =
   | { done: true; result: ResolutionResult };
 
 // ---------------------------------------------------------------------------
+// Effect-stream driver
+// ---------------------------------------------------------------------------
+
+/**
+ * Generator that drives an `applyEffectStream` while piping its
+ * `EffectChoosePrompt`s outward as `AttackPrompt` (kind: selection). This
+ * lets the existing selection-prompt machinery (the host/user feeding a
+ * `%choose <optionId>` back through `advanceAttack`) handle player choices
+ * inside effect clauses -- including nested choices in chosen sub-effects.
+ *
+ * Each pending prompt is one `AttackStep` round-trip out of
+ * `resolveAttackFlow`. Once the effect stream is exhausted (no more
+ * `choose` clauses), it yields all accumulated messages as its return
+ * value.
+ */
+function* runEffectStream(
+  gen: Generator<EffectChoosePrompt, string[], string>,
+): Generator<AttackPrompt, string[], string> {
+  let nextInput: string | undefined = undefined;
+  while (true) {
+    const step = gen.next(nextInput);
+    nextInput = undefined;
+    if (step.done) {
+      return step.value as string[];
+    }
+    // EffectChoosePrompt maps cleanly onto AttackPrompt-selection: both
+    // are "pick one of N labelled options" interactions.
+    const prompt = step.value as EffectChoosePrompt;
+    const chosenId: string = yield {
+      kind: "selection",
+      message: prompt.message,
+      options: prompt.options,
+    };
+    nextInput = chosenId;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The pipeline itself:
 // Declare -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
@@ -125,9 +180,17 @@ function* resolveAttackFlow(
   // --- Declare Attack ---
   // result.messages.push(`/me declares ${ability.name}`);
 
-  // --- Selection / Choices / Sacrifice / Pay Costs ---
-  // STUB: this is a placeholder. Work on how costs/choices are represented
+  // --- Auto-deduct non-prompted costs ---
+  if (ability.cost && !ability.cost.prompt) {
+    if (!autoDeductCost(user, ability.cost)) {
+      result.messages.push(
+        `${user.num} could not pay the cost for ${ability.name}.`,
+      );
+      return result;
+    }
+  }
 
+  // --- Selection / Choices / Sacrifice / Pay Costs ---
   if (abilityNeedsSelection(ability)) {
     const choiceId = yield {
       kind: "selection",
@@ -202,16 +265,28 @@ function* resolveAttackFlow(
   const isHeal = ability.effect.toLowerCase().includes("heal") && !isAttack;
   const pushPullResult = parsePushPull(ability);
 
+  // Combat metadata walks the whole effect tree once for `Multi-Hit: N`,
+  // `+N% damage`, `+N DMG`, and `Ignores …` clauses. The base hit count
+  // already reflects roll-field keywords like "Double Hit" via
+  // parseMultiHit(); meta.additionalHits adds the effect-driven extra hits
+  // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
+  // effect still rolls the highest of the two.
+  const effects = parseEffects(ability.effect);
+  const combat = extractCombatMetadata(effects);
+  const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
+
   for (const target of targets) {
     if (isAttack) {
       let confusionApplied = false;
-      for (let h = 0; h < hitCount; h++) {
-        const label = hitCount > 1 ? ` (Hit ${h + 1}/${hitCount})` : "";
-        const singleResult = resolveSingleTarget(
+      for (let h = 0; h < effectiveHitCount; h++) {
+        const label =
+          effectiveHitCount > 1 ? ` (Hit ${h + 1}/${effectiveHitCount})` : "";
+        const singleResult: ResolutionResult = yield* resolveSingleTarget(
           game,
           user,
           ability,
           target,
+          combat,
           label,
           confusionApplied,
         );
@@ -233,21 +308,27 @@ function* resolveAttackFlow(
       const healResult = resolveHeal(game, user, ability, target);
       result.messages.push(...healResult.messages);
     } else {
-      const statusResult = resolveNonDamaging(game, user, ability, target);
+      const statusResult: ResolutionResult = yield* resolveNonDamaging(
+        game,
+        user,
+        ability,
+        target,
+      );
       result.messages.push(...statusResult.messages);
       result.deaths.push(...statusResult.deaths);
     }
   }
 
   if (isAttack && !isAoE && targets.length > 0) {
-    const splashResult = resolveSplash(game, user, ability, targets[0]);
+    const splashResult = resolveSplash(game, user, ability, targets[0], combat);
     result.messages.push(...splashResult.messages);
     result.deaths.push(...splashResult.deaths);
   }
 
   // --- After Resolving (cooldowns, use tracking, win check) ---
   setCooldown(user, ability);
-  if (ability.maxUses) {
+  const { uses } = parseFrequency(ability.frequency);
+  if (ability.maxUses ?? uses) {
     user.usesUsed[ability.name] = (user.usesUsed[ability.name] ?? 0) + 1;
   }
   // Bug fix carried over: check win condition once after all deaths this
@@ -347,16 +428,45 @@ function advanceAttack(
   return { done: false, prompt: step.value };
 }
 
-// TODO: implement these once we know how costs/choices will be represented in AbilityData.
+// ---------------------------------------------------------------------------
+// Cost / choice system — reads structured AbilityData.cost and .choices
+// instead of parsing effect text.
+// ---------------------------------------------------------------------------
 
 function abilityNeedsSelection(ability: AbilityData): boolean {
-  // TODO: e.g. `return !!ability.cost || !!ability.choices;`
-  return false;
+  return !!(ability.choices?.length || ability.cost?.prompt);
 }
 
 function buildSelectionOptions(ability: AbilityData): SelectionOption[] {
-  // TODO: map ability.choices (or however they're stored) into buttons.
-  return [];
+  const opts: SelectionOption[] = [];
+  if (ability.choices) {
+    opts.push(...ability.choices);
+  }
+  if (ability.cost?.prompt) {
+    const label = `Pay ${ability.cost.amount} ${ability.cost.type === "Resource" ? (ability.cost.resource ?? "") : ability.cost.type}`;
+    // avoid duplicating if the only choice is the same as the cost
+    if (!opts.some((o) => o.label === label)) {
+      opts.push({ id: "pay_cost", label });
+    }
+  }
+  return opts.length > 0 ? opts : [{ id: "confirm", label: "Confirm" }];
+}
+
+function autoDeductCost(user: Entity, cost: AbilityCost): boolean {
+  if (cost.type === "HP") {
+    if (user.curhp <= cost.amount) return false;
+    user.curhp -= cost.amount;
+    return true;
+  }
+  if (cost.type === "MP") {
+    if (user.mp < cost.amount) return false;
+    user.mp -= cost.amount;
+    return true;
+  }
+  const pool = user.resources[cost.resource ?? ""] ?? 0;
+  if (pool < cost.amount) return false;
+  user.resources[cost.resource ?? ""] = pool - cost.amount;
+  return true;
 }
 
 function applySelection(
@@ -364,7 +474,9 @@ function applySelection(
   ability: AbilityData,
   choiceId: string,
 ): boolean {
-  // TODO: deduct HP/MP/resources for the chosen cost, return false if the user can't actually pay it.
+  if (choiceId === "pay_cost" && ability.cost) {
+    return autoDeductCost(user, ability.cost);
+  }
   return true;
 }
 
@@ -516,14 +628,15 @@ function isValidTarget(user: Entity, target: Entity, group: string): boolean {
   return true;
 }
 
-function resolveSingleTarget(
+function* resolveSingleTarget(
   game: Game,
   user: Entity,
   ability: AbilityData,
   target: Entity,
+  combat: CombatMetadata,
   hitLabel = "",
   confusionAlreadyApplied = false,
-): ResolutionResult {
+): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
 
   const userAccBonus = getStatBonus(user, "acc");
@@ -538,12 +651,18 @@ function resolveSingleTarget(
     `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
-  // --- Hit resolves first (damage to target) ---
+  // --- Hit resolves first (damage to target first) ---
   if (hit) {
     const damageRoll = rollDice(ability.roll);
-    const userOff = offensiveStat(user, ability.damageType);
-    let baseDamage =
-      damageRoll.total + userOff - defensiveStat(target, ability.damageType);
+    const userOff = combat.ignore.atkMag
+      ? 0
+      : offensiveStat(user, ability.damageType);
+    const targetDef = applyIgnoreToDefense(
+      defensiveStat(target, ability.damageType),
+      combat.ignore,
+    );
+
+    let baseDamage = damageRoll.total + userOff - targetDef;
 
     if (crit) {
       const critRoll = rollDice(ability.roll);
@@ -553,11 +672,22 @@ function resolveSingleTarget(
       );
     }
 
-    const finalDamage = Math.max(0, baseDamage);
+    const bleed = hasStatus(user, "bleed") ? 5 : 0;
+    // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
+    // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
+    // multiplicative 1.69x. extractCombatMetadata already summed the
+    // percent values additively.
+    let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
+    finalDamage += combat.flatDamage;
+    finalDamage = Math.max(0, Math.floor(finalDamage));
+    finalDamage = Math.max(0, finalDamage - bleed);
+
     const dmgResult = dealDamage(target, finalDamage);
+    const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
     result.messages.push(
-      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
     );
+    emitDamageModTrail(result.messages, combat, finalDamage);
 
     if (dmgResult.shieldAbsorbed > 0) {
       result.messages.push(
@@ -566,11 +696,16 @@ function resolveSingleTarget(
     }
 
     const effects = parseEffects(ability.effect);
-    const effectMsgs = applyEffects(game, user, target, effects);
+    const effectMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, effects, ability),
+    );
     result.messages.push(...effectMsgs);
 
-    // Apply recoil damage after hit damage
-    for (const e of parseEffects(ability.effect)) {
+    // Apply recoil damage after hit damage (reuse the parsed `effects`
+    // array rather than re-running the regex-based clause splitter).
+    // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
+    // Recoil 25%" combo reflects the boosted total.
+    for (const e of effects) {
       if (e.type === "recoil") {
         const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
         dealDamage(user, recoilDmg);
@@ -623,14 +758,110 @@ function resolveSingleTarget(
   return result;
 }
 
-function setCooldown(entity: Entity, ability: AbilityData) {
-  const freq = ability.frequency.toLowerCase();
-  if (freq === "every turn" || freq === "passive") return;
-  if (freq === "eot") {
-    entity.cooldowns[ability.name] = 2;
-  } else if (freq === "e3t") {
-    entity.cooldowns[ability.name] = 3;
+// ---------------------------------------------------------------------------
+// Damage-mod math helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply ignore-clause semantics to a target's defensive stat (PD or MD).
+ *
+ * Order of precedence (deepest reduction wins):
+ *   1. "Ignores DEF"                       -> 0
+ *   2. "Ignores 1/4 DEF"                   -> floor(raw / 4)
+ *   3. "Ignores 1/2 DEF" / "half DEF"      -> floor(raw / 2)
+ *   4. "Ignores X DEF" / "ignores up to …
+ *      DEF"                                -> max(0, raw - X)
+ *
+ * If multiple reductions appear in a single effect ("Ignores DEF AND 5
+ * DEF") the strongest (full-zero) wins; a clause that mixes a fraction
+ * and a numeric subtract is rare in real data and we conservatively
+ * apply the fraction first and then subtract.
+ */
+function applyIgnoreToDefense(
+  raw: number,
+  ignore: CombatMetadata["ignore"],
+): number {
+  if (ignore.def) return 0;
+  let def = raw;
+  if (ignore.quarterDef) def = Math.floor(def / 4);
+  else if (ignore.halfDef) def = Math.floor(def / 2);
+  def = Math.max(0, def - ignore.defReduction);
+  return def;
+}
+
+/**
+ * Build a short trace line that the **Damage** log can append after the
+ * base = dice + OFF - DEF equation, so the player can see adjustments.
+ * Returns "" when no modifier changed the math.
+ */
+function formatDamageModsLine(combat: CombatMetadata): string {
+  const parts: string[] = [];
+  if (combat.ignore.atkMag) parts.push("no OFF (Ignores ATK/MAG)");
+  if (combat.ignore.def) parts.push("no DEF (Ignores DEF)");
+  else if (combat.ignore.quarterDef) parts.push("1/4 DEF");
+  else if (combat.ignore.halfDef) parts.push("1/2 DEF");
+  else if (combat.ignore.defReduction > 0)
+    parts.push(`-${combat.ignore.defReduction} DEF`);
+  if (combat.damagePercent !== 0) {
+    const sign = combat.damagePercent > 0 ? "+" : "";
+    parts.push(`${sign}${combat.damagePercent}% damage`);
   }
+  if (combat.flatDamage !== 0) {
+    const sign = combat.flatDamage > 0 ? "+" : "";
+    parts.push(`${sign}${combat.flatDamage} flat`);
+  }
+  if (parts.length === 0) return "";
+  return ` [${parts.join(", ")}]`;
+}
+
+/**
+ * Push a follow-up log line so the operator can see the breakdown after
+ * a "+30% damage" or "Ignores 5 DEF" kick in. Includes a clause-by-clause
+ * echo for transparency even when the resulting damage has no fractional
+ * pieces.
+ */
+function emitDamageModTrail(
+  log: string[],
+  combat: CombatMetadata,
+  finalDamage: number,
+): void {
+  if (
+    combat.damagePercent === 0 &&
+    combat.flatDamage === 0 &&
+    !combat.ignore.atkMag &&
+    !combat.ignore.def &&
+    !combat.ignore.halfDef &&
+    !combat.ignore.quarterDef &&
+    combat.ignore.defReduction === 0 &&
+    combat.ignore.other.length === 0 &&
+    !combat.ignore.outsideFactors
+  )
+    return;
+  const tags: string[] = [];
+  if (combat.damagePercent !== 0) {
+    const sign = combat.damagePercent > 0 ? "+" : "";
+    tags.push(`${sign}${combat.damagePercent}% damage`);
+  }
+  if (combat.flatDamage !== 0) {
+    const sign = combat.flatDamage > 0 ? "+" : "";
+    tags.push(`${sign}${combat.flatDamage} DMG`);
+  }
+  if (combat.ignore.atkMag) tags.push("Ignores ATK/MAG");
+  if (combat.ignore.def) tags.push("Ignores DEF");
+  else if (combat.ignore.quarterDef) tags.push("Ignores 1/4 DEF");
+  else if (combat.ignore.halfDef) tags.push("Ignores half DEF");
+  if (combat.ignore.defReduction > 0)
+    tags.push(`Ignores ${combat.ignore.defReduction} DEF`);
+  if (combat.ignore.outsideFactors) tags.push("Ignores outside damage factors");
+  for (const o of combat.ignore.other) tags.push(`Ignores ${o}`);
+  log.push(
+    `  *Damage Modifiers applied:* ${tags.join(", ")} -> **${finalDamage}**`,
+  );
+}
+
+function setCooldown(entity: Entity, ability: AbilityData) {
+  const { cooldown } = parseFrequency(ability.frequency);
+  if (cooldown) entity.cooldowns[ability.name] = cooldown;
 }
 
 function isWinCondition(game: Game): boolean {
@@ -726,15 +957,17 @@ function resolveHeal(
   return result;
 }
 
-function resolveNonDamaging(
+function* resolveNonDamaging(
   game: Game,
   user: Entity,
   ability: AbilityData,
   target: Entity,
-): ResolutionResult {
+): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
   const effects = parseEffects(ability.effect);
-  const effectMsgs = applyEffects(game, user, target, effects);
+  const effectMsgs: string[] = yield* runEffectStream(
+    applyEffectStream(game, user, target, effects, ability),
+  );
 
   if (effectMsgs.length > 0) {
     result.messages.push(
@@ -755,6 +988,7 @@ function resolveSplash(
   user: Entity,
   ability: AbilityData,
   primary: Entity,
+  combat: CombatMetadata,
 ): ResolutionResult {
   const result = newResult();
 
@@ -778,16 +1012,28 @@ function resolveSplash(
   for (const target of splashTargets) {
     const damageRoll = rollDice(ability.roll);
     const half = (v: number) => Math.floor(v / 2);
-    const baseDamage =
-      damageRoll.total +
-      offensiveStat(user, ability.damageType) -
-      half(defensiveStat(target, ability.damageType));
+    // Splash halves defense by default per the home page ("half target
+    // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores
+    // DEF" on the parent ability should still wipe the remaining half.
+    const rawDef = half(defensiveStat(target, ability.damageType));
+    const targetDef = applyIgnoreToDefense(rawDef, combat.ignore);
+    const userOff = combat.ignore.atkMag
+      ? 0
+      : offensiveStat(user, ability.damageType);
 
-    const finalDamage = Math.max(0, baseDamage);
+    const baseDamage = damageRoll.total + userOff - targetDef;
+
+    let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
+    finalDamage += combat.flatDamage;
+    finalDamage = Math.max(0, Math.floor(finalDamage));
+
+    const bleed = hasStatus(user, "bleed") ? 5 : 0;
+    finalDamage = Math.max(0, finalDamage - bleed);
     const dmgResult = dealDamage(target, finalDamage);
     result.messages.push(
-      `  **Splash Damage**: -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**`,
+      `  **Splash Damage**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - half DEF(${targetDef})${formatDamageModsLine(combat)} -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**${bleed > 0 ? ` (Bleed -${bleed})` : ""}`,
     );
+    emitDamageModTrail(result.messages, combat, finalDamage);
 
     if (dmgResult.shieldAbsorbed > 0) {
       result.messages.push(

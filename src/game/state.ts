@@ -80,6 +80,18 @@ export interface StatusEffect {
   removable: boolean;
 }
 
+export interface AbilityCost {
+  type: "HP" | "MP" | "Resource";
+  amount: number;
+  resource?: string;
+  prompt?: boolean;
+}
+
+export interface AbilityChoice {
+  id: string;
+  label: string;
+}
+
 export interface AbilityData {
   name: string;
   level: number | "EX1" | "EX2";
@@ -101,6 +113,36 @@ export interface AbilityData {
   range: string;
   effect: string;
   maxUses?: number;
+  cost?: AbilityCost;
+  choices?: AbilityChoice[];
+}
+
+// Parse an ability frequency into a per-battle use limit and a cooldown in turns.
+// Handles both compact data forms ("Once", "Twice/EoT", "E3T") and spec forms
+// ("Twice, Every Other Turn", "Once (Permanent)", "X per Game: 3").
+export function parseFrequency(frequency: string) {
+  const f = frequency.toLowerCase().replace(/\s*,\s*/g, "/");
+  let uses: number | null = null;
+  let cooldown: number | null = null;
+
+  const perGame = f.match(/(\d+)\s*per game/);
+  if (perGame) {
+    uses = parseInt(perGame[1]);
+  } else if (f.includes("once")) {
+    uses = 1;
+  } else if (f.includes("twice")) {
+    uses = 2;
+  } else if (f.includes("thrice")) {
+    uses = 3;
+  }
+
+  if (f.includes("every other turn") || f.includes("eot")) {
+    cooldown = 2;
+  } else if (f.includes("every third turn") || f.includes("e3t")) {
+    cooldown = 3;
+  }
+
+  return { uses, cooldown };
 }
 
 export interface Entity {
@@ -133,6 +175,8 @@ export interface Entity {
   standardUsed: boolean;
   movementUsed: boolean;
   swiftUsed: boolean;
+  resources: Record<string, number>;
+  triggered?: boolean;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
 }
@@ -189,6 +233,11 @@ export interface ActionLogEntry {
   snapshot: string;
 }
 
+export interface ChatEntry {
+  user: string;
+  message: string;
+}
+
 export interface Game {
   id: string;
   room: string;
@@ -206,6 +255,9 @@ export interface Game {
   started: boolean;
   kills: Record<string, number>; // entity num -> kill count
   winner: string | null; // winning entity num or team
+  chatLog: ChatEntry[];
+  toasts: ChatEntry[];
+  signupsOpen: boolean;
 }
 
 export const games = new Map<string, Game>();
@@ -226,9 +278,11 @@ function serializeState(game: Game): string {
       standardUsed: e.standardUsed,
       movementUsed: e.movementUsed,
       swiftUsed: e.swiftUsed,
+      triggered: e.triggered,
     })),
     turnIndex: game.turnIndex,
     round: game.round,
+    log: game.log,
   });
 }
 
@@ -255,10 +309,12 @@ export function popSnapshot(game: Game): boolean {
       ent.standardUsed = e.standardUsed;
       ent.movementUsed = e.movementUsed;
       ent.swiftUsed = e.swiftUsed;
+      ent.triggered = e.triggered;
     }
   }
   game.turnIndex = data.turnIndex;
   game.round = data.round;
+  if (data.log) game.log = data.log;
   return true;
 }
 
@@ -341,7 +397,7 @@ export function getReachableTiles(
 // Line of sight check for range rule
 export function hasLineOfSight(
   game: Game,
-  from: [number, number],
+  from: [number, number], // [row, col]
   to: [number, number],
 ): boolean {
   const dx = to[1] - from[1];
@@ -352,7 +408,7 @@ export function hasLineOfSight(
   const sx = dx / steps;
   const sy = dy / steps;
 
-  for (let i = 1; i < steps; i++) {
+  for (let i = 1; i <= steps; i++) {
     const x = Math.round(from[1] + sx * i);
     const y = Math.round(from[0] + sy * i);
     if (x < 0 || y < 0 || y >= game.map.length || x >= game.map[0].length)
@@ -479,36 +535,26 @@ function inBeam(
   const dr = to[0] - from[0];
   const dc = to[1] - from[1];
 
-  // Beam only works cardinally (up/down/left/right)
-  // 3 tiles wide = perpendicular offset of -1, 0, or +1
-  if (dr === 0) {
-    // Horizontal beam
+  if (dr === 0 && dc === 0) return false;
+
+  // Horizontal beam: perpendicular (row) offset <= 1, column distance 1..range
+  if (Math.abs(dr) <= 1 && dc !== 0) {
     const colDist = Math.abs(dc);
-    if (colDist < 1 || colDist > range) return false;
-    // Check perpendicular (row offset must be 0 or +/-1)
-    return Math.abs(dr) <= 0; // already checked dr===0
+    return colDist >= 1 && colDist <= range;
   }
-  if (dc === 0) {
-    // Vertical beam
+
+  // Vertical beam: perpendicular (col) offset <= 1, row distance 1..range
+  if (Math.abs(dc) <= 1 && dr !== 0) {
     const rowDist = Math.abs(dr);
-    if (rowDist < 1 || rowDist > range) return false;
-    return true;
+    return rowDist >= 1 && rowDist <= range;
   }
 
-  // Diagonal beams: treat the diagonal as the center line
-  if (Math.abs(dr) === Math.abs(dc)) {
-    const diagDist = Math.abs(dr);
-    if (diagDist < 1 || diagDist > range) return false;
-    // Beam width perpendicular to diagonal = 1 tile on each side
-    // For a diagonal beam, the "3 wide" means the two adjacent diagonal columns
-    // We check if the target is on the center diagonal or one tile off
-    return true; // on the diagonal center line, within range
+  // Diagonal beams: center line where |dr| = |dc|, width where they differ by 1
+  const absDr = Math.abs(dr);
+  const absDc = Math.abs(dc);
+  if (Math.abs(absDr - absDc) <= 1 && absDr >= 1 && absDc >= 1) {
+    return Math.max(absDr, absDc) <= range;
   }
-
-  // Off-diagonal: check if within 1 tile perpendicular of the center line
-  // For cardinal beams, perpendicular offset of +/-1 is allowed
-  if (Math.abs(dr) <= range && dc === 0) return Math.abs(dc) <= 0;
-  if (Math.abs(dc) <= range && dr === 0) return Math.abs(dr) <= 0;
 
   return false;
 }
@@ -593,7 +639,7 @@ export function getStarTiles(
   return tiles;
 }
 
-// Get all entity positions in a Cone from caster in a cardinal direction
+// Get all entity positions in a Cone from user in a cardinal direction
 export function getConeTiles(
   from: [number, number],
   range: number,
@@ -626,7 +672,7 @@ export function getConeTiles(
   return tiles;
 }
 
-// Get all tiles in a Line from caster in the closest matching direction
+// Get all tiles in a Line from user in the closest matching direction
 export function getLineTiles(
   from: [number, number],
   range: number,
@@ -654,7 +700,7 @@ export function getLineTiles(
   return tiles;
 }
 
-// Get all tiles in a Pierce from caster (same as Line)
+// Get all tiles in a Pierce from user (same as Line)
 export function getPierceTiles(
   from: [number, number],
   range: number,
@@ -696,7 +742,7 @@ export function getBeamTiles(
 // Get all valid entities in an AoE pattern
 export function getAoETargets(
   game: Game,
-  caster: Entity,
+  user: Entity,
   range: string,
   group: string,
 ): Entity[] {
@@ -705,32 +751,32 @@ export function getAoETargets(
 
   const burstMatch = rangeStr.match(/^burst\s*(\d+)/);
   if (burstMatch) {
-    tiles = getBurstTiles(caster.pos, parseInt(burstMatch[1]));
+    tiles = getBurstTiles(user.pos, parseInt(burstMatch[1]));
   }
 
   const starMatch = rangeStr.match(/^star\s*(\d+)/);
   if (starMatch) {
-    tiles = getStarTiles(caster.pos, parseInt(starMatch[1]));
+    tiles = getStarTiles(user.pos, parseInt(starMatch[1]));
   }
 
   const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
   if (coneMatch) {
-    tiles = getConeTiles(caster.pos, parseInt(coneMatch[1]));
+    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]));
   }
 
   const lineMatch = rangeStr.match(/^line\s*(\d+)/);
   if (lineMatch) {
-    tiles = getLineTiles(caster.pos, parseInt(lineMatch[1]));
+    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]));
   }
 
   const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
   if (pierceMatch) {
-    tiles = getPierceTiles(caster.pos, parseInt(pierceMatch[1]));
+    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]));
   }
 
   const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
   if (beamMatch) {
-    tiles = getBeamTiles(caster.pos, parseInt(beamMatch[1]));
+    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]));
   }
 
   if (tiles.length === 0) return [];
@@ -740,7 +786,7 @@ export function getAoETargets(
 
   return game.entities.filter((e) => {
     if (e.curhp <= 0) return false;
-    if (!isValidGroupTarget(caster, e, groupLower)) return false;
+    if (!isValidGroupTarget(user, e, groupLower)) return false;
     return tileSet.has(posToStr(e.pos[0], e.pos[1]));
   });
 }
@@ -748,7 +794,7 @@ export function getAoETargets(
 // Get Splash targets around a primary target (Burst X from the target)
 export function getSplashTargets(
   game: Game,
-  caster: Entity,
+  user: Entity,
   primary: Entity,
   splashRadius: number,
   group: string,
@@ -760,28 +806,28 @@ export function getSplashTargets(
   return game.entities.filter((e) => {
     if (e.curhp <= 0) return false;
     if (e.num === primary.num) return false; // primary is already targeted
-    if (!isValidGroupTarget(caster, e, groupLower)) return false;
+    if (!isValidGroupTarget(user, e, groupLower)) return false;
     return tileSet.has(posToStr(e.pos[0], e.pos[1]));
   });
 }
 
 // Check if entity is valid for a target group
 function isValidGroupTarget(
-  caster: Entity,
+  user: Entity,
   target: Entity,
   group: string,
 ): boolean {
-  if (group === "self") return target.num === caster.num;
+  if (group === "self") return target.num === user.num;
   if (group === "ally")
-    return target.team === caster.team && target.num !== caster.num;
-  if (group === "foe") return target.team !== caster.team;
+    return target.team === user.team && target.num !== user.num;
+  if (group === "foe") return target.team !== user.team;
   if (group === "any") return true;
   if (group === "tile") return false;
-  if (group.includes("self and allies")) return target.team === caster.team;
-  if (group.includes("self or ally")) return target.team === caster.team;
+  if (group.includes("self and allies")) return target.team === user.team;
+  if (group.includes("self or ally")) return target.team === user.team;
   if (group.includes("self or foe"))
-    return target.team === caster.team || target.team !== caster.team;
-  if (group.includes("foe or ally")) return target.num !== caster.num;
+    return target.team === user.team || target.team !== user.team;
+  if (group.includes("foe or ally")) return target.num !== user.num;
   if (group.includes("self, foes, allies")) return true;
   return true;
 }
@@ -942,30 +988,12 @@ export function dealDamage(
   return { actual, shieldAbsorbed, shieldBreaks };
 }
 
-// Damage statuses deal damage before entity's turn
+// Damage statuses deal damage just before the affected entity's turn
 export function processStartOfTurn(
   game: Game,
   entity: Entity,
 ): { messages: string[]; died: boolean } {
   const messages: string[] = [];
-
-  // Tick cooldowns
-  for (const [name, turns] of Object.entries(entity.cooldowns)) {
-    entity.cooldowns[name] = turns - 1;
-    if (entity.cooldowns[name] <= 0) delete entity.cooldowns[name];
-  }
-
-  // Tick buff durations, remove expired
-  entity.buffs = entity.buffs.filter((b) => {
-    b.rounds--;
-    if (b.rounds <= 0) {
-      messages.push(
-        `  ${entity.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
-      );
-      return false;
-    }
-    return true;
-  });
 
   // Apply status damage (DoT)
   for (const status of [...entity.statuses]) {
@@ -975,21 +1003,6 @@ export function processStartOfTurn(
         `  ${entity.num} takes **${status.damage}** ${status.name} damage (${entity.curhp}/${entity.maxhp} HP).`,
       );
     }
-    // Tick status duration
-    status.rounds--;
-    if (status.rounds <= 0) {
-      messages.push(`  ${entity.num}'s ${status.name} wore off.`);
-      entity.statuses = entity.statuses.filter((s) => s !== status);
-    }
-  }
-
-  // Lava damage
-  const terrain = game.map[entity.pos[0]]?.[entity.pos[1]];
-  if (terrain === Terrain.Lava) {
-    dealDamage(entity, 30);
-    messages.push(
-      `  ${entity.num} takes **30** lava damage (${entity.curhp}/${entity.maxhp} HP).`,
-    );
   }
 
   // Announce status restrictions
@@ -1004,6 +1017,46 @@ export function processStartOfTurn(
   }
   if (isSealed(entity)) {
     messages.push(`  **${entity.num} is sealed and cannot use abilities!**`);
+  }
+
+  const died = entity.curhp <= 0;
+  if (died) {
+    messages.push(`  **${entity.num} (${entity.name}) has been defeated!**`);
+    removeEntity(game, entity);
+  }
+
+  return { messages, died };
+}
+
+// Cooldowns, status durations, and lava resolve at the end of the entity's turn
+export function processEndOfTurn(
+  game: Game,
+  entity: Entity,
+): { messages: string[]; died: boolean } {
+  const messages: string[] = [];
+
+  // Tick cooldowns
+  for (const [name, turns] of Object.entries(entity.cooldowns)) {
+    entity.cooldowns[name] = turns - 1;
+    if (entity.cooldowns[name] <= 0) delete entity.cooldowns[name];
+  }
+
+  // Tick status durations
+  for (const status of [...entity.statuses]) {
+    status.rounds--;
+    if (status.rounds <= 0) {
+      messages.push(`  ${entity.num}'s ${status.name} wore off.`);
+      entity.statuses = entity.statuses.filter((s) => s !== status);
+    }
+  }
+
+  // Lava damage
+  const terrain = game.map[entity.pos[0]]?.[entity.pos[1]];
+  if (terrain === Terrain.Lava) {
+    dealDamage(entity, 30);
+    messages.push(
+      `  ${entity.num} takes **30** lava damage (${entity.curhp}/${entity.maxhp} HP).`,
+    );
   }
 
   const died = entity.curhp <= 0;
@@ -1117,22 +1170,59 @@ export function nextTurn(game: Game): {
     return { entity: null, messages: [], died: false };
   }
 
+  // Tick buffs of the entity whose turn is ending
+  const messages: string[] = [];
+  const prev = getCurrentEntity(game);
+  const prevIndex = game.turnIndex;
+  if (prev) {
+    prev.buffs = prev.buffs.filter((b) => {
+      b.rounds--;
+      if (b.rounds <= 0) {
+        messages.push(
+          `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
+        );
+        return false;
+      }
+      return true;
+    });
+  }
+
   game.turnIndex++;
   if (game.turnIndex >= game.turnOrder.length) {
     game.turnIndex = 0;
     game.round++;
   }
 
+  // Resolve end-of-turn effects for the entity whose turn just ended
+  let died = false;
+  if (prev) {
+    const end = processEndOfTurn(game, prev);
+    messages.push(...end.messages);
+    died = end.died;
+    if (end.died) {
+      // prev was removed from turnOrder; keep the pointer on the next entity
+      game.turnIndex = prevIndex >= game.turnOrder.length ? 0 : prevIndex;
+    }
+  }
+
   const entity = getCurrentEntity(game);
-  if (!entity) return { entity: null, messages: [], died: false };
+  if (!entity) return { entity: null, messages, died };
 
   // Reset per-turn flags
   entity.dashUsed = false;
   entity.standardUsed = false;
   entity.movementUsed = false;
   entity.swiftUsed = false;
+  entity.triggered = false;
   entity.pendingAction = null;
 
-  const { messages, died } = processStartOfTurn(game, entity);
-  return { entity, messages, died };
+  const { messages: startMessages, died: startDied } = processStartOfTurn(
+    game,
+    entity,
+  );
+  return {
+    entity,
+    messages: [...messages, ...startMessages],
+    died: died || startDied,
+  };
 }

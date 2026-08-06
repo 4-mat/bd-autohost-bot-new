@@ -199,6 +199,9 @@ export function handleKyubsInfo(roomid: string, html: string) {
       started: true,
       kills: {},
       winner: null,
+      chatLog: [],
+      toasts: [],
+      signupsOpen: false,
     };
     games.set(game.id, game);
   } else {
@@ -241,6 +244,7 @@ export function handleKyubsInfo(roomid: string, html: string) {
         buffs: [],
         cooldowns: {},
         usesUsed: {},
+        resources: {},
         pendingAction: null,
         dashUsed: false,
         standardUsed: false,

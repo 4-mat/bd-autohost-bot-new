@@ -5,6 +5,7 @@ import { rooms, getRoom, type Room } from "./rooms.js";
 import { users, type User } from "./users.js";
 import { handleCommand } from "./commands/index.js";
 import { handleKyubsInfo } from "./html/parse.js";
+import { games } from "./game/state.js";
 
 const PREFIX = config.char;
 
@@ -31,10 +32,21 @@ function handleChatMessage(roomid: string, username: string, message: string) {
     return;
   }
 
+  // Capture non-command messages to active game chat
+  if (!message.startsWith(PREFIX)) {
+    for (const game of games.values()) {
+      if (game.room === roomid) {
+        const entry = { user: username, message };
+        game.chatLog.push(entry);
+        game.toasts.push(entry);
+        break;
+      }
+    }
+    return;
+  }
+
   const room = getRoom(roomid);
   const user = users.get(toId(username));
-
-  if (!message.startsWith(PREFIX)) return;
   const { cmd, args, val } = splitMessage(message.slice(PREFIX.length));
 
   handleCommand(room, user ?? null, cmd, args, val);
