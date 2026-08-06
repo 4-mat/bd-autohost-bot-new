@@ -586,6 +586,13 @@ function handleGenPos(room: Room, user: User, args: string) {
 
   const arg = args.trim().toLowerCase();
 
+  if (game.map.length === 0) {
+    return sendPm(
+      user.name,
+      "Set a map first (%setmap <name> or %setmap gen), then %genpos.",
+    );
+  }
+
   // Team mode: %genpos <N>v<M> (e.g. %genpos 2v2, %genpos 3v3)
   const teamMatch = arg.match(/^(\d+)\s*v\s*(\d+)$/);
   if (teamMatch) {
@@ -750,22 +757,35 @@ export function genPosSlots(
  * mirrored anchors along the bottom edge (columns evenly spread), so team 1
  * starts in the top half and team 2 in the bottom half.
  */
+// Compact cluster of k anchor offsets starting at a corner: fills a 2x2 block
+// first, then continues along the edge row.
+function cornerOffsets(k: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (let layer = 0; out.length < k; layer++) {
+    for (let r = 0; r <= layer && out.length < k; r++) out.push([r, layer]);
+    for (let c = 0; c < layer && out.length < k; c++) out.push([layer, c]);
+  }
+  return out;
+}
+
 export function genTeamSlots(
   rows: number,
   cols: number,
   a: number,
   b: number,
 ): [top: [number, number][], bottom: [number, number][]] {
-  const top: [number, number][] = [];
-  const bottom: [number, number][] = [];
-  for (let i = 0; i < a; i++) {
-    const c = Math.floor((cols * (i + 1)) / (a + 1));
-    top.push([0, c]);
-  }
-  for (let i = 0; i < b; i++) {
-    const c = Math.floor((cols * (i + 1)) / (b + 1));
-    bottom.push([Math.max(0, rows - 1), c]);
-  }
+  // Team A clusters in the top-left corner, team B in the diagonally opposite
+  // bottom-right corner — so 1v1 meets at opposite corners and teams face off
+  // from mirrored corners.
+  const top: [number, number][] = cornerOffsets(a).map(
+    ([r, c]) => [r, c] as [number, number],
+  );
+  const bottom: [number, number][] = cornerOffsets(b).map(
+    ([r, c]): [number, number] => [
+      Math.max(0, rows - 1) - r,
+      Math.max(0, cols - 1) - c,
+    ],
+  );
   return [top, bottom];
 }
 
