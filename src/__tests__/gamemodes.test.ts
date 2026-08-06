@@ -6,6 +6,7 @@ import {
   modeDescription,
   modeIdFor,
   normalizeVoteMode,
+  pendingVoterIds,
   randomMapForMode,
   recommendedMaps,
   runoffOptions,
@@ -266,6 +267,25 @@ describe("tieModes", () => {
         { mode: "JUGG", count: 1 },
       ]),
     ).toEqual(["FFA", "NTR", "JUGG"]);
+  });
+});
+
+describe("pendingVoterIds", () => {
+  test("returns ids that have not voted", () => {
+    expect(pendingVoterIds({ p1: "FFA" }, ["p1", "p2", "p3"])).toEqual([
+      "p2",
+      "p3",
+    ]);
+  });
+
+  test("returns all ids when nobody voted", () => {
+    expect(pendingVoterIds({}, ["p1", "p2"])).toEqual(["p1", "p2"]);
+  });
+
+  test("returns empty when everyone voted", () => {
+    expect(pendingVoterIds({ p1: "FFA", p2: "NTR" }, ["p1", "p2"])).toEqual(
+      [],
+    );
   });
 });
 

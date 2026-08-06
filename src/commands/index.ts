@@ -33,9 +33,9 @@ export function handleCommand(
 
   if (id === "help" || id === "h") {
     const help = [
-      "**Host Commands**: %host, %setgame, %addp, %addm, %remp, %setmap, %setlevel, %setteam, %setjugg, %gento, %start, %dehost, %listmaps",
+      "**Host Commands**: %host, %setgame, %addp, %addm, %remp, %setmap, %setlevel, %setteam, %setjugg, %gento, %start, %dehost, %listmaps, %close, %endvote, %nudge",
       "**In-Game (Host)**: %info, %map, %pl, %to, %status, %regp, %hp, %cut, %cr",
-      "**In-Game (Player)**: %move, %use, %dash, %target, %choose, %confirm, %cancel, %endturn, %premove, %r",
+      "**In-Game (Player)**: %move, %use, %dash, %target, %choose, %confirm, %cancel, %endturn, %premove, %r, %vote, %votestatus, %unvote",
       "**Character**: %vs, %vl, %vi, %sc, %sw, %sco",
       "**Reference**: %wt, %rf, %wtm",
       "**Sheets**: %sheets, %sheets all",
@@ -90,6 +90,7 @@ export function handleCommand(
     id === "openbsu" ||
     id === "close" ||
     id === "endvote" ||
+    id === "nudge" ||
     id === "join" ||
     id === "genpos"
   ) {
@@ -112,6 +113,7 @@ export function handleCommand(
     id === "target" ||
     id === "choose" ||
     id === "vote" ||
+    id === "votestatus" ||
     id === "unvote" ||
     id === "endturn" ||
     id === "next" ||

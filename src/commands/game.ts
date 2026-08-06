@@ -45,6 +45,7 @@ import {
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
 import {    normalizeVoteMode,
+    pendingVoterIds,
     runoffOptions,
     tallyVotes,
   voteOptionsFor,
@@ -103,6 +104,11 @@ export function gameCommand(
     case "vote":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleVote(game, user, full);
+      break;
+
+    case "votestatus":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleVoteStatus(game, user);
       break;
 
     case "unvote":
@@ -649,7 +655,31 @@ function buildVoteStatus(game: Game): string {
   const runoff = game.voteRunoff
     ? ` (RUNOFF: only **${game.voteRunoff.join(" / ")}** count)`
     : "";
-  return `**Gamemode vote** (${Object.keys(game.votes).length}/${players.length} voted): ${summary}.${runoff}`;
+  const pending = pendingVoterIds(
+    game.votes,
+    players.map((p) => p.id),
+  );
+  const pendingNames = pending
+    .map((id) => players.find((p) => p.id === id)?.name ?? id)
+    .join(", ");
+  const pendingPart = pending.length
+    ? ` | not voted: ${pendingNames}`
+    : " | everyone has voted!";
+  return `**Gamemode vote** (${Object.keys(game.votes).length}/${players.length} voted): ${summary}.${runoff}${pendingPart}`;
+}
+
+/**
+ * %votestatus — anyone can check the live tally, runoff state, and who still
+ * hasn't voted, without casting a vote themselves.
+ */
+function handleVoteStatus(game: Game, user: User) {
+  if (!game.voteOpen) {
+    return sendPm(
+      user.name,
+      "No gamemode vote is open. The host closes signups (%close) to start one.",
+    );
+  }
+  sendPm(user.name, buildVoteStatus(game));
 }
 
 function finishStep(game: Game, entity: Entity, step: AttackStep) {
