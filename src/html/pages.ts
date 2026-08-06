@@ -84,7 +84,7 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
   html += `<span style="color:#888;font-size:10px">New to a mode? Hover the buttons, or use %wt modes to learn them all.</span><br>`;
 
   if (options.length === 0) {
-    html += '<span style="color:#888"><i>No valid modes for this lobby size.</i></span>';
+    html += '<span style="color:#888"><i>No valid modes for this lobby size (modes are defined for up to 8 players).</i></span>';
   }
 
   for (const opt of options) {

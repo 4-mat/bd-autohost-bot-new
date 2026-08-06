@@ -129,6 +129,18 @@ describe("voteOptionsFor", () => {
     ]);
   });
 
+  test("caps FFA/NTR/JUGG at 8 players", () => {
+    expect(voteOptionsFor(8).map((o) => o.id)).toContain("FFA");
+    expect(voteOptionsFor(8).map((o) => o.id)).toContain("NTR");
+    expect(voteOptionsFor(8).map((o) => o.id)).toContain("JUGG");
+    // Above the glossary's 8-player max, the open-ended modes disappear.
+    expect(voteOptionsFor(9).map((o) => o.id)).not.toContain("FFA");
+    expect(voteOptionsFor(9).map((o) => o.id)).not.toContain("NTR");
+    expect(voteOptionsFor(9).map((o) => o.id)).not.toContain("JUGG");
+    // Exact-size modes are unaffected (their counts are all <= 8 anyway).
+    expect(voteOptionsFor(9)).toEqual([]);
+  });
+
   test("offers Juggernaut formats at their exact sizes", () => {
     expect(voteOptionsFor(3).map((o) => o.id)).toContain("2vJ");
     expect(voteOptionsFor(4).map((o) => o.id)).toContain("3vJ");
