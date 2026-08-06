@@ -28,6 +28,9 @@ import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
 import type { AbilityData } from "../data/index.js";
 
+// Modes in which someone must be designated the Juggernaut (%setjugg).
+const JUGG_MODES = new Set(["JUGG", "2vJ", "3vJ", "4vJ", "PvPJ"]);
+
 function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
   return a.level === "EX1" || a.level === "EX2" ? exOk : a.level <= lvl;
 }
@@ -293,9 +296,18 @@ function handleEndVote(room: Room, user: User) {
   }
 
   game.mode = top.mode.toUpperCase();
+  let hint = "";
+  if (JUGG_MODES.has(top.mode)) {
+    // PvPJ is a team format: one team gets the juggernaut, so teams must be
+    // split first. The NvJ formats and plain Juggernaut only need a designation.
+    hint =
+      top.mode === "PvPJ"
+        ? " Split teams with %setteam, then designate the Juggernaut with %setjugg <entity>."
+        : " Designate the Juggernaut with %setjugg <entity>.";
+  }
   send(
     room.id,
-    `**Voting closed.** ${summary}\nMode set to **${game.mode}** (won by vote).`,
+    `**Voting closed.** ${summary}\nMode set to **${game.mode}** (won by vote).${hint}`,
   );
   broadcastPages(game);
 }

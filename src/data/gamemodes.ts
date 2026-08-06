@@ -78,6 +78,18 @@ const ALIASES: Record<string, GameModeId> = {
   pvp: "pvp",
   duel: "1v1",
   "1v1": "1v1",
+  // BD 4.4 modes: Juggernaut-family modes use jugg (cover) maps, team NTR
+  // uses ntr (central-feature) maps, and PvP-family modes use pvp maps.
+  "2vj": "jugg",
+  "3vj": "jugg",
+  "4vj": "jugg",
+  pvpj: "pvp",
+  "pvp juggernaut": "pvp",
+  pvpntr: "ntr",
+  "pvp ntr": "ntr",
+  "2v2v2": "pvp",
+  "4v4": "pvp",
+  "2v2v2v2": "pvp",
 };
 
 /**
@@ -119,14 +131,17 @@ export function randomMapForMode(mode: string): string | undefined {
 // impossible mode (e.g. 3v3 with 4 players) is never offered.
 
 export interface VoteOption {
-  /** Canonical mode string stored on the game (e.g. "FFA", "2v2"). */
+  /** Canonical mode string stored on the game (e.g. "FFA", "2v2", "PvPJ"). */
   id: string;
   /** Friendly display label. */
   label: string;
   /** Minimum joined players for this option. */
   minPlayers: number;
-  /** When set, this option requires EXACTLY this many players. */
-  exactPlayers?: number;
+  /**
+   * When set, this option requires EXACTLY this many players — either a single
+   * count or a list of allowed counts (e.g. PvPJ supports 5 or 7).
+   */
+  exactPlayers?: number | number[];
 }
 
 export const VOTE_OPTIONS: VoteOption[] = [
@@ -134,8 +149,16 @@ export const VOTE_OPTIONS: VoteOption[] = [
   { id: "1v1", label: "1v1", minPlayers: 2, exactPlayers: 2 },
   { id: "2v2", label: "2v2", minPlayers: 4, exactPlayers: 4 },
   { id: "3v3", label: "3v3", minPlayers: 6, exactPlayers: 6 },
+  { id: "4v4", label: "4v4", minPlayers: 8, exactPlayers: 8 },
+  { id: "2v2v2", label: "2v2v2", minPlayers: 6, exactPlayers: 6 },
+  { id: "2v2v2v2", label: "2v2v2v2", minPlayers: 8, exactPlayers: 8 },
   { id: "NTR", label: "NTR", minPlayers: 2 },
   { id: "JUGG", label: "Juggernaut", minPlayers: 2 },
+  { id: "2vJ", label: "2vJ", minPlayers: 3, exactPlayers: 3 },
+  { id: "3vJ", label: "3vJ", minPlayers: 4, exactPlayers: 4 },
+  { id: "4vJ", label: "4vJ", minPlayers: 5, exactPlayers: 5 },
+  { id: "PvPJ", label: "PvPJ", minPlayers: 5, exactPlayers: [5, 7] },
+  { id: "PvPNTR", label: "PvP NTR", minPlayers: 4, exactPlayers: [4, 6, 8] },
 ];
 
 const VOTE_ALIASES: Record<string, string> = {
@@ -145,10 +168,20 @@ const VOTE_ALIASES: Record<string, string> = {
   duel: "1v1",
   "2v2": "2v2",
   "3v3": "3v3",
+  "4v4": "4v4",
+  "2v2v2": "2v2v2",
+  "2v2v2v2": "2v2v2v2",
   ntr: "NTR",
   jugg: "JUGG",
   juggernaut: "JUGG",
   jug: "JUGG",
+  "2vj": "2vJ",
+  "3vj": "3vJ",
+  "4vj": "4vJ",
+  pvpj: "PvPJ",
+  "pvp juggernaut": "PvPJ",
+  pvpntr: "PvPNTR",
+  "pvp ntr": "PvPNTR",
 };
 
 /**
@@ -162,13 +195,17 @@ export function normalizeVoteMode(arg: string): string | undefined {
 
 /**
  * Vote options valid for a given joined-player count: exact-count modes
- * (1v1/2v2/3v3) are only offered when the lobby matches exactly.
+ * (1v1/2v2/PvPJ...) are only offered when the lobby matches exactly.
  */
 export function voteOptionsFor(playerCount: number): VoteOption[] {
   return VOTE_OPTIONS.filter((o) => {
     if (playerCount < o.minPlayers) return false;
-    if (o.exactPlayers !== undefined && playerCount !== o.exactPlayers)
-      return false;
+    if (o.exactPlayers !== undefined) {
+      const allowed = Array.isArray(o.exactPlayers)
+        ? o.exactPlayers
+        : [o.exactPlayers];
+      if (!allowed.includes(playerCount)) return false;
+    }
     return true;
   });
 }
