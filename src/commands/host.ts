@@ -199,12 +199,89 @@ function handleSetGame(room: Room, user: User, args: string) {
   if (!mode)
     return sendPm(user.name, "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.)");
 
+  const players = game.entities.filter((e) => !e.isMonster);
+  if (players.length === 0) {
+    return sendPm(
+      user.name,
+      "Add players first (%addp, or %open + %join), then %setgame <mode> to finish the setup.",
+    );
+  }
+
+  // Validate team-count requirements BEFORE mutating anything.
+  const teamMatch = mode.toUpperCase().match(/^(\d+)V(\d+)$/);
+  if (teamMatch) {
+    const a = parseInt(teamMatch[1]);
+    const b = parseInt(teamMatch[2]);
+    if (players.length !== a + b) {
+      return sendPm(
+        user.name,
+        `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
+      );
+    }
+  }
+
   game.mode = mode.toUpperCase();
-  const rec = recommendedMaps(game.mode);
+
+  // Pick a map only when none is chosen yet: random from the mode's
+  // recommended pool, falling back to a procedural map.
+  const mapMsg: string[] = [];
+  if (game.map.length === 0) {
+    const poolPick = randomMapForMode(mode);
+    const poolDef = poolPick ? getMapByName(poolPick) : undefined;
+    if (poolDef) {
+      applyMap(game, poolDef, "", true);
+      mapMsg.push(
+        `Map: ${poolDef.displayName} (random ${modeIdFor(mode)!.toUpperCase()} pick)`,
+      );
+    } else {
+      applyMap(game, {
+        grid: generateDefaultMap(),
+        displayName: "Procedural (12x12)",
+        rows: 12,
+        cols: 12,
+      }, "", true);
+      mapMsg.push("Map: Procedural (12x12)");
+    }
+  }
+
+  pushSnapshot(game);
+
+  // Team modes: split the players into two teams and place mirrored halves.
+  const spots: string[] = [];
+  if (teamMatch) {
+    const a = parseInt(teamMatch[1]);
+    const b = parseInt(teamMatch[2]);
+    const teamA = players.slice(0, a);
+    const teamB = players.slice(a, a + b);
+    teamA.forEach((e) => (e.team = 1));
+    teamB.forEach((e) => (e.team = 2));
+    const placed = placeTeamPlayers(game, teamA, teamB);
+    if (!placed) {
+      return sendPm(user.name, "Could not find open spawn tiles.");
+    }
+    for (const [e, p] of [...placed[0], ...placed[1]]) {
+      spots.push(`${e.num} (T${e.team}) at ${posToStr(p[0], p[1])}`);
+    }
+  } else {
+    // FFA and other modes: clear leftover teams, spread everyone.
+    players.forEach((e) => (e.team = 0));
+    const placed = placePlayers(game, players);
+    if (!placed) {
+      return sendPm(user.name, "Could not find open spawn tiles.");
+    }
+    for (const [e, p] of placed) {
+      spots.push(`${e.num} at ${posToStr(p[0], p[1])}`);
+    }
+  }
+
+  // Generate the turn order so only %start remains.
+  handleGenTurnOrder(room, user);
+
   send(
     room.id,
-    `Game mode set to **${game.mode}**.${rec ? " Use %listmaps for recommended maps." : ""}`,
+    `**Game set up for ${game.mode}!**${mapMsg.length ? ` ${mapMsg.join("; ")}.` : ""}\nPositions: ${spots.join(" | ")}\nRun %start to begin.`,
   );
+  broadcastPages(game);
 }
 
 // -- .open / .openbsu / .close - Open/close signups ---------------------------
@@ -285,19 +362,63 @@ function handleGenPos(room: Room, user: User, args: string) {
     );
   }
 
-  const match = args
-    .trim()
-    .toLowerCase()
-    .match(/^(\d+)\s*p?\s*([a-z0-9]+)$/);
+  const arg = args.trim().toLowerCase();
+
+  // Team mode: %genpos <N>v<M> (e.g. %genpos 2v2, %genpos 3v3)
+  const teamMatch = arg.match(/^(\d+)\s*v\s*(\d+)$/);
+  if (teamMatch) {
+    const a = parseInt(teamMatch[1]);
+    const b = parseInt(teamMatch[2]);
+    if (a < 1 || b < 1 || a > 5 || b > 5) {
+      return sendPm(
+        user.name,
+        "Usage: %genpos <N>v<M> with 1-5 per team (e.g. %genpos 2v2).",
+      );
+    }
+    const players = game.entities.filter((e) => !e.isMonster);
+    if (a + b > players.length) {
+      return sendPm(
+        user.name,
+        `Only ${players.length} player(s) joined; need ${a + b} for ${a}v${b}.`,
+      );
+    }
+
+    const teamA = players.slice(0, a);
+    const teamB = players.slice(a, a + b);
+
+    pushSnapshot(game);
+    const placed = placeTeamPlayers(game, teamA, teamB);
+    if (!placed) {
+      return sendPm(user.name, "Could not find open spawn tiles.");
+    }
+    teamA.forEach((e) => (e.team = 1));
+    teamB.forEach((e) => (e.team = 2));
+    game.mode = `${a}V${b}`;
+    const spots = [...placed[0], ...placed[1]]
+      .map(([e, p]) => `${e.num} (T${e.team}) at ${posToStr(p[0], p[1])}`)
+      .join(" | ");
+    send(room.id, `**Positions set (${a}v${b}):** ${spots}`);
+    broadcastPages(game);
+    return;
+  }
+
+  // Free-for-all: %genpos <N>p<mode> (e.g. %genpos 4pffa)
+  const match = arg.match(/^(\d+)\s*p?\s*([a-z0-9]+)$/);
   if (!match) {
-    return sendPm(user.name, "Usage: %genpos <N><mode> (e.g. %genpos 4pffa).");
+    return sendPm(
+      user.name,
+      "Usage: %genpos <N><mode> (e.g. %genpos 4pffa) or %genpos <N>v<M> (e.g. %genpos 2v2).",
+    );
   }
 
   const n = parseInt(match[1]);
   const mode = match[2];
 
   if (mode.includes("v")) {
-    return sendPm(user.name, "%genpos does not support team modes.");
+    return sendPm(
+      user.name,
+      "Team modes use %genpos <N>v<M> (e.g. %genpos 2v2).",
+    );
   }
   if (mode.includes("pve")) {
     return sendPm(user.name, "%genpos does not support PvE.");
@@ -314,12 +435,15 @@ function handleGenPos(room: Room, user: User, args: string) {
     return sendPm(user.name, "%genpos supports up to 9 players.");
   }
 
+  // FFA: clear any leftover team assignment from a prior team setup.
+  players.forEach((e) => (e.team = 0));
+
+  pushSnapshot(game);
   const placed = placePlayers(game, players.slice(0, n));
   if (!placed) {
     return sendPm(user.name, "Could not find open spawn tiles.");
   }
 
-  pushSnapshot(game);
   const spots = placed
     .map(([e, p]) => `${e.num} at ${posToStr(p[0], p[1])}`)
     .join(" | ");
@@ -383,6 +507,66 @@ export function genPosSlots(
   if (n === 7) return [...corners, edges[0], edges[1], center];
   if (n === 8) return [...corners, ...edges];
   return [...corners, ...edges, center];
+}
+
+/**
+ * Symmetric team spawn anchors: `a` anchors along the top edge and `b`
+ * mirrored anchors along the bottom edge (columns evenly spread), so team 1
+ * starts in the top half and team 2 in the bottom half.
+ */
+export function genTeamSlots(
+  rows: number,
+  cols: number,
+  a: number,
+  b: number,
+): [top: [number, number][], bottom: [number, number][]] {
+  const top: [number, number][] = [];
+  const bottom: [number, number][] = [];
+  for (let i = 0; i < a; i++) {
+    const c = Math.floor((cols * (i + 1)) / (a + 1));
+    top.push([0, c]);
+  }
+  for (let i = 0; i < b; i++) {
+    const c = Math.floor((cols * (i + 1)) / (b + 1));
+    bottom.push([Math.max(0, rows - 1), c]);
+  }
+  return [top, bottom];
+}
+
+/**
+ * Place two teams on mirrored map halves. Returns a pair of placed lists
+ * (entity + position) or null when no open tiles are found.
+ */
+export function placeTeamPlayers(
+  game: Game,
+  teamA: Entity[],
+  teamB: Entity[],
+): [
+  placedA: [Entity, [number, number]][],
+  placedB: [Entity, [number, number]][],
+] | null {
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  const [top, bottom] = genTeamSlots(rows, cols, teamA.length, teamB.length);
+  const used = new Set<string>();
+  const outA: [Entity, [number, number]][] = [];
+  const outB: [Entity, [number, number]][] = [];
+
+  for (let i = 0; i < teamA.length; i++) {
+    const pos = findNearestOpenTile(game, top[i][0], top[i][1], used);
+    if (!pos) return null;
+    teamA[i].pos = pos;
+    used.add(`${pos[0]},${pos[1]}`);
+    outA.push([teamA[i], pos]);
+  }
+  for (let i = 0; i < teamB.length; i++) {
+    const pos = findNearestOpenTile(game, bottom[i][0], bottom[i][1], used);
+    if (!pos) return null;
+    teamB[i].pos = pos;
+    used.add(`${pos[0]},${pos[1]}`);
+    outB.push([teamB[i], pos]);
+  }
+  return [outA, outB];
 }
 
 export function findNearestOpenTile(
@@ -1262,10 +1446,12 @@ function applyMap(
   game: Game,
   def: { grid: Terrain[][]; displayName: string; rows: number; cols: number },
   note = "",
+  quiet = false,
 ): void {
   game.map = def.grid.map((row) => [...row]);
   game.mapName = def.displayName;
   repositionEntities(game);
+  if (quiet) return;
   broadcastPages(game);
   send(
     game.room,
