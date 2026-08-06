@@ -2,9 +2,12 @@ import {
   TERRAIN_COLORS,
   TERRAIN_NAMES,
   getReachableTiles,
+  getEffectiveMp,
   hasLineOfSight,
   inRange,
   dist,
+  DIRECTION_LABELS,
+  parseFrequency,
   type Game,
   type Entity,
   type AbilityData,
@@ -110,6 +113,8 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 
   const map = buildMiniMap(game, entity);
   const stats = buildEntityStats(entity);
+  const pl = buildPlayerDataTable(game);
+  const log = buildActionLog(game, true);
 
   let phase = "";
   let actions = "";
@@ -140,13 +145,29 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     } else if (!entity.movementUsed) {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move</span></div>`;
       actions = buildMoveButtons(game, entity);
-      actions += buildDashButton(entity);
-      actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")}</div>`;
+      actions += buildDashButtons(game, entity);
+      actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")} ${btn("%passmove", "Pass Movement")}</div>`;
     } else {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
       actions = buildAbilityButtons(game, entity);
     }
-    if (entity.pendingAction && !entity.pendingPrompt) {
+    // Direction prompt buttons
+    if (entity.pendingPromptKind === "direction") {
+      const dirs = ["up", "down", "left", "right"];
+      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #f80;background:rgba(255,136,0,0.10)"><b style="color:#f80">CHOOSE DIRECTION</b><br>`;
+      for (const d of dirs) {
+        const label = DIRECTION_LABELS[d] ?? d;
+        actions += btn(`%dir ${d}`, label, "font-size:12px;padding:4px 12px");
+      }
+      actions += `</div>`;
+    }
+
+    // Tile prompt buttons
+    if (entity.pendingPromptKind === "tile") {
+      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #80f;background:rgba(136,0,255,0.10)"><b style="color:#80f">CHOOSE TILE</b><br><span style="color:#888;font-size:10px">Use %tile &lt;ref&gt; to pick a tile</span></div>`;
+    }
+
+    if (entity.pendingAction) {
       const pa = entity.pendingAction;
       const targetStr = pa.target ? ` targeting ${pa.target}` : "";
       actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #0c0;background:rgba(0,204,0,0.10)"><b style="color:#0c0">PENDING:</b> ${esc(pa.ability.name)}${targetStr}</div>`;
@@ -160,14 +181,10 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   }
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
-  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})
-  <hr>
-  ${stats}
-  ${map}
-  <hr>
-  ${phase}
-  ${prompt}
-  ${actions}
+  ${map}${pl}
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
+  <hr>${phase}${prompt}${actions}
+  ${log}
   ${buildToasts(game)}
 </div>`;
 }
@@ -244,6 +261,46 @@ function buildMapTable(game: Game, self: Entity | null): string {
   return html;
 }
 
+// -- Buff/Shield Display Helpers ----------------------------------------------
+
+const DISPLAY_STATS = new Set(["atk", "mag", "pd", "md", "eva", "mp"]);
+
+function statBonus(entity: Entity, stat: string): number {
+  let bonus = 0;
+  for (const b of entity.buffs) {
+    if (b.stat === stat) bonus += b.amount;
+    if (b.stat === "def" && (stat === "pd" || stat === "md")) bonus += b.amount;
+  }
+  return bonus;
+}
+
+function buildStatCell(entity: Entity, stat: string, base: number): string {
+  const bonus = statBonus(entity, stat);
+  const value = Math.max(0, base + bonus);
+  if (bonus === 0) return `<td style="padding:0px 8px">${value}</td>`;
+  const color = bonus > 0 ? "#c90" : "#c00";
+  return `<td style="padding:0px 8px"><i style="color:${color}">${value}</i></td>`;
+}
+
+function buildBuffSuffix(entity: Entity): string {
+  const parts: string[] = [];
+  for (const b of entity.buffs) {
+    if (DISPLAY_STATS.has(b.stat) || b.stat === "def") continue;
+    const sign = b.amount > 0 ? "+" : "";
+    parts.push(`${sign}${b.amount} ${b.stat.toUpperCase()}/${b.rounds}r`);
+  }
+  if (parts.length === 0) return "";
+  return ` <span style="color:#888;font-size:10px">(${parts.join(", ")})</span>`;
+}
+
+function buildHpCell(entity: Entity): string {
+  const shield = entity.statuses.find((s) => s.name.toLowerCase() === "shield");
+  if (!shield || shield.damage <= 0) {
+    return `${entity.curhp}/${entity.maxhp}`;
+  }
+  return `${entity.curhp} + <span style="color:#08c">(${shield.damage})</span>/${entity.maxhp}`;
+}
+
 // -- Player Data Table (Host) -------------------------------------------------
 
 function buildPlayerDataTable(game: Game): string {
@@ -305,7 +362,7 @@ title="${esc(e.className)}, ${esc(e.weaponName)}">
 </th>
 `;
 
-    html += `<th style="padding:0px 8px">${esc(e.name)}</th>`;
+    html += `<th style="padding:0px 8px">${esc(e.name)}${buildBuffSuffix(e)}</th>`;
 
     html += `
 <th style="padding:0px 8px">
@@ -313,13 +370,13 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
 </th>
 `;
 
-    html += `<th style="padding:0px 8px">${e.curhp}/${e.maxhp}</th>`;
-    html += `<th style="padding:0px 8px">${e.atk}</th>`;
-    html += `<th style="padding:0px 8px">${e.mag}</th>`;
-    html += `<th style="padding:0px 8px">${e.pd}</th>`;
-    html += `<th style="padding:0px 8px">${e.md}</th>`;
-    html += `<th style="padding:0px 8px">${e.eva}</th>`;
-    html += `<th style="padding:0px 8px">${e.mp}</th>`;
+    html += `<th style="padding:0px 8px">${buildHpCell(e)}</th>`;
+    html += buildStatCell(e, "atk", e.atk);
+    html += buildStatCell(e, "mag", e.mag);
+    html += buildStatCell(e, "pd", e.pd);
+    html += buildStatCell(e, "md", e.md);
+    html += buildStatCell(e, "eva", e.eva);
+    html += buildStatCell(e, "mp", e.mp);
 
     html += `</tr>`;
   }
@@ -354,20 +411,24 @@ Turn Order: ${turnParts.map(esc).join(", ")}
 
 // -- Action Log ---------------------------------------------------------------
 
-function buildActionLog(game: Game): string {
-  let html = `<b>Action Log</b>`;
-  if (game.log.length === 0) {
-    html += `<div style="color:#888"><i>(empty)</i></div>`;
-    return html;
-  }
+function buildActionLog(game: Game, collapsed = false): string {
+  const body =
+    game.log.length === 0
+      ? `<div style="color:#888"><i>(empty)</i></div>`
+      : `<table class="log" align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">` +
+        game.log
+          .slice(-15)
+          .map(
+            (entry) =>
+              `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
+          )
+          .join("") +
+        `</table>`;
 
-  const recent = game.log.slice(-15);
-  html += `<table class="log" align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">`;
-  for (const entry of recent) {
-    html += `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`;
+  if (collapsed) {
+    return `<details style="margin:4px 0"><summary style="cursor:pointer"><b>Action Log</b></summary>${body}</details>`;
   }
-  html += "</table>";
-  return html;
+  return `<b>Action Log</b>${body}`;
 }
 
 // -- Controls (Host) ----------------------------------------------------------
@@ -433,9 +494,22 @@ function buildMoveButtons(game: Game, entity: Entity): string {
   return `<div style="margin:4px 0">${tiles.join(" ")}</div>`;
 }
 
-function buildDashButton(entity: Entity): string {
+function buildDashButtons(game: Game, entity: Entity): string {
   if (entity.dashUsed) return "";
-  return `<div style="margin:2px 0">${btn(`%dash ${entity.name}`, "Dash (1.5x MP)")}</div>`;
+
+  // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
+  const dashMp = Math.floor(getEffectiveMp(entity) * 1.5);
+  const reachable = getReachableTiles(game, entity.pos, dashMp);
+  const tiles: string[] = [];
+
+  for (const [key] of reachable) {
+    tiles.push(btn(`%dash ${key},${entity.name}`, key));
+  }
+
+  if (tiles.length === 0) {
+    return `<div style="margin:4px 0;color:#888"><i>No dash targets.</i></div>`;
+  }
+  return `<div style="margin:2px 0;padding:3px 6px;border-left:2px solid #c60;background:rgba(204,102,0,0.08)"><span style="color:#c60;font-size:10px;font-weight:bold">DASH (1.5x MP, Full)</span><br>${tiles.join(" ")}</div>`;
 }
 
 // -- Pre-Move Ability Buttons (Player) ----------------------------------------
@@ -454,13 +528,19 @@ function buildPreMoveAbilities(game: Game, entity: Entity): string {
     groups[key].push(ab);
   }
 
-  const order = ["Trigger", "Swift", "Free"];
+  const order = ["Trigger", "Reaction", "Swift", "Free"];
   for (const type of order) {
     const abs = groups[type];
     if (!abs || abs.length === 0) continue;
 
     const typeColor =
-      type === "Swift" ? "#0c0" : type === "Trigger" ? "#cc0" : "#888";
+      type === "Swift"
+        ? "#0c0"
+        : type === "Trigger"
+          ? "#cc0"
+          : type === "Reaction"
+            ? "#f60"
+            : "#888";
 
     html += `<div style="margin:4px 0;padding:3px 6px;border-left:2px solid ${typeColor}">`;
     html += `<span style="color:${typeColor};font-size:10px;font-weight:bold">${type.toUpperCase()}</span><br>`;
@@ -526,12 +606,11 @@ function buildAbilityButton(
   entity: Entity,
   ab: AbilityData,
 ): string {
-  const usesLeft = ab.maxUses
-    ? ab.maxUses - (entity.usesUsed[ab.name] ?? 0)
-    : null;
+  const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
+  const usesLeft = maxUses ? maxUses - (entity.usesUsed[ab.name] ?? 0) : null;
   const cooldown = entity.cooldowns[ab.name] ?? 0;
 
-  const usesStr = usesLeft !== null ? ` [${usesLeft}/${ab.maxUses}]` : "";
+  const usesStr = usesLeft !== null ? ` [${usesLeft}/${maxUses}]` : "";
   const cdStr = cooldown > 0 ? ` CD:${cooldown}` : "";
 
   const targets = getValidTargets(game, ab, entity);
@@ -602,13 +681,20 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
 
     if (entity.cooldowns[ab.name]) return false;
 
-    if (ab.maxUses) {
+    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
+    if (maxUses) {
       const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= ab.maxUses) return false;
+      if (used >= maxUses) return false;
     }
 
     if (ab.actionType === "Standard" && entity.standardUsed) return false;
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;
+    // Issue #3: Free/Swift must be used before the Standard action.
+    if (
+      entity.standardUsed &&
+      (ab.actionType === "Free" || ab.actionType === "Swift")
+    )
+      return false;
     if (ab.actionType === "Movement" && entity.movementUsed) return false;
     if (
       ab.actionType === "Full" &&
@@ -626,7 +712,8 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
       ab.actionType !== "Free" &&
       ab.actionType !== "Swift" &&
       ab.actionType !== "Trigger" &&
-      ab.actionType !== "Movement"
+      ab.actionType !== "Movement" &&
+      !(ab.actionType === "Reaction" && entity.triggered)
     )
       return false;
 
@@ -639,9 +726,10 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
 
     if (entity.cooldowns[ab.name]) return false;
 
-    if (ab.maxUses) {
+    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
+    if (maxUses) {
       const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= ab.maxUses) return false;
+      if (used >= maxUses) return false;
     }
 
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;

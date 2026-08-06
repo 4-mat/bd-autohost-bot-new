@@ -79,26 +79,36 @@ Normalizes `cmd` via `toId`, then dispatches to one of four sub-routers:
 
 All game setup commands, routed by `hostCommand()`:
 
-| Command             | Function             | What it does                                                                     |
-| ------------------- | -------------------- | -------------------------------------------------------------------------------- |
-| `%host`             | `handleHost`         | Creates a new `Game` in the room with a default 12x12 map, FFA mode, setup phase |
-| `%dehost`           | `handleDehost`       | Deletes the game (host only)                                                     |
-| `%setgame`          | `handleSetGame`      | Sets `game.mode` (FFA, 2v2, 3v3...)                                              |
-| `%addp`             | `handleAddPlayer`    | Creates an `Entity` from a class + weapon + team, assigned a spawn position      |
-| `%addm`             | `handleAddMonster`   | Creates a monster entity with raw stats                                          |
-| `%remp`             | `handleRemPlayer`    | Removes an entity                                                                |
-| `%sc`               | `handleSwitchClass`  | Changes an entity's class mid-game, recalculates stats + abilities               |
-| `%sw`               | `handleSwitchWeapon` | Changes an entity's weapon, recalculates stats + abilities                       |
-| `%setlevel` / `%sl` | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level                         |
-| `%setteam`          | `handleSetTeam`      | Changes an entity's team number                                                  |
-| `%setmap`           | `handleSetMap`       | Sets a curated map by name, or procedural small/medium/large                     |
-| `%listmaps`         | `handleListMaps`     | Lists available maps, optionally filtered by size                                |
-| `%gento`            | `handleGenTurnOrder` | Rolls 1d20 + MP for each entity, sorts descending                                |
-| `%start`            | `handleStart`        | Starts the game, auto-gentos if needed, broadcasts HTML pages                    |
+| Command              | Function             | What it does                                                                                                                             |
+| -------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `%host`              | `handleHost`         | Creates a new `Game` in the room with a default 12x12 map, FFA mode, setup phase                                                         |
+| `%dehost`            | `handleDehost`       | Deletes the game (host only)                                                                                                             |
+| `%setgame`           | `handleSetGame`      | Sets `game.mode` (FFA, 2v2, 3v3...)                                                                                                      |
+| `%addp`              | `handleAddPlayer`    | Creates an `Entity` from a class + weapon + team, assigned a spawn position                                                              |
+| `%addm`              | `handleAddMonster`   | Creates a monster entity with raw stats                                                                                                  |
+| `%remp`              | `handleRemPlayer`    | Removes an entity                                                                                                                        |
+| `%sc`                | `handleSwitchClass`  | Changes an entity's class mid-game, recalculates stats + abilities                                                                       |
+| `%sw`                | `handleSwitchWeapon` | Changes an entity's weapon, recalculates stats + abilities                                                                               |
+| `%setlevel` / `%sl`  | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level                                                                                 |
+| `%setteam`           | `handleSetTeam`      | Changes an entity's team number                                                                                                          |
+| `%setmap`            | `handleSetMap`       | Sets a curated map by name, or procedural small/medium/large                                                                             |
+| `%listmaps`          | `handleListMaps`     | Lists available maps, optionally filtered by size                                                                                        |
+| `%gento`             | `handleGenTurnOrder` | Rolls 1d20 + MP for each entity, sorts descending                                                                                        |
+| `%open` / `%openbsu` | `handleOpen`         | Opens signups (`signupsOpen = true`), enabling `%join`; `openbsu` highlights                                                             |
+| `%close`             | `handleClose`        | Closes signups (`signupsOpen = false`)                                                                                                   |
+| `%join`              | `handleJoin`         | Self-service join with a chosen class/weapon while signups are open                                                                      |
+| `%genpos`            | `handleGenPos`       | Sets competitive starting positions: `%genpos <N><mode>` (e.g. `4pffa`); FFA-only, spawns spread symmetrically from corners/edges/center |
+| `%start`             | `handleStart`        | Starts the game, auto-gentos if needed, broadcasts HTML pages                                                                            |
 
 `handleAddPlayer` parses flat stat strings (class stat + weapon stat),
 filters abilities by level, and calls `findSpawnPosition` — a spiral-search
-from map center for open Normal tiles.
+from map center for open Normal tiles. `%addp` and `%join` share the same
+entity-building helper `createPlayerEntity`.
+
+`%genpos` parses a player count + mode (e.g. `4pffa`), rejects team modes
+and PvE, and places the first N players at symmetric spawn slots derived
+from map size (corners, then edges, then center), BFS-searching to the
+nearest open Normal tile per slot.
 
 `%start` sets `phase = "playing"`, generates turn order if needed (each
 entity rolls `1d20 + MP` from `rollDice`), calls `nextTurn` to get the
@@ -232,21 +242,21 @@ meta:     mode, kills{}, winner
 The grid is a `Terrain[][]` matrix. Each tile type affects movement and
 gameplay:
 
-| Terrain  | Movement cost | Passable  | Notes                                                 |
-| -------- | ------------- | --------- | ----------------------------------------------------- |
-| `Normal` | 1 MP          | yes       |                                                       |
-| `Stop`   | —             | no        | Impassable wall                                       |
-| `Water`  | 1 MP          | yes       |                                                       |
-| `Forest` | 1 MP          | yes       |                                                       |
-| `Ice`    | —             | no        | Impassable                                            |
-| `Air`    | 1 MP          | yes       |                                                       |
-| `Sticky` | 2 MP          | yes       | Costs 1 extra MP                                      |
-| `Lava`   | —             | no (path) | Deals 30 DoT at start of turn; BFS won't path through |
-| `Broken` | —             | no        | Impassable                                            |
-| `Bone`   | —             | no        | Impassable                                            |
-| `Stone`  | —             | no        | Impassable                                            |
-| `Hearth` | 1 MP          | yes       |                                                       |
-| `Boost`  | 0 MP (min)    | yes       | Costs 1 less MP (floor 0)                             |
+| Terrain  | Movement cost | Passable  | Notes                                                                      |
+| -------- | ------------- | --------- | -------------------------------------------------------------------------- |
+| `Normal` | 1 MP          | yes       |                                                                            |
+| `Stop`   | —             | no        | Impassable wall                                                            |
+| `Water`  | 1 MP          | yes       |                                                                            |
+| `Forest` | 1 MP          | yes       |                                                                            |
+| `Ice`    | —             | no        | Impassable                                                                 |
+| `Air`    | 1 MP          | yes       |                                                                            |
+| `Sticky` | 2 MP          | yes       | Costs 1 extra MP                                                           |
+| `Lava`   | —             | no (path) | Deals 30 damage when an entity ends its turn on it; BFS won't path through |
+| `Broken` | —             | no        | Impassable                                                                 |
+| `Bone`   | —             | no        | Impassable                                                                 |
+| `Stone`  | —             | no        | Impassable                                                                 |
+| `Hearth` | 1 MP          | yes       |                                                                            |
+| `Boost`  | 0 MP (min)    | yes       | Costs 1 less MP (floor 0)                                                  |
 
 `isObstruction(t)` returns true for Stop, Bone, Ice, Stone, and Broken.
 `moveCost(t)` returns the MP cost to enter a tile.
@@ -339,18 +349,21 @@ includes bonuses, so it's effectively natural 20 + bonuses).
 
 ---
 
-**Turn processing: `nextTurn` and `processStartOfTurn`**
+**Turn processing: `nextTurn`, `processStartOfTurn`, `processEndOfTurn`**
 
 ```
 nextTurn(game): { entity, messages, died }
 ```
 
-1. Increments `turnIndex`. If past the end, wraps to 0 and increments
+1. Ticks buffs of the entity whose turn is ending (`prev`).
+2. Increments `turnIndex`. If past the end, wraps to 0 and increments
    `round`.
-2. Gets the current entity from `turnOrder[turnIndex]`.
-3. Resets per-turn flags: `dashUsed`, `standardUsed`, `movementUsed`,
+3. Calls `processEndOfTurn(game, prev)`; if `prev` dies, the turn pointer
+   is corrected so the next entity is not skipped.
+4. Gets the current entity from `turnOrder[turnIndex]`.
+5. Resets per-turn flags: `dashUsed`, `standardUsed`, `movementUsed`,
    `swiftUsed`, `pendingAction`.
-4. Calls `processStartOfTurn(game, entity)`.
+6. Calls `processStartOfTurn(game, entity)`.
 
 ```
 processStartOfTurn(game, entity): { messages, died }
@@ -358,16 +371,29 @@ processStartOfTurn(game, entity): { messages, died }
 
 Before an entity can act, the following resolve in order:
 
+1. **DoT damage**: each status with `damage > 0` deals its tick damage
+   via `dealDamage` (statuses are removed at end of turn, not here).
+2. **Status announcements**: prints Stun/Confuse/Root/Seal warnings.
+3. **Death check**: if HP ≤ 0, removes entity and sets `died = true`.
+
+```
+processEndOfTurn(game, entity): { messages, died }
+```
+
+At the end of an entity's turn, the following resolve in order:
+
 1. **Cooldown tick**: each cooldown counter decrements by 1; entries
    reaching 0 are deleted.
-2. **Buff tick**: each buff's round counter decrements; expired buffs
-   generate "buff expired" messages and are removed.
-3. **DoT damage**: each status with `damage > 0` deals its tick damage
-   via `dealDamage`. Status round counters tick down; expired statuses
-   generate "wore off" messages.
-4. **Lava damage**: if the entity is on a Lava tile, deals 30 flat damage.
-5. **Status announcements**: prints Stun/Confuse/Root/Seal warnings.
-6. **Death check**: if HP ≤ 0, removes entity and sets `died = true`.
+2. **Status duration tick**: each status's round counter decrements;
+   expired statuses generate "wore off" messages and are removed.
+3. **Lava damage**: if the entity ended its turn on a Lava tile, deals
+   30 flat damage.
+4. **Death check**: if HP ≤ 0, removes entity and sets `died = true`.
+
+Buffs also tick down at the end of the buffed entity's turn (inside
+`nextTurn`). Per the glossary, damaging statuses deal their damage just
+before the affected entity's turn, while round counters and cooldowns
+decrement when that entity's turn ends.
 
 ---
 
@@ -449,7 +475,7 @@ Declare → Selection/Costs → Target → Accuracy → Splash → Damage → Po
                                                           ↓
                                                     Effects (from effects.ts)
                                                           ↓
-                                                    Push/Pull 
+                                                    Push/Pull
                                                           ↓
                                                     Cooldowns + Uses
                                                           ↓
@@ -480,11 +506,6 @@ For each target, for each hit (1 for single, 2 for double, 3 for triple):
 ```
 resolveSingleTarget(game, user, ability, target, hitLabel, confusionAlreadyApplied)
 ```
-
-**Stage 5: Confusion check**
-Before accuracy, if the attacker is Confused and rolled ≥ 16 on the
-accuracy die, they take self-damage equal to the higher of their own
-ATK or MAG. This only triggers once per attack (not per hit).
 
 **Stage 6: Accuracy**
 `rollAccuracy(ability.mr, target.eva, user.accBonus)` → hit/miss/crit.
