@@ -374,10 +374,10 @@ function handleNudge(room: Room, user: User) {
     })
     .filter(Boolean)
     .join(" ");
-  send(
-    room.id,
-    `${names} — you haven't voted yet! Vote in the GUI or with %vote <mode>.`,
-  );
+  const msg = `${names} — you haven't voted yet! Vote in the GUI or with %vote [mode].`;
+  send(room.id, msg);
+  game.toasts.push({ user: game.host, message: msg });
+  broadcastPages(game);
 }
 
 
