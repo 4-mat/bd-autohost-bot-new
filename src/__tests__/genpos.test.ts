@@ -107,15 +107,15 @@ describe("genPosSlots", () => {
 });
 
 describe("genTeamSlots", () => {
-  it("spreads 2v2 so all four players sit in corners", () => {
+  it("clumps 2v2 teams in mirrored corners (a1/b1 vs j10/i10)", () => {
     expect(genTeamSlots(10, 10, 2, 2)).toEqual([
       [
         [0, 0],
-        [0, 9],
+        [0, 1],
       ],
       [
         [9, 9],
-        [9, 0],
+        [9, 8],
       ],
     ]);
   });
@@ -129,26 +129,45 @@ describe("genTeamSlots", () => {
       [[0, 0]],
       [
         [9, 9],
-        [9, 0],
+        [9, 8],
       ],
     ]);
   });
 
-  it("fans larger teams out along their own side (3v3)", () => {
+  it("clumps 3v3 in a corner block (a1/b1/a2 vs j10/i10/j9)", () => {
     const [top, bottom] = genTeamSlots(10, 10, 3, 3);
     expect(top).toEqual([
       [0, 0],
-      [0, 5],
-      [0, 9],
+      [0, 1],
+      [1, 0],
     ]);
     expect(bottom).toEqual([
       [9, 9],
-      [9, 4],
-      [9, 0],
+      [9, 8],
+      [8, 9],
     ]);
-    // Teammates on the same side are never adjacent.
-    for (let i = 1; i < top.length; i++) {
-      expect(Math.abs(top[i][1] - top[i - 1][1])).toBeGreaterThan(1);
+  });
+
+  it("clumps the max team size (5v5) in a tight corner block", () => {
+    const [top, bottom] = genTeamSlots(10, 10, 5, 5);
+    expect(top).toEqual([
+      [0, 0],
+      [0, 1],
+      [0, 2],
+      [1, 0],
+      [1, 1],
+    ]);
+    expect(bottom).toEqual([
+      [9, 9],
+      [9, 8],
+      [9, 7],
+      [8, 9],
+      [8, 8],
+    ]);
+    // Every teammate is within a 3x2 block of the corner — a tight clump.
+    for (const [r, c] of top) {
+      expect(r).toBeLessThanOrEqual(1);
+      expect(c).toBeLessThanOrEqual(2);
     }
   });
 });
@@ -173,11 +192,9 @@ describe("placeTeamPlayers", () => {
     for (const [, pos] of out![0]) expect(pos[0]).toBeLessThan(5); // top half
     for (const [, pos] of out![1]) expect(pos[0]).toBeGreaterThanOrEqual(5); // bottom half
 
-    // 2v2: every player lands in a corner (max spread, equidistant pairs).
-    const corners = new Set(["0,0", "0,9", "9,0", "9,9"]);
-    for (const [, pos] of [...out![0], ...out![1]]) {
-      expect(corners.has(`${pos[0]},${pos[1]}`)).toBe(true);
-    }
+    // 2v2: each team clumps in its own corner (a1/b1 vs j10/i10).
+    expect(out![0].map(([, p]) => `${p[0]},${p[1]}`).sort()).toEqual(["0,0", "0,1"]);
+    expect(out![1].map(([, p]) => `${p[0]},${p[1]}`).sort()).toEqual(["9,8", "9,9"]);
   });
 
   it("returns null when no open tiles exist", () => {
@@ -191,12 +208,12 @@ describe("placeTeamPlayers", () => {
     // Entities were previously placed at the 2v2 anchors; re-running genpos
     // must NOT snap them to adjacent tiles because their old positions block
     // the anchors. This covers the being-placed ignore set in findNearestOpenTile.
-    const teamA = [makeEntity("P1", [0, 0]), makeEntity("P2", [0, 9])];
-    const teamB = [makeEntity("P3", [9, 9]), makeEntity("P4", [9, 0])];
+    const teamA = [makeEntity("P1", [0, 0]), makeEntity("P2", [0, 1])];
+    const teamB = [makeEntity("P3", [9, 9]), makeEntity("P4", [9, 8])];
     const game = makeGame([...teamA, ...teamB]);
     const out = placeTeamPlayers(game, teamA, teamB);
     expect(out).not.toBeNull();
-    const corners = new Set(["0,0", "0,9", "9,0", "9,9"]);
+    const corners = new Set(["0,0", "0,1", "9,8", "9,9"]);
     for (const [, pos] of [...out![0], ...out![1]]) {
       expect(corners.has(`${pos[0]},${pos[1]}`)).toBe(true);
     }
