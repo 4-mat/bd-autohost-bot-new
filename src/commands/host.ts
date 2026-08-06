@@ -721,10 +721,13 @@ export function placePlayers(
   const slots = genPosSlots(rows, cols, players.length);
   const used = new Set<string>();
   const out: [Entity, [number, number]][] = [];
+  // Ignore the being-placed players' PREVIOUS positions when finding open
+  // tiles, so re-running %genpos doesn't let their old spots block the anchors.
+  const placing = new Set(players.map((p) => p.id));
 
   for (let i = 0; i < players.length; i++) {
     const anchor = slots[i];
-    const pos = findNearestOpenTile(game, anchor[0], anchor[1], used);
+    const pos = findNearestOpenTile(game, anchor[0], anchor[1], used, placing);
     if (!pos) return null;
     players[i].pos = pos;
     used.add(`${pos[0]},${pos[1]}`);
@@ -759,7 +762,12 @@ export function genPosSlots(
   const center: [number, number] = [midR, midC];
 
   if (n === 1) return [center];
-  if (n <= 4) return corners.slice(0, n);
+  if (n === 2) return corners.slice(0, 2);
+  if (n === 3)
+    // Balanced triangle: top corners + bottom-center — spreads 3 players
+    // more evenly than three corners (9/13/13 instead of 9/9/18 on 10x10).
+    return [corners[0], corners[2], [bottom, midC]];
+  if (n === 4) return corners;
   if (n === 5) return [...corners, center];
   if (n === 6) return [...corners, edges[0], edges[1]];
   if (n === 7) return [...corners, edges[0], edges[1], center];
@@ -768,38 +776,39 @@ export function genPosSlots(
 }
 
 /**
- * Symmetric team spawn anchors: `a` anchors along the top edge and `b`
- * mirrored anchors along the bottom edge (columns evenly spread), so team 1
- * starts in the top half and team 2 in the bottom half.
+ * Evenly-spread column anchors for `k` teammates along one side. k=1 anchors
+ * at the left corner; k>=2 spreads from the left corner to the right corner,
+ * so teammates stay as far apart as the side width allows.
  */
-// Compact cluster of k anchor offsets starting at a corner: fills a 2x2 block
-// first, then continues along the edge row.
-function cornerOffsets(k: number): [number, number][] {
-  const out: [number, number][] = [];
-  for (let layer = 0; out.length < k; layer++) {
-    for (let r = 0; r <= layer && out.length < k; r++) out.push([r, layer]);
-    for (let c = 0; c < layer && out.length < k; c++) out.push([layer, c]);
+function edgeAnchors(cols: number, k: number): number[] {
+  if (k <= 1) return [0];
+  const max = Math.max(0, cols - 1);
+  const out: number[] = [];
+  for (let i = 0; i < k; i++) {
+    out.push(Math.round((i * max) / (k - 1)));
   }
   return out;
 }
 
+/**
+ * Symmetric team spawn anchors: team A is spread evenly along the top edge,
+ * team B mirrored diagonally onto the bottom edge. Everyone is kept as far
+ * apart as the map allows: 1v1 meets at opposite corners, 2v2 puts all four
+ * players in the corners, and larger teams fan out along their own side
+ * instead of clustering together.
+ */
 export function genTeamSlots(
   rows: number,
   cols: number,
   a: number,
   b: number,
 ): [top: [number, number][], bottom: [number, number][]] {
-  // Team A clusters in the top-left corner, team B in the diagonally opposite
-  // bottom-right corner — so 1v1 meets at opposite corners and teams face off
-  // from mirrored corners.
-  const top: [number, number][] = cornerOffsets(a).map(
-    ([r, c]) => [r, c] as [number, number],
+  const bottomRow = Math.max(0, rows - 1);
+  const top: [number, number][] = edgeAnchors(cols, a).map(
+    (c): [number, number] => [0, c],
   );
-  const bottom: [number, number][] = cornerOffsets(b).map(
-    ([r, c]): [number, number] => [
-      Math.max(0, rows - 1) - r,
-      Math.max(0, cols - 1) - c,
-    ],
+  const bottom: [number, number][] = edgeAnchors(cols, b).map(
+    (c): [number, number] => [bottomRow, Math.max(0, cols - 1) - c],
   );
   return [top, bottom];
 }
@@ -822,16 +831,19 @@ export function placeTeamPlayers(
   const used = new Set<string>();
   const outA: [Entity, [number, number]][] = [];
   const outB: [Entity, [number, number]][] = [];
+  // See placePlayers: ignore the placed players' old positions so repeated
+  // %genpos calls still hit the exact anchors.
+  const placing = new Set([...teamA, ...teamB].map((e) => e.id));
 
   for (let i = 0; i < teamA.length; i++) {
-    const pos = findNearestOpenTile(game, top[i][0], top[i][1], used);
+    const pos = findNearestOpenTile(game, top[i][0], top[i][1], used, placing);
     if (!pos) return null;
     teamA[i].pos = pos;
     used.add(`${pos[0]},${pos[1]}`);
     outA.push([teamA[i], pos]);
   }
   for (let i = 0; i < teamB.length; i++) {
-    const pos = findNearestOpenTile(game, bottom[i][0], bottom[i][1], used);
+    const pos = findNearestOpenTile(game, bottom[i][0], bottom[i][1], used, placing);
     if (!pos) return null;
     teamB[i].pos = pos;
     used.add(`${pos[0]},${pos[1]}`);
@@ -845,6 +857,7 @@ export function findNearestOpenTile(
   r: number,
   c: number,
   used: Set<string>,
+  placing?: Set<string>,
 ): [number, number] | null {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
@@ -857,7 +870,12 @@ export function findNearestOpenTile(
     if (
       game.map[cr][cc] === Terrain.Normal &&
       !used.has(`${cr},${cc}`) &&
-      !game.entities.some((e) => e.pos[0] === cr && e.pos[1] === cc)
+      !game.entities.some(
+        (e) =>
+          e.pos[0] === cr &&
+          e.pos[1] === cc &&
+          !(placing && placing.has(e.id)),
+      )
     ) {
       return [cr, cc];
     }
