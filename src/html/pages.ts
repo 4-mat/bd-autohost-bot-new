@@ -608,6 +608,12 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
 
     if (ab.actionType === "Standard" && entity.standardUsed) return false;
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;
+    // Issue #3: Free/Swift must be used before the Standard action.
+    if (
+      entity.standardUsed &&
+      (ab.actionType === "Free" || ab.actionType === "Swift")
+    )
+      return false;
     if (ab.actionType === "Movement" && entity.movementUsed) return false;
     if (
       ab.actionType === "Full" &&
