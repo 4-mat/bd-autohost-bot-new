@@ -33,6 +33,15 @@ import type { AbilityData } from "../data/index.js";
 // Modes in which someone must be designated the Juggernaut (%setjugg).
 const JUGG_MODES = new Set(["JUGG", "2vJ", "3vJ", "4vJ", "PvPJ"]);
 
+// Extra setup hint for Juggernaut modes: someone must be designated with
+// %setjugg; PvPJ also needs teams split first (one side gets the juggernaut).
+function juggSetupHint(mode: string): string {
+  if (!JUGG_MODES.has(mode)) return "";
+  return mode === "PvPJ"
+    ? " Split teams with %setteam, then designate the Juggernaut with %setjugg [entity]."
+    : " Designate the Juggernaut with %setjugg [entity].";
+}
+
 function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
   return a.level === "EX1" || a.level === "EX2" ? exOk : a.level <= lvl;
 }
@@ -216,15 +225,97 @@ function handleSetGame(room: Room, user: User, args: string) {
   if (!mode)
     return sendPm(user.name, "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.)");
 
+  const players = game.entities.filter((e) => !e.isMonster);
+  if (players.length === 0) {
+    return sendPm(
+      user.name,
+      "Add players first (%addp, or %open + %join), then %setgame <mode> to finish the setup.",
+    );
+  }
+
+  // Validate team-count requirements BEFORE mutating anything.
+  const teamMatch = mode.toUpperCase().match(/^(\d+)V(\d+)$/);
+  if (teamMatch) {
+    const a = parseInt(teamMatch[1]);
+    const b = parseInt(teamMatch[2]);
+    if (players.length !== a + b) {
+      return sendPm(
+        user.name,
+        `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
+      );
+    }
+  }
+
   game.mode = mode.toUpperCase();
+
   // Manually setting a mode supersedes any ongoing vote / runoff.
+  const voteCancelled = game.voteOpen;
   game.voteOpen = false;
   game.votes = {};
   game.voteRunoff = null;
-  const rec = recommendedMaps(game.mode);
+
+  // Pick a map only when none is chosen yet: random from the mode's
+  // recommended pool, falling back to a procedural map.
+  const mapMsg: string[] = [];
+  if (game.map.length === 0) {
+    const poolPick = randomMapForMode(mode);
+    const poolDef = poolPick ? getMapByName(poolPick) : undefined;
+    if (poolDef) {
+      applyMap(game, poolDef, "", true);
+      mapMsg.push(
+        `Map: ${poolDef.displayName} (random ${modeIdFor(mode)!.toUpperCase()} pick)`,
+      );
+    } else {
+      applyMap(game, {
+        grid: generateDefaultMap(),
+        displayName: "Procedural (12x12)",
+        rows: 12,
+        cols: 12,
+      }, "", true);
+      mapMsg.push("Map: Procedural (12x12)");
+    }
+  }
+
+  pushSnapshot(game);
+
+  // Team modes: split the players into two teams and place mirrored halves.
+  let placedPairs: [Entity, [number, number]][] = [];
+  if (teamMatch) {
+    const a = parseInt(teamMatch[1]);
+    const b = parseInt(teamMatch[2]);
+    const teamA = players.slice(0, a);
+    const teamB = players.slice(a, a + b);
+    teamA.forEach((e) => (e.team = 1));
+    teamB.forEach((e) => (e.team = 2));
+    const placed = placeTeamPlayers(game, teamA, teamB);
+    if (!placed) {
+      broadcastPages(game); // keep the GUI in sync after the mode change
+      return sendPm(user.name, "Could not find open spawn tiles.");
+    }
+    placedPairs = [...placed[0], ...placed[1]];
+  } else {
+    // FFA and other modes: clear leftover teams, spread everyone.
+    players.forEach((e) => (e.team = 0));
+    const placed = placePlayers(game, players);
+    if (!placed) {
+      broadcastPages(game); // keep the GUI in sync after the mode change
+      return sendPm(user.name, "Could not find open spawn tiles.");
+    }
+    placedPairs = placed;
+  }
+
+  // Generate the turn order so only %start remains. This RENUMBERS entities
+  // by roll (highest roller becomes P1), so the position list is built after
+  // it to keep the announced numbers consistent with the turn order.
+  handleGenTurnOrder(room, user);
+  const spots = placedPairs.map(([e]) => {
+    const teamTag = e.team > 0 ? ` (T${e.team})` : "";
+    return `${e.num}${teamTag} at ${posToStr(e.pos[0], e.pos[1])}`;
+  });
+  const hint = juggSetupHint(game.mode);
   send(
     room.id,
-    `Game mode set to **${game.mode}**.${rec ? " Use %listmaps for recommended maps." : ""}`,
+    `**Game set up for ${game.mode}!${voteCancelled ? " (voting cancelled)" : ""}**${mapMsg.length ? ` ${mapMsg.join("; ")}.` : ""}\nPositions: ${spots.join(" | ")}\nRun %start to begin.${hint}`,
   );
   broadcastPages(game);
 }
@@ -322,15 +413,7 @@ function handleEndVote(room: Room, user: User) {
   game.voteOpen = false;
   game.voteRunoff = null;
   game.mode = top.mode.toUpperCase();
-  let hint = "";
-  if (JUGG_MODES.has(top.mode)) {
-    // PvPJ is a team format: one team gets the juggernaut, so teams must be
-    // split first. The NvJ formats and plain Juggernaut only need a designation.
-    hint =
-      top.mode === "PvPJ"
-        ? " Split teams with %setteam, then designate the Juggernaut with %setjugg <entity>."
-        : " Designate the Juggernaut with %setjugg <entity>.";
-  }
+  const hint = juggSetupHint(top.mode);
   send(
     room.id,
     `**Voting closed.** ${summary}\nMode set to **${game.mode}** (won by ${wasRunoff ? "runoff" : "vote"}).${hint}`,
@@ -433,19 +516,67 @@ function handleGenPos(room: Room, user: User, args: string) {
     );
   }
 
-  const match = args
-    .trim()
-    .toLowerCase()
-    .match(/^(\d+)\s*p?\s*([a-z0-9]+)$/);
+  const arg = args.trim().toLowerCase();
+
+  // Team mode: %genpos <N>v<M> (e.g. %genpos 2v2, %genpos 3v3)
+  const teamMatch = arg.match(/^(\d+)\s*v\s*(\d+)$/);
+  if (teamMatch) {
+    const a = parseInt(teamMatch[1]);
+    const b = parseInt(teamMatch[2]);
+    if (a < 1 || b < 1 || a > 5 || b > 5) {
+      return sendPm(
+        user.name,
+        "Usage: %genpos <N>v<M> with 1-5 per team (e.g. %genpos 2v2).",
+      );
+    }
+    const players = game.entities.filter((e) => !e.isMonster);
+    if (a + b > players.length) {
+      return sendPm(
+        user.name,
+        `Only ${players.length} player(s) joined; need ${a + b} for ${a}v${b}.`,
+      );
+    }
+
+    const teamA = players.slice(0, a);
+    const teamB = players.slice(a, a + b);
+
+    pushSnapshot(game);
+    const placed = placeTeamPlayers(game, teamA, teamB);
+    if (!placed) {
+      return sendPm(user.name, "Could not find open spawn tiles.");
+    }
+    teamA.forEach((e) => (e.team = 1));
+    teamB.forEach((e) => (e.team = 2));
+    game.mode = `${a}V${b}`;
+    // Setting a mode directly supersedes any ongoing vote / runoff.
+    game.voteOpen = false;
+    game.votes = {};
+    game.voteRunoff = null;
+    const spots = [...placed[0], ...placed[1]]
+      .map(([e, p]) => `${e.num} (T${e.team}) at ${posToStr(p[0], p[1])}`)
+      .join(" | ");
+    send(room.id, `**Positions set (${a}v${b}):** ${spots}`);
+    broadcastPages(game);
+    return;
+  }
+
+  // Free-for-all: %genpos <N>p<mode> (e.g. %genpos 4pffa)
+  const match = arg.match(/^(\d+)\s*p?\s*([a-z0-9]+)$/);
   if (!match) {
-    return sendPm(user.name, "Usage: %genpos <N><mode> (e.g. %genpos 4pffa).");
+    return sendPm(
+      user.name,
+      "Usage: %genpos <N><mode> (e.g. %genpos 4pffa) or %genpos <N>v<M> (e.g. %genpos 2v2).",
+    );
   }
 
   const n = parseInt(match[1]);
   const mode = match[2];
 
   if (mode.includes("v")) {
-    return sendPm(user.name, "%genpos does not support team modes.");
+    return sendPm(
+      user.name,
+      "Team modes use %genpos <N>v<M> (e.g. %genpos 2v2).",
+    );
   }
   if (mode.includes("pve")) {
     return sendPm(user.name, "%genpos does not support PvE.");
@@ -462,12 +593,15 @@ function handleGenPos(room: Room, user: User, args: string) {
     return sendPm(user.name, "%genpos supports up to 9 players.");
   }
 
+  // FFA: clear any leftover team assignment from a prior team setup.
+  players.forEach((e) => (e.team = 0));
+
+  pushSnapshot(game);
   const placed = placePlayers(game, players.slice(0, n));
   if (!placed) {
     return sendPm(user.name, "Could not find open spawn tiles.");
   }
 
-  pushSnapshot(game);
   const spots = placed
     .map(([e, p]) => `${e.num} at ${posToStr(p[0], p[1])}`)
     .join(" | ");
@@ -531,6 +665,66 @@ export function genPosSlots(
   if (n === 7) return [...corners, edges[0], edges[1], center];
   if (n === 8) return [...corners, ...edges];
   return [...corners, ...edges, center];
+}
+
+/**
+ * Symmetric team spawn anchors: `a` anchors along the top edge and `b`
+ * mirrored anchors along the bottom edge (columns evenly spread), so team 1
+ * starts in the top half and team 2 in the bottom half.
+ */
+export function genTeamSlots(
+  rows: number,
+  cols: number,
+  a: number,
+  b: number,
+): [top: [number, number][], bottom: [number, number][]] {
+  const top: [number, number][] = [];
+  const bottom: [number, number][] = [];
+  for (let i = 0; i < a; i++) {
+    const c = Math.floor((cols * (i + 1)) / (a + 1));
+    top.push([0, c]);
+  }
+  for (let i = 0; i < b; i++) {
+    const c = Math.floor((cols * (i + 1)) / (b + 1));
+    bottom.push([Math.max(0, rows - 1), c]);
+  }
+  return [top, bottom];
+}
+
+/**
+ * Place two teams on mirrored map halves. Returns a pair of placed lists
+ * (entity + position) or null when no open tiles are found.
+ */
+export function placeTeamPlayers(
+  game: Game,
+  teamA: Entity[],
+  teamB: Entity[],
+): [
+  placedA: [Entity, [number, number]][],
+  placedB: [Entity, [number, number]][],
+] | null {
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  const [top, bottom] = genTeamSlots(rows, cols, teamA.length, teamB.length);
+  const used = new Set<string>();
+  const outA: [Entity, [number, number]][] = [];
+  const outB: [Entity, [number, number]][] = [];
+
+  for (let i = 0; i < teamA.length; i++) {
+    const pos = findNearestOpenTile(game, top[i][0], top[i][1], used);
+    if (!pos) return null;
+    teamA[i].pos = pos;
+    used.add(`${pos[0]},${pos[1]}`);
+    outA.push([teamA[i], pos]);
+  }
+  for (let i = 0; i < teamB.length; i++) {
+    const pos = findNearestOpenTile(game, bottom[i][0], bottom[i][1], used);
+    if (!pos) return null;
+    teamB[i].pos = pos;
+    used.add(`${pos[0]},${pos[1]}`);
+    outB.push([teamB[i], pos]);
+  }
+  return [outA, outB];
 }
 
 export function findNearestOpenTile(
@@ -1410,10 +1604,12 @@ function applyMap(
   game: Game,
   def: { grid: Terrain[][]; displayName: string; rows: number; cols: number },
   note = "",
+  quiet = false,
 ): void {
   game.map = def.grid.map((row) => [...row]);
   game.mapName = def.displayName;
   repositionEntities(game);
+  if (quiet) return;
   broadcastPages(game);
   send(
     game.room,
