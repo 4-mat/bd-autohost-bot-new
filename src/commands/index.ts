@@ -89,6 +89,7 @@ export function handleCommand(
     id === "open" ||
     id === "openbsu" ||
     id === "close" ||
+    id === "endvote" ||
     id === "join" ||
     id === "genpos"
   ) {
@@ -110,6 +111,7 @@ export function handleCommand(
     id === "cancel" ||
     id === "target" ||
     id === "choose" ||
+    id === "vote" ||
     id === "endturn" ||
     id === "next" ||
     id === "back" ||

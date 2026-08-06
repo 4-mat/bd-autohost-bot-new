@@ -58,6 +58,8 @@ function makeGame(entities: Entity[], terrain = Terrain.Normal): Game {
     chatLog: [],
     toasts: [],
     signupsOpen: false,
+    votes: {},
+    voteOpen: false,
   };
 }
 

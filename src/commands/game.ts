@@ -44,6 +44,7 @@ import {
   type AttackStep,
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
+import { normalizeVoteMode, voteOptionsFor } from "../data/gamemodes.js";
 
 export function gameCommand(
   room: Room | null,
@@ -93,6 +94,11 @@ export function gameCommand(
     case "choose":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleChoose(game, user, full);
+      break;
+
+    case "vote":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleVote(game, user, full);
       break;
 
     case "endturn":
@@ -535,6 +541,50 @@ function handleChoose(game: Game, user: User, args: string) {
   } catch (e) {
     sendPm(user.name, e instanceof Error ? e.message : String(e));
   }
+}
+
+function handleVote(game: Game, user: User, args: string) {
+  if (game.started) return sendPm(user.name, "Game already started.");
+  if (!game.voteOpen) {
+    return sendPm(
+      user.name,
+      "No gamemode vote is open. The host closes signups (%close) to start one.",
+    );
+  }
+
+  // Only joined players may vote — keyed by their entity.
+  const entity = game.entities.find(
+    (e) => !e.isMonster && toId(e.name) === toId(user.name),
+  );
+  if (!entity) {
+    return sendPm(user.name, "You're not in this game. Join first (%join).");
+  }
+
+  const arg = args.trim();
+  const players = game.entities.filter((e) => !e.isMonster);
+  const options = voteOptionsFor(players.length);
+
+  if (!arg) {
+    const list = options.map((o) => o.id).join(", ");
+    return sendPm(user.name, `Vote with %vote <mode>. Available: ${list}`);
+  }
+
+  const mode = normalizeVoteMode(arg);
+  if (!mode || !options.some((o) => o.id === mode)) {
+    const list = options.map((o) => o.id).join(", ");
+    return sendPm(
+      user.name,
+      `"${arg}" is not a valid mode${options.length ? ` for ${players.length} players` : ""}. Available: ${list}`,
+    );
+  }
+
+  // Key by stable entity id — %gento renumbers nums, ids never change.
+  game.votes[entity.id] = mode;
+  send(
+    game.room,
+    `${entity.num} (${entity.name}) voted for **${mode}**.`,
+  );
+  broadcastPages(game);
 }
 
 function finishStep(game: Game, entity: Entity, step: AttackStep) {

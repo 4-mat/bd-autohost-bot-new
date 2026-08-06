@@ -13,6 +13,7 @@ import {
   type AbilityData,
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
+import { tallyVotes, voteOptionsFor } from "../data/gamemodes.js";
 
 // -- Premove Mode Tracking -----------------------------------------------------
 
@@ -59,6 +60,54 @@ const TABLE_BORDER = `style="${TABLE_STYLE}"`;
 const PLAYER_LABEL =
   "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
 
+// -- Gamemode Vote Panel ------------------------------------------------------
+// Shown while game.voteOpen is true (between %close and %endvote). Players get
+// one button per valid option plus a live tally; the host gets the full tally
+// and an "End Vote" button that applies the winner.
+
+function buildVotePanel(game: Game, entity: Entity | null): string {
+  if (!game.voteOpen) return "";
+
+  const players = game.entities.filter((e) => !e.isMonster);
+  const options = voteOptionsFor(players.length);
+  const tally = new Map(tallyVotes(game.votes).map((t) => [t.mode, t.count]));
+  const voted = Object.keys(game.votes).length;
+
+  let html =
+    '<div style="margin:6px 0;padding:6px 10px;border:1px solid #a0c;border-left:3px solid #a0c;background:rgba(160,0,204,0.08)">';
+  html += `<b style="color:#a0c">GAMEMODE VOTE</b> <span style="color:#888">(${voted}/${players.length} voted)</span><br>`;
+
+  if (options.length === 0) {
+    html += '<span style="color:#888"><i>No valid modes for this lobby size.</i></span>';
+  }
+
+  for (const opt of options) {
+    const count = tally.get(opt.id) ?? 0;
+    const mine = entity !== null && game.votes[entity.id] === opt.id;
+    const suffix = count > 0 ? ` (${count})` : "";
+
+    if (entity !== null) {
+      // Player view: clickable vote button, highlighted once voted.
+      const style = mine
+        ? "background:#a0c;color:#fff;border-color:#a0c;font-weight:bold;"
+        : "";
+      html += btn(`%vote ${opt.id}`, `${opt.label}${suffix}`, style);
+    } else {
+      // Host view: per-mode tally with voter names.
+      const voters = game.entities
+        .filter((e) => !e.isMonster && game.votes[e.id] === opt.id)
+        .map((e) => e.num);
+      html += `<div style="margin:2px 0"><b>${esc(opt.label)}</b>: ${count}${voters.length ? ` (${esc(voters.join(", "))})` : ""}</div>`;
+    }
+  }
+
+  if (entity === null) {
+    html += `<div style="margin-top:6px">${btn("%endvote", "End Vote & Apply Winner")}</div>`;
+  }
+  html += "</div>";
+  return html;
+}
+
 // -- Toast helpers ------------------------------------------------------------
 
 function buildToasts(game: Game): string {
@@ -101,7 +150,7 @@ export function buildHostPage(game: Game): string {
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   <b>Game: ${esc(game.id)}</b> -- ${esc(game.mode)} -- Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
-  <hr>${map}<hr>${pl}<hr>${log}<hr>${controls}
+  <hr>${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}<hr>${controls}
   ${buildToasts(game)}
 </div>`;
 }
@@ -183,6 +232,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   ${map}${pl}
   <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
+  ${buildVotePanel(game, entity)}
   <hr>${phase}${prompt}${actions}
   ${log}
   ${buildToasts(game)}

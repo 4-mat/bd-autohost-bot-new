@@ -259,6 +259,10 @@ export interface Game {
   chatLog: ChatEntry[];
   toasts: ChatEntry[];
   signupsOpen: boolean;
+  /** Gamemode votes: entity num -> voted mode id. Active between %close and %endvote. */
+  votes: Record<string, string>;
+  /** Whether gamemode voting is open (opened by %close, closed by %endvote). */
+  voteOpen: boolean;
 }
 
 export const games = new Map<string, Game>();

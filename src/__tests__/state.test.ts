@@ -114,6 +114,8 @@ function makeGame(
     chatLog: [],
     toasts: [],
     signupsOpen: false,
+    votes: {},
+    voteOpen: false,
   };
 }
 
