@@ -83,7 +83,7 @@ All game setup commands, routed by `hostCommand()`:
 | -------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `%host`              | `handleHost`         | Creates a new `Game` in the room with a default 12x12 map, FFA mode, setup phase                                                         |
 | `%dehost`            | `handleDehost`       | Deletes the game (host only)                                                                                                             |
-| `%setgame`           | `handleSetGame`      | Sets `game.mode` (FFA, 2v2, 3v3...)                                                                                                      |
+| `%setgame`           | `handleSetGame`      | Sets mode AND completes setup: picks a random map from the mode's pool (if none set), assigns teams (NvM), places players, generates turn order — then %start                                                                                                      |
 | `%addp`              | `handleAddPlayer`    | Creates an `Entity` from a class + weapon + team, assigned a spawn position                                                              |
 | `%addm`              | `handleAddMonster`   | Creates a monster entity with raw stats                                                                                                  |
 | `%remp`              | `handleRemPlayer`    | Removes an entity                                                                                                                        |
@@ -97,7 +97,7 @@ All game setup commands, routed by `hostCommand()`:
 | `%open` / `%openbsu` | `handleOpen`         | Opens signups (`signupsOpen = true`), enabling `%join`; `openbsu` highlights                                                             |
 | `%close`             | `handleClose`        | Closes signups (`signupsOpen = false`)                                                                                                   |
 | `%join`              | `handleJoin`         | Self-service join with a chosen class/weapon while signups are open                                                                      |
-| `%genpos`            | `handleGenPos`       | Sets competitive starting positions: `%genpos <N><mode>` (e.g. `4pffa`); FFA-only, spawns spread symmetrically from corners/edges/center |
+| `%genpos`            | `handleGenPos`       | Sets competitive starting positions: FFA `%genpos <N><mode>` (e.g. `4pffa`) spread symmetrically, or teams `%genpos <N>v<M>` (e.g. `2v2`) on mirrored halves with auto-assigned teams + mode |
 | `%start`             | `handleStart`        | Starts the game, auto-gentos if needed, broadcasts HTML pages                                                                            |
 
 `handleAddPlayer` parses flat stat strings (class stat + weapon stat),
@@ -105,7 +105,7 @@ filters abilities by level, and calls `findSpawnPosition` — a spiral-search
 from map center for open Normal tiles. `%addp` and `%join` share the same
 entity-building helper `createPlayerEntity`.
 
-`%genpos` parses a player count + mode (e.g. `4pffa`), rejects team modes
+`%genpos` parses a player count + mode (e.g. `4pffa`) or a team match (e.g. `2v2`, auto-teams and sets the mode)
 and PvE, and places the first N players at symmetric spawn slots derived
 from map size (corners, then edges, then center), BFS-searching to the
 nearest open Normal tile per slot.
