@@ -383,6 +383,27 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     game.room,
     `/me selects ${ability.name}${targetName ? ` targeting ${targetName}` : ""}`,
   );
+
+  // Auto-resolve Free/Swift actions without dice rolls
+  const noDice = !ability.roll || ability.roll === "" || ability.roll === "—";
+  if (
+    noDice &&
+    (ability.actionType === "Free" || ability.actionType === "Swift")
+  ) {
+    const step = resolveAction(game, entity);
+    if (step.done === false) {
+      send(game.room, `${entity.num}: ${step.prompt.message}`);
+      return;
+    }
+    for (const msg of step.result.messages) {
+      send(game.room, msg);
+    }
+    entity.pendingAction = null;
+    send(game.room, `**${ability.name}** resolved. Use %back to undo.`);
+    broadcastPages(game);
+    return;
+  }
+
   broadcastPages(game);
 }
 
