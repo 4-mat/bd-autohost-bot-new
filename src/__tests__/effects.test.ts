@@ -10,6 +10,7 @@ import {
   parseEffects,
   applyEffects,
   applyEffectStream,
+  evaluateCondition,
   isApexActive,
   isThirstActive,
 } from "../game/effects.js";
@@ -1028,6 +1029,247 @@ describe("applyEffectStream: choose prompt", () => {
     expect(messages.some((m) => m.startsWith("    Option 1:"))).toBe(true);
     expect(messages.some((m) => m.startsWith("    Option 2:"))).toBe(true);
     expect(messages.some((m) => m.startsWith("    Option 3:"))).toBe(true);
+  });
+});
+
+// =============================================================================
+// Conditional gate
+// =============================================================================
+
+describe("parseEffects: conditional clause", () => {
+  it("recognises 'If CONDITION, EFFECT [Otherwise EFFECT]'", () => {
+    const effects = parseEffects("If user ATK > 5, +3 ATK/1. Otherwise, +1 DEF/1.");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("conditional");
+    if (effects[0].type !== "conditional") return;
+    expect(effects[0].condition).toContain("user atk > 5");
+    expect(effects[0].thenEffects.length).toBeGreaterThan(0);
+    expect(effects[0].elseEffects?.length).toBeGreaterThan(0);
+  });
+
+  it("parses conditional without otherwise-branch", () => {
+    const effects = parseEffects("If target is alive, +1 MP.");
+    expect(effects).toHaveLength(1);
+    if (effects[0].type !== "conditional") return;
+    expect(effects[0].condition).toBe("target is alive");
+    expect(effects[0].thenEffects.length).toBeGreaterThan(0);
+    expect(effects[0].elseEffects).toBeUndefined();
+  });
+});
+
+describe("evaluateCondition: supported patterns", () => {
+  it("target is alive / dead", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const live = makeEntity({ num: "P2", name: "B", curhp: 50 });
+    const dead = makeEntity({ num: "P2", name: "B", curhp: 0 });
+    expect(evaluateCondition("target is alive", user, live)).toBe("then");
+    expect(evaluateCondition("target is alive", user, dead)).toBe("else");
+    expect(evaluateCondition("target is dead", user, live)).toBe("else");
+    expect(evaluateCondition("target is dead", user, dead)).toBe("then");
+  });
+
+  it("user/target has Status", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({
+      num: "P2",
+      name: "B",
+      statuses: [
+        { name: "Stun", damage: 0, rounds: 2, maxRounds: 2, removable: true },
+      ],
+    });
+    expect(evaluateCondition("target has Stun", user, target)).toBe("then");
+    expect(evaluateCondition("target has Slow", user, target)).toBe("else");
+    expect(evaluateCondition("user has Stun", user, target)).toBe("else");
+  });
+
+  it("user/target has N <resource>", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "A",
+      resources: { blood: 5 },
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "B",
+      resources: { blood: 3 },
+    });
+    expect(evaluateCondition("user has 5 blood", user, target)).toBe("then");
+    expect(evaluateCondition("user has 4 blood", user, target)).toBe("then");
+    expect(evaluateCondition("user has 6 blood", user, target)).toBe("else");
+    expect(evaluateCondition("target has 3 blood", user, target)).toBe("then");
+    expect(evaluateCondition("target has 4 blood", user, target)).toBe("else");
+  });
+
+  it("resource threshold shorthand like '5 Blood' / '0 Campaigns'", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "A",
+      resources: { blood: 5, campaigns: 0 },
+    });
+    const target = makeEntity({ num: "P2", name: "B" });
+    expect(evaluateCondition("5 blood", user, target)).toBe("then");
+    expect(evaluateCondition("6 blood", user, target)).toBe("else");
+    expect(evaluateCondition("zero campaigns", user, target)).toBe("then");
+    expect(evaluateCondition("no campaigns", user, target)).toBe("then");
+    expect(evaluateCondition("1 campaign", user, target)).toBe("else");
+  });
+
+  it("Stat comparison (>, >=, =, greater/less than, equal to)", () => {
+    const user = makeEntity({ num: "P1", name: "A", atk: 10 });
+    const target = makeEntity({ num: "P2", name: "B", mag: 7 });
+
+    expect(evaluateCondition("user atk > 5", user, target)).toBe("then");
+    expect(evaluateCondition("user atk > 15", user, target)).toBe("else");
+    expect(evaluateCondition("user atk >= 10", user, target)).toBe("then");
+    expect(evaluateCondition("user atk = 10", user, target)).toBe("then");
+    expect(evaluateCondition("target mag > 5", user, target)).toBe("then");
+    expect(evaluateCondition("target mag greater than 5", user, target)).toBe(
+      "then",
+    );
+    expect(evaluateCondition("target mag less than 10", user, target)).toBe(
+      "then",
+    );
+    expect(evaluateCondition("target mag less than 5", user, target)).toBe(
+      "else",
+    );
+  });
+
+  it("Stat sign (positive/negative/zero)", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+
+    // Vanilla ATK is 10 -> positive
+    expect(evaluateCondition("user atk positive", user, target)).toBe("then");
+    expect(evaluateCondition("user atk negative", user, target)).toBe("else");
+    expect(evaluateCondition("user atk zero", user, target)).toBe("else");
+
+    target.buffs.push({ stat: "atk", amount: -100, rounds: 1 });
+    expect(evaluateCondition("target atk positive", user, target)).toBe("else");
+    expect(evaluateCondition("target atk negative", user, target)).toBe("then");
+  });
+
+  it("not / no negation wraps another condition", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({
+      num: "P2",
+      name: "B",
+      statuses: [
+        { name: "Stun", damage: 0, rounds: 2, maxRounds: 2, removable: true },
+      ],
+    });
+
+    expect(evaluateCondition("target has Stun", user, target)).toBe("then");
+    expect(evaluateCondition("not target has Stun", user, target)).toBe("else");
+    expect(evaluateCondition("no target has Stun", user, target)).toBe("else");
+    expect(evaluateCondition("target is alive", user, target)).toBe("then");
+    expect(evaluateCondition("not target is alive", user, target)).toBe("else");
+  });
+
+  it("unknown conditions return 'unknown' (and fall back to then-branch)", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+
+    expect(evaluateCondition("target Dashes before user's next turn", user, target)).toBe(
+      "unknown",
+    );
+    expect(
+      evaluateCondition(
+        "the player this ability originates from has more MAG than ATK",
+        user,
+        target,
+      ),
+    ).toBe("unknown");
+  });
+});
+
+describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => {
+  function buildCtx() {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({
+      num: "P2",
+      name: "B",
+      pos: [5, 6],
+      curhp: 50,
+      statuses: [
+        {
+          name: "Cripple",
+          damage: 0,
+          rounds: 2,
+          maxRounds: 2,
+          removable: true,
+        },
+      ],
+    });
+    const ability = makeAbility({
+      name: "Smart Strike",
+      range: "Melee",
+      effect: "",
+    });
+    const game = makeGame({ entities: [user, target] });
+    return { user, target, ability, game };
+  }
+
+  it("then-branch fires when condition holds", () => {
+    const { user, target, ability, game } = buildCtx();
+    const effects = parseEffects("If target has Cripple, +5 ATK/1.");
+    applyEffectStream(game, user, target, effects, ability).next(undefined);
+    expect(target.buffs.some((b) => b.stat === "atk" && b.amount === 5)).toBe(
+      true,
+    );
+  });
+
+  it("else-branch fires when condition is false", () => {
+    const { user, target, ability, game } = buildCtx();
+    target.statuses = []; // remove Cripple
+    const effects = parseEffects(
+      "If target has Cripple, +5 ATK/1. Otherwise, +3 DEF/1.",
+    );
+    applyEffectStream(game, user, target, effects, ability).next(undefined);
+    expect(target.buffs.some((b) => b.stat === "def" && b.amount === 3)).toBe(
+      true,
+    );
+    expect(target.buffs.some((b) => b.stat === "atk")).toBe(false);
+  });
+
+  it("unknown conditions still fire then-branch but log TODO", () => {
+    const { user, target, ability, game } = buildCtx();
+    const effects = parseEffects(
+      "If target Dashes before user's next turn, +5 ATK/1.",
+    );
+    const messages = applyEffectStream(game, user, target, effects, ability)
+      .next(undefined).value as string[];
+    expect(target.buffs.some((b) => b.stat === "atk" && b.amount === 5)).toBe(
+      true,
+    );
+    expect(
+      messages.some((m) =>
+        m.toLowerCase().includes("condition evaluation todo"),
+      ),
+    ).toBe(true);
+  });
+
+  it("'If target is alive' false-branch drops sub-effects", () => {
+    const { user, target, ability, game } = buildCtx();
+    target.curhp = 0;
+    const effects = parseEffects("If target is alive, +5 ATK/1.");
+    applyEffectStream(game, user, target, effects, ability).next(undefined);
+    expect(target.buffs.some((b) => b.stat === "atk")).toBe(false);
+  });
+
+  it("sync applyEffects routes correctly too", () => {
+    const { user, target, ability, game } = buildCtx();
+    target.statuses = [];
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects("If target has Cripple, +5 ATK/1. Otherwise, +3 DEF/1."),
+      ability,
+    );
+    expect(target.buffs.some((b) => b.stat === "def" && b.amount === 3)).toBe(
+      true,
+    );
+    expect(messages.some((m) => m.includes("Otherwise"))).toBe(true);
   });
 });
 
