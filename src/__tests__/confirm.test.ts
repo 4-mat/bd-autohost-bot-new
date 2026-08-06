@@ -165,6 +165,64 @@ describe("confirm", () => {
     expect(user.pendingAction).toBeNull();
   });
 
+  it("records a battle log summary when an action resolves", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+    games.set(game.id, game);
+
+    const ability = makeAbility({ name: "Punch", mr: 0, roll: "1d1+0" });
+    user.pendingAction = { type: "attack", ability, target: "P2" };
+    user.standardUsed = true;
+
+    gameCommand(room, alice, "confirm", "", "");
+
+    expect(game.log.length).toBeGreaterThan(0);
+    const entry = game.log[game.log.length - 1];
+    expect(entry.entity).toBe("P1");
+    expect(entry.turn).toBe(1);
+    expect(entry.description).toContain("Punch @ Bob");
+  });
+
+  it("does not log a duplicate turn pass after an action was logged", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+    games.set(game.id, game);
+
+    const ability = makeAbility({ name: "Punch", mr: 0, roll: "1d1+0" });
+    user.pendingAction = { type: "attack", ability, target: "P2" };
+    user.standardUsed = true;
+
+    gameCommand(room, alice, "confirm", "", "");
+    const afterConfirm = game.log.length;
+    expect(afterConfirm).toBeGreaterThan(0);
+
+    gameCommand(room, host, "next", "", "");
+
+    expect(game.log.length).toBe(afterConfirm);
+  });
+
   it("does nothing when no action is pending", () => {
     const user = makeEntity({
       num: "P1",
