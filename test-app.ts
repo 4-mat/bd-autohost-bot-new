@@ -1204,6 +1204,9 @@ function handleTurn(msg) {
     showToast('Your turn: ' + label, true);
     if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
   }
+  if (msg.yours) {
+    addLine('action', tabLink('player', 'Open your tab'), 'Your turn');
+  }
 }
 
 window.addEventListener('resize', () => {
@@ -1243,10 +1246,11 @@ function addLine(type, raw, name) {
 
 let switchToTab = null;
 let lastSignupsOpen = false;
-const SIGNUP_LINK = '<a href="#" data-tab="signin" style="color:#00aaff;text-decoration:underline;cursor:pointer">Sign Up Here</a>';
+// Clickable chat link that jumps to a GUI tab (see the chatMessages listener).
+const tabLink = (tab, label) => '<a href="#" data-tab="' + tab + '" style="color:#00aaff;text-decoration:underline;cursor:pointer">' + label + '</a>';
 // The [[SIGNUP]] token is only produced by the %open room message (a chat/quote
 // line); other message types render via textContent and would show it raw.
-const withSignupLink = (s) => String(s).split('[[SIGNUP]]').join(SIGNUP_LINK);
+const withSignupLink = (s) => String(s).split('[[SIGNUP]]').join(tabLink('signin', 'Sign Up Here'));
 
 guiContent.addEventListener('click', (e) => {
   const join = e.target.closest('button[name="join"]');
