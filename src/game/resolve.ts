@@ -409,14 +409,38 @@ function respondToPromptOfKind(
   return advanceAttack(user, flow, value);
 }
 
-// TODO: work out how to handle the case where the generator throws an error
-
 function advanceAttack(
   user: Entity,
   flow: Generator<AttackPrompt, ResolutionResult, PromptResponse>,
   input: PromptResponse,
 ): AttackStep {
-  const step = flow.next(input);
+  let step: IteratorResult<AttackPrompt, ResolutionResult>;
+  try {
+    step = flow.next(input);
+  } catch (e) {
+    // A throwing generator means resolution died mid-stream (e.g. a
+    // malformed ability in the data). The generator is now exhausted:
+    // subsequent .next() calls return {done:true} with no result, so we
+    // must clear it here or the user stays stuck on a dangling prompt that
+    // crashes finishStep. Report the failure as a completed step so the
+    // pending action is cleaned up like any other resolution; %back can
+    // still undo any partial effects via the snapshot.
+    user.pendingResolution = undefined;
+    user.pendingPromptKind = undefined;
+    console.error("Attack resolution failed:", e);
+    return {
+      done: true,
+      result: {
+        messages: [
+          `${user.num}'s action failed to resolve: ${
+            e instanceof Error ? e.message : String(e)
+          }.`,
+        ],
+        deaths: [],
+        gameOver: false,
+      },
+    };
+  }
 
   if (step.done === true) {
     user.pendingResolution = undefined;
