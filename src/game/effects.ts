@@ -764,6 +764,33 @@ function getBaseStat(entity: Entity, stat: string): number {
 }
 
 // ---------------------------------------------------------------------------
+// Thirst gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when the caster's Blood resource meets (or exceeds) the
+ * threshold required by a `Thirst N:` clause.
+ *
+ * Per BD 4.4 (Trophy class): Blood is its own resource counter -- separate
+ * from HP/MP/Resolve. Every `Thirst N:` clause in an ability text fires only
+ * when the caster has N+ Blood at move-select time. Real examples:
+ *   - "Thirst 5: +3 MR, Double Hit."
+ *   - "Thirst 4: inflict Cripple 4/1."
+ *   - "Thirst 10: no effects."
+ *
+ * The Blood spend (if any) is handled by explicit sub-effect text such as
+ * "lose X Blood"; this gate only decides whether the sub-effects run.
+ *
+ * Entities without a Blood pool (i.e. any class other than Trophy) read as 0
+ * Blood and so never satisfy a thirst threshold -- matches the design where
+ * thirst clauses are Trophy-specific mechanics.
+ */
+export function isThirstActive(user: Entity, effect: ThirstEffect): boolean {
+  const blood = user.resources.blood ?? 0;
+  return blood >= effect.threshold;
+}
+
+// ---------------------------------------------------------------------------
 // Apex gate
 // ---------------------------------------------------------------------------
 
@@ -1151,13 +1178,24 @@ export function applyEffects(
       }
 
       case "thirst": {
-        // Threshold gating is intentionally still TODO -- always applies the
-        // sub-effects for now. Thread `ability` through for any nested apex.
-        messages.push(
-          `  [Thirst ${effect.threshold}] -- threshold evaluation TODO.`,
+        // Fire sub-effects only when user.resources.blood >= threshold.
+        // Thread `ability` so any nested apex in the sub-effects keeps gating.
+        if (!isThirstActive(user, effect)) {
+          messages.push(
+            `  [Thirst ${effect.threshold}] inactive (Blood ${user.resources.blood ?? 0} < ${effect.threshold}).`,
+          );
+          break;
+        }
+        const thirstMsgs = applyEffects(
+          game,
+          user,
+          target,
+          effect.effects,
+          ability,
         );
-        const thirstMsgs = applyEffects(game, user, target, effect.effects, ability);
-        messages.push(...thirstMsgs.map((m) => `    ${m}`));
+        messages.push(
+          ...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`),
+        );
         break;
       }
 
