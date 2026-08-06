@@ -53,6 +53,7 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%unvote`                             | Withdraw your gamemode vote.                                                          |
 | `%endvote`                            | Closes voting and applies the winning mode; on a tie, starts a runoff restricted to the tied modes. Hosts only.                            |
 | `%nudge`                              | Pings the players who haven't voted yet (@Name) so they finish voting. Hosts only.                            |
+| `%leave`                              | Leaves the game you're in: removes your entity, turn-order slot, and any vote. Hosts use %dehost.             |
 | `%autoclose [value]`                 | Autoclose the game after the specified time in seconds. Hosts only.                |
 | `%setgame [gamemode]`                | Sets up the game for the desired gamemode. Hosts only.                             |
 | `%pos [pl]+[mode]`                   | Gives starting positions for the selected game mode and PL size (e.g. 8pffa, 2v2). |
@@ -86,6 +87,7 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%endturn`                           | End current turn. Host bypass available.      |
 | `%next`                              | Resolve current turn and advance (host only). |
 | `%back`                              | Undo last action.                             |
+| `%leave`                             | Leave the game you're in (removes your entity, turn-order slot, and any vote). The host uses %dehost instead. |
 
 ### Display Commands
 

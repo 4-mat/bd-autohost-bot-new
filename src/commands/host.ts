@@ -1271,6 +1271,7 @@ function handleRemPlayer(room: Room, user: User, args: string) {
 
   removeEntity(game, entity);
   send(room.id, `**${entity.num} (${entity.name})** has been removed.`);
+  broadcastPages(game);
 }
 
 // -- .setmap <name> - Set the map ----------------------------------------------

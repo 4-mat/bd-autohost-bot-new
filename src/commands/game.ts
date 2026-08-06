@@ -116,6 +116,11 @@ export function gameCommand(
       handleUnvote(game, user);
       break;
 
+    case "leave":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleLeave(game, user);
+      break;
+
     case "endturn":
     case "next":
       if (!game) return sendPm(user.name, "No active game in this room.");
@@ -641,6 +646,29 @@ function handleUnvote(game: Game, user: User) {
 
   delete game.votes[entity.id];
   send(game.room, `${entity.num} (${entity.name}) withdrew their vote.`);
+  broadcastPages(game);
+}
+
+/**
+ * %leave — a player leaves the game they're in: removes their entity, drops
+ * them from the turn order, and withdraws any vote they cast. The host must
+ * use %dehost instead.
+ */
+function handleLeave(game: Game, user: User) {
+  if (toId(user.name) === toId(game.host)) {
+    return sendPm(
+      user.name,
+      "You're the host — use %dehost to close the game.",
+    );
+  }
+  const entity = game.entities.find(
+    (e) => !e.isMonster && toId(e.name) === toId(user.name),
+  );
+  if (!entity) {
+    return sendPm(user.name, "You're not in this game. Join first (%join).");
+  }
+  removeEntity(game, entity);
+  send(game.room, `**${entity.num} (${entity.name})** has left the game.`);
   broadcastPages(game);
 }
 
