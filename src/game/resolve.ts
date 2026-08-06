@@ -14,6 +14,11 @@ import {
   isConfused,
   hasStatus,
   parseFrequency,
+  needsDirection,
+  getDirectionCandidates,
+  DIRECTION_LABELS,
+  placeTerrain,
+  TERRAIN_NAMES,
 } from "./state.js";
 import {
   parseEffects,
@@ -102,6 +107,16 @@ export type AttackPrompt =
       kind: "target";
       message: string;
       candidates: Entity[];
+    }
+  | {
+      kind: "direction";
+      message: string;
+      candidates: string[];
+    }
+  | {
+      kind: "tile";
+      message: string;
+      candidates: string[];
     };
 
 export type PromptResponse = string;
@@ -189,6 +204,18 @@ function* resolveAttackFlow(
       );
       return result;
     }
+  }
+
+  // --- Direction prompt for AoE abilities ---
+  const needsDir = needsDirection(ability);
+  let dir = user.pendingAction?.direction;
+  if (needsDir && !dir) {
+    const dirs = getDirectionCandidates();
+    dir = yield {
+      kind: "direction",
+      message: `Choose a direction for ${ability.name}`,
+      candidates: dirs,
+    };
   }
 
   // --- Target (attack may not continue if nothing can be chosen) ---
@@ -325,7 +352,11 @@ export function startAttack(
   user: Entity,
   ability: AbilityData,
   target?: string,
+  dir?: string,
 ): AttackStep {
+  if (dir && user.pendingAction) {
+    user.pendingAction.direction = dir;
+  }
   const flow = resolveAttackFlow(game, user, ability, target);
   user.pendingResolution = flow;
   return advanceAttack(user, flow, undefined as unknown as PromptResponse);
@@ -341,6 +372,16 @@ export function respondToTarget(user: Entity, targetRef: string): AttackStep {
   return respondToPromptOfKind(user, "target", targetRef, "%target");
 }
 
+// %dir <direction> -- only valid while a "direction" prompt is pending.
+export function respondToDir(user: Entity, dir: string): AttackStep {
+  return respondToPromptOfKind(user, "direction", dir, "%dir");
+}
+
+// %tile <tileRef> -- only valid while a "tile" prompt is pending.
+export function respondToTile(user: Entity, tileRef: string): AttackStep {
+  return respondToPromptOfKind(user, "tile", tileRef, "%tile");
+}
+
 function respondToPromptOfKind(
   user: Entity,
   expectedKind: AttackPrompt["kind"],
@@ -354,8 +395,13 @@ function respondToPromptOfKind(
     throw new Error(`${user.num} has no pending action awaiting a response.`);
   }
   if (user.pendingPromptKind !== expectedKind) {
-    const wants =
-      user.pendingPromptKind === "selection" ? "%choose" : "%target";
+    const kindMap: Record<string, string> = {
+      selection: "%choose",
+      target: "%target",
+      direction: "%dir",
+      tile: "%tile",
+    };
+    const wants = kindMap[user.pendingPromptKind ?? ""] ?? "%target";
     throw new Error(
       `${user.num}'s pending action expects ${wants}, not ${commandName}.`,
     );
@@ -455,6 +501,44 @@ function getTargetCandidates(
     }
     return false;
   });
+}
+
+function getTileCandidates(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+): string[] {
+  const tiles: string[] = [];
+  const rangeStr = ability.range.toLowerCase().trim();
+  const rangeMatch = rangeStr.match(/(?:range|homing)\s*(\d+)/);
+  const range = rangeMatch ? parseInt(rangeMatch[1]) : 3;
+
+  for (let r = 0; r < game.map.length; r++) {
+    for (let c = 0; c < game.map[0].length; c++) {
+      const d = Math.abs(r - user.pos[0]) + Math.abs(c - user.pos[1]);
+      if (d === 0) continue;
+      if (d > range) continue;
+      tiles.push(posToStr(r, c));
+    }
+  }
+  return tiles;
+}
+
+function parseTileRef(ref: string): [number, number] | null {
+  const parts = ref.split(",");
+  if (parts.length === 2) {
+    const r = parseInt(parts[0]);
+    const c = parseInt(parts[1]);
+    if (!isNaN(r) && !isNaN(c)) return [r, c];
+  }
+  // Letter-number format: A1, B3, etc.
+  const match = ref.match(/^([a-zA-Z])\s*(\d+)$/);
+  if (match) {
+    const r = match[1].toUpperCase().charCodeAt(0) - 65;
+    const c = parseInt(match[2]) - 1;
+    if (r >= 0 && c >= 0) return [r, c];
+  }
+  return null;
 }
 
 // ---------------------------
@@ -981,5 +1065,11 @@ export function resolveAction(game: Game, user: Entity): AttackStep {
     };
   }
 
-  return startAttack(game, user, action.ability, action.target);
+  return startAttack(
+    game,
+    user,
+    action.ability,
+    action.target,
+    action.direction,
+  );
 }

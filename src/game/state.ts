@@ -187,6 +187,43 @@ export interface PendingAction {
   target?: string; // entity num
   targetPos?: [number, number];
   position?: [number, number];
+  direction?: string; // cardinal direction for cone/line/beam/pierce
+}
+
+export const DIRECTION_LABELS: Record<string, string> = {
+  up: "\u2191 Up",
+  down: "\u2193 Down",
+  left: "\u2190 Left",
+  right: "\u2192 Right",
+};
+
+export function needsDirection(ability: AbilityData): boolean {
+  const r = ability.range.toLowerCase().trim();
+  return /^(cone|line|beam|pierce)\b/.test(r);
+}
+
+export function getDirectionCandidates(): string[] {
+  return ["up", "down", "left", "right"];
+}
+
+export function placeTerrain(
+  map: number[][],
+  pos: [number, number],
+  terrain: number,
+): void {
+  const [r, c] = pos;
+  if (r >= 0 && r < map.length && c >= 0 && c < map[0].length) {
+    map[r][c] = terrain;
+  }
+}
+
+export function entityOnTile(
+  entities: Entity[],
+  pos: [number, number],
+): Entity | undefined {
+  return entities.find(
+    (e) => e.pos[0] === pos[0] && e.pos[1] === pos[1] && e.curhp > 0,
+  );
 }
 
 export interface ActionLogEntry {

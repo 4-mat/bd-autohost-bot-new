@@ -38,8 +38,12 @@ import {
   resolveAction,
   respondToChoice,
   respondToTarget,
+  respondToDir,
+  respondToTile,
+  startAttack,
   type AttackStep,
 } from "../game/resolve.js";
+import { DIRECTION_LABELS } from "../game/state.js";
 
 export function gameCommand(
   room: Room | null,
@@ -49,7 +53,12 @@ export function gameCommand(
   val: string,
   pm = false,
 ) {
-  const game = room ? findGameForRoom(room.id) : null;
+  // PM routing: find game by entity/host name
+  let game = room ? findGameForRoom(room.id) : null;
+  if (!game && pm) {
+    game = findGameForUser(user.name);
+    if (!game) return sendPm(user.name, "No active game found.");
+  }
 
   const full = val ? `${args},${val}` : args;
 
@@ -165,6 +174,16 @@ export function gameCommand(
       handleRegp(game, user, full);
       break;
 
+    case "dir":
+      if (!game) return sendPm(user.name, "No active game.");
+      handleDirChoice(game, user, args);
+      break;
+
+    case "tile":
+      if (!game) return sendPm(user.name, "No active game.");
+      handleTileChoice(game, user, full);
+      break;
+
     default:
       sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
       break;
@@ -174,6 +193,17 @@ export function gameCommand(
 function findGameForRoom(roomid: string): Game | null {
   for (const game of games.values()) {
     if (game.room === roomid) return game;
+  }
+  return null;
+}
+
+function findGameForUser(username: string): Game | null {
+  for (const game of games.values()) {
+    if (toId(game.host) === toId(username)) return game;
+    for (const e of game.entities) {
+      if (toId(e.name) === toId(username) || toId(e.num) === toId(username))
+        return game;
+    }
   }
   return null;
 }
@@ -521,6 +551,16 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
         game.room,
         `Use %choose <option>. Options: ${step.prompt.options.map((o) => o.id).join(", ")}`,
       );
+    } else if (step.prompt.kind === "direction") {
+      send(
+        game.room,
+        `Use %dir <direction>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
+    } else if (step.prompt.kind === "tile") {
+      send(
+        game.room,
+        `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
     }
 
     return;
@@ -776,6 +816,44 @@ function handlePremove(game: Game, user: User) {
     send(game.room, `/me ${entity.num} viewing pre-move abilities`);
   }
   broadcastPages(game);
+}
+
+// -- Direction / Tile choice handlers -----------------------------------------
+
+function handleDirChoice(game: Game, user: User, dir: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!dir) return sendPm(user.name, "Usage: %dir <direction>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToDir(entity, dir);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function handleTileChoice(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!args) return sendPm(user.name, "Usage: %tile <tile>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToTile(entity, args);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
 }
 
 function handlePassMove(game: Game, user: User) {
