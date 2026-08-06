@@ -461,6 +461,13 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
     send(game.room, msg);
   }
 
+  game.log.push({
+    turn: game.round,
+    entity: entity.num,
+    description: summarizeResult(game, entity, step.result.messages),
+    snapshot: "",
+  });
+
   entity.pendingAction = null;
 
   const winner = checkGameOver(game);
@@ -546,12 +553,17 @@ function handleAdvanceTurn(game: Game, user: User) {
     }
   }
 
-  game.log.push({
-    turn: game.round,
-    entity: entity.num,
-    description: acted || `${entity.num} (${entity.name}) -- turn passed`,
-    snapshot: "",
-  });
+  if (
+    acted ||
+    !game.log.some((e) => e.turn === game.round && e.entity === entity.num)
+  ) {
+    game.log.push({
+      turn: game.round,
+      entity: entity.num,
+      description: acted || `${entity.num} (${entity.name}) -- turn passed`,
+      snapshot: "",
+    });
+  }
 
   const result = nextTurn(game);
   for (const msg of result.messages) {
@@ -601,7 +613,9 @@ function summarizeResult(
   for (const m of messages) {
     const d = m.match(/= \*\*(\d+)\*\* -> (\S+) \(/);
     if (d) {
-      dmg.push(`${nm(d[2])} ${d[1]} dmg`);
+      dmg.push(
+        `${nm(d[2])} ${d[1]} ${m.includes("**Heal**") ? "heal" : "dmg"}`,
+      );
       continue;
     }
     const s = m.match(/-> (\S+) \(.*= \*\*(\d+)\*\*$/);
