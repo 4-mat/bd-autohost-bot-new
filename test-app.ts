@@ -48,9 +48,10 @@ function getConnectedPlayers() {
   for (const session of sessions.values()) {
     if (!session.authenticated) continue;
 
-    let role = session.tabs.includes("host")
+    const tabs = getUserTabs(session.username);
+    let role = tabs.includes("host")
       ? "Host"
-      : session.tabs.includes("player")
+      : tabs.includes("player")
         ? "Player"
         : "Spectator";
 
@@ -334,6 +335,8 @@ function refreshAllTabs() {
       );
     }
   }
+
+  refreshPlayerList();
 }
 
 function controlsEntity(username: string, entity: Entity): boolean {
@@ -827,7 +830,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   @media (max-width:600px) {
     #header { padding:10px 12px; font-size:16px; flex-wrap:wrap; gap:8px; }
     #header .title { font-size:18px; }
-    #header-tabs { display:flex; order:3; flex-basis:100%; justify-content:center; padding-bottom:4px; }
+    #header-tabs { display:flex; order:3; flex-basis:100%; justify-content:flex-start; padding:0 0 4px 8px; }
     #gui-header { display:none; }
     #mobile-tabs { display:flex; margin-left:auto; }
     .sep { display:none; }
@@ -928,7 +931,7 @@ function renderPlayerList() {
   const rows = connectedPlayers.map(p =>
     '<div style="padding:3px 0">' + p.name + ' <span style="color:#888">(' + p.role + ')</span></div>'
   ).join('');
-  guiPages.players = '<div style="padding:10px"><h3 style="color:#00aaff">Connected Players</h3>' +
+  guiPages.players = '<div style="padding:10px"><h3 style="color:#00aaff">Connected users</h3>' +
     (rows || '<div style="color:#888">No players connected.</div>') + '</div>';
   if (activeTab === "players") guiContent.innerHTML = guiPages.players;
 }
@@ -1043,8 +1046,9 @@ function createTabs(tabs) {
       const button = document.createElement("div");
       button.className = "gui-tab";
       button.dataset.role = tab;
-      const label = isMobile() && tab === "player" ? "Game" : tab.charAt(0).toUpperCase() + tab.slice(1);
+      const label = tab === "players" ? "Connected users" : isMobile() && tab === "player" ? "Game" : tab.charAt(0).toUpperCase() + tab.slice(1);
       button.textContent = label;
+      if (tab === "players") button.style.order = -1;
       button.onclick = () => {
         document.querySelectorAll(".gui-tab").forEach(t => t.classList.remove("active"));
         document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
