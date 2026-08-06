@@ -220,6 +220,7 @@ export interface Game {
   winner: string | null; // winning entity num or team
   chatLog: ChatEntry[];
   toasts: ChatEntry[];
+  signupsOpen: boolean;
 }
 
 export const games = new Map<string, Game>();

@@ -1,6 +1,6 @@
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import { loadGameData } from "./src/data/index.js";
+import { loadGameData, classes, weapons } from "./src/data/index.js";
 import { rooms, type Room } from "./src/rooms.js";
 import { users } from "./src/users.js";
 import { handleCommand } from "./src/commands/index.js";
@@ -202,6 +202,50 @@ function sendToUser(username: string, msg: object) {
   }
 }
 
+// -- Sign-in page -------------------------------------------------------------
+
+function buildSigninPage(game: Game): string {
+  const open = !!game.signupsOpen;
+  const status = open
+    ? `<b style="color:#0f0">OPEN</b>`
+    : `<b style="color:#f66">CLOSED</b>`;
+
+  const classOpts = [...classes.values()]
+    .map(
+      (c) => `<option value="${escHtml(c.name)}">${escHtml(c.name)}</option>`,
+    )
+    .join("");
+  const weaponOpts = [...weapons.values()]
+    .map(
+      (w) => `<option value="${escHtml(w.name)}">${escHtml(w.name)}</option>`,
+    )
+    .join("");
+
+  const joinBtn = open
+    ? `<button name="join" style="${BTN_STYLE}">Join</button>`
+    : `<button name="join" disabled style="${BTN_STYLE}">Join (signups closed)</button>`;
+
+  return `<div style="padding:12px;background:#16213e;border:1px solid #333;border-radius:4px">
+<b style="color:#00aaff">Battle Sign-up</b> <span style="color:#888">(signups: ${status})</span><br><br>
+Class:<br>
+<select id="signin-class" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${classOpts}</select><br><br>
+Weapon:<br>
+<select id="signin-weapon" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${weaponOpts}</select><br><br>
+${joinBtn}
+<div style="color:#888;font-size:11px;margin-top:6px">Host opens signups with %open / %openbsu.</div>
+</div>`;
+}
+
+function sendSigninGui(username: string) {
+  const game = [...games.values()][0];
+  if (!game) return;
+  sendToUser(username, {
+    type: "gui",
+    role: "signin",
+    html: buildSigninPage(game),
+  });
+}
+
 setWs({
   send(raw: string) {
     if (raw.startsWith("|/pm ")) {
@@ -347,6 +391,14 @@ function getUserTabs(username: string): string[] {
     tabs.push("player");
   }
 
+  // Sign-up tab for anyone not yet an entity while a game is in setup
+  const game = [...games.values()][0];
+  const isEntity =
+    game && game.entities.some((e) => toId(e.name) === toId(username));
+  if (game && !game.started && !isEntity) {
+    tabs.push("signin");
+  }
+
   // If they have no role, they are a spectator
   if (tabs.length === 0) {
     tabs.push("spectator");
@@ -355,8 +407,8 @@ function getUserTabs(username: string): string[] {
   tabs.push("players");
 
   // Team chat only appears for players during team battles
-  const game = [...games.values()][0];
-  if (game && isTeamBattle(game) && tabs.includes("player")) {
+  const g = [...games.values()][0];
+  if (g && isTeamBattle(g) && tabs.includes("player")) {
     tabs.push("teamchat");
   }
 
@@ -376,6 +428,10 @@ function refreshAllTabs() {
           tabs,
         }),
       );
+
+      if (tabs.includes("signin")) {
+        sendSigninGui(session.username);
+      }
     }
   }
 
@@ -570,6 +626,10 @@ wss.on("connection", (ws) => {
               html: savedGui.player,
             }),
           );
+        }
+
+        if (session.tabs.includes("signin")) {
+          sendSigninGui(username);
         }
 
         ws.send(
@@ -1138,6 +1198,16 @@ function addLine(type, raw, name) {
 }
 
 guiContent.addEventListener('click', (e) => {
+  const join = e.target.closest('button[name="join"]');
+  if (join) {
+    e.preventDefault();
+    const cls = document.getElementById('signin-class');
+    const wpn = document.getElementById('signin-weapon');
+    if (cls && wpn) {
+      ws.send(JSON.stringify({ type: 'chat', text: '%join ' + cls.value + ', ' + wpn.value }));
+    }
+    return;
+  }
   const btn = e.target.closest('button[name="send"]');
   if (!btn) return;
   e.preventDefault();
@@ -1161,7 +1231,7 @@ function createTabs(tabs) {
     const button = document.createElement("div");
     button.className = "gui-tab";
     button.dataset.role = tab;
-    const label = tab === "players" ? "Connected users" : isMobile() && tab === "player" ? "Game" : tab.charAt(0).toUpperCase() + tab.slice(1);
+    const label = tab === "players" ? "Connected users" : tab === "signin" ? "Sign In" : isMobile() && tab === "player" ? "Game" : tab.charAt(0).toUpperCase() + tab.slice(1);
     button.textContent = label;
     if (tab === "players") button.style.order = -1;
     button.onclick = () => activateTab(tab, true);

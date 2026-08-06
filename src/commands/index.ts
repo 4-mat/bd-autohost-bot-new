@@ -85,7 +85,11 @@ export function handleCommand(
     id === "gento" ||
     id === "start" ||
     id === "sc" ||
-    id === "sw"
+    id === "sw" ||
+    id === "open" ||
+    id === "openbsu" ||
+    id === "close" ||
+    id === "join"
   ) {
     hostCommand(room, user, id, args, val, pm);
     return;

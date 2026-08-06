@@ -113,6 +113,7 @@ function makeGame(
     winner: null,
     chatLog: [],
     toasts: [],
+    signupsOpen: false,
   };
 }
 
