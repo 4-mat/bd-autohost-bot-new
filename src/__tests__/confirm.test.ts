@@ -787,3 +787,121 @@ describe("frequency and uses", () => {
     expect(caster.pendingAction).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dash (Issue #4)
+// ---------------------------------------------------------------------------
+
+describe("dash", () => {
+  beforeEach(() => games.clear());
+
+  it("moves 1.5x MP and is a Full action", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+      mp: 3,
+    });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "dash", "g,3,P1", "");
+
+    expect(caster.pos).toEqual([6, 2]);
+    expect(caster.dashUsed).toBe(true);
+    expect(caster.movementUsed).toBe(true);
+    expect(caster.standardUsed).toBe(true);
+  });
+
+  it("rejects a tile beyond 1.5x MP", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+      mp: 3,
+    });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "dash", "h,3,P1", "");
+
+    expect(caster.pos).toEqual([2, 2]);
+    expect(caster.dashUsed).toBe(false);
+  });
+
+  it("keeps normal move capped at MP", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+      mp: 3,
+    });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "move", "g,3,P1", "");
+
+    expect(caster.pos).toEqual([2, 2]);
+    expect(caster.movementUsed).toBe(false);
+  });
+
+  it("blocks Standard after dash (Full action)", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+      mp: 3,
+    });
+    const punch = makeAbility({ name: "Punch", mr: 0 });
+    caster.abilities = [punch];
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "dash", "g,3,P1", "");
+    gameCommand(room, alice, "use", "Punch", "");
+
+    expect(caster.pendingAction).toBeNull();
+  });
+
+  it("blocks dash after movement is used", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+      mp: 3,
+    });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "move", "a,3,P1", "");
+    expect(caster.movementUsed).toBe(true);
+
+    gameCommand(room, alice, "dash", "g,3,P1", "");
+
+    expect(caster.pos).toEqual([0, 2]);
+    expect(caster.dashUsed).toBe(false);
+  });
+
+  it("blocks a second dash", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+      mp: 3,
+    });
+    const game = makeGame({ entities: [caster] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "dash", "g,3,P1", "");
+    gameCommand(room, alice, "dash", "c,3,P1", "");
+
+    expect(caster.pos).toEqual([6, 2]);
+    expect(caster.dashUsed).toBe(true);
+  });
+});
