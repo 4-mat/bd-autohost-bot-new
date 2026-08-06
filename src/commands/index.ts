@@ -124,7 +124,9 @@ export function handleCommand(
     id === "passmove" ||
     id === "pass" ||
     id === "status" ||
-    id === "regp"
+    id === "regp" ||
+    id === "target" ||
+    id === "choose"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;

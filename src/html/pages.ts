@@ -118,6 +118,22 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 
   let phase = "";
   let actions = "";
+  let prompt = "";
+
+  if (entity.pendingPrompt) {
+    const pp = entity.pendingPrompt;
+    if (pp.kind === "selection") {
+      const opts = pp.options
+        .map((o) => btn(`%choose ${o.id}`, o.label))
+        .join("");
+      prompt = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #a0c;background:rgba(160,0,204,0.10)"><b style="color:#a0c">CHOOSE</b> ${esc(pp.message)}<div style="margin-top:4px">${opts}</div></div>`;
+    } else {
+      const opts = pp.candidates
+        .map((e) => btn(`%target ${e.num}`, e.num))
+        .join("");
+      prompt = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #a0c;background:rgba(160,0,204,0.10)"><b style="color:#a0c">TARGET</b> ${esc(pp.message)}<div style="margin-top:4px">${opts}</div></div>`;
+    }
+  }
 
   if (isTurn) {
     const inPremove = premoveSet.has(entity.num);
@@ -167,7 +183,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   ${map}${pl}
   <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
-  <hr>${phase}${actions}
+  <hr>${phase}${prompt}${actions}
   ${log}
   ${buildToasts(game)}
 </div>`;
