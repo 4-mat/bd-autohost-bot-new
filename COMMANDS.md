@@ -49,8 +49,10 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%openbsu`                           | Same as open, but automatically highlights the room. Hosts only.                   |
 | `%close`                             | Closes signups for your squad AND opens gamemode voting. Hosts only.              |
 | `%vote [mode]`                        | Cast/change your gamemode vote (FFA, 1v1, 2v2, 3v3, 4v4, 2v2v2, NTR, Juggernaut, 2vJ/3vJ/4vJ, PvPJ, PvP NTR) while voting is open; options filter by lobby size (2p offers only 1v1/NTR; modes defined up to 8p); bare `%vote` shows tallies. Use `%wt modes` or `%wt <mode>` to learn what each mode is. |
+| `%votestatus`                         | Check the live vote: tallies, runoff state, and who hasn't voted yet. Anyone can use it.                                                          |
 | `%unvote`                             | Withdraw your gamemode vote.                                                          |
 | `%endvote`                            | Closes voting and applies the winning mode; on a tie, starts a runoff restricted to the tied modes. Hosts only.                            |
+| `%nudge`                              | Pings the players who haven't voted yet (@Name) so they finish voting. Hosts only.                            |
 | `%autoclose [value]`                 | Autoclose the game after the specified time in seconds. Hosts only.                |
 | `%setgame [gamemode]`                | Sets up the game for the desired gamemode. Hosts only.                             |
 | `%pos [pl]+[mode]`                   | Gives starting positions for the selected game mode and PL size (e.g. 8pffa, 2v2). |

@@ -354,3 +354,14 @@ export function tieModes(tally: { mode: string; count: number }[]): string[] | n
 export function runoffOptions(runoff: string[]): VoteOption[] {
   return VOTE_OPTIONS.filter((o) => runoff.includes(o.id));
 }
+
+/**
+ * Entity ids (of a given list) that have not cast a vote yet. Used by
+ * %votestatus and %nudge to tell players who still needs to vote.
+ */
+export function pendingVoterIds(
+  votes: Record<string, string>,
+  playerIds: string[],
+): string[] {
+  return playerIds.filter((id) => votes[id] === undefined);
+}

@@ -18,10 +18,12 @@ import { getMapByName, listMaps } from "../data/maps.js";
 import {
   GAMEMODE_MAPS,
   modeIdFor,
+  pendingVoterIds,
   randomMapForMode,
-  recommendedMaps,    normalizeVoteMode,
-    tallyVotes,
-    tieModes,
+  recommendedMaps,
+  normalizeVoteMode,
+  tallyVotes,
+  tieModes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
@@ -118,6 +120,9 @@ export function hostCommand(
       break;
     case "endvote":
       handleEndVote(room, user);
+      break;
+    case "nudge":
+      handleNudge(room, user);
       break;
     case "join":
       handleJoin(room, user, full);
@@ -332,6 +337,49 @@ function handleEndVote(room: Room, user: User) {
   );
   broadcastPages(game);
 }
+
+/**
+ * %nudge — host-only: pings the players who haven't voted yet so the lobby
+ * can finish the vote. Mentions them by name so the chat client highlights
+ * them (@Name).
+ */
+function handleNudge(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %nudge.");
+  }
+  if (!game.voteOpen) {
+    return sendPm(
+      user.name,
+      "No gamemode vote is open. Close signups with %close to start one.",
+    );
+  }
+
+  const players = game.entities.filter((e) => !e.isMonster);
+  const pending = pendingVoterIds(
+    game.votes,
+    players.map((p) => p.id),
+  );
+
+  if (pending.length === 0) {
+    send(room.id, "Everyone has already voted! Run %endvote to apply the winning mode.");
+    return;
+  }
+
+  const names = pending
+    .map((id) => {
+      const p = players.find((e) => e.id === id);
+      return p ? `@${p.name}` : "";
+    })
+    .filter(Boolean)
+    .join(" ");
+  send(
+    room.id,
+    `${names} — you haven't voted yet! Vote in the GUI or with %vote <mode>.`,
+  );
+}
+
 
 // -- .vote <mode> - Cast/change a gamemode vote (in game.ts via gameCommand) --
 
