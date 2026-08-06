@@ -1252,11 +1252,11 @@ guiContent.addEventListener('click', (e) => {
   const loadout = e.target.closest('button[name="loadout"]');
   if (loadout) {
     e.preventDefault();
-    const num = loadout.getAttribute('data-num');
+    // %sco is self-service: the player's own entity is resolved server-side.
     const cls = document.getElementById('loadout-class');
     const wpn = document.getElementById('loadout-weapon');
-    if (num && cls && wpn) {
-      ws.send(JSON.stringify({ type: 'chat', text: '%sco ' + num + ', ' + cls.value + ', ' + wpn.value }));
+    if (cls && wpn) {
+      ws.send(JSON.stringify({ type: 'chat', text: '%sco ' + cls.value + ', ' + wpn.value }));
     }
     return;
   }

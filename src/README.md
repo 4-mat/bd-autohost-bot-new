@@ -87,8 +87,8 @@ All game setup commands, routed by `hostCommand()`:
 | `%addp`              | `handleAddPlayer`    | Creates an `Entity` from a class + weapon + team, assigned a spawn position                                                              |
 | `%addm`              | `handleAddMonster`   | Creates a monster entity with raw stats                                                                                                  |
 | `%remp`              | `handleRemPlayer`    | Removes an entity                                                                                                                        |
-| `%sc`                | `handleSwitchClass`  | Changes an entity's class, recalculates stats + abilities; host any time, players may change their own until the game starts             |
-| `%sw`                | `handleSwitchWeapon` | Changes an entity's weapon, recalculates stats + abilities; host any time, players may change their own until the game starts             |
+| `%sc`                | `handleSwitchClass`  | Changes YOUR class (`%sc <class>`), recalculates stats + abilities; until the game starts             |
+| `%sw`                | `handleSwitchWeapon` | Changes YOUR weapon (`%sw <weapon>`), recalculates stats + abilities; until the game starts             |
 | `%setlevel` / `%sl`  | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level; `all` levels every player at once                                                                  |
 | `%setteam`           | `handleSetTeam`      | Changes an entity's team number                                                                                                          |
 | `%setmap`            | `handleSetMap`       | Sets a curated map by name, a random map from a gamemode pool (`%setmap pvp`), or `%setmap gen` for a procedural map (host starts with no map; %start requires one)                                                                             |
@@ -168,7 +168,10 @@ Character viewer commands routed by `playerCommand()`:
 | `%vs` / `%viewstats`  | HP bar, stats, position, statuses, buffs, cooldowns                  |
 | `%vl` / `%viewlevels` | Class/weapon levels, all abilities with remaining uses and cooldowns |
 | `%vi` / `%viewitems`  | Stub                                                                 |
-| `%sco`               | Combined loadout setter: `%sco <entity>, <class>, <weapon>` (host any time; players their own until start) |
+| `%sco`               | Combined loadout setter: `%sco <class>, <weapon>` (your own, until start) |
+| `%setclass`          | Host-only: `%setclass <entity>, <class>` — set any entity's class (any time) |
+| `%setweapon`         | Host-only: `%setweapon <entity>, <weapon>` — set any entity's weapon (any time) |
+| `%setloadout`        | Host-only: `%setloadout <entity>, <class>, <weapon>` — set any entity's loadout (any time) |
 | `%score`             | Score display: HP + ability usage counts                            |
 
 Uses `findEntityInGames()` to locate the calling user's entity across
