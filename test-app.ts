@@ -12,6 +12,7 @@ import {
   type Entity,
   type Game,
 } from "./src/game/state.js";
+import { broadcastPages } from "./src/commands/game.js";
 
 loadGameData();
 
@@ -475,6 +476,52 @@ function broadcastTurn() {
   }
 }
 
+// -- Shot clock / timer ---------------------------------------------------------
+
+// Broadcasts the active game timer state to all clients whenever it changes
+// (start, cancel, or expiry). With force=true (used on login) the state is
+// always sent so freshly-connected clients can't miss an active timer.
+let lastTimerState = "";
+function syncTimerState(force = false) {
+  const game = [...games.values()][0];
+  const t = game?.timer ?? null;
+  const state = JSON.stringify({
+    type: "timer",
+    entity: t?.entity ?? null,
+    endAt: t?.endAt ?? null,
+  });
+  if (force || state !== lastTimerState) {
+    lastTimerState = state;
+    broadcast(state);
+  }
+}
+
+// Tick the shot clock every second: announce expiry in the room, clear the
+// timer, and push the (now-empty) state to clients so the banner hides.
+setInterval(() => {
+  for (const game of games.values()) {
+    if (!game.timer) continue;
+    if (Date.now() >= game.timer.endAt) {
+      const entity = game.timer.entity
+        ? game.entities.find((e) => e.num === game.timer.entity)
+        : null;
+      game.timer = null;
+      broadcast(
+        JSON.stringify({
+          type: "chat",
+          text: `⏰ **Timer expired!**${entity ? ` (${entity.name})` : ""}`,
+        }),
+      );
+      try {
+        broadcastPages(game);
+      } catch (e) {
+        console.error("timer expiry page refresh failed:", e);
+      }
+    }
+  }
+  syncTimerState();
+}, 1000);
+
 function ensureUser(name: string) {
   const uid = toId(name);
   if (!users.has(uid)) {
@@ -659,6 +706,7 @@ wss.on("connection", (ws) => {
         );
         refreshPlayerList();
         broadcastTurn();
+        syncTimerState(true);
         return;
       }
 
@@ -973,6 +1021,8 @@ const HTML_PAGE = `<!DOCTYPE html>
   .msg-react { color: #cc66ff; }
   #turn-indicator { display:none; color:#00aaff; font-size:11px; font-weight:bold; background:#0f3460; border:1px solid #333; border-radius:3px; padding:2px 8px; }
   #turn-indicator.yours { color:#ffcc00; border-color:#ffcc00; animation:tp 1s ease infinite; }
+  #timer-indicator { display:none; color:#ffaa33; font-size:11px; font-weight:bold; background:#16213e; border:1px solid #666; border-radius:3px; padding:2px 8px; }
+  #timer-indicator.warn { color:#ff0000; border-color:#ff0000; animation:tp 1s ease infinite; }
   @keyframes tp { 0%,100% { opacity:1 } 50% { opacity:.4 } }
   #quick-actions { display:none; gap:6px; padding:6px 8px 0; flex-wrap:wrap; }
   .qbtn { background:#0f3460; border:1px solid #333; color:#00aaff; padding:8px 16px; font-size:14px; border-radius:6px; font-family:inherit; cursor:pointer; }
@@ -1022,6 +1072,7 @@ const HTML_PAGE = `<!DOCTYPE html>
     #gui-content { padding:4px; }
     #status { font-size:12px !important; }
     #turn-indicator { font-size:14px; padding:4px 10px; }
+    #timer-indicator { font-size:14px; padding:4px 10px; }
   }
 </style>
 </head>
@@ -1040,6 +1091,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   </div>
   <span style="flex:1"></span>
   <span id="turn-indicator"></span>
+  <span id="timer-indicator"></span>
   <span style="color:#8888aa;font-size:10px" id="status">connecting...</span>
 </div>
 <div id="container">
@@ -1123,6 +1175,9 @@ let connectedPlayers = [];
 let teamChatLines = [];
 let unread = 0;
 let lastTurn = '';
+let timerEndAt = null;
+let timerEntity = null;
+const timerEl = document.getElementById('timer-indicator');
 const container = document.getElementById('container');
 
 function renderPlayerList() {
@@ -1208,6 +1263,20 @@ function handleTurn(msg) {
     addLine('action', tabLink('player', 'Open your tab'), 'Your turn');
   }
 }
+
+function renderTimer() {
+  if (!timerEl) return;
+  if (!timerEndAt || timerEndAt <= Date.now()) {
+    timerEl.style.display = 'none';
+    timerEl.classList.remove('warn');
+    return;
+  }
+  const s = Math.ceil((timerEndAt - Date.now()) / 1000);
+  timerEl.textContent = '⏱ ' + s + 's' + (timerEntity ? ' · ' + timerEntity : '');
+  timerEl.style.display = 'inline-block';
+  timerEl.classList.toggle('warn', s <= 10);
+}
+setInterval(renderTimer, 500);
 
 window.addEventListener('resize', () => {
   if (isMobile()) setView(mobileView);
@@ -1438,6 +1507,10 @@ function connect() {
         unread++;
         updateBadge();
       }
+    } else if (msg.type === 'timer') {
+      timerEndAt = msg.endAt;
+      timerEntity = msg.entity;
+      renderTimer();
     } else if (msg.type === 'turn') {
       handleTurn(msg);
     } else if (msg.type === 'action') {

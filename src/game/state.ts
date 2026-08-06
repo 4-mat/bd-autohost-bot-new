@@ -270,6 +270,8 @@ export interface Game {
    * runoff is active). Only these can be voted on while set.
    */
   voteRunoff: string[] | null;
+  /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
+  timer?: { entity: string | null; endAt: number } | null;
 }
 
 export const games = new Map<string, Game>();
