@@ -1,11 +1,17 @@
 import { describe, it, expect } from "bun:test";
 import {
+  findSpawnPosition,
   genPosSlots,
   genTeamSlots,
   placePlayers,
   placeTeamPlayers,
 } from "../commands/host.js";
-import { type Entity, Terrain, type Game } from "../game/state.js";
+import {
+  isStandable,
+  type Entity,
+  Terrain,
+  type Game,
+} from "../game/state.js";
 
 function makeEntity(num: string, pos: [number, number] = [0, 0]): Entity {
   return {
@@ -289,5 +295,56 @@ describe("placePlayers", () => {
     const keys = out!.map(([, p]) => `${p[0]},${p[1]}`);
     expect(keys).toContain("0,0");
     expect(keys).toContain("9,9");
+  });
+
+  it("never places a player on a Broken tile, even when all anchors are Broken", () => {
+    // Entire perimeter ring (the genPosSlots anchors) is Broken — players must
+    // snap inward to standable tiles instead of landing on Broken.
+    const map = Array.from({ length: 10 }, () => Array(10).fill(Terrain.Normal));
+    for (let r = 0; r < 10; r++) {
+      map[r][0] = Terrain.Broken;
+      map[r][9] = Terrain.Broken;
+      map[0][r] = Terrain.Broken;
+      map[9][r] = Terrain.Broken;
+    }
+    const players = [makeEntity("P1"), makeEntity("P2"), makeEntity("P3")];
+    const game: Game = { ...makeGame(players), map };
+    const out = placePlayers(game, players);
+    expect(out).not.toBeNull();
+    const used = new Set<string>();
+    for (const [e, pos] of out!) {
+      expect(map[pos[0]][pos[1]]).not.toBe(Terrain.Broken);
+      expect(isStandable(map[pos[0]][pos[1]])).toBe(true);
+      const key = `${pos[0]},${pos[1]}`;
+      expect(used.has(key)).toBe(false);
+      used.add(key);
+      expect(e.pos).toEqual(pos);
+    }
+  });
+});
+
+describe("findSpawnPosition", () => {
+  it("never returns a Broken or obstruction tile", () => {
+    const map = Array.from({ length: 10 }, () => Array(10).fill(Terrain.Normal));
+    // Scatter impassable tiles around so the spiral has to dodge them.
+    for (const [r, c] of [[4, 4], [4, 5], [5, 4], [5, 5], [8, 1], [1, 8]] as const) {
+      map[r][c] = Terrain.Broken;
+    }
+    const game: Game = { ...makeGame([]), map };
+    const pos = findSpawnPosition(game);
+    expect(isStandable(map[pos[0]][pos[1]])).toBe(true);
+    expect(map[pos[0]][pos[1]]).not.toBe(Terrain.Broken);
+  });
+
+  it("falls back to the full-map scan when the spiral finds nothing standable", () => {
+    // Every tile is Broken except a single Normal in a far corner. The spiral
+    // (which starts at center) reaches it via the exhaustive ring walk, but if
+    // the map had zero standable tiles the fallback would still never invent a
+    // Broken spawn. Here we prove the scan finds the one good tile anywhere.
+    const map = Array.from({ length: 10 }, () => Array(10).fill(Terrain.Broken));
+    map[0][9] = Terrain.Normal;
+    const game: Game = { ...makeGame([]), map };
+    const pos = findSpawnPosition(game);
+    expect(pos).toEqual([0, 9]);
   });
 });

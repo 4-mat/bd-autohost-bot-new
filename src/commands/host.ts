@@ -1836,7 +1836,7 @@ function applyMap(
   );
 }
 
-function findSpawnPosition(game: Game): [number, number] {
+export function findSpawnPosition(game: Game): [number, number] {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
 
@@ -1859,6 +1859,14 @@ function findSpawnPosition(game: Game): [number, number] {
     }
   }
 
-  // Fallback
+  // Fallback: scan the whole map for ANY standable, unoccupied tile — never
+  // dump a spawn onto Broken/Lava/obstruction blindly.
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!isStandable(game.map[r][c])) continue;
+      if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c)) continue;
+      return [r, c];
+    }
+  }
   return [1, 1];
 }
