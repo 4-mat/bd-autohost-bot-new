@@ -12,6 +12,7 @@ import {
   getAoETargets,
   getSplashTargets,
   isConfused,
+  hasStatus,
   parseFrequency,
 } from "./state.js";
 import { parseEffects, applyEffects } from "./effects.js";
@@ -36,7 +37,7 @@ function defensiveStat(entity: Entity, damageType: string): number {
   return getEffectiveStat(entity, damageType === "Physical" ? "pd" : "md");
 }
 
-function getEffectiveStat(entity: Entity, stat: string): number {
+export function getEffectiveStat(entity: Entity, stat: string): number {
   let base = 0;
   switch (stat) {
     case "atk":
@@ -61,14 +62,19 @@ function getEffectiveStat(entity: Entity, stat: string): number {
   for (const b of entity.buffs) {
     if (b.stat === stat) base += b.amount;
   }
+  // Status passive effects
+  if (stat === "eva" && hasStatus(entity, "poison")) base -= 2;
+  if (stat === "pd" && hasStatus(entity, "curse")) base -= 4;
   return Math.max(0, base);
 }
 
-function getStatBonus(entity: Entity, stat: string): number {
+export function getStatBonus(entity: Entity, stat: string): number {
   let bonus = 0;
   for (const b of entity.buffs) {
     if (b.stat === stat) bonus += b.amount;
   }
+  // Status passive effects
+  if (stat === "acc" && hasStatus(entity, "burn")) bonus -= 2;
   return bonus;
 }
 
@@ -511,10 +517,12 @@ function resolveSingleTarget(
       );
     }
 
-    const finalDamage = Math.max(0, baseDamage);
+    const bleed = hasStatus(user, "bleed") ? 5 : 0;
+    const finalDamage = Math.max(0, baseDamage - bleed);
     const dmgResult = dealDamage(target, finalDamage);
+    const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
     result.messages.push(
-      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)}) = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${defensiveStat(target, ability.damageType)})${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
     );
 
     if (dmgResult.shieldAbsorbed > 0) {
@@ -736,10 +744,11 @@ function resolveSplash(
       offensiveStat(user, ability.damageType) -
       half(defensiveStat(target, ability.damageType));
 
-    const finalDamage = Math.max(0, baseDamage);
+    const bleed = hasStatus(user, "bleed") ? 5 : 0;
+    const finalDamage = Math.max(0, baseDamage - bleed);
     const dmgResult = dealDamage(target, finalDamage);
     result.messages.push(
-      `  **Splash Damage**: -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**`,
+      `  **Splash Damage**: -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**${bleed > 0 ? ` (Bleed -${bleed})` : ""}`,
     );
 
     if (dmgResult.shieldAbsorbed > 0) {

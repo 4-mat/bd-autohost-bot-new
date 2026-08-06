@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { gameCommand } from "../commands/game.js";
+import { getEffectiveStat, getStatBonus } from "../game/resolve.js";
 import { games } from "../game/state.js";
 import { setWs } from "../utils.js";
 import type { Room } from "../rooms.js";
@@ -221,6 +222,39 @@ describe("confirm", () => {
     gameCommand(room, host, "next", "", "");
 
     expect(game.log.length).toBe(afterConfirm);
+  });
+
+  it("logs auto-resolved Free/Swift actions with the ability and target", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+    games.set(game.id, game);
+
+    const ability = makeAbility({
+      name: "Stance",
+      actionType: "Free",
+      roll: "",
+      mr: 0,
+    });
+    user.abilities = [ability];
+
+    gameCommand(room, alice, "use", "Stance @ P2", "");
+
+    expect(game.log.length).toBe(1);
+    const entry = game.log[game.log.length - 1];
+    expect(entry.entity).toBe("P1");
+    expect(entry.description).toContain("Stance");
+    expect(entry.description).toContain("Bob");
   });
 
   it("does nothing when no action is pending", () => {
@@ -961,5 +995,58 @@ describe("dash", () => {
 
     expect(caster.pos).toEqual([6, 2]);
     expect(caster.dashUsed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Status passive effects
+// ---------------------------------------------------------------------------
+
+describe("status passive effects", () => {
+  it("Burn reduces accuracy by 2", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "Alice",
+      statuses: [
+        { name: "Burn", damage: 3, rounds: 2, maxRounds: 2, removable: true },
+      ],
+    });
+    expect(getStatBonus(e, "acc")).toBe(-2);
+  });
+
+  it("Poison reduces EVA by 2", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "Alice",
+      eva: 5,
+      statuses: [
+        { name: "Poison", damage: 3, rounds: 2, maxRounds: 2, removable: true },
+      ],
+    });
+    expect(getEffectiveStat(e, "eva")).toBe(3);
+  });
+
+  it("Curse reduces PD by 4", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pd: 6,
+      statuses: [
+        { name: "Curse", damage: 3, rounds: 2, maxRounds: 2, removable: true },
+      ],
+    });
+    expect(getEffectiveStat(e, "pd")).toBe(2);
+  });
+
+  it("effective stats never drop below 0", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "Alice",
+      eva: 1,
+      statuses: [
+        { name: "Poison", damage: 3, rounds: 2, maxRounds: 2, removable: true },
+      ],
+    });
+    expect(getEffectiveStat(e, "eva")).toBe(0);
   });
 });
