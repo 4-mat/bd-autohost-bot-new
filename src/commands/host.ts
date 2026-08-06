@@ -97,6 +97,16 @@ export function hostCommand(
     case "listmaps":
       handleListMaps(room, user, full);
       break;
+    case "open":
+    case "openbsu":
+      handleOpen(room, user, cmd === "openbsu");
+      break;
+    case "close":
+      handleClose(room, user);
+      break;
+    case "join":
+      handleJoin(room, user, full);
+      break;
     default:
       sendPm(user.name, `Host command ${cmd}: not yet implemented.`);
   }
@@ -140,6 +150,7 @@ function handleHost(room: Room, user: User) {
     winner: null,
     chatLog: [],
     toasts: [],
+    signupsOpen: false,
   };
 
   games.set(id, game);
@@ -178,6 +189,69 @@ function handleSetGame(room: Room, user: User, args: string) {
   send(room.id, `Game mode set to **${game.mode}**.`);
 }
 
+// -- .open / .openbsu / .close - Open/close signups ---------------------------
+
+function handleOpen(room: Room, user: User, highlight = false) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %open.");
+  }
+  if (game.started) return sendPm(user.name, "Game already started.");
+
+  game.signupsOpen = true;
+  const hl = highlight ? " (highlighted)" : "";
+  send(room.id, `**Signups are now open!**${hl} Use %join to join.`);
+  broadcastPages(game);
+}
+
+function handleClose(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %close.");
+  }
+
+  game.signupsOpen = false;
+  send(room.id, "**Signups are now closed.**");
+  broadcastPages(game);
+}
+
+// -- .join <class>, <weapon> - Join an open game -------------------------------
+
+function handleJoin(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (game.started) return sendPm(user.name, "Game already started.");
+  if (!game.signupsOpen) {
+    return sendPm(user.name, "Signups are closed. Wait for the host to %open.");
+  }
+
+  const parts = args.split(",").map((s) => s.trim());
+  const className = parts[0] || "Bard";
+  const weaponName = parts[1] || "Crossbow";
+  const team = game.entities.length + 1;
+  const level = 1;
+
+  const res = createPlayerEntity(
+    game,
+    user.name,
+    className,
+    weaponName,
+    team,
+    level,
+  );
+  if (res.err) return sendPm(user.name, res.err);
+  const entity = res.entity!;
+
+  game.entities.push(entity);
+  send(
+    room.id,
+    `**${user.name}** joined as ${entity.num} - ${entity.className}/${entity.weaponName} Lv.${entity.classLevel} (${entity.maxhp} HP) at ${posToStr(entity.pos[0], entity.pos[1])}`,
+  );
+  broadcastPages(game);
+}
+
 // -- .addp <name>, [class], [weapon], [team] - Add a player --------------------
 
 function handleAddPlayer(room: Room, user: User, args: string) {
@@ -199,33 +273,53 @@ function handleAddPlayer(room: Room, user: User, args: string) {
   const team = parts[3] ? parseInt(parts[3]) : game.entities.length + 1;
   const level = 1;
 
-  // Check if already added
+  const res = createPlayerEntity(
+    game,
+    name,
+    className,
+    weaponName,
+    team,
+    level,
+  );
+  if (res.err) return sendPm(user.name, res.err);
+  const entity = res.entity!;
+
+  game.entities.push(entity);
+  const teamStr = team > 0 ? ` Team ${team}` : "";
+  send(
+    room.id,
+    `**${name}** added as ${entity.num} - ${entity.className}/${entity.weaponName} Lv.${entity.classLevel} (${entity.maxhp} HP) at ${posToStr(entity.pos[0], entity.pos[1])}${teamStr}`,
+  );
+  broadcastPages(game);
+}
+
+// Build a player entity (shared by %addp and %join)
+function createPlayerEntity(
+  game: Game,
+  name: string,
+  className: string,
+  weaponName: string,
+  team: number,
+  level: number,
+): { err?: string; entity?: Entity } {
   if (game.entities.some((e) => toId(e.name) === toId(name))) {
-    return sendPm(user.name, `${name} is already in the game.`);
+    return { err: `${name} is already in the game.` };
   }
 
-  // Look up class and weapon data
   const classData = classes.get(toId(className));
   const weaponData = weapons.get(toId(weaponName));
 
   if (!classData) {
-    return sendPm(
-      user.name,
-      `Unknown class: ${className}. Use %wt to look up.`,
-    );
+    return { err: `Unknown class: ${className}. Use %wt to look up.` };
   }
   if (!weaponData) {
-    return sendPm(
-      user.name,
-      `Unknown weapon: ${weaponName}. Use %wt to look up.`,
-    );
+    return { err: `Unknown weapon: ${weaponName}. Use %wt to look up.` };
   }
 
   if (isNaN(team) || team < 0) {
-    return sendPm(user.name, "Team must be a non-negative number (0 = FFA).");
+    return { err: "Team must be a non-negative number (0 = FFA)." };
   }
 
-  // Parse stat strings (flat values -- same at all levels)
   const lvl = Math.min(level, 10);
   const maxhp = parseInt(classData.stats.hp) + parseInt(weaponData.stats.hp);
 
@@ -233,7 +327,6 @@ function handleAddPlayer(room: Room, user: User, args: string) {
     return parseFloat(statList) || 0;
   }
 
-  // Determine next entity number
   const playerNum = game.entities.filter((e) => !e.isMonster).length + 1;
   const num = `P${playerNum}`;
 
@@ -245,7 +338,6 @@ function handleAddPlayer(room: Room, user: User, args: string) {
   );
   const allAbilities = [...classAbilities, ...weaponAbilities] as any[];
 
-  // Find a starting position (first open normal tile)
   const pos = findSpawnPosition(game);
 
   const entity: Entity = {
@@ -283,12 +375,7 @@ function handleAddPlayer(room: Room, user: User, args: string) {
     swiftUsed: false,
   };
 
-  game.entities.push(entity);
-  const teamStr = team > 0 ? ` Team ${team}` : "";
-  send(
-    room.id,
-    `**${name}** added as ${num} - ${classData.name}/${weaponData.name} Lv.${lvl} (${maxhp} HP) at ${posToStr(pos[0], pos[1])}${teamStr}`,
-  );
+  return { entity };
 }
 
 // -- .addm <name>, <hp>, <atk>, <mag>, <pd>, <md>, <eva>, <mp> [, team] - Add a monster --
