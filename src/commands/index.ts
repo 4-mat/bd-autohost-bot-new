@@ -86,6 +86,7 @@ export function handleCommand(
     id === "start" ||
     id === "sc" ||
     id === "sw" ||
+    id === "sco" ||
     id === "open" ||
     id === "openbsu" ||
     id === "close" ||
@@ -139,7 +140,7 @@ export function handleCommand(
   }
 
   // Loot/progression
-  if (id === "loot" || id === "xp" || id === "gold" || id === "sco") {
+  if (id === "loot" || id === "xp" || id === "gold" || id === "score") {
     playerCommand(user, id, args || val);
     return;
   }

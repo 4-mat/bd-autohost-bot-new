@@ -168,7 +168,8 @@ Character viewer commands routed by `playerCommand()`:
 | `%vs` / `%viewstats`  | HP bar, stats, position, statuses, buffs, cooldowns                  |
 | `%vl` / `%viewlevels` | Class/weapon levels, all abilities with remaining uses and cooldowns |
 | `%vi` / `%viewitems`  | Stub                                                                 |
-| `%sco` / `%score`     | HP + ability usage counts                                            |
+| `%sco`               | Combined loadout setter: `%sco <entity>, <class>, <weapon>` (host any time; players their own until start) |
+| `%score`             | Score display: HP + ability usage counts                            |
 
 Uses `findEntityInGames()` to locate the calling user's entity across
 all active games.

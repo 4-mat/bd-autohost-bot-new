@@ -131,7 +131,6 @@ export function playerCommand(user: User, cmd: string, args: string) {
       break;
     }
 
-    case "sco":
     case "score": {
       const game = findGameForUser(user.name);
       if (!game) return sendPm(target, "You are not in any active game.");
