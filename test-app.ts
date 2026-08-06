@@ -358,7 +358,7 @@ function escHtml(s: string): string {
 function stripControls(html: string): string {
   return html
     .replace(/<button[^>]*>[\s\S]*?<\/button>/gi, "")
-    .replace(/<[^>]*>\s*Controls\s*<\/[^>]*>/gi, "");
+    .replace(/<details[^>]*>[\s\S]*?Controls[\s\S]*?<\/details>/gi, "");
 }
 
 function findPlayerSlot(name: string): string | null {
