@@ -1045,4 +1045,13 @@ describe("removeEntity", () => {
     expect(game.entities[0].num).toBe("P2");
     expect(game.turnOrder).toEqual(["P2"]);
   });
+
+  it("drops the removed entity's gamemode vote", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [p1, p2] });
+    game.votes = { p1: "FFA", p2: "2v2" };
+    removeEntity(game, p1);
+    expect(game.votes).toEqual({ p2: "2v2" });
+  });
 });
