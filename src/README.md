@@ -174,7 +174,7 @@ all active games.
 
 Reference lookups routed by `infoCommand()`:
 
-- `%wt <term>` — checks `WhatIs` map, then `weapons`, then `classes`
+- `%wt <term>` — checks `WhatIs` map, then game-mode descriptions (`%wt modes` lists all; `%wt pvpj` describes one), then `weapons`, then `classes`
 - `%rf <term>` — checks `Reference` map for external links
 
 `buildAbilityLine()` formats one ability as:

@@ -76,6 +76,7 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
   let html =
     '<div style="margin:6px 0;padding:6px 10px;border:1px solid #a0c;border-left:3px solid #a0c;background:rgba(160,0,204,0.08)">';
   html += `<b style="color:#a0c">GAMEMODE VOTE</b> <span style="color:#888">(${voted}/${players.length} voted)</span><br>`;
+  html += `<span style="color:#888;font-size:10px">New to a mode? Hover the buttons, or use %wt modes to learn them all.</span><br>`;
 
   if (options.length === 0) {
     html += '<span style="color:#888"><i>No valid modes for this lobby size.</i></span>';
@@ -87,17 +88,22 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
     const suffix = count > 0 ? ` (${count})` : "";
 
     if (entity !== null) {
-      // Player view: clickable vote button, highlighted once voted.
+      // Player view: clickable vote button (tooltip explains the mode).
       const style = mine
         ? "background:#a0c;color:#fff;border-color:#a0c;font-weight:bold;"
         : "";
-      html += btn(`%vote ${opt.id}`, `${opt.label}${suffix}`, style);
+      html += btn(
+        `%vote ${opt.id}`,
+        `${opt.label}${suffix}`,
+        style,
+        opt.description,
+      );
     } else {
-      // Host view: per-mode tally with voter names.
+      // Host view: per-mode tally with voter names + a one-line description.
       const voters = game.entities
         .filter((e) => !e.isMonster && game.votes[e.id] === opt.id)
         .map((e) => e.num);
-      html += `<div style="margin:2px 0"><b>${esc(opt.label)}</b>: ${count}${voters.length ? ` (${esc(voters.join(", "))})` : ""}</div>`;
+      html += `<div style="margin:2px 0"><b>${esc(opt.label)}</b>: ${count}${voters.length ? ` (${esc(voters.join(", "))})` : ""}<br><span style="color:#888;font-size:10px">${esc(opt.description)}</span></div>`;
     }
   }
 
@@ -129,10 +135,11 @@ function buildToasts(game: Game): string {
 
 // -- Helpers ------------------------------------------------------------------
 
-function btn(value: string, label: string, extra = ""): string {
+function btn(value: string, label: string, extra = "", title = ""): string {
+  const titleAttr = title ? ` title="${esc(title)}"` : "";
   return `<button 
 name="send" 
-value="${esc(value)}"
+value="${esc(value)}"${titleAttr}
 style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif;${extra}">
 ${esc(label)}
 </button>`;

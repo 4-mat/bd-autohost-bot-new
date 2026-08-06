@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   GAMEMODE_MAPS,
+  VOTE_OPTIONS,
+  describeModes,
+  modeDescription,
   modeIdFor,
   normalizeVoteMode,
   randomMapForMode,
@@ -167,6 +170,41 @@ describe("normalizeVoteMode", () => {
   test("returns undefined for unknown modes", () => {
     expect(normalizeVoteMode("solo")).toBeUndefined();
     expect(normalizeVoteMode("")).toBeUndefined();
+  });
+});
+
+describe("VOTE_OPTIONS descriptions", () => {
+  test("every vote option has a non-empty description", () => {
+    for (const opt of VOTE_OPTIONS) {
+      expect(opt.description.trim().length, `${opt.id} missing description`).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("modeDescription", () => {
+  test("resolves aliases and canonical ids", () => {
+    expect(modeDescription("PvPJ")).toContain("Juggernaut");
+    expect(modeDescription("pvpj")).toContain("Juggernaut");
+    expect(modeDescription("pvp juggernaut")).toContain("Juggernaut");
+    expect(modeDescription("ntr")).toContain("Nowhere To Run");
+    expect(modeDescription("ffa")).toContain("Free For All");
+    expect(modeDescription("2v2")).toContain("two");
+  });
+
+  test("returns undefined for unknown modes", () => {
+    expect(modeDescription("solo")).toBeUndefined();
+    expect(modeDescription("")).toBeUndefined();
+  });
+});
+
+describe("describeModes", () => {
+  test("lists every vote option with its label and description", () => {
+    const text = describeModes();
+    for (const opt of VOTE_OPTIONS) {
+      expect(text).toContain(`**${opt.id}**`);
+      expect(text).toContain(opt.label);
+      expect(text).toContain(opt.description);
+    }
   });
 });
 

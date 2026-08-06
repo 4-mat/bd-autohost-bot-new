@@ -254,7 +254,7 @@ function handleClose(room: Room, user: User) {
       .join(", ");
     send(
       room.id,
-      `**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote <mode> (available: ${options}).`, 
+      `**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote <mode> (available: ${options}). Use %wt modes to learn what each mode is.`, 
     );
   } else {
     send(room.id, "**Signups are now closed.**");

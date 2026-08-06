@@ -135,6 +135,8 @@ export interface VoteOption {
   id: string;
   /** Friendly display label. */
   label: string;
+  /** Short one-line explanation shown in the GUI and via %wt modes. */
+  description: string;
   /** Minimum joined players for this option. */
   minPlayers: number;
   /**
@@ -145,21 +147,122 @@ export interface VoteOption {
 }
 
 export const VOTE_OPTIONS: VoteOption[] = [
-  { id: "FFA", label: "Free For All", minPlayers: 2 },
-  { id: "1v1", label: "1v1", minPlayers: 2, exactPlayers: 2 },
-  { id: "2v2", label: "2v2", minPlayers: 4, exactPlayers: 4 },
-  { id: "3v3", label: "3v3", minPlayers: 6, exactPlayers: 6 },
-  { id: "4v4", label: "4v4", minPlayers: 8, exactPlayers: 8 },
-  { id: "2v2v2", label: "2v2v2", minPlayers: 6, exactPlayers: 6 },
-  { id: "2v2v2v2", label: "2v2v2v2", minPlayers: 8, exactPlayers: 8 },
-  { id: "NTR", label: "NTR", minPlayers: 2 },
-  { id: "JUGG", label: "Juggernaut", minPlayers: 2 },
-  { id: "2vJ", label: "2vJ", minPlayers: 3, exactPlayers: 3 },
-  { id: "3vJ", label: "3vJ", minPlayers: 4, exactPlayers: 4 },
-  { id: "4vJ", label: "4vJ", minPlayers: 5, exactPlayers: 5 },
-  { id: "PvPJ", label: "PvPJ", minPlayers: 5, exactPlayers: [5, 7] },
-  { id: "PvPNTR", label: "PvP NTR", minPlayers: 4, exactPlayers: [4, 6, 8] },
+  {
+    id: "FFA",
+    label: "Free For All",
+    description: "Everyone for themselves — last player standing wins.",
+    minPlayers: 2,
+  },
+  {
+    id: "1v1",
+    label: "1v1",
+    description: "A one-on-one duel — the match ends when one player dies.",
+    minPlayers: 2,
+    exactPlayers: 2,
+  },
+  {
+    id: "2v2",
+    label: "2v2",
+    description: "Two teams of two — last team standing wins.",
+    minPlayers: 4,
+    exactPlayers: 4,
+  },
+  {
+    id: "3v3",
+    label: "3v3",
+    description: "Two teams of three — last team standing wins.",
+    minPlayers: 6,
+    exactPlayers: 6,
+  },
+  {
+    id: "4v4",
+    label: "4v4",
+    description: "Two teams of four — last team standing wins.",
+    minPlayers: 8,
+    exactPlayers: 8,
+  },
+  {
+    id: "2v2v2",
+    label: "2v2v2",
+    description: "Three teams of two — last team standing wins.",
+    minPlayers: 6,
+    exactPlayers: 6,
+  },
+  {
+    id: "2v2v2v2",
+    label: "2v2v2v2",
+    description: "Four teams of two — last team standing wins.",
+    minPlayers: 8,
+    exactPlayers: 8,
+  },
+  {
+    id: "NTR",
+    label: "NTR",
+    description: "Nowhere To Run — players must stay near the centre of the map.",
+    minPlayers: 2,
+  },
+  {
+    id: "JUGG",
+    label: "Juggernaut",
+    description: "One player is a super-powered Juggernaut; everyone else works together to take them down.",
+    minPlayers: 2,
+  },
+  {
+    id: "2vJ",
+    label: "2vJ",
+    description: "Two players vs a Juggernaut.",
+    minPlayers: 3,
+    exactPlayers: 3,
+  },
+  {
+    id: "3vJ",
+    label: "3vJ",
+    description: "Three players vs a Juggernaut.",
+    minPlayers: 4,
+    exactPlayers: 4,
+  },
+  {
+    id: "4vJ",
+    label: "4vJ",
+    description: "Four players vs a Juggernaut.",
+    minPlayers: 5,
+    exactPlayers: 5,
+  },
+  {
+    id: "PvPJ",
+    label: "PvPJ",
+    description: "PvP + Juggernaut — two teams fight and one team gets a Juggernaut character (2v3 or 3v4).",
+    minPlayers: 5,
+    exactPlayers: [5, 7],
+  },
+  {
+    id: "PvPNTR",
+    label: "PvP NTR",
+    description: "Team-based NTR — teams fight to hold the centre (2v2, 3v3, 2v2v2 or 4v4).",
+    minPlayers: 4,
+    exactPlayers: [4, 6, 8],
+  },
 ];
+
+/**
+ * Human-readable blurb for a single mode, or undefined when the argument
+ * doesn't resolve to a known vote mode. Used by `%wt <mode>`.
+ */
+export function modeDescription(arg: string): string | undefined {
+  const id = normalizeVoteMode(arg);
+  const opt = VOTE_OPTIONS.find((o) => o.id === id);
+  return opt ? `**${opt.id}** (${opt.label}): ${opt.description}` : undefined;
+}
+
+/**
+ * Formatted list of every known mode with its description, used by
+ * `%wt modes` so players can learn what they are voting on.
+ */
+export function describeModes(): string {
+  return VOTE_OPTIONS.map((o) => `**${o.id}** (${o.label}) — ${o.description}`).join(
+    "\n",
+  );
+}
 
 const VOTE_ALIASES: Record<string, string> = {
   ffa: "FFA",
