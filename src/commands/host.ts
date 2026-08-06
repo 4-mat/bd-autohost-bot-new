@@ -107,6 +107,9 @@ export function hostCommand(
     case "join":
       handleJoin(room, user, full);
       break;
+    case "genpos":
+      handleGenPos(room, user, full);
+      break;
     default:
       sendPm(user.name, `Host command ${cmd}: not yet implemented.`);
   }
@@ -250,6 +253,154 @@ function handleJoin(room: Room, user: User, args: string) {
     `**${user.name}** joined as ${entity.num} - ${entity.className}/${entity.weaponName} Lv.${entity.classLevel} (${entity.maxhp} HP) at ${posToStr(entity.pos[0], entity.pos[1])}`,
   );
   broadcastPages(game);
+}
+
+// -- .genpos <N><mode> - Competitive starting positions ------------------------
+
+function handleGenPos(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %genpos.");
+  }
+
+  const match = args
+    .trim()
+    .toLowerCase()
+    .match(/^(\d+)\s*p?\s*([a-z0-9]+)$/);
+  if (!match) {
+    return sendPm(user.name, "Usage: %genpos <N><mode> (e.g. %genpos 4pffa).");
+  }
+
+  const n = parseInt(match[1]);
+  const mode = match[2];
+
+  if (mode.includes("v")) {
+    return sendPm(user.name, "%genpos does not support team modes.");
+  }
+  if (mode.includes("pve")) {
+    return sendPm(user.name, "%genpos does not support PvE.");
+  }
+
+  const players = game.entities.filter((e) => !e.isMonster);
+  if (n > players.length) {
+    return sendPm(
+      user.name,
+      `Only ${players.length} player(s) joined; cannot place ${n}.`,
+    );
+  }
+  if (n > 9) {
+    return sendPm(user.name, "%genpos supports up to 9 players.");
+  }
+
+  const placed = placePlayers(game, players.slice(0, n));
+  if (!placed) {
+    return sendPm(user.name, "Could not find open spawn tiles.");
+  }
+
+  pushSnapshot(game);
+  const spots = placed
+    .map(([e, p]) => `${e.num} at ${posToStr(p[0], p[1])}`)
+    .join(" | ");
+  send(
+    room.id,
+    `**Positions set (${n}-player ${mode.toUpperCase()}):** ${spots}`,
+  );
+  broadcastPages(game);
+}
+
+export function placePlayers(
+  game: Game,
+  players: Entity[],
+): [Entity, [number, number]][] | null {
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  const slots = genPosSlots(rows, cols, players.length);
+  const used = new Set<string>();
+  const out: [Entity, [number, number]][] = [];
+
+  for (let i = 0; i < players.length; i++) {
+    const anchor = slots[i];
+    const pos = findNearestOpenTile(game, anchor[0], anchor[1], used);
+    if (!pos) return null;
+    players[i].pos = pos;
+    used.add(`${pos[0]},${pos[1]}`);
+    out.push([players[i], pos]);
+  }
+  return out;
+}
+
+export function genPosSlots(
+  rows: number,
+  cols: number,
+  n: number,
+): [number, number][] {
+  const top = 0;
+  const bottom = Math.max(0, rows - 1);
+  const left = 0;
+  const right = Math.max(0, cols - 1);
+  const midR = Math.floor(rows / 2);
+  const midC = Math.floor(cols / 2);
+  const corners: [number, number][] = [
+    [top, left],
+    [bottom, right],
+    [top, right],
+    [bottom, left],
+  ];
+  const edges: [number, number][] = [
+    [top, midC],
+    [bottom, midC],
+    [midR, left],
+    [midR, right],
+  ];
+  const center: [number, number] = [midR, midC];
+
+  if (n === 1) return [center];
+  if (n <= 4) return corners.slice(0, n);
+  if (n === 5) return [...corners, center];
+  if (n === 6) return [...corners, edges[0], edges[1]];
+  if (n === 7) return [...corners, edges[0], edges[1], center];
+  if (n === 8) return [...corners, ...edges];
+  return [...corners, ...edges, center];
+}
+
+export function findNearestOpenTile(
+  game: Game,
+  r: number,
+  c: number,
+  used: Set<string>,
+): [number, number] | null {
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  const seen = new Set<string>();
+  const q: [number, number][] = [[r, c]];
+  seen.add(`${r},${c}`);
+
+  while (q.length > 0) {
+    const [cr, cc] = q.shift()!;
+    if (
+      game.map[cr][cc] === Terrain.Normal &&
+      !used.has(`${cr},${cc}`) &&
+      !game.entities.some((e) => e.pos[0] === cr && e.pos[1] === cc)
+    ) {
+      return [cr, cc];
+    }
+    for (const [dr, dc] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const nr = cr + dr;
+      const nc = cc + dc;
+      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+      const key = `${nr},${nc}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      q.push([nr, nc]);
+    }
+  }
+  return null;
 }
 
 // -- .addp <name>, [class], [weapon], [team] - Add a player --------------------

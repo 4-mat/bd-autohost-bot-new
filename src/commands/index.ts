@@ -89,7 +89,8 @@ export function handleCommand(
     id === "open" ||
     id === "openbsu" ||
     id === "close" ||
-    id === "join"
+    id === "join" ||
+    id === "genpos"
   ) {
     hostCommand(room, user, id, args, val, pm);
     return;
