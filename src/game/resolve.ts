@@ -15,7 +15,7 @@ import {
   hasStatus,
   parseFrequency,
 } from "./state.js";
-import { parseEffects, applyEffects } from "./effects.js";
+import { parseEffects, applyEffects, applyEffectStream, type EffectChoosePrompt } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
 export interface ResolutionResult {
@@ -102,6 +102,44 @@ export type PromptResponse = string;
 export type AttackStep =
   | { done: false; prompt: AttackPrompt }
   | { done: true; result: ResolutionResult };
+
+// ---------------------------------------------------------------------------
+// Effect-stream driver
+// ---------------------------------------------------------------------------
+
+/**
+ * Generator that drives an `applyEffectStream` while piping its
+ * `EffectChoosePrompt`s outward as `AttackPrompt` (kind: selection). This
+ * lets the existing selection-prompt machinery (the host/user feeding a
+ * `%choose <optionId>` back through `advanceAttack`) handle player choices
+ * inside effect clauses -- including nested choices in chosen sub-effects.
+ *
+ * Each pending prompt is one `AttackStep` round-trip out of
+ * `resolveAttackFlow`. Once the effect stream is exhausted (no more
+ * `choose` clauses), it yields all accumulated messages as its return
+ * value.
+ */
+function* runEffectStream(
+  gen: Generator<EffectChoosePrompt, string[], string>,
+): Generator<AttackPrompt, string[], string> {
+  let nextInput: string | undefined = undefined;
+  while (true) {
+    const step = gen.next(nextInput);
+    nextInput = undefined;
+    if (step.done) {
+      return step.value as string[];
+    }
+    // EffectChoosePrompt maps cleanly onto AttackPrompt-selection: both
+    // are "pick one of N labelled options" interactions.
+    const prompt = step.value as EffectChoosePrompt;
+    const chosenId: string = yield {
+      kind: "selection",
+      message: prompt.message,
+      options: prompt.options,
+    };
+    nextInput = chosenId;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // The pipeline itself:
@@ -198,7 +236,7 @@ function* resolveAttackFlow(
       let confusionApplied = false;
       for (let h = 0; h < hitCount; h++) {
         const label = hitCount > 1 ? ` (Hit ${h + 1}/${hitCount})` : "";
-        const singleResult = resolveSingleTarget(
+        const singleResult: ResolutionResult = yield* resolveSingleTarget(
           game,
           user,
           ability,
@@ -224,7 +262,12 @@ function* resolveAttackFlow(
       const healResult = resolveHeal(game, user, ability, target);
       result.messages.push(...healResult.messages);
     } else {
-      const statusResult = resolveNonDamaging(game, user, ability, target);
+      const statusResult: ResolutionResult = yield* resolveNonDamaging(
+        game,
+        user,
+        ability,
+        target,
+      );
       result.messages.push(...statusResult.messages);
       result.deaths.push(...statusResult.deaths);
     }
@@ -482,14 +525,14 @@ function isValidTarget(user: Entity, target: Entity, group: string): boolean {
   return true;
 }
 
-function resolveSingleTarget(
+function* resolveSingleTarget(
   game: Game,
   user: Entity,
   ability: AbilityData,
   target: Entity,
   hitLabel = "",
   confusionAlreadyApplied = false,
-): ResolutionResult {
+): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
 
   const userAccBonus = getStatBonus(user, "acc");
@@ -534,7 +577,9 @@ function resolveSingleTarget(
     }
 
     const effects = parseEffects(ability.effect);
-    const effectMsgs = applyEffects(game, user, target, effects, ability);
+    const effectMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, effects, ability),
+    );
     result.messages.push(...effectMsgs);
 
     // Apply recoil damage after hit damage
@@ -689,15 +734,17 @@ function resolveHeal(
   return result;
 }
 
-function resolveNonDamaging(
+function* resolveNonDamaging(
   game: Game,
   user: Entity,
   ability: AbilityData,
   target: Entity,
-): ResolutionResult {
+): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
   const effects = parseEffects(ability.effect);
-  const effectMsgs = applyEffects(game, user, target, effects, ability);
+  const effectMsgs: string[] = yield* runEffectStream(
+    applyEffectStream(game, user, target, effects, ability),
+  );
 
   if (effectMsgs.length > 0) {
     result.messages.push(
