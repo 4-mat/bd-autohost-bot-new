@@ -1256,8 +1256,7 @@ guiContent.addEventListener('click', (e) => {
     const cls = document.getElementById('loadout-class');
     const wpn = document.getElementById('loadout-weapon');
     if (num && cls && wpn) {
-      ws.send(JSON.stringify({ type: 'chat', text: '%sc ' + num + ', ' + cls.value }));
-      ws.send(JSON.stringify({ type: 'chat', text: '%sw ' + num + ', ' + wpn.value }));
+      ws.send(JSON.stringify({ type: 'chat', text: '%sco ' + num + ', ' + cls.value + ', ' + wpn.value }));
     }
     return;
   }

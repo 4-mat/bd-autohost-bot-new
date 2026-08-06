@@ -124,7 +124,7 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%vi [player]`                      | View player items.      |
 | `%sc [player], [class]`             | Change player class (host any time; players can change their own until the game starts).    |
 | `%sw [player], [weapon]`            | Change player weapon (host any time; players can change their own until the game starts).   |
-| `%sco [player], [amount]`           | Set player class level. |
+| `%sco [player], [class], [weapon]`  | Set a player's class AND weapon in one go (host any time; players can change their own until the game starts). |
 | `%regp [player], [class], [weapon]` | Register a player.      |
 
 ### Loot/Progression Commands

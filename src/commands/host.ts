@@ -46,6 +46,61 @@ function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
   return a.level === "EX1" || a.level === "EX2" ? exOk : a.level <= lvl;
 }
 
+// Whether a user may change this entity's class/weapon: hosts any time,
+// players only their own entity until the game starts.
+function mayChangeLoadout(user: User, game: Game, entity: Entity): boolean {
+  if (toId(user.name) === toId(game.host)) return true;
+  return !game.started && toId(entity.name) === toId(user.name);
+}
+
+// Recalculate an entity's maxhp/curhp, stats, and abilities from its current
+// class + weapon. Returns the new max HP.
+function recalcEntityStats(entity: Entity): number {
+  const classData = classes.get(toId(entity.className));
+  const weaponData = weapons.get(toId(entity.weaponName));
+  const sv = (s: string) => parseFloat(s) || 0;
+  const newMaxhp =
+    (classData ? parseInt(classData.stats.hp) : 0) +
+    (weaponData ? parseInt(weaponData.stats.hp) : 0);
+  entity.maxhp = newMaxhp;
+  entity.curhp = Math.min(entity.curhp, newMaxhp);
+  entity.atk =
+    (classData ? sv(classData.stats.atk) : 0) +
+    (weaponData ? sv(weaponData.stats.atk) : 0);
+  entity.mag =
+    (classData ? sv(classData.stats.mag) : 0) +
+    (weaponData ? sv(weaponData.stats.mag) : 0);
+  entity.pd =
+    (classData ? sv(classData.stats.pd) : 0) +
+    (weaponData ? sv(weaponData.stats.pd) : 0);
+  entity.md =
+    (classData ? sv(classData.stats.md) : 0) +
+    (weaponData ? sv(weaponData.stats.md) : 0);
+  entity.eva = Math.floor(
+    (classData ? sv(classData.stats.eva) : 0) +
+      (weaponData ? sv(weaponData.stats.eva) : 0),
+  );
+  entity.mp =
+    (classData ? sv(classData.stats.mp) : 0) +
+    (weaponData ? sv(weaponData.stats.mp) : 0);
+  // classLevel and weaponLevel are always set together (createPlayerEntity,
+  // %setlevel), so using classLevel here is equivalent to weaponLevel.
+  const lvl = entity.classLevel;
+  entity.abilities = [
+    ...(classData
+      ? classData.abilities.filter((a) =>
+          hasAbility(a, lvl, !!entity.isJuggernaut),
+        )
+      : []),
+    ...(weaponData
+      ? weaponData.abilities.filter((a) =>
+          hasAbility(a, lvl, !!entity.isJuggernaut),
+        )
+      : []),
+  ] as any[];
+  return newMaxhp;
+}
+
 function findGameForHost(username: string): Game | null {
   for (const game of games.values()) {
     if (toId(game.host) === toId(username)) return game;
@@ -113,6 +168,9 @@ export function hostCommand(
       break;
     case "sw":
       handleSwitchWeapon(room, user, full);
+      break;
+    case "sco":
+      handleSetLoadout(room, user, full);
       break;
     case "setjugg":
       handleSetJugg(room, user, full);
@@ -1002,12 +1060,8 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   const entity = getEntity(game, parts[0]);
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
-  // Players may change their OWN class until the game starts (e.g. after the
-  // gamemode vote, before the map is set); hosts can change anyone anytime.
-  if (toId(user.name) !== toId(game.host)) {
-    if (game.started || toId(entity.name) !== toId(user.name)) {
-      return sendPm(user.name, "Only the host can use %sc.");
-    }
+  if (!mayChangeLoadout(user, game, entity)) {
+    return sendPm(user.name, "Only the host can use %sc.");
   }
 
   const newClass = parts[1];
@@ -1018,45 +1072,9 @@ function handleSwitchClass(room: Room, user: User, args: string) {
 
   pushSnapshot(game);
 
-  // Recalculate HP: old weapon + new class
-  const weaponData = weapons.get(toId(entity.weaponName));
-  const newMaxhp =
-    parseInt(classData.stats.hp) +
-    (weaponData ? parseInt(weaponData.stats.hp) : 0);
-
   const oldClass = entity.className;
   entity.className = classData.name;
-  entity.maxhp = newMaxhp;
-  entity.curhp = Math.min(entity.curhp, newMaxhp);
-
-  // Recalculate stats
-  const sv = (s: string) => parseFloat(s) || 0;
-  entity.atk =
-    sv(classData.stats.atk) + (weaponData ? sv(weaponData.stats.atk) : 0);
-  entity.mag =
-    sv(classData.stats.mag) + (weaponData ? sv(weaponData.stats.mag) : 0);
-  entity.pd =
-    sv(classData.stats.pd) + (weaponData ? sv(weaponData.stats.pd) : 0);
-  entity.md =
-    sv(classData.stats.md) + (weaponData ? sv(weaponData.stats.md) : 0);
-  entity.eva = Math.floor(
-    sv(classData.stats.eva) + (weaponData ? sv(weaponData.stats.eva) : 0),
-  );
-  entity.mp =
-    sv(classData.stats.mp) + (weaponData ? sv(weaponData.stats.mp) : 0);
-
-  // Update abilities to new class + existing weapon, filtered by level
-  const lvl = entity.classLevel;
-  entity.abilities = [
-    ...classData.abilities.filter((a) =>
-      hasAbility(a, lvl, !!entity.isJuggernaut),
-    ),
-    ...(weaponData
-      ? weaponData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
-      : []),
-  ] as any[];
+  const newMaxhp = recalcEntityStats(entity);
 
   send(
     room.id,
@@ -1078,12 +1096,8 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   const entity = getEntity(game, parts[0]);
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
-  // Players may change their OWN weapon until the game starts; hosts can
-  // change anyone anytime.
-  if (toId(user.name) !== toId(game.host)) {
-    if (game.started || toId(entity.name) !== toId(user.name)) {
-      return sendPm(user.name, "Only the host can use %sw.");
-    }
+  if (!mayChangeLoadout(user, game, entity)) {
+    return sendPm(user.name, "Only the host can use %sw.");
   }
 
   const newWeapon = parts[1];
@@ -1097,49 +1111,57 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
 
   pushSnapshot(game);
 
-  // Recalculate HP: existing class + new weapon
-  const classData = classes.get(toId(entity.className));
-  const newMaxhp =
-    (classData ? parseInt(classData.stats.hp) : 0) +
-    parseInt(weaponData.stats.hp);
-
   const oldWeapon = entity.weaponName;
   entity.weaponName = weaponData.name;
-  entity.maxhp = newMaxhp;
-  entity.curhp = Math.min(entity.curhp, newMaxhp);
-
-  // Recalculate stats
-  const sv = (s: string) => parseFloat(s) || 0;
-  entity.atk =
-    (classData ? sv(classData.stats.atk) : 0) + sv(weaponData.stats.atk);
-  entity.mag =
-    (classData ? sv(classData.stats.mag) : 0) + sv(weaponData.stats.mag);
-  entity.pd =
-    (classData ? sv(classData.stats.pd) : 0) + sv(weaponData.stats.pd);
-  entity.md =
-    (classData ? sv(classData.stats.md) : 0) + sv(weaponData.stats.md);
-  entity.eva = Math.floor(
-    (classData ? sv(classData.stats.eva) : 0) + sv(weaponData.stats.eva),
-  );
-  entity.mp =
-    (classData ? sv(classData.stats.mp) : 0) + sv(weaponData.stats.mp);
-
-  // Update abilities to existing class + new weapon, filtered by level
-  const lvl = entity.weaponLevel;
-  entity.abilities = [
-    ...(classData
-      ? classData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
-      : []),
-    ...weaponData.abilities.filter((a) =>
-      hasAbility(a, lvl, !!entity.isJuggernaut),
-    ),
-  ] as any[];
+  const newMaxhp = recalcEntityStats(entity);
 
   send(
     room.id,
     `${entity.num} (${entity.name}) weapon: ${oldWeapon} -> ${weaponData.name} (${newMaxhp} HP)`,
+  );
+  broadcastPages(game);
+}
+
+/**
+ * %sco <entity>, <class>, <weapon> — set a player's class AND weapon in one
+ * go. Same permissions as %sc/%sw: hosts any time, players their own until
+ * the game starts.
+ */
+function handleSetLoadout(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) {
+    return sendPm(user.name, "Usage: %sco <entity>, <class>, <weapon>");
+  }
+
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+
+  if (!mayChangeLoadout(user, game, entity)) {
+    return sendPm(user.name, "Only the host can use %sco.");
+  }
+
+  const classData = classes.get(toId(parts[1]));
+  if (!classData) {
+    return sendPm(user.name, `Unknown class: ${parts[1]}. Use %wt to look up.`);
+  }
+  const weaponData = weapons.get(toId(parts[2]));
+  if (!weaponData) {
+    return sendPm(user.name, `Unknown weapon: ${parts[2]}. Use %wt to look up.`);
+  }
+
+  pushSnapshot(game);
+
+  const oldClass = entity.className;
+  const oldWeapon = entity.weaponName;
+  entity.className = classData.name;
+  entity.weaponName = weaponData.name;
+  const newMaxhp = recalcEntityStats(entity);
+
+  send(
+    room.id,
+    `${entity.num} (${entity.name}) loadout: ${oldClass}/${oldWeapon} -> ${classData.name}/${weaponData.name} (${newMaxhp} HP)`,
   );
   broadcastPages(game);
 }
