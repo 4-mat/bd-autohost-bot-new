@@ -1,6 +1,7 @@
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import { loadGameData, classes, weapons } from "./src/data/index.js";
+import { loadGameData } from "./src/data/index.js";
+import { loadGameData43, getVersionData } from "./src/data/version43.js";
 import { rooms, type Room } from "./src/rooms.js";
 import { users } from "./src/users.js";
 import { handleCommand } from "./src/commands/index.js";
@@ -14,6 +15,7 @@ import {
 } from "./src/game/state.js";
 
 loadGameData();
+loadGameData43();
 
 const PORT = Number(process.env.PORT) || 4000;
 const PREFIX = "%";
@@ -210,12 +212,13 @@ function buildSigninPage(game: Game): string {
     ? `<b style="color:#0f0">OPEN</b>`
     : `<b style="color:#f66">CLOSED</b>`;
 
-  const classOpts = [...classes.values()]
+  const data = getVersionData(game.version);
+  const classOpts = [...data.classes.values()]
     .map(
       (c) => `<option value="${escHtml(c.name)}">${escHtml(c.name)}</option>`,
     )
     .join("");
-  const weaponOpts = [...weapons.values()]
+  const weaponOpts = [...data.weapons.values()]
     .map(
       (w) => `<option value="${escHtml(w.name)}">${escHtml(w.name)}</option>`,
     )
@@ -226,13 +229,12 @@ function buildSigninPage(game: Game): string {
     : `<button name="join" disabled style="${BTN_STYLE}">Join (signups closed)</button>`;
 
   return `<div style="padding:12px;background:#16213e;border:1px solid #333;border-radius:4px">
-<b style="color:#00aaff">Battle Sign-up</b> <span style="color:#888">(signups: ${status})</span><br><br>
+<b style="color:#00aaff">Battle Sign-up (BD ${escHtml(game.version)})</b> <span style="color:#888">(signups: ${status})</span><br><br>
 Class:<br>
 <select id="signin-class" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${classOpts}</select><br><br>
 Weapon:<br>
 <select id="signin-weapon" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${weaponOpts}</select><br><br>
 ${joinBtn}
-<div style="color:#888;font-size:11px;margin-top:6px">Host opens signups with %open / %openbsu.</div>
 </div>`;
 }
 

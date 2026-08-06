@@ -1,6 +1,7 @@
 import { rollDice, posToStr, toId } from "../utils.js";
 import { send, sendPm } from "../utils.js";
 import { rooms } from "../rooms.js";
+import type { GameVersion } from "../data/version43.js";
 import type {
   AttackPrompt,
   ResolutionResult,
@@ -205,6 +206,7 @@ export interface Game {
   id: string;
   room: string;
   host: string;
+  version: GameVersion;
   entities: Entity[];
   map: Terrain[][];
   mapName: string;

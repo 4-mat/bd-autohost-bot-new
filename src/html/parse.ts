@@ -186,6 +186,7 @@ export function handleKyubsInfo(roomid: string, html: string) {
       id: `kyubs-${roomid}-${Date.now()}`,
       room: roomid,
       host: "Ice Kyubs",
+      version: "4.4",
       entities: [],
       map: info.map.grid,
       mapName: "kyubs",

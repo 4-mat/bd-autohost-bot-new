@@ -44,6 +44,16 @@ function defensiveStat(entity: Entity, damageType: string): number {
   return getEffectiveStat(entity, damageType === "Physical" ? "pd" : "md");
 }
 
+// BD 4.3 evasion: physical uses PE (PD/10), magical uses ME (MD/10), max 9.
+function eva43(entity: Entity, damageType: string): number {
+  const base =
+    damageType === "Physical"
+      ? getEffectiveStat(entity, "pd")
+      : getEffectiveStat(entity, "md");
+  const pen = hasStatus(entity, "poison") ? -2 : 0;
+  return Math.max(0, Math.min(9, Math.floor(base / 10) + pen));
+}
+
 export function getEffectiveStat(entity: Entity, stat: string): number {
   let base = 0;
   switch (stat) {
@@ -556,7 +566,10 @@ function* resolveSingleTarget(
   const result = newResult();
 
   const userAccBonus = getStatBonus(user, "acc");
-  const targetEva = getEffectiveStat(target, "eva");
+  const targetEva =
+    game.version === "4.3"
+      ? eva43(target, ability.damageType)
+      : getEffectiveStat(target, "eva");
   const {
     hit,
     roll: accRoll,

@@ -12,6 +12,7 @@ import {
   type AbilityData,
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
+import { getEffectiveStat } from "../game/resolve.js";
 
 // -- Premove Mode Tracking -----------------------------------------------------
 
@@ -293,6 +294,7 @@ function buildPlayerDataTable(game: Game): string {
   // Header
   html += `<tr style="height:22px">`;
 
+  const is43 = game.version === "4.3";
   const headers = [
     "#",
     "Name",
@@ -302,7 +304,7 @@ function buildPlayerDataTable(game: Game): string {
     "M",
     "PD",
     "MD",
-    "EVA",
+    is43 ? "PE/ME" : "EVA",
     "MP",
   ];
 
@@ -342,7 +344,13 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
     html += buildStatCell(e, "mag", e.mag);
     html += buildStatCell(e, "pd", e.pd);
     html += buildStatCell(e, "md", e.md);
-    html += buildStatCell(e, "eva", e.eva);
+    if (is43) {
+      const pe = Math.floor(getEffectiveStat(e, "pd") / 10);
+      const me = Math.floor(getEffectiveStat(e, "md") / 10);
+      html += `<td style="padding:0px 8px">${pe}/${me}</td>`;
+    } else {
+      html += buildStatCell(e, "eva", e.eva);
+    }
     html += buildStatCell(e, "mp", e.mp);
 
     html += `</tr>`;
