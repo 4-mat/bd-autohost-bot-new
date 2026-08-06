@@ -280,6 +280,7 @@ function serializeState(game: Game): string {
       curhp: e.curhp,
       maxhp: e.maxhp,
       pos: e.pos,
+      team: e.team,
       statuses: e.statuses,
       buffs: e.buffs,
       cooldowns: e.cooldowns,
@@ -311,6 +312,7 @@ export function popSnapshot(game: Game): boolean {
       ent.curhp = e.curhp;
       ent.maxhp = e.maxhp;
       ent.pos = e.pos;
+      ent.team = e.team;
       ent.statuses = e.statuses;
       ent.buffs = e.buffs;
       ent.cooldowns = e.cooldowns;

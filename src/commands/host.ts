@@ -238,6 +238,12 @@ function handleSetGame(room: Room, user: User, args: string) {
   if (teamMatch) {
     const a = parseInt(teamMatch[1]);
     const b = parseInt(teamMatch[2]);
+    if (a < 1 || b < 1) {
+      return sendPm(
+        user.name,
+        "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.) — team modes need at least 1 player per team.",
+      );
+    }
     if (players.length !== a + b) {
       return sendPm(
         user.name,
@@ -357,7 +363,7 @@ function handleClose(room: Room, user: User) {
       .join(", ");
     send(
       room.id,
-      `**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote <mode> (available: ${options || "no modes fit this lobby size (max 8p)"}). Use %wt modes to learn what each mode is.`, 
+      `**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote [mode] (available: ${options || "no modes fit this lobby size (max 8p)"}). Use %wt modes to learn what each mode is.`, 
     );
   } else {
     send(room.id, "**Signups are now closed.**");
@@ -403,7 +409,7 @@ function handleEndVote(room: Room, user: User) {
     game.voteRunoff = tied;
     send(
       room.id,
-      `**TIE — runoff!** ${summary}\nVote again, only between **${tied.join(" / ")}** (%vote <mode> or GUI). The winner is played.`,
+      `**TIE — runoff!** ${summary}\nVote again, only between **${tied.join(" / ")}** (%vote [mode] or GUI). The winner is played.`,
     );
     broadcastPages(game);
     return;
@@ -509,6 +515,7 @@ function handleGenPos(room: Room, user: User, args: string) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %genpos.");
   }
+  if (game.started) return sendPm(user.name, "Game already started.");
   if (game.map.length === 0) {
     return sendPm(
       user.name,
@@ -530,10 +537,10 @@ function handleGenPos(room: Room, user: User, args: string) {
       );
     }
     const players = game.entities.filter((e) => !e.isMonster);
-    if (a + b > players.length) {
+    if (a + b !== players.length) {
       return sendPm(
         user.name,
-        `Only ${players.length} player(s) joined; need ${a + b} for ${a}v${b}.`,
+        `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
       );
     }
 
@@ -583,6 +590,12 @@ function handleGenPos(room: Room, user: User, args: string) {
   }
 
   const players = game.entities.filter((e) => !e.isMonster);
+  if (n < 1) {
+    return sendPm(
+      user.name,
+      "Usage: %genpos <N><mode> (e.g. %genpos 4pffa) or %genpos <N>v<M> (e.g. %genpos 2v2).",
+    );
+  }
   if (n > players.length) {
     return sendPm(
       user.name,
@@ -593,10 +606,9 @@ function handleGenPos(room: Room, user: User, args: string) {
     return sendPm(user.name, "%genpos supports up to 9 players.");
   }
 
-  // FFA: clear any leftover team assignment from a prior team setup.
-  players.forEach((e) => (e.team = 0));
-
+  // Snapshot BEFORE clearing teams so %undo restores a prior team setup.
   pushSnapshot(game);
+  players.forEach((e) => (e.team = 0));
   const placed = placePlayers(game, players.slice(0, n));
   if (!placed) {
     return sendPm(user.name, "Could not find open spawn tiles.");
