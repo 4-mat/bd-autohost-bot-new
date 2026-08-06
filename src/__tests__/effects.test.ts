@@ -9,6 +9,7 @@ import {
 import {
   parseEffects,
   applyEffects,
+  applyEffectStream,
   isApexActive,
   isThirstActive,
 } from "../game/effects.js";
@@ -828,6 +829,205 @@ describe("applyEffects: thirst gate", () => {
       (b) => b.stat === "atk",
     );
     expect(atkBuff?.amount).toBe(2);
+  });
+});
+
+// =============================================================================
+// Choose -- generator-driven prompts
+// =============================================================================
+
+/**
+ * Drain `applyEffectStream` to completion, emulating a player who always
+ * picks the option at `picker(prompt).index` (default: option 0). Returns
+ * the accumulated log messages plus the prompts the player saw, in order.
+ */
+function driveStream(
+  gen: Generator<any, string[], string>,
+  picker: (prompt: any) => number = () => 0,
+) {
+  const prompts: any[] = [];
+  let nextInput: string | undefined = undefined;
+  while (true) {
+    const step = gen.next(nextInput);
+    nextInput = undefined;
+    if (step.done) return { messages: step.value, prompts };
+    prompts.push(step.value);
+    const idx = picker(step.value);
+    const chosen = step.value.options[idx];
+    nextInput = chosen.id;
+  }
+}
+
+describe("parseEffects: choose clause", () => {
+  it("recognises 'Choose: A or B or C' as a choose clause", () => {
+    const effects = parseEffects("Choose: +3 ATK/1 or +1 ACC/1 or +4 DEF/1");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("choose");
+    if (effects[0].type !== "choose") return;
+    expect(effects[0].options.length).toBe(3);
+  });
+
+  it("parses 'Choose Yin or Yang.' with two options", () => {
+    const effects = parseEffects(
+      "Choose Yin or Yang.\\\\nYin: Physical. Yang: Magical.",
+    );
+    // First clause will be "Choose Yin or Yang" -> choose with [Yin, Yang]
+    // parser splits on . at depth 0 so this would be: ["Choose Yin or Yang", "\\nYin: Physical", " Yang: Magical"]
+    // The choose clause parses first two options (Yin, Yang) before splittable "." breaks.
+    // The remaining clauses go through individually.
+    const choose = effects.find((e) => e.type === "choose");
+    expect(choose).toBeDefined();
+    if (choose?.type !== "choose") return;
+    expect(choose.options.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("applyEffectStream: choose prompt", () => {
+  it("yields a choose prompt when encountering a Choose clause", () => {
+    const ability = makeAbility({
+      name: "Rising Hope",
+      range: "Melee",
+      effect: "Choose: +3 ATK/1 or +1 ACC/1 or +4 DEF/1",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    const { messages, prompts } = driveStream(
+      applyEffectStream(game, user, target, effects, ability),
+    );
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].kind).toBe("choose");
+    expect(prompts[0].options).toHaveLength(3);
+    // The summary labels should mention the relevant stat names.
+    const labels = prompts[0].options.map((o: any) => o.label);
+    expect(labels.some((l: string) => /atk/i.test(l))).toBe(true);
+    expect(labels.some((l: string) => /acc/i.test(l))).toBe(true);
+    expect(labels.some((l: string) => /def/i.test(l))).toBe(true);
+
+    // After answering option 0 (+3 ATK), the chosen buff should be applied.
+    expect(messages.some((m) => m.includes("+3"))).toBe(true);
+    expect(target.buffs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("only applies the chosen option's sub-effects (not all)", () => {
+    const ability = makeAbility({
+      name: "Pick One",
+      range: "Melee",
+      effect: "Choose: +3 ATK/1 or +1 ACC/1 or +4 DEF/1",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+
+    // Pick option 2 (+4 DEF/1)
+    const { prompts } = driveStream(
+      applyEffectStream(game, user, target, effects, ability),
+      (p) => 2,
+    );
+
+    expect(prompts).toHaveLength(1);
+    // Only DEF applied, not ATK or ACC
+    const statBuffs = target.buffs.map((b) => b.stat);
+    expect(statBuffs).toContain("def");
+    expect(statBuffs).not.toContain("atk");
+    expect(statBuffs).not.toContain("acc");
+  });
+
+  it("doesn't yield when there's no Choose clause -- streams straight through", () => {
+    const ability = makeAbility({
+      name: "Boost",
+      range: "Melee",
+      effect: "inflict 3 Bleed/1",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    const { prompts, messages } = driveStream(
+      applyEffectStream(
+        game,
+        user,
+        target,
+        parseEffects(ability.effect),
+        ability,
+      ),
+    );
+    expect(prompts).toHaveLength(0);
+    expect(messages.length).toBeGreaterThan(0);
+    expect(target.statuses.find((s) => s.name === "Bleed")).toBeDefined();
+  });
+
+  it("nested Choose: a Choose inside a chosen option also prompts", () => {
+    // Manually construct: outer choose { option 0 = +3 atk, option 1 = inner
+    // choose { +1 atk, +2 atk } } -> picking option 1 should yield a second
+    // prompt.
+    const effects = [
+      {
+        type: "choose" as const,
+        options: [
+          [{ type: "buff" as const, stat: "atk", amount: 3, rounds: 1 }],
+          [
+            {
+              type: "choose" as const,
+              options: [
+                [{ type: "buff" as const, stat: "atk", amount: 1, rounds: 1 }],
+                [{ type: "buff" as const, stat: "atk", amount: 2, rounds: 1 }],
+              ],
+            },
+          ],
+        ],
+      },
+    ];
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    let pickerCalls = 0;
+    const { prompts } = driveStream(
+      applyEffectStream(game, user, target, effects),
+      (p) => {
+        pickerCalls++;
+        return pickerCalls === 1 ? 1 : 1; // pick option 1 of outer, then option 1 of inner
+      },
+    );
+    expect(prompts.length).toBe(2);
+    // Only the second option of the inner choose (+2 atk) should have been
+    // applied -- total buff applied once with amount 2.
+    expect(target.buffs.length).toBe(1);
+    expect(target.buffs[0]).toEqual({ stat: "atk", amount: 2, rounds: 1 });
+  });
+
+  it("sync applyEffects fallback fans out choose options (test ergonomics)", () => {
+    // applyEffects shouldn't throw on a choose clause -- it should emit a
+    // "[Choose one]" placeholder plus one Option N summary line per option.
+    const ability = makeAbility({
+      name: "Three-way",
+      range: "Melee",
+      effect: "Choose: +3 ATK/1 or +1 ACC/1 or +4 DEF/1",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+
+    expect(messages.some((m) => m.toLowerCase().includes("choose one"))).toBe(
+      true,
+    );
+    expect(messages.some((m) => m.startsWith("    Option 1:"))).toBe(true);
+    expect(messages.some((m) => m.startsWith("    Option 2:"))).toBe(true);
+    expect(messages.some((m) => m.startsWith("    Option 3:"))).toBe(true);
   });
 });
 
