@@ -1,4 +1,12 @@
-import { send, sendPm, toId, parseArgs, parsePos, posToStr } from "../utils.js";
+import {
+  send,
+  sendPm,
+  sendPmChunks,
+  toId,
+  parseArgs,
+  parsePos,
+  posToStr,
+} from "../utils.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
 import {
@@ -20,6 +28,7 @@ import {
   isSealed,
   isConfused,
   getEffectiveMp,
+  parseFrequency,
   type Game,
   type Entity,
 } from "../game/state.js";
@@ -29,8 +38,12 @@ import {
   resolveAction,
   respondToChoice,
   respondToTarget,
+  respondToDir,
+  respondToTile,
+  startAttack,
   type AttackStep,
 } from "../game/resolve.js";
+import { DIRECTION_LABELS } from "../game/state.js";
 
 export function gameCommand(
   room: Room | null,
@@ -40,7 +53,12 @@ export function gameCommand(
   val: string,
   pm = false,
 ) {
-  const game = room ? findGameForRoom(room.id) : null;
+  // PM routing: find game by entity/host name
+  let game = room ? findGameForRoom(room.id) : null;
+  if (!game && pm) {
+    game = findGameForUser(user.name);
+    if (!game) return sendPm(user.name, "No active game found.");
+  }
 
   const full = val ? `${args},${val}` : args;
 
@@ -65,6 +83,16 @@ export function gameCommand(
     case "cancel":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleCancel(game, user);
+      break;
+
+    case "target":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleTarget(game, user, full);
+      break;
+
+    case "choose":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleChoose(game, user, full);
       break;
 
     case "endturn":
@@ -99,9 +127,20 @@ export function gameCommand(
       handlePremove(game, user);
       break;
 
+    case "passmove":
+    case "pass":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handlePassMove(game, user);
+      break;
+
     case "pl":
       if (!game) return sendPm(user.name, "No active game in this room.");
       sendPm(user.name, buildPlayerList(game));
+      break;
+
+    case "log":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleLog(game, user, args);
       break;
 
     case "to":
@@ -135,14 +174,14 @@ export function gameCommand(
       handleRegp(game, user, full);
       break;
 
-    case "target":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleTarget(game, user, args);
+    case "dir":
+      if (!game) return sendPm(user.name, "No active game.");
+      handleDirChoice(game, user, args);
       break;
 
-    case "choose":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleChoice(game, user, args);
+    case "tile":
+      if (!game) return sendPm(user.name, "No active game.");
+      handleTileChoice(game, user, full);
       break;
 
     default:
@@ -158,6 +197,30 @@ function findGameForRoom(roomid: string): Game | null {
   return null;
 }
 
+function findGameForUser(username: string): Game | null {
+  for (const game of games.values()) {
+    if (toId(game.host) === toId(username)) return game;
+    for (const e of game.entities) {
+      if (toId(e.name) === toId(username) || toId(e.num) === toId(username))
+        return game;
+    }
+  }
+  return null;
+}
+
+function logEntry(game: Game, entity: Entity, description: string) {
+  game.log.push({
+    turn: game.round,
+    entity: entity.num,
+    description,
+    snapshot: "",
+  });
+}
+
+function failAct(game: Game, entity: Entity, reason: string) {
+  logEntry(game, entity, `${entity.num} (${entity.name}) idles (${reason})`);
+}
+
 function handleMove(game: Game, user: User, cmd: string, args: string) {
   const isHost = toId(user.name) === toId(game.host);
 
@@ -168,7 +231,10 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   if (parts.length >= 3) {
     entityName = parts[parts.length - 1];
     posStr = parts.slice(0, -1).join(",");
-  } else if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+  } else if (
+    parts.length === 2 &&
+    (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
+  ) {
     entityName = parts[1];
     posStr = parts[0];
   }
@@ -187,32 +253,63 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
     return sendPm(user.name, "It's not your turn.");
   }
   if (isStunned(entity)) {
+    failAct(game, entity, "Stunned");
     return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
   }
   if (isRooted(entity)) {
+    failAct(game, entity, "Rooted");
     return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
   }
-  if (entity.movementUsed && cmd === "move") {
+  if (entity.movementUsed) {
+    failAct(game, entity, "already moved");
     return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+  if (cmd === "dash" && entity.dashUsed) {
+    failAct(game, entity, "already dashed");
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
+  if (cmd === "dash" && entity.standardUsed) {
+    failAct(game, entity, "Dash is a Full action");
+    return sendPm(
+      user.name,
+      `${entity.num} already used their Standard — Dash is a Full action.`,
+    );
   }
 
   const pos = parsePos(posStr);
   if (!pos)
     return sendPm(user.name, "Invalid position. Use: %move e4[,entity]");
 
-  const reachable = getReachableTiles(game, entity.pos, entity.mp, entity);
+  // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
+  const dash = cmd === "dash";
+  const mp = dash ? Math.floor(getEffectiveMp(entity) * 1.5) : entity.mp;
+  const reachable = getReachableTiles(
+    game,
+    entity.pos,
+    mp,
+    dash ? undefined : entity,
+  );
   const key = posToStr(pos[0], pos[1]);
 
   if (!reachable.has(key)) {
+    failAct(game, entity, "tile not reachable");
     return sendPm(user.name, "That tile is not reachable with remaining MP.");
   }
 
   pushSnapshot(game);
   entity.pos = pos;
   entity.movementUsed = true;
-  if (cmd === "dash") entity.dashUsed = true;
+  if (cmd === "dash") {
+    entity.dashUsed = true;
+    entity.standardUsed = true;
+  }
   premoveSet.delete(entity.num);
 
+  logEntry(
+    game,
+    entity,
+    `${entity.num} (${entity.name}) ${dash ? "dashes" : "moves"} to ${key}`,
+  );
   send(game.room, `/me moves ${entity.num} to ${key}`);
   broadcastPages(game);
 }
@@ -227,7 +324,10 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (parts.length >= 3) {
     entityName = parts[parts.length - 1];
     abilityTarget = parts.slice(0, -1).join(",");
-  } else if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+  } else if (
+    parts.length === 2 &&
+    (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
+  ) {
     entityName = parts[1];
     abilityTarget = parts[0];
   }
@@ -246,12 +346,14 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     return sendPm(user.name, "It's not your turn.");
   }
   if (isStunned(entity)) {
+    failAct(game, entity, "Stunned");
     return sendPm(
       user.name,
       `${entity.num} is Stunned and cannot use abilities.`,
     );
   }
   if (isSealed(entity)) {
+    failAct(game, entity, "Sealed");
     return sendPm(
       user.name,
       `${entity.num} is Sealed and cannot use abilities.`,
@@ -275,6 +377,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 
   // Cooldown check
   if (entity.cooldowns[ability.name]) {
+    failAct(game, entity, `${ability.name} on cooldown`);
     return sendPm(
       user.name,
       `${ability.name} is on cooldown (${entity.cooldowns[ability.name]} turns left).`,
@@ -282,40 +385,60 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   }
 
   // Max uses check
-  if (ability.maxUses) {
+  const maxUses = ability.maxUses ?? parseFrequency(ability.frequency).uses;
+  if (maxUses) {
     const used = entity.usesUsed[ability.name] ?? 0;
-    if (used >= ability.maxUses) {
+    if (used >= maxUses) {
+      failAct(game, entity, `${ability.name} out of uses`);
       return sendPm(user.name, `${ability.name} has no uses remaining.`);
     }
   }
 
   // Action type enforcement
   if (ability.actionType === "Standard" && entity.standardUsed) {
+    failAct(game, entity, "Standard already used");
     return sendPm(user.name, "You already used your Standard action.");
   }
   if (ability.actionType === "Swift" && entity.swiftUsed) {
+    failAct(game, entity, "Swift already used");
     return sendPm(user.name, "You already used your Swift action this turn.");
   }
   if (
     ability.actionType === "Full" &&
     (entity.standardUsed || entity.movementUsed)
   ) {
+    failAct(game, entity, "Full action needs Movement+Standard");
     return sendPm(
       user.name,
       "Full action requires both Standard and Movement unused.",
     );
   }
-  if (ability.actionType === "Free") {
-    // Free actions always allowed (no slot consumed)
-  } else if (
-    ability.actionType === "Trigger" ||
-    ability.actionType === "Reaction"
+  // Issue #3: Free/Swift/Trigger must be used before the Standard action.
+  if (
+    entity.standardUsed &&
+    (ability.actionType === "Free" ||
+      ability.actionType === "Swift" ||
+      ability.actionType === "Trigger")
   ) {
+    failAct(game, entity, "Free/Swift must come before Standard");
     return sendPm(
       user.name,
-      `${ability.actionType} abilities resolve automatically, not manually.`,
+      `${ability.actionType} abilities must be used before your Standard action.`,
     );
+  }
+  if (ability.actionType === "Trigger") {
+    // Trigger abilities are free-like: manual use, no slot consumed.
+    // Using a trigger lets the entity manually resolve Reactions this turn.
+  } else if (ability.actionType === "Reaction") {
+    if (!entity.triggered) {
+      failAct(game, entity, "no trigger active");
+      return sendPm(
+        user.name,
+        "No trigger active this turn — Reaction abilities cannot be used manually.",
+      );
+    }
   } else if (ability.actionType === "Passive") {
+    failAct(game, entity, "Passive cannot be used manually");
     return sendPm(user.name, "Passive abilities cannot be used manually.");
   }
 
@@ -326,6 +449,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     entity.standardUsed = true;
     entity.movementUsed = true;
   }
+  if (ability.actionType === "Trigger") entity.triggered = true;
   entity.pendingAction = {
     type: "attack",
     ability,
@@ -336,6 +460,28 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     game.room,
     `/me selects ${ability.name}${targetName ? ` targeting ${targetName}` : ""}`,
   );
+
+  // Auto-resolve Free/Swift actions without dice rolls
+  const noDice = !ability.roll || ability.roll === "" || ability.roll === "—";
+  if (
+    noDice &&
+    (ability.actionType === "Free" || ability.actionType === "Swift")
+  ) {
+    const step = resolveAction(game, entity);
+    if (step.done === false) {
+      send(game.room, `${entity.num}: ${step.prompt.message}`);
+      return;
+    }
+    for (const msg of step.result.messages) {
+      send(game.room, msg);
+    }
+    logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
+    entity.pendingAction = null;
+    send(game.room, `**${ability.name}** resolved. Use %back to undo.`);
+    broadcastPages(game);
+    return;
+  }
+
   broadcastPages(game);
 }
 
@@ -351,10 +497,47 @@ function handleConfirm(game: Game, user: User) {
   }
 
   pushSnapshot(game);
-  sendStep(game, entity, resolveAction(game, entity));
+  const step = resolveAction(game, entity);
+  finishStep(game, entity, step);
 }
 
-function sendStep(game: Game, entity: Entity, step: AttackStep) {
+function handleTarget(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!args) return sendPm(user.name, "Usage: %target <target>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToTarget(entity, args);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function handleChoose(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!args) return sendPm(user.name, "Usage: %choose <option>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToChoice(entity, args);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
 
@@ -363,6 +546,21 @@ function sendStep(game: Game, entity: Entity, step: AttackStep) {
         game.room,
         `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
       );
+    } else if (step.prompt.kind === "selection") {
+      send(
+        game.room,
+        `Use %choose <option>. Options: ${step.prompt.options.map((o) => o.id).join(", ")}`,
+      );
+    } else if (step.prompt.kind === "direction") {
+      send(
+        game.room,
+        `Use %dir <direction>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
+    } else if (step.prompt.kind === "tile") {
+      send(
+        game.room,
+        `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
     }
     return;
   }
@@ -370,6 +568,8 @@ function sendStep(game: Game, entity: Entity, step: AttackStep) {
   for (const msg of step.result.messages) {
     send(game.room, msg);
   }
+
+  logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
 
   entity.pendingAction = null;
 
@@ -380,52 +580,6 @@ function sendStep(game: Game, entity: Entity, step: AttackStep) {
   }
 
   broadcastPages(game);
-}
-
-function handleTarget(game: Game, user: User, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
-  const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
-  if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
-  }
-  if (!entity.pendingResolution) {
-    return sendPm(user.name, "No action awaiting a response.");
-  }
-  if (entity.pendingPromptKind !== "target") {
-    return sendPm(
-      user.name,
-      `Your pending action expects ${
-        entity.pendingPromptKind === "selection" ? "%choose" : "%target"
-      }.`,
-    );
-  }
-
-  pushSnapshot(game);
-  sendStep(game, entity, respondToTarget(entity, args));
-}
-
-function handleChoice(game: Game, user: User, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
-  const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
-  if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
-  }
-  if (!entity.pendingResolution) {
-    return sendPm(user.name, "No action awaiting a response.");
-  }
-  if (entity.pendingPromptKind !== "selection") {
-    return sendPm(
-      user.name,
-      `Your pending action expects ${
-        entity.pendingPromptKind === "target" ? "%target" : "%choose"
-      }.`,
-    );
-  }
-
-  pushSnapshot(game);
-  sendStep(game, entity, respondToChoice(entity, args));
 }
 
 function handleCancel(game: Game, user: User) {
@@ -448,6 +602,8 @@ function handleCancel(game: Game, user: User) {
   }
 
   entity.pendingAction = null;
+  entity.pendingResolution = undefined;
+  entity.pendingPromptKind = undefined;
   send(game.room, `/me ${entity.num} cancels ${ability.name}`);
   broadcastPages(game);
 }
@@ -461,6 +617,8 @@ function handleAdvanceTurn(game: Game, user: User) {
   if (!entity) return;
 
   pushSnapshot(game);
+
+  let acted = "";
 
   // Stunned entities can't act — skip their action and clear pending
   if (isStunned(entity)) {
@@ -482,11 +640,10 @@ function handleAdvanceTurn(game: Game, user: User) {
       send(game.room, msg);
     }
 
-    // Track kills
-    for (const death of step.result.deaths) {
-      if (entity.pendingAction === null) {
-        // Only track kills from the attacker (not DoT deaths)
-      }
+    acted = summarizeResult(game, entity, step.result.messages);
+
+    for (const _ of step.result.deaths) {
+      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
     }
 
     const winner = checkGameOver(game);
@@ -496,12 +653,16 @@ function handleAdvanceTurn(game: Game, user: User) {
     }
   }
 
-  game.log.push({
-    turn: game.round,
-    entity: entity.num,
-    description: `${entity.num} (${entity.name}) -- turn passed`,
-    snapshot: "",
-  });
+  if (
+    acted ||
+    !game.log.some((e) => e.turn === game.round && e.entity === entity.num)
+  ) {
+    logEntry(
+      game,
+      entity,
+      acted || `${entity.num} (${entity.name}) -- turn passed`,
+    );
+  }
 
   const result = nextTurn(game);
   for (const msg of result.messages) {
@@ -535,12 +696,88 @@ function handleAdvanceTurn(game: Game, user: User) {
   broadcastPages(game);
 }
 
+function summarizeResult(
+  game: Game,
+  entity: Entity,
+  messages: string[],
+): string {
+  const nm = (n: string) => game.entities.find((e) => e.num === n)?.name ?? n;
+  const head = messages.find((m) => m.startsWith("/me "));
+  let action = head ? head.slice(4).split(", MR")[0] : "action";
+  action = action.replace(
+    /@ (.*)$/,
+    (_, t) => `@ ${t.split(", ").map(nm).join(", ")}`,
+  );
+  const dmg: string[] = [];
+  for (const m of messages) {
+    const d = m.match(/= \*\*(\d+)\*\* -> (\S+) \(/);
+    if (d) {
+      dmg.push(
+        `${nm(d[2])} ${d[1]} ${m.includes("**Heal**") ? "heal" : "dmg"}`,
+      );
+      continue;
+    }
+    const s = m.match(/-> (\S+) \(.*= \*\*(\d+)\*\*$/);
+    if (s) dmg.push(`${nm(s[1])} ${s[2]} dmg`);
+  }
+  const acc = messages
+    .filter((m) => m.includes("**Accuracy**"))
+    .map((m) => (m.includes("HIT") ? "HIT" : "MISS"));
+  const hits = acc.length ? acc.join("/") : "";
+  const tail = [hits, dmg.join(" ")].filter(Boolean).join(" ");
+  return `${entity.name} ${action}${tail ? `: ${tail}` : ""}`;
+}
+
 function handleBack(game: Game, user: User) {
   if (popSnapshot(game)) {
     send(game.room, "Action undone.");
     broadcastPages(game);
   } else {
     send(game.room, "Nothing to undo.");
+  }
+}
+
+function handleLog(game: Game, user: User, args: string) {
+  if (game.log.length === 0) {
+    sendPm(user.name, "Action log is empty.");
+    return;
+  }
+
+  const text = game.log
+    .map((e) => `[R${e.turn}] ${e.entity}: ${e.description}`)
+    .join("\n");
+
+  if (args === "paste" || args === "share") {
+    void (async () => {
+      const url = await pasteLog(text);
+      if (url) {
+        send(game.room, `${user.name} shared the action log: ${url}`);
+      } else {
+        sendPm(
+          user.name,
+          "Paste service unreachable — sending the log directly:",
+        );
+        sendPmChunks(user.name, text);
+      }
+    })();
+    return;
+  }
+
+  sendPmChunks(user.name, text);
+}
+
+async function pasteLog(text: string): Promise<string | null> {
+  try {
+    const res = await fetch("https://paste.rs/", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: text,
+    });
+    if (!res.ok) return null;
+    const url = (await res.text()).trim();
+    return url.startsWith("http") ? url : null;
+  } catch {
+    return null;
   }
 }
 
@@ -577,6 +814,70 @@ function handlePremove(game: Game, user: User) {
     premoveSet.add(entity.num);
     send(game.room, `/me ${entity.num} viewing pre-move abilities`);
   }
+  broadcastPages(game);
+}
+
+// -- Direction / Tile choice handlers -----------------------------------------
+
+function handleDirChoice(game: Game, user: User, dir: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!dir) return sendPm(user.name, "Usage: %dir <direction>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToDir(entity, dir);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function handleTileChoice(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (!args) return sendPm(user.name, "Usage: %tile <tile>");
+
+  pushSnapshot(game);
+  try {
+    const step = respondToTile(entity, args);
+    finishStep(game, entity, step);
+  } catch (e) {
+    sendPm(user.name, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function handlePassMove(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entity: Entity | null = null;
+  if (isHost) {
+    entity = getCurrentEntity(game);
+  } else {
+    entity = getCurrentEntity(game);
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, "You already moved this turn.");
+  }
+
+  pushSnapshot(game);
+  entity.movementUsed = true;
+  premoveSet.delete(entity.num);
+  logEntry(game, entity, `${entity.num} (${entity.name}) passes movement`);
+  send(game.room, `/me ${entity.num} passes movement`);
   broadcastPages(game);
 }
 

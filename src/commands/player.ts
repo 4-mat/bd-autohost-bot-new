@@ -1,6 +1,11 @@
 import { send, sendPm, toId, posToStr } from "../utils.js";
 import type { User } from "../users.js";
-import { games, type Game, type Entity } from "../game/state.js";
+import {
+  games,
+  parseFrequency,
+  type Game,
+  type Entity,
+} from "../game/state.js";
 
 function findGameForUser(userName: string): Game | null {
   for (const game of games.values()) {
@@ -81,8 +86,9 @@ export function playerCommand(user: User, cmd: string, args: string) {
       ];
 
       for (const a of e.abilities) {
-        const uses = a.maxUses
-          ? ` [${a.maxUses - (e.usesUsed[a.name] ?? 0)}/${a.maxUses}]`
+        const maxUses = a.maxUses ?? parseFrequency(a.frequency).uses;
+        const uses = maxUses
+          ? ` [${maxUses - (e.usesUsed[a.name] ?? 0)}/${maxUses}]`
           : "";
         const cd = e.cooldowns[a.name] ? ` CD:${e.cooldowns[a.name]}` : "";
         lines.push(
