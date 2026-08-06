@@ -174,7 +174,8 @@ export function buildHostPage(game: Game): string {
   const map = buildMap(game);
   const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game);
-  const controls = buildControls(game);
+  // Controls (Next Turn / Undo / d20) only matter once the battle is running.
+  const controls = game.started ? buildControls(game) : "";
   // "FFA" is just the placeholder until a mode is actually chosen (%setgame, the
   // vote, or %genpos) — don't claim a mode in the header before then.
   const modeSeg =
@@ -182,7 +183,7 @@ export function buildHostPage(game: Game): string {
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   <b>Game: ${esc(game.id)}</b>${modeSeg} Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
-  <hr>${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}<hr>${controls}
+  <hr>${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}${controls ? `<hr>${controls}` : ""}
   ${buildToasts(game)}
 </div>`;
 }
