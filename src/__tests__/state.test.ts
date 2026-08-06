@@ -25,6 +25,7 @@ import {
   calculateLoot,
   nextTurn,
   processStartOfTurn,
+  processEndOfTurn,
   pushSnapshot,
   popSnapshot,
   getCurrentEntity,
@@ -65,6 +66,7 @@ function makeEntity(
     buffs: [],
     cooldowns: {},
     usesUsed: {},
+    resources: {},
     pendingAction: null,
     dashUsed: false,
     standardUsed: false,
@@ -111,6 +113,7 @@ function makeGame(
     winner: null,
     chatLog: [],
     toasts: [],
+    signupsOpen: false,
   };
 }
 
@@ -467,21 +470,21 @@ describe("getAoETargets", () => {
 
 describe("getSplashTargets", () => {
   it("finds nearby enemies around primary target", () => {
-    const caster = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
+    const user = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
     const primary = makeEntity({ num: "P2", name: "B", pos: [2, 2], team: 1 });
     const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 3], team: 1 });
     const p4 = makeEntity({ num: "P4", name: "D", pos: [4, 4], team: 1 });
-    const game = makeGame({ entities: [caster, primary, p3, p4] });
-    const splash = getSplashTargets(game, caster, primary, 1, "Foe");
+    const game = makeGame({ entities: [user, primary, p3, p4] });
+    const splash = getSplashTargets(game, user, primary, 1, "Foe");
     expect(splash.map((t) => t.num)).toContain("P3");
     expect(splash.map((t) => t.num)).not.toContain("P4");
   });
 
   it("excludes the primary target itself", () => {
-    const caster = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
+    const user = makeEntity({ num: "P1", name: "A", pos: [0, 0], team: 0 });
     const primary = makeEntity({ num: "P2", name: "B", pos: [2, 2], team: 1 });
-    const game = makeGame({ entities: [caster, primary] });
-    const splash = getSplashTargets(game, caster, primary, 2, "Foe");
+    const game = makeGame({ entities: [user, primary] });
+    const splash = getSplashTargets(game, user, primary, 2, "Foe");
     expect(splash.some((t) => t.num === "P2")).toBe(false);
   });
 });
@@ -752,6 +755,23 @@ describe("Snapshots", () => {
     expect(p1.pos).toEqual([0, 0]);
   });
 
+  it("popSnapshot removes action log entries added after the snapshot", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const game = makeGame({ entities: [p1] });
+
+    pushSnapshot(game);
+    game.log.push({
+      turn: 1,
+      entity: "P1",
+      description: "A punches B",
+      snapshot: "",
+    });
+    expect(game.log.length).toBe(1);
+
+    popSnapshot(game);
+    expect(game.log.length).toBe(0);
+  });
+
   it("returns false when no snapshots", () => {
     const game = makeGame();
     expect(popSnapshot(game)).toBe(false);
@@ -851,24 +871,24 @@ describe("processStartOfTurn", () => {
     expect(messages.some((m) => m.includes("Bleed"))).toBe(true);
   });
 
-  it("applies lava damage", () => {
+  it("applies lava damage at end of turn", () => {
     const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
     map[2][2] = Terrain.Lava;
     const game = makeGame({ terrain: map });
     const e = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [2, 2] });
-    const { died } = processStartOfTurn(game, e);
+    const { died } = processEndOfTurn(game, e);
     expect(e.curhp).toBe(70); // 30 lava damage
     expect(died).toBe(false);
   });
 
-  it("ticks cooldowns and removes expired ones", () => {
+  it("ticks cooldowns and removes expired ones at end of turn", () => {
     const e = makeEntity({
       num: "P1",
       name: "A",
       cooldowns: { Fireball: 2, Heal: 1 },
     });
     const game = makeGame();
-    processStartOfTurn(game, e);
+    processEndOfTurn(game, e);
     expect(e.cooldowns["Fireball"]).toBe(1);
     expect(e.cooldowns["Heal"]).toBeUndefined();
   });
@@ -895,7 +915,7 @@ describe("processStartOfTurn", () => {
     expect(result.entity?.num).toBe("P2");
   });
 
-  it("ticks status durations and removes expired", () => {
+  it("ticks status durations and removes expired at end of turn", () => {
     const e = makeEntity({
       num: "P1",
       name: "A",
@@ -905,7 +925,7 @@ describe("processStartOfTurn", () => {
       ],
     });
     const game = makeGame();
-    processStartOfTurn(game, e);
+    processEndOfTurn(game, e);
     // Burn has 1 round, gets ticked to 0 and removed. Bleed goes from 3 to 2.
     expect(e.statuses.length).toBe(1);
     expect(e.statuses[0].name).toBe("Bleed");
@@ -930,14 +950,79 @@ describe("processStartOfTurn", () => {
     expect(game.entities.find((x) => x.num === "P1")).toBeUndefined();
   });
 
-  it("returns died=true when lava damage kills entity", () => {
+  it("returns died=true when lava damage kills entity at end of turn", () => {
     const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
     map[2][2] = Terrain.Lava;
     const game = makeGame({ terrain: map });
     const e = makeEntity({ num: "P1", name: "A", curhp: 20, pos: [2, 2] });
-    const { died } = processStartOfTurn(game, e);
+    const { died } = processEndOfTurn(game, e);
     expect(e.curhp).toBe(-10);
     expect(died).toBe(true);
+    expect(game.entities.find((x) => x.num === "P1")).toBeUndefined();
+  });
+});
+
+describe("processEndOfTurn", () => {
+  it("returns died=false when status remains active", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      statuses: [
+        { name: "Bleed", damage: 10, rounds: 3, maxRounds: 3, removable: true },
+      ],
+    });
+    const game = makeGame();
+    const { died } = processEndOfTurn(game, e);
+    expect(died).toBe(false);
+  });
+
+  it("deals no status damage at end of turn", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      curhp: 100,
+      statuses: [
+        { name: "Bleed", damage: 10, rounds: 3, maxRounds: 3, removable: true },
+      ],
+    });
+    const game = makeGame();
+    const { messages } = processEndOfTurn(game, e);
+    expect(e.curhp).toBe(100);
+    expect(messages.some((m) => m.includes("damage"))).toBe(false);
+  });
+});
+
+describe("nextTurn end-of-turn death", () => {
+  it("skips the entity that died at end of turn", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[1][1] = Terrain.Lava;
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 20, pos: [1, 1] });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+      terrain: map,
+    });
+    game.turnIndex = 0;
+    const result = nextTurn(game);
+    expect(result.died).toBe(true);
+    expect(result.entity?.num).toBe("P2");
+    expect(game.turnIndex).toBe(0);
+  });
+
+  it("does not skip when the ending entity survives", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 0;
+    const result = nextTurn(game);
+    expect(result.died).toBe(false);
+    expect(result.entity?.num).toBe("P2");
   });
 });
 
