@@ -83,21 +83,26 @@ All game setup commands, routed by `hostCommand()`:
 | -------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `%host`              | `handleHost`         | Creates a new `Game` in the room with a default 12x12 map, FFA mode, setup phase                                                         |
 | `%dehost`            | `handleDehost`       | Deletes the game (host only)                                                                                                             |
-| `%setgame`           | `handleSetGame`      | Sets `game.mode` (FFA, 2v2, 3v3...)                                                                                                      |
+| `%setgame`           | `handleSetGame`      | Sets mode AND completes setup: picks a random map from the mode's pool (if none set), assigns teams (NvM), places players, generates turn order — then %start                                                                                                      |
 | `%addp`              | `handleAddPlayer`    | Creates an `Entity` from a class + weapon + team, assigned a spawn position                                                              |
 | `%addm`              | `handleAddMonster`   | Creates a monster entity with raw stats                                                                                                  |
 | `%remp`              | `handleRemPlayer`    | Removes an entity                                                                                                                        |
-| `%sc`                | `handleSwitchClass`  | Changes an entity's class mid-game, recalculates stats + abilities                                                                       |
-| `%sw`                | `handleSwitchWeapon` | Changes an entity's weapon, recalculates stats + abilities                                                                               |
-| `%setlevel` / `%sl`  | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level                                                                                 |
+| `%sc`                | `handleSwitchClass`  | Changes YOUR class (`%sc <class>`), recalculates stats + abilities; until the game starts             |
+| `%sw`                | `handleSwitchWeapon` | Changes YOUR weapon (`%sw <weapon>`), recalculates stats + abilities; until the game starts             |
+| `%setlevel` / `%sl`  | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level; `all` levels every player at once                                                                  |
 | `%setteam`           | `handleSetTeam`      | Changes an entity's team number                                                                                                          |
 | `%setmap`            | `handleSetMap`       | Sets a curated map by name, a random map from a gamemode pool (`%setmap pvp`), or `%setmap gen` for a procedural map (host starts with no map; %start requires one)                                                                             |
 | `%listmaps`          | `handleListMaps`     | Lists available maps (filterable by size); shows recommended maps for the game mode                                                                                        |
 | `%gento`             | `handleGenTurnOrder` | Rolls 1d20 + MP for each entity, sorts descending                                                                                        |
 | `%open` / `%openbsu` | `handleOpen`         | Opens signups (`signupsOpen = true`), enabling `%join`; `openbsu` highlights                                                             |
-| `%close`             | `handleClose`        | Closes signups (`signupsOpen = false`)                                                                                                   |
+| `%close`             | `handleClose`        | Closes signups and opens gamemode voting (`voteOpen = true`) for joined players                                                          || `%vote`              | `handleVote`         | Casts/changes a player's gamemode vote; bare `%vote` shows tallies; options filtered by lobby size (all BD 4.4 modes incl. 4v4/2v2v2/NvJ/PvPJ/PvP NTR); nudges host when everyone voted |
+| `%votestatus`        | `handleVoteStatus`   | Anyone can check live tallies, runoff state, and who hasn't voted yet (`buildVoteStatus` + `pendingVoterIds`)                                |
+| `%nudge`             | `handleNudge`        | Host-only: pings players who haven't voted (@Name) so the lobby can finish the vote                                             |
+| `%unvote`            | `handleUnvote`       | Withdraws a player's gamemode vote                                                                                                                   |
+| `%endvote`           | `handleEndVote`      | Closes voting, applies the winning mode; on a tie, keeps voting open as a runoff restricted to the tied modes (`game.voteRunoff`)   |
 | `%join`              | `handleJoin`         | Self-service join with a chosen class/weapon while signups are open                                                                      |
-| `%genpos`            | `handleGenPos`       | Sets competitive starting positions: `%genpos <N><mode>` (e.g. `4pffa`); FFA-only, spawns spread symmetrically from corners/edges/center |
+| `%leave`             | `handleLeave`        | Player leaves the game: removes their entity, drops them from the turn order, withdraws their vote (`removeEntity`); host must use `%dehost` |
+| `%genpos`            | `handleGenPos`       | Sets competitive starting positions: FFA `%genpos <N><mode>` (e.g. `4pffa`) spread symmetrically, or teams `%genpos <N>v<M>` (e.g. `2v2`) on mirrored halves with auto-assigned teams + mode |
 | `%start`             | `handleStart`        | Starts the game, auto-gentos if needed, broadcasts HTML pages                                                                            |
 
 `handleAddPlayer` parses flat stat strings (class stat + weapon stat),
@@ -105,7 +110,7 @@ filters abilities by level, and calls `findSpawnPosition` — a spiral-search
 from map center for open Normal tiles. `%addp` and `%join` share the same
 entity-building helper `createPlayerEntity`.
 
-`%genpos` parses a player count + mode (e.g. `4pffa`), rejects team modes
+`%genpos` parses a player count + mode (e.g. `4pffa`) or a team match (e.g. `2v2`, auto-teams and sets the mode)
 and PvE, and places the first N players at symmetric spawn slots derived
 from map size (corners, then edges, then center), BFS-searching to the
 nearest open Normal tile per slot.
@@ -133,7 +138,8 @@ In-play actions routed by `gameCommand()`:
 | `%pl`                    | inline              | Player list via PM                                                                                   |
 | `%to`                    | inline              | Turn order via PM                                                                                    |
 | `%hp`                    | `handleHp`          | (Host) manually adjust HP                                                                            |
-| `%cut`                   | `handleCut`         | (Host) deal raw damage through shield                                                                |
+| `%cut`                   | `handleCut`         | (Host) shot clock on a player; `%cut off` cancels                                                    |
+| `%timer`                 | `handleTimer`       | (Host) global countdown; `%timer off` cancels                                                         |
 | `%cr` / `%checkrange`    | `handleCheckRange`  | Manhattan distance between two positions/entities                                                    |
 | `%status`                | `handleStatus`      | (Host) add/remove/list status effects                                                                |
 | `%regp`                  | `handleRegp`        | (Host) reassign an entity to a PS user                                                               |
@@ -163,7 +169,11 @@ Character viewer commands routed by `playerCommand()`:
 | `%vs` / `%viewstats`  | HP bar, stats, position, statuses, buffs, cooldowns                  |
 | `%vl` / `%viewlevels` | Class/weapon levels, all abilities with remaining uses and cooldowns |
 | `%vi` / `%viewitems`  | Stub                                                                 |
-| `%sco` / `%score`     | HP + ability usage counts                                            |
+| `%sco`               | Combined loadout setter: `%sco <class>, <weapon>` (your own, until start) |
+| `%setclass`          | Host-only: `%setclass <entity>, <class>` — set any entity's class (any time) |
+| `%setweapon`         | Host-only: `%setweapon <entity>, <weapon>` — set any entity's weapon (any time) |
+| `%setloadout`        | Host-only: `%setloadout <entity>, <class>, <weapon>` — set any entity's loadout (any time) |
+| `%score`             | Score display: HP + ability usage counts                            |
 
 Uses `findEntityInGames()` to locate the calling user's entity across
 all active games.
@@ -172,7 +182,7 @@ all active games.
 
 Reference lookups routed by `infoCommand()`:
 
-- `%wt <term>` — checks `WhatIs` map, then `weapons`, then `classes`
+- `%wt <term>` — checks `WhatIs` map, then game-mode descriptions (`%wt modes` lists all; `%wt pvpj` describes one), then `weapons`, then `classes`
 - `%rf <term>` — checks `Reference` map for external links
 
 `buildAbilityLine()` formats one ability as:
