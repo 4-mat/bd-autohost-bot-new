@@ -151,7 +151,8 @@ export const VOTE_OPTIONS: VoteOption[] = [
     id: "FFA",
     label: "Free For All",
     description: "Everyone for themselves — last player standing wins.",
-    minPlayers: 2,
+    // With only 2 players FFA is just a 1v1, so it's not offered.
+    minPlayers: 3,
   },
   {
     id: "1v1",

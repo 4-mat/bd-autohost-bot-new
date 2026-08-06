@@ -102,11 +102,7 @@ describe("randomMapForMode", () => {
 
 describe("voteOptionsFor", () => {
   test("filters exact-count modes by lobby size", () => {
-    expect(voteOptionsFor(2).map((o) => o.id)).toEqual([
-      "FFA",
-      "1v1",
-      "NTR",
-    ]);
+    expect(voteOptionsFor(2).map((o) => o.id)).toEqual(["1v1", "NTR"]);
     expect(voteOptionsFor(4).map((o) => o.id)).toEqual([
       "FFA",
       "2v2",
@@ -145,6 +141,7 @@ describe("voteOptionsFor", () => {
 
   test("never offers a team mode the lobby can't fill", () => {
     expect(voteOptionsFor(2).map((o) => o.id)).not.toContain("JUGG");
+    expect(voteOptionsFor(2).map((o) => o.id)).not.toContain("FFA");
     expect(voteOptionsFor(3).map((o) => o.id)).not.toContain("1v1");
     expect(voteOptionsFor(3).map((o) => o.id)).not.toContain("2v2");
     expect(voteOptionsFor(4).map((o) => o.id)).not.toContain("3v3");
