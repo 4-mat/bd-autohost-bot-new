@@ -106,7 +106,6 @@ describe("voteOptionsFor", () => {
       "FFA",
       "1v1",
       "NTR",
-      "JUGG",
     ]);
     expect(voteOptionsFor(4).map((o) => o.id)).toEqual([
       "FFA",
@@ -145,6 +144,7 @@ describe("voteOptionsFor", () => {
   });
 
   test("never offers a team mode the lobby can't fill", () => {
+    expect(voteOptionsFor(2).map((o) => o.id)).not.toContain("JUGG");
     expect(voteOptionsFor(3).map((o) => o.id)).not.toContain("1v1");
     expect(voteOptionsFor(3).map((o) => o.id)).not.toContain("2v2");
     expect(voteOptionsFor(4).map((o) => o.id)).not.toContain("3v3");
