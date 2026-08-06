@@ -44,9 +44,9 @@ import {
   type AttackStep,
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
-import {
-  normalizeVoteMode,
-  tallyVotes,
+import {    normalizeVoteMode,
+    runoffOptions,
+    tallyVotes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
 
@@ -571,7 +571,10 @@ function handleVote(game: Game, user: User, args: string) {
 
   const arg = args.trim();
   const players = game.entities.filter((e) => !e.isMonster);
-  const options = voteOptionsFor(players.length);
+  // During a runoff only the tied modes are votable.
+  const options = game.voteRunoff
+    ? runoffOptions(game.voteRunoff)
+    : voteOptionsFor(players.length);
 
   // Bare %vote: show current status + tallies + available options.
   if (!arg) {
@@ -643,7 +646,10 @@ function buildVoteStatus(game: Game): string {
     tally.length > 0
       ? tally.map((t) => `${t.mode}: ${t.count}`).join(" | ")
       : "no votes yet";
-  return `**Gamemode vote** (${Object.keys(game.votes).length}/${players.length} voted): ${summary}.`;
+  const runoff = game.voteRunoff
+    ? ` (RUNOFF: only **${game.voteRunoff.join(" / ")}** count)`
+    : "";
+  return `**Gamemode vote** (${Object.keys(game.votes).length}/${players.length} voted): ${summary}.${runoff}`;
 }
 
 function finishStep(game: Game, entity: Entity, step: AttackStep) {

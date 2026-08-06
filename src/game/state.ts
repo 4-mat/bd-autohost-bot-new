@@ -263,6 +263,11 @@ export interface Game {
   votes: Record<string, string>;
   /** Whether gamemode voting is open (opened by %close, closed by %endvote). */
   voteOpen: boolean;
+  /**
+   * Modes allowed in a runoff after a tied %endvote (empty/null when no
+   * runoff is active). Only these can be voted on while set.
+   */
+  voteRunoff: string[] | null;
 }
 
 export const games = new Map<string, Game>();

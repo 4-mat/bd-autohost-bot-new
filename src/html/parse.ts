@@ -204,6 +204,7 @@ export function handleKyubsInfo(roomid: string, html: string) {
       signupsOpen: false,
       votes: {},
       voteOpen: false,
+      voteRunoff: null,
     };
     games.set(game.id, game);
   } else {

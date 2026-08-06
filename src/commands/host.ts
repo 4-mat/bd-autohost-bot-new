@@ -19,9 +19,9 @@ import {
   GAMEMODE_MAPS,
   modeIdFor,
   randomMapForMode,
-  recommendedMaps,
-  normalizeVoteMode,
-  tallyVotes,
+  recommendedMaps,    normalizeVoteMode,
+    tallyVotes,
+    tieModes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
@@ -173,6 +173,7 @@ function handleHost(room: Room, user: User) {
     signupsOpen: false,
     votes: {},
     voteOpen: false,
+    voteRunoff: null,
   };
 
   games.set(id, game);
@@ -211,11 +212,16 @@ function handleSetGame(room: Room, user: User, args: string) {
     return sendPm(user.name, "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.)");
 
   game.mode = mode.toUpperCase();
+  // Manually setting a mode supersedes any ongoing vote / runoff.
+  game.voteOpen = false;
+  game.votes = {};
+  game.voteRunoff = null;
   const rec = recommendedMaps(game.mode);
   send(
     room.id,
     `Game mode set to **${game.mode}**.${rec ? " Use %listmaps for recommended maps." : ""}`,
   );
+  broadcastPages(game);
 }
 
 // -- .open / .openbsu / .close - Open/close signups ---------------------------
@@ -249,6 +255,7 @@ function handleClose(room: Room, user: User) {
   if (players.length >= 2) {
     game.voteOpen = true;
     game.votes = {};
+    game.voteRunoff = null;
     const options = voteOptionsFor(players.length)
       .map((o) => o.id)
       .join(", ");
@@ -275,26 +282,40 @@ function handleEndVote(room: Room, user: User) {
     return sendPm(user.name, "No gamemode vote is open. Close signups with %close to start one.");
   }
 
-  game.voteOpen = false;
+  const wasRunoff = game.voteRunoff !== null;
   const tally = tallyVotes(game.votes);
   game.votes = {};
 
   if (tally.length === 0) {
-    send(room.id, "**Voting closed.** No votes were cast — pick a mode with %setgame.");
+    game.voteOpen = false;
+    game.voteRunoff = null;
+    send(
+      room.id,
+      wasRunoff
+        ? "**Voting closed.** No runoff votes were cast — pick a mode with %setgame."
+        : "**Voting closed.** No votes were cast — pick a mode with %setgame.",
+    );
     broadcastPages(game);
     return;
   }
-
-  const [top, second] = tally;
-  const tie = second && second.count === top.count;
 
   const summary = tally.map((t) => `${t.mode}: ${t.count}`).join(" | ");
-  if (tie) {
-    send(room.id, `**Voting closed — TIE!** ${summary}\nHost, break the tie with %setgame <mode>.`);
+
+  // Tied top: keep voting open as a runoff restricted to the tied modes.
+  const tied = tieModes(tally);
+  if (tied) {
+    game.voteRunoff = tied;
+    send(
+      room.id,
+      `**TIE — runoff!** ${summary}\nVote again, only between **${tied.join(" / ")}** (%vote <mode> or GUI). The winner is played.`,
+    );
     broadcastPages(game);
     return;
   }
 
+  const [top] = tally;
+  game.voteOpen = false;
+  game.voteRunoff = null;
   game.mode = top.mode.toUpperCase();
   let hint = "";
   if (JUGG_MODES.has(top.mode)) {
@@ -307,7 +328,7 @@ function handleEndVote(room: Room, user: User) {
   }
   send(
     room.id,
-    `**Voting closed.** ${summary}\nMode set to **${game.mode}** (won by vote).${hint}`,
+    `**Voting closed.** ${summary}\nMode set to **${game.mode}** (won by ${wasRunoff ? "runoff" : "vote"}).${hint}`,
   );
   broadcastPages(game);
 }

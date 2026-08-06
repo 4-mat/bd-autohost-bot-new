@@ -86,6 +86,7 @@ function makeGame(opts: { entities?: Entity[]; size?: number } = {}): Game {
     signupsOpen: false,
     votes: {},
     voteOpen: false,
+    voteRunoff: null,
   };
 }
 

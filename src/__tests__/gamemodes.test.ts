@@ -8,7 +8,9 @@ import {
   normalizeVoteMode,
   randomMapForMode,
   recommendedMaps,
+  runoffOptions,
   tallyVotes,
+  tieModes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
 import { getMapByName } from "../data/maps.js";
@@ -219,5 +221,59 @@ describe("tallyVotes", () => {
 
   test("returns empty for no votes", () => {
     expect(tallyVotes({})).toEqual([]);
+  });
+});
+
+describe("tieModes", () => {
+  test("returns null for a unique winner", () => {
+    expect(
+      tieModes([
+        { mode: "FFA", count: 3 },
+        { mode: "NTR", count: 1 },
+      ]),
+    ).toBeNull();
+  });
+
+  test("returns null for a single entry or no votes", () => {
+    expect(tieModes([])).toBeNull();
+    expect(tieModes([{ mode: "FFA", count: 2 }])).toBeNull();
+  });
+
+  test("returns both tied modes for a 2-way tie", () => {
+    expect(
+      tieModes([
+        { mode: "FFA", count: 2 },
+        { mode: "NTR", count: 2 },
+        { mode: "JUGG", count: 1 },
+      ]),
+    ).toEqual(["FFA", "NTR"]);
+  });
+
+  test("returns all tied modes for a 3-way tie", () => {
+    expect(
+      tieModes([
+        { mode: "FFA", count: 1 },
+        { mode: "NTR", count: 1 },
+        { mode: "JUGG", count: 1 },
+      ]),
+    ).toEqual(["FFA", "NTR", "JUGG"]);
+  });
+});
+
+describe("runoffOptions", () => {
+  test("filters VOTE_OPTIONS to the runoff modes", () => {
+    const opts = runoffOptions(["FFA", "NTR"]);
+    expect(opts.map((o) => o.id)).toEqual(["FFA", "NTR"]);
+  });
+
+  test("excludes modes not in the runoff", () => {
+    const opts = runoffOptions(["PvPJ"]);
+    expect(opts.map((o) => o.id)).toEqual(["PvPJ"]);
+    expect(opts[0].description.length).toBeGreaterThan(0);
+  });
+
+  test("keeps canonical VOTE_OPTIONS order", () => {
+    const opts = runoffOptions(["JUGG", "FFA"]);
+    expect(opts.map((o) => o.id)).toEqual(["FFA", "JUGG"]);
   });
 });
