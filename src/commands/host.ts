@@ -776,26 +776,26 @@ export function genPosSlots(
 }
 
 /**
- * Evenly-spread column anchors for `k` teammates along one side. k=1 anchors
- * at the left corner; k>=2 spreads from the left corner to the right corner,
- * so teammates stay as far apart as the side width allows.
+ * A tight corner cluster of `k` anchors: fills the smallest square block at
+ * the corner (row-major), so 3 teammates sit at a1/b1/a2, 4 at a 2x2 block,
+ * and larger teams spill along the edges — all staying adjacent in the corner.
  */
-function edgeAnchors(cols: number, k: number): number[] {
-  if (k <= 1) return [0];
-  const max = Math.max(0, cols - 1);
-  const out: number[] = [];
-  for (let i = 0; i < k; i++) {
-    out.push(Math.round((i * max) / (k - 1)));
+function cornerCluster(k: number): [number, number][] {
+  const out: [number, number][] = [];
+  const dim = Math.ceil(Math.sqrt(Math.max(1, k)));
+  for (let r = 0; r < dim && out.length < k; r++) {
+    for (let c = 0; c < dim && out.length < k; c++) {
+      out.push([r, c]);
+    }
   }
   return out;
 }
 
 /**
- * Symmetric team spawn anchors: team A is spread evenly along the top edge,
- * team B mirrored diagonally onto the bottom edge. Everyone is kept as far
- * apart as the map allows: 1v1 meets at opposite corners, 2v2 puts all four
- * players in the corners, and larger teams fan out along their own side
- * instead of clustering together.
+ * Symmetric team spawn anchors: team A clumps together in the top-left corner
+ * (a1/b1/a2...), team B clumps mirrored in the bottom-right corner. 1v1 meets
+ * at opposite corners; larger teams sit shoulder-to-shoulder facing each other
+ * across the map, which is how BD team games are played.
  */
 export function genTeamSlots(
   rows: number,
@@ -804,11 +804,10 @@ export function genTeamSlots(
   b: number,
 ): [top: [number, number][], bottom: [number, number][]] {
   const bottomRow = Math.max(0, rows - 1);
-  const top: [number, number][] = edgeAnchors(cols, a).map(
-    (c): [number, number] => [0, c],
-  );
-  const bottom: [number, number][] = edgeAnchors(cols, b).map(
-    (c): [number, number] => [bottomRow, Math.max(0, cols - 1) - c],
+  const rightCol = Math.max(0, cols - 1);
+  const top = cornerCluster(a);
+  const bottom = cornerCluster(b).map(
+    ([r, c]): [number, number] => [bottomRow - r, rightCol - c],
   );
   return [top, bottom];
 }
