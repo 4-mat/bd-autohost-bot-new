@@ -889,7 +889,7 @@ function handleInfo(game: Game, user: User, args: string) {
     // Show game info
     const lines = [
       `Game: ${game.id} | Mode: ${game.mode} | Phase: ${game.phase}`,
-      `Host: ${game.host} | Map: ${game.mapName}`,
+      `Host: ${game.host} | Map: ${game.mapName || "(none)"}`,
       `Players: ${game.entities.length} | Round: ${game.round}`,
     ];
     if (game.turnOrder.length > 0) {

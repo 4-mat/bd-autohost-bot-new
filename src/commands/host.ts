@@ -15,6 +15,7 @@ import {
 } from "../game/state.js";
 import { classes, weapons, loadGameData } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
+import { GAMEMODE_MAPS, modeIdFor, recommendedMaps } from "../data/gamemodes.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
 import type { AbilityData } from "../data/index.js";
@@ -139,8 +140,10 @@ function handleHost(room: Room, user: User) {
     room: room.id,
     host: user.name,
     entities: [],
-    map: generateDefaultMap(),
-    mapName: "Default",
+    // A freshly hosted game has NO map — the host must pick one
+    // (%setmap <name> or %setmap gen) before %start will work.
+    map: [],
+    mapName: "",
     turnOrder: [],
     turnIndex: 0,
     round: 1,
@@ -158,7 +161,10 @@ function handleHost(room: Room, user: User) {
 
   games.set(id, game);
   send(room.id, `**${user.name}** is now hosting! (Game ID: ${id})`);
-  sendPm(user.name, "Use %setgame, %addp, %setmap to configure, then %start.");
+  sendPm(
+    user.name,
+    "Use %setgame, %addp, %setmap to configure, then %start. Pick a map with %setmap <name> (see %listmaps) or %setmap gen.",
+  );
 }
 
 // -- .dehost - Remove the game -------------------------------------------------
@@ -189,7 +195,11 @@ function handleSetGame(room: Room, user: User, args: string) {
     return sendPm(user.name, "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.)");
 
   game.mode = mode.toUpperCase();
-  send(room.id, `Game mode set to **${game.mode}**.`);
+  const rec = recommendedMaps(game.mode);
+  send(
+    room.id,
+    `Game mode set to **${game.mode}**.${rec ? " Use %listmaps for recommended maps." : ""}`,
+  );
 }
 
 // -- .open / .openbsu / .close - Open/close signups ---------------------------
@@ -262,6 +272,12 @@ function handleGenPos(room: Room, user: User, args: string) {
   if (!game) return sendPm(user.name, "No active game in this room.");
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %genpos.");
+  }
+  if (game.map.length === 0) {
+    return sendPm(
+      user.name,
+      "No map set. Use %setmap <name> (see %listmaps) or %setmap gen first.",
+    );
   }
 
   const match = args
@@ -912,16 +928,18 @@ function handleSetMap(room: Room, user: User, args: string) {
   if (!mapName)
     return sendPm(
       user.name,
-      "Usage: %setmap <name>. Use %listmaps to see available maps.",
+      "Usage: %setmap <name> or %setmap gen [12|16|20]. Use %listmaps to see curated maps.",
     );
 
   const lower = mapName.toLowerCase();
 
-  // Try the curated map database first
+  // Curated map database
   const def = getMapByName(lower);
   if (def) {
     game.map = def.grid.map((row) => [...row]);
     game.mapName = def.displayName;
+    repositionEntities(game);
+    broadcastPages(game);
     send(
       room.id,
       `Map set to **${def.displayName}** (${def.rows}x${def.cols}).`,
@@ -929,26 +947,37 @@ function handleSetMap(room: Room, user: User, args: string) {
     return;
   }
 
-  // Fallback to procedural maps
-  if (lower === "default" || lower === "small") {
-    game.map = generateDefaultMap();
-    game.mapName = "Small (12x12)";
-  } else if (lower === "medium" || lower === "md") {
-    game.map = generateMediumMap();
-    game.mapName = "Medium (16x16)";
-  } else if (lower === "large" || lower === "lg") {
-    game.map = generateLargeMap();
-    game.mapName = "Large (20x20)";
-  } else {
-    return sendPm(
-      user.name,
-      "Unknown map. Use %listmaps to see available maps, or small/medium/large for procedural maps.",
+  // %setmap gen [12|16|20] — the ONLY procedural map trigger.
+  if (lower === "gen" || lower.startsWith("gen ")) {
+    const size = lower === "gen" ? 12 : parseInt(lower.slice(4));
+    if (
+      lower !== "gen" &&
+      (isNaN(size) || (size !== 12 && size !== 16 && size !== 20))
+    ) {
+      return sendPm(user.name, "Usage: %setmap gen [12|16|20].");
+    }
+    if (size === 16) {
+      game.map = generateMediumMap();
+      game.mapName = "Procedural (16x16)";
+    } else if (size === 20) {
+      game.map = generateLargeMap();
+      game.mapName = "Procedural (20x20)";
+    } else {
+      game.map = generateDefaultMap();
+      game.mapName = "Procedural (12x12)";
+    }
+    repositionEntities(game);
+    broadcastPages(game);
+    send(
+      room.id,
+      `Map set to **${game.mapName}** (${game.map.length}x${game.map[0].length}).`,
     );
+    return;
   }
 
-  send(
-    room.id,
-    `Map set to **${game.mapName}** (${game.map.length}x${game.map[0].length}).`,
+  return sendPm(
+    user.name,
+    "Unknown map. Use %listmaps to see curated maps, or %setmap gen for a procedural map.",
   );
 }
 
@@ -956,6 +985,23 @@ function handleSetMap(room: Room, user: User, args: string) {
 
 function handleListMaps(room: Room, user: User, args: string) {
   const filter = args.trim().toLowerCase();
+  const game = findGameForRoom(room.id);
+  const mode = game?.mode ?? "FFA";
+
+  // `%listmaps <mode>` shows the recommended pool for that mode
+  // (e.g. %listmaps pvp, %listmaps 1v1, %listmaps 2v2).
+  const modeId = modeIdFor(filter);
+  if (modeId) {
+    const byName = new Map(listMaps().map((m) => [m.name, m]));
+    const names = GAMEMODE_MAPS[modeId]
+      .map((n) => byName.get(n)?.displayName ?? n)
+      .join(", ");
+    return sendPm(
+      user.name,
+      `**Recommended ${modeId.toUpperCase()} maps:** ${names}`,
+    );
+  }
+
   let maps = listMaps();
 
   if (filter) {
@@ -975,6 +1021,19 @@ function handleListMaps(room: Room, user: User, args: string) {
     return sendPm(user.name, "No maps found matching that filter.");
   }
 
+  const lines: string[] = [];
+
+  // Plain `%listmaps` surfaces the designated pool for the current game mode.
+  if (!filter) {
+    const rec = recommendedMaps(mode);
+    if (rec && rec.length > 0) {
+      const byName = new Map(maps.map((m) => [m.name, m]));
+      const names = rec.map((n) => byName.get(n)?.displayName ?? n).join(", ");
+      lines.push(`**Recommended for ${mode}:** ${names}`);
+      lines.push("");
+    }
+  }
+
   // Group by size
   const bySize = new Map<string, typeof maps>();
   for (const m of maps) {
@@ -983,7 +1042,6 @@ function handleListMaps(room: Room, user: User, args: string) {
     bySize.get(key)!.push(m);
   }
 
-  const lines: string[] = [];
   lines.push(`**BD Maps** (${maps.length} total):`);
   for (const [size, sizeMaps] of [...bySize.entries()].sort()) {
     const names = sizeMaps.map((m) => m.displayName).join(", ");
@@ -1000,6 +1058,12 @@ function handleGenTurnOrder(room: Room, user: User) {
   if (!game) return sendPm(user.name, "No active game in this room.");
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %gento.");
+  }
+  if (game.map.length === 0) {
+    return sendPm(
+      user.name,
+      "No map set. Use %setmap <name> (see %listmaps) or %setmap gen first.",
+    );
   }
   if (game.entities.length === 0) {
     return sendPm(user.name, "No players in the game.");
@@ -1049,6 +1113,12 @@ function handleStart(room: Room, user: User) {
     return sendPm(user.name, "Only the host can use %start.");
   }
   if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.map.length === 0) {
+    return sendPm(
+      user.name,
+      "No map set. Use %setmap <name> (see %listmaps) or %setmap gen first.",
+    );
+  }
   if (game.entities.length < 2) {
     return sendPm(user.name, "Need at least 2 players to start.");
   }
@@ -1087,12 +1157,7 @@ function generateDefaultMap(): Terrain[][] {
   for (let r = 0; r < rows; r++) {
     const row: Terrain[] = [];
     for (let c = 0; c < cols; c++) {
-      // Borders are stop
-      if (r === 0 || r === rows - 1 || c === 0 || c === cols - 1) {
-        row.push(Terrain.Stop);
-        continue;
-      }
-      // Random terrain features
+      // Random terrain features (open edges, no Stop ring)
       const rng = Math.random();
       if (rng < 0.05) row.push(Terrain.Water);
       else if (rng < 0.08) row.push(Terrain.Forest);
@@ -1121,10 +1186,7 @@ function generateMediumMap(): Terrain[][] {
   for (let r = 0; r < rows; r++) {
     const row: Terrain[] = [];
     for (let c = 0; c < cols; c++) {
-      if (r === 0 || r === rows - 1 || c === 0 || c === cols - 1) {
-        row.push(Terrain.Stop);
-        continue;
-      }
+      // Random terrain features (open edges, no Stop ring)
       const rng = Math.random();
       if (rng < 0.06) row.push(Terrain.Water);
       else if (rng < 0.09) row.push(Terrain.Forest);
@@ -1147,10 +1209,7 @@ function generateLargeMap(): Terrain[][] {
   for (let r = 0; r < rows; r++) {
     const row: Terrain[] = [];
     for (let c = 0; c < cols; c++) {
-      if (r === 0 || r === rows - 1 || c === 0 || c === cols - 1) {
-        row.push(Terrain.Stop);
-        continue;
-      }
+      // Random terrain features (open edges, no Stop ring)
       const rng = Math.random();
       if (rng < 0.07) row.push(Terrain.Water);
       else if (rng < 0.1) row.push(Terrain.Forest);
@@ -1167,6 +1226,15 @@ function generateLargeMap(): Terrain[][] {
 }
 
 // -- Helpers -------------------------------------------------------------------
+
+// Re-place every entity on the (new) map so no one is left standing on a tile
+// that no longer exists after %setmap. findSpawnPosition skips occupied tiles,
+// so sequential assignment spreads entities out.
+function repositionEntities(game: Game): void {
+  for (const e of game.entities) {
+    e.pos = findSpawnPosition(game);
+  }
+}
 
 function findSpawnPosition(game: Game): [number, number] {
   const rows = game.map.length;
