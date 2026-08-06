@@ -81,6 +81,14 @@ describe("genPosSlots", () => {
     ]);
   });
 
+  it("places 3 players in a balanced triangle (top corners + bottom-center)", () => {
+    expect(genPosSlots(10, 10, 3)).toEqual([
+      [0, 0],
+      [0, 9],
+      [9, 5],
+    ]);
+  });
+
   it("places 4 players in all corners", () => {
     expect(genPosSlots(10, 10, 4)).toEqual([
       [0, 0],
@@ -99,15 +107,15 @@ describe("genPosSlots", () => {
 });
 
 describe("genTeamSlots", () => {
-  it("mirrors team 2 into the opposite corner (2v2)", () => {
+  it("spreads 2v2 so all four players sit in corners", () => {
     expect(genTeamSlots(10, 10, 2, 2)).toEqual([
       [
         [0, 0],
-        [0, 1],
+        [0, 9],
       ],
       [
         [9, 9],
-        [9, 8],
+        [9, 0],
       ],
     ]);
   });
@@ -121,16 +129,35 @@ describe("genTeamSlots", () => {
       [[0, 0]],
       [
         [9, 9],
-        [9, 8],
+        [9, 0],
       ],
     ]);
+  });
+
+  it("fans larger teams out along their own side (3v3)", () => {
+    const [top, bottom] = genTeamSlots(10, 10, 3, 3);
+    expect(top).toEqual([
+      [0, 0],
+      [0, 5],
+      [0, 9],
+    ]);
+    expect(bottom).toEqual([
+      [9, 9],
+      [9, 4],
+      [9, 0],
+    ]);
+    // Teammates on the same side are never adjacent.
+    for (let i = 1; i < top.length; i++) {
+      expect(Math.abs(top[i][1] - top[i - 1][1])).toBeGreaterThan(1);
+    }
   });
 });
 
 describe("placeTeamPlayers", () => {
   it("places team 1 in the top half and team 2 in the bottom half", () => {
-    const teamA = [makeEntity("P1"), makeEntity("P2")];
-    const teamB = [makeEntity("P3"), makeEntity("P4")];
+    // Distinct starting positions so stale entity pos never blocks the anchors.
+    const teamA = [makeEntity("P1", [5, 5]), makeEntity("P2", [5, 6])];
+    const teamB = [makeEntity("P3", [6, 5]), makeEntity("P4", [6, 6])];
     const game = makeGame([...teamA, ...teamB]);
     const out = placeTeamPlayers(game, teamA, teamB);
     expect(out).not.toBeNull();
@@ -145,6 +172,12 @@ describe("placeTeamPlayers", () => {
     }
     for (const [, pos] of out![0]) expect(pos[0]).toBeLessThan(5); // top half
     for (const [, pos] of out![1]) expect(pos[0]).toBeGreaterThanOrEqual(5); // bottom half
+
+    // 2v2: every player lands in a corner (max spread, equidistant pairs).
+    const corners = new Set(["0,0", "0,9", "9,0", "9,9"]);
+    for (const [, pos] of [...out![0], ...out![1]]) {
+      expect(corners.has(`${pos[0]},${pos[1]}`)).toBe(true);
+    }
   });
 
   it("returns null when no open tiles exist", () => {
@@ -152,6 +185,21 @@ describe("placeTeamPlayers", () => {
     const teamB = [makeEntity("P2")];
     const game = makeGame([...teamA, ...teamB], Terrain.Stop);
     expect(placeTeamPlayers(game, teamA, teamB)).toBeNull();
+  });
+
+  it("re-placing hits exact anchors even when entities already sit there (re-%genpos)", () => {
+    // Entities were previously placed at the 2v2 anchors; re-running genpos
+    // must NOT snap them to adjacent tiles because their old positions block
+    // the anchors. This covers the being-placed ignore set in findNearestOpenTile.
+    const teamA = [makeEntity("P1", [0, 0]), makeEntity("P2", [0, 9])];
+    const teamB = [makeEntity("P3", [9, 9]), makeEntity("P4", [9, 0])];
+    const game = makeGame([...teamA, ...teamB]);
+    const out = placeTeamPlayers(game, teamA, teamB);
+    expect(out).not.toBeNull();
+    const corners = new Set(["0,0", "0,9", "9,0", "9,9"]);
+    for (const [, pos] of [...out![0], ...out![1]]) {
+      expect(corners.has(`${pos[0]},${pos[1]}`)).toBe(true);
+    }
   });
 });
 
@@ -171,14 +219,17 @@ describe("placePlayers", () => {
     }
   });
 
-  it("avoids occupied tiles and places on distinct open tiles", () => {
+  it("avoids tiles occupied by entities that are not being placed", () => {
+    // The blocker is NOT in the placement list, so its spot stays occupied and
+    // the placed players must land on other open tiles.
     const blocker = makeEntity("P1", [0, 0]);
-    const players = [blocker, makeEntity("P2")];
-    const game = makeGame(players);
+    const players = [makeEntity("P2"), makeEntity("P3")];
+    const game = makeGame([blocker, ...players]);
     const out = placePlayers(game, players);
     expect(out).not.toBeNull();
     const keys = out!.map(([, p]) => `${p[0]},${p[1]}`);
     expect(new Set(keys).size).toBe(2);
+    expect(keys.includes("0,0")).toBe(false);
     expect(keys).toContain("9,9");
   });
 
@@ -186,5 +237,17 @@ describe("placePlayers", () => {
     const players = [makeEntity("P1"), makeEntity("P2")];
     const game = makeGame(players, Terrain.Stop);
     expect(placePlayers(game, players)).toBeNull();
+  });
+
+  it("re-placing hits exact anchors when entities already sit there (re-%genpos)", () => {
+    // Same re-%genpos case for FFA: previous positions on the anchors must not
+    // push the players to adjacent tiles.
+    const players = [makeEntity("P1", [0, 0]), makeEntity("P2", [9, 9])];
+    const game = makeGame(players);
+    const out = placePlayers(game, players);
+    expect(out).not.toBeNull();
+    const keys = out!.map(([, p]) => `${p[0]},${p[1]}`);
+    expect(keys).toContain("0,0");
+    expect(keys).toContain("9,9");
   });
 });
