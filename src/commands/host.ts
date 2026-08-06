@@ -20,6 +20,9 @@ import {
   modeIdFor,
   randomMapForMode,
   recommendedMaps,
+  normalizeVoteMode,
+  tallyVotes,
+  voteOptionsFor,
 } from "../data/gamemodes.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
@@ -110,6 +113,9 @@ export function hostCommand(
     case "close":
       handleClose(room, user);
       break;
+    case "endvote":
+      handleEndVote(room, user);
+      break;
     case "join":
       handleJoin(room, user, full);
       break;
@@ -162,6 +168,8 @@ function handleHost(room: Room, user: User) {
     chatLog: [],
     toasts: [],
     signupsOpen: false,
+    votes: {},
+    voteOpen: false,
   };
 
   games.set(id, game);
@@ -229,11 +237,67 @@ function handleClose(room: Room, user: User) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %close.");
   }
+  if (game.started) return sendPm(user.name, "Game already started.");
 
   game.signupsOpen = false;
-  send(room.id, "**Signups are now closed.**");
+
+  // Closing signups opens gamemode voting (unless there's nobody to vote).
+  const players = game.entities.filter((e) => !e.isMonster);
+  if (players.length >= 2) {
+    game.voteOpen = true;
+    game.votes = {};
+    send(
+      room.id,
+      "**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote <mode> (e.g. %vote 2v2).",
+    );
+  } else {
+    send(room.id, "**Signups are now closed.**");
+  }
   broadcastPages(game);
 }
+
+// -- .endvote - Close gamemode voting and apply the winner --------------------
+
+function handleEndVote(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %endvote.");
+  }
+  if (game.started) return sendPm(user.name, "Game already started.");
+  if (!game.voteOpen) {
+    return sendPm(user.name, "No gamemode vote is open. Close signups with %close to start one.");
+  }
+
+  game.voteOpen = false;
+  const tally = tallyVotes(game.votes);
+  game.votes = {};
+
+  if (tally.length === 0) {
+    send(room.id, "**Voting closed.** No votes were cast — pick a mode with %setgame.");
+    broadcastPages(game);
+    return;
+  }
+
+  const [top, second] = tally;
+  const tie = second && second.count === top.count;
+
+  const summary = tally.map((t) => `${t.mode}: ${t.count}`).join(" | ");
+  if (tie) {
+    send(room.id, `**Voting closed — TIE!** ${summary}\nHost, break the tie with %setgame <mode>.`);
+    broadcastPages(game);
+    return;
+  }
+
+  game.mode = top.mode.toUpperCase();
+  send(
+    room.id,
+    `**Voting closed.** ${summary}\nMode set to **${game.mode}** (won by vote).`,
+  );
+  broadcastPages(game);
+}
+
+// -- .vote <mode> - Cast/change a gamemode vote (in game.ts via gameCommand) --
 
 // -- .join <class>, <weapon> - Join an open game -------------------------------
 

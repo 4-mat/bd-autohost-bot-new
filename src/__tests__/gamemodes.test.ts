@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   GAMEMODE_MAPS,
   modeIdFor,
+  normalizeVoteMode,
   randomMapForMode,
   recommendedMaps,
+  tallyVotes,
+  voteOptionsFor,
 } from "../data/gamemodes.js";
 import { getMapByName } from "../data/maps.js";
 
@@ -78,5 +81,65 @@ describe("randomMapForMode", () => {
   test("returns undefined for unknown modes", () => {
     expect(randomMapForMode("solo")).toBeUndefined();
     expect(randomMapForMode("")).toBeUndefined();
+  });
+});
+
+describe("voteOptionsFor", () => {
+  test("filters exact-count modes by lobby size", () => {
+    expect(voteOptionsFor(2).map((o) => o.id)).toEqual([
+      "FFA",
+      "1v1",
+      "NTR",
+      "JUGG",
+    ]);
+    expect(voteOptionsFor(4).map((o) => o.id)).toEqual([
+      "FFA",
+      "2v2",
+      "NTR",
+      "JUGG",
+    ]);
+    expect(voteOptionsFor(6).map((o) => o.id)).toEqual([
+      "FFA",
+      "3v3",
+      "NTR",
+      "JUGG",
+    ]);
+  });
+
+  test("never offers a team mode the lobby can't fill", () => {
+    expect(voteOptionsFor(3).map((o) => o.id)).not.toContain("1v1");
+    expect(voteOptionsFor(3).map((o) => o.id)).not.toContain("2v2");
+    expect(voteOptionsFor(4).map((o) => o.id)).not.toContain("3v3");
+    expect(voteOptionsFor(1).length).toBe(0);
+  });
+});
+
+describe("normalizeVoteMode", () => {
+  test("resolves aliases and case", () => {
+    expect(normalizeVoteMode("ffa")).toBe("FFA");
+    expect(normalizeVoteMode("FFA")).toBe("FFA");
+    expect(normalizeVoteMode("2v2")).toBe("2v2");
+    expect(normalizeVoteMode("duel")).toBe("1v1");
+    expect(normalizeVoteMode("juggernaut")).toBe("JUGG");
+    expect(normalizeVoteMode("ntr")).toBe("NTR");
+  });
+
+  test("returns undefined for unknown modes", () => {
+    expect(normalizeVoteMode("solo")).toBeUndefined();
+    expect(normalizeVoteMode("")).toBeUndefined();
+  });
+});
+
+describe("tallyVotes", () => {
+  test("counts votes and sorts by count descending", () => {
+    const tally = tallyVotes({ P1: "FFA", P2: "2v2", P3: "2v2" });
+    expect(tally).toEqual([
+      { mode: "2v2", count: 2 },
+      { mode: "FFA", count: 1 },
+    ]);
+  });
+
+  test("returns empty for no votes", () => {
+    expect(tallyVotes({})).toEqual([]);
   });
 });
