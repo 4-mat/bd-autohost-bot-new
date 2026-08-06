@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { GAMEMODE_MAPS, modeIdFor, recommendedMaps } from "../data/gamemodes.js";
+import {
+  GAMEMODE_MAPS,
+  modeIdFor,
+  randomMapForMode,
+  recommendedMaps,
+} from "../data/gamemodes.js";
 import { getMapByName } from "../data/maps.js";
 
 describe("GAMEMODE_MAPS", () => {
@@ -55,5 +60,23 @@ describe("recommendedMaps", () => {
 
   test("returns undefined when the mode has no pool", () => {
     expect(recommendedMaps("unknown")).toBeUndefined();
+  });
+});
+
+describe("randomMapForMode", () => {
+  test("always picks a map from the mode's pool", () => {
+    for (const mode of ["ffa", "ntr", "jugg", "pvp", "1v1", "2v2", "duel"]) {
+      const pool = recommendedMaps(mode)!;
+      for (let i = 0; i < 20; i++) {
+        const pick = randomMapForMode(mode);
+        expect(pick, `${mode} pick must be from its pool`).toBeDefined();
+        expect(pool).toContain(pick);
+      }
+    }
+  });
+
+  test("returns undefined for unknown modes", () => {
+    expect(randomMapForMode("solo")).toBeUndefined();
+    expect(randomMapForMode("")).toBeUndefined();
   });
 });
