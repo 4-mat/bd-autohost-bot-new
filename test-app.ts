@@ -789,6 +789,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   #gui-header { background: #16213e; padding: 4px 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
   #gui-header span { color: #8888aa; font-size: 11px; }
   #gui-tabs { display: flex; gap: 4px; }
+  #gui-pinned { display: flex; align-items: center; }
   .gui-tab { padding: 2px 10px; background: #0f3460; border: 1px solid #333; border-radius: 3px; cursor: pointer; font-size: 10px; color: #8888aa; font-family: inherit; }
   .gui-tab.active { background: #00aaff; color: #fff; border-color: #00aaff; }
   #gui-content { flex: 1; overflow: auto; padding: 8px; background: #1a1a2e; }
@@ -882,6 +883,8 @@ const HTML_PAGE = `<!DOCTYPE html>
   <div id="gui-panel">
     <div id="gui-header">
       <span>GUI Preview</span>
+      <div id="gui-pinned"></div>
+      <span style="flex:1"></span>
       <div id="gui-tabs"></div>
     </div>
     <div id="gui-content">
@@ -1039,36 +1042,44 @@ guiContent.addEventListener('click', (e) => {
 function createTabs(tabs) {
   const previousTab = activeTab;
 
-  function renderTabs(container) {
+  function makeButton(tab) {
+    guiPages[tab] ??= "";
+    const button = document.createElement("div");
+    button.className = "gui-tab";
+    button.dataset.role = tab;
+    const label = tab === "players" ? "Connected users" : isMobile() && tab === "player" ? "Game" : tab.charAt(0).toUpperCase() + tab.slice(1);
+    button.textContent = label;
+    if (tab === "players") button.style.order = -1;
+    button.onclick = () => {
+      document.querySelectorAll(".gui-tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
+      activeTab = tab;
+      guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
+      if (isMobile() && mobileView === 'chat') setView('game');
+    };
+    return button;
+  }
+
+  function renderTabs(container, list) {
     container.innerHTML = "";
-    tabs.forEach(tab => {
-      guiPages[tab] ??= "";
-      const button = document.createElement("div");
-      button.className = "gui-tab";
-      button.dataset.role = tab;
-      const label = tab === "players" ? "Connected users" : isMobile() && tab === "player" ? "Game" : tab.charAt(0).toUpperCase() + tab.slice(1);
-      button.textContent = label;
-      if (tab === "players") button.style.order = -1;
-      button.onclick = () => {
-        document.querySelectorAll(".gui-tab").forEach(t => t.classList.remove("active"));
-        document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
-        activeTab = tab;
-        guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
-        if (isMobile() && mobileView === 'chat') setView('game');
-      };
-      container.appendChild(button);
-    });
+    (list ?? tabs).forEach(tab => container.appendChild(makeButton(tab)));
+  }
+
+  const pinned = document.getElementById("gui-pinned");
+  if (pinned) {
+    pinned.innerHTML = "";
+    if (tabs.includes("players")) pinned.appendChild(makeButton("players"));
   }
 
   const hc = document.getElementById("header-tabs");
   const gc = document.getElementById("gui-tabs");
-  if (gc) renderTabs(gc);
+  if (gc) renderTabs(gc, tabs.filter(t => t !== "players"));
   if (hc) renderTabs(hc);
 
   if (previousTab && tabs.includes(previousTab)) {
     document.querySelector('.gui-tab[data-role="' + previousTab + '"]')?.click();
   } else if (tabs.length > 0) {
-    document.querySelector(".gui-tab")?.click();
+    document.querySelector('.gui-tab[data-role="' + tabs[0] + '"]')?.click();
   }
 }
 
