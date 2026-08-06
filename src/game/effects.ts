@@ -534,7 +534,6 @@ function parseStatMods(lower: string): Effect[] {
     if (stat === "damage") stat = "dmg";
     if (stat === "mdef") stat = "md";
     if (stat === "pdef") stat = "pd";
-    if (stat === "def") stat = "pd";
 
     const rounds = match[4] ? parseInt(match[4]) : undefined;
 
@@ -746,6 +745,7 @@ function getBaseStat(entity: Entity, stat: string): number {
     case "mag":
       return entity.mag;
     case "pd":
+    case "def":
       return entity.pd;
     case "md":
       return entity.md;

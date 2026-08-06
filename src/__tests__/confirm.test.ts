@@ -1038,6 +1038,30 @@ describe("status passive effects", () => {
     expect(getEffectiveStat(e, "pd")).toBe(2);
   });
 
+  it("Curse reduces MD by 4", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "Alice",
+      md: 6,
+      statuses: [
+        { name: "Curse", damage: 3, rounds: 2, maxRounds: 2, removable: true },
+      ],
+    });
+    expect(getEffectiveStat(e, "md")).toBe(2);
+  });
+
+  it("DEF buff raises both PD and MD", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pd: 5,
+      md: 5,
+      buffs: [{ stat: "def", amount: 3, rounds: 1 }],
+    });
+    expect(getEffectiveStat(e, "pd")).toBe(8);
+    expect(getEffectiveStat(e, "md")).toBe(8);
+  });
+
   it("effective stats never drop below 0", () => {
     const e = makeEntity({
       num: "P1",
