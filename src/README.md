@@ -89,7 +89,7 @@ All game setup commands, routed by `hostCommand()`:
 | `%remp`              | `handleRemPlayer`    | Removes an entity                                                                                                                        |
 | `%sc`                | `handleSwitchClass`  | Changes an entity's class, recalculates stats + abilities; host any time, players may change their own until the game starts             |
 | `%sw`                | `handleSwitchWeapon` | Changes an entity's weapon, recalculates stats + abilities; host any time, players may change their own until the game starts             |
-| `%setlevel` / `%sl`  | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level                                                                                 |
+| `%setlevel` / `%sl`  | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level; `all` levels every player at once                                                                  |
 | `%setteam`           | `handleSetTeam`      | Changes an entity's team number                                                                                                          |
 | `%setmap`            | `handleSetMap`       | Sets a curated map by name, a random map from a gamemode pool (`%setmap pvp`), or `%setmap gen` for a procedural map (host starts with no map; %start requires one)                                                                             |
 | `%listmaps`          | `handleListMaps`     | Lists available maps (filterable by size); shows recommended maps for the game mode                                                                                        |
