@@ -407,7 +407,10 @@ function handleOpen(room: Room, user: User, highlight = false) {
 
   game.signupsOpen = true;
   const hl = highlight ? " (highlighted)" : "";
-  send(room.id, `**Signups are now open!**${hl} Use %join to join.`);
+  send(
+    room.id,
+    `**Signups are now open!**${hl} Use %join to join, or click [[SIGNUP]] to open the sign-up page.`,
+  );
   broadcastPages(game);
 }
 

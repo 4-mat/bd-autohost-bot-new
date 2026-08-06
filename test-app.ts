@@ -435,6 +435,7 @@ function refreshAllTabs() {
         JSON.stringify({
           type: "tabs",
           tabs,
+          signupsOpen: !![...games.values()][0]?.signupsOpen,
         }),
       );
 
@@ -588,6 +589,7 @@ wss.on("connection", (ws) => {
           JSON.stringify({
             type: "tabs",
             tabs: session.tabs,
+            signupsOpen: !![...games.values()][0]?.signupsOpen,
           }),
         );
 
@@ -795,6 +797,7 @@ wss.on("connection", (ws) => {
             JSON.stringify({
               type: "tabs",
               tabs: session.tabs,
+              signupsOpen: !![...games.values()][0]?.signupsOpen,
             }),
           );
 
@@ -1238,6 +1241,13 @@ function addLine(type, raw, name) {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+let switchToTab = null;
+let lastSignupsOpen = false;
+const SIGNUP_LINK = '<a href="#" data-tab="signin" style="color:#00aaff;text-decoration:underline;cursor:pointer">Sign Up Here</a>';
+// The [[SIGNUP]] token is only produced by the %open room message (a chat/quote
+// line); other message types render via textContent and would show it raw.
+const withSignupLink = (s) => String(s).split('[[SIGNUP]]').join(SIGNUP_LINK);
+
 guiContent.addEventListener('click', (e) => {
   const join = e.target.closest('button[name="join"]');
   if (join) {
@@ -1267,6 +1277,15 @@ guiContent.addEventListener('click', (e) => {
   if (!cmd) return;
   ws.send(JSON.stringify({ type: 'chat', text: cmd }));
 });
+
+// Clicking a chat link like "Sign Up Here" jumps to the matching GUI tab.
+chatMessages.addEventListener('click', (e) => {
+  const link = e.target.closest('a[data-tab]');
+  if (!link) return;
+  e.preventDefault();
+  if (switchToTab) switchToTab(link.dataset.tab, true);
+});
+
 function createTabs(tabs) {
   const previousTab = activeTab;
 
@@ -1277,6 +1296,7 @@ function createTabs(tabs) {
     guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
     if (isMobile() && mobileView === 'chat' && fromUser) setView('game');
   }
+    switchToTab = activateTab;
 
   function makeButton(tab) {
     guiPages[tab] ??= "";
@@ -1373,7 +1393,7 @@ function connect() {
   if (msg.type === 'history') {
     if (msg.lines.length > 0) {
       msg.lines.forEach((line) => {
-        if (line.type === 'chat' || line.type === 'quote') addLine(line.type, line.text);
+        if (line.type === 'chat' || line.type === 'quote') addLine(line.type, withSignupLink(line.text));
         else if (line.type === 'action') addLine('action', line.text, line.name);
         else if (line.type === 'react') addLine('react', line.user + ' ' + line.emote);
         else if (line.type === 'join') addLine('system', line.user + ' joined.');
@@ -1384,7 +1404,13 @@ function connect() {
     return;
   }
   if (msg.type === 'tabs') {
+    const justOpened = !!msg.signupsOpen && !lastSignupsOpen;
+    lastSignupsOpen = !!msg.signupsOpen;
     createTabs(msg.tabs);
+    // When signups open, pull non-hosts who aren't joined into the Sign In tab.
+    if (justOpened && msg.tabs.includes('signin') && !msg.tabs.includes('host') && switchToTab) {
+      switchToTab('signin', true);
+    }
     return;
   }
   if (msg.type === 'gui') {
@@ -1401,9 +1427,10 @@ function connect() {
     } else if (msg.type === 'leave') {
       addLine('system', msg.user + ' left.');
     } else if (msg.type === 'chat' || msg.type === 'quote') {
-      addLine(msg.type, msg.text);
+      const text = withSignupLink(msg.text);
+      addLine(msg.type, text);
       if (isMobile() && mobileView === 'game') {
-        showToast(msg.text);
+        showToast(text);
         unread++;
         updateBadge();
       }
