@@ -1168,6 +1168,34 @@ function handleSetLoadout(room: Room, user: User, args: string) {
 
 // -- .setlevel <entity>, <level> - Set entity level ----------------------------
 
+// Set an entity's class/weapon level, recomputing HP and abilities. Returns
+// the previous level.
+function applyEntityLevel(entity: Entity, level: number): number {
+  const classData = classes.get(toId(entity.className));
+  const weaponData = weapons.get(toId(entity.weaponName));
+  const maxhp =
+    (classData ? parseInt(classData.stats.hp) : 0) +
+    (weaponData ? parseInt(weaponData.stats.hp) : 0);
+  const oldLvl = entity.classLevel;
+  entity.classLevel = level;
+  entity.weaponLevel = level;
+  entity.curhp = Math.min(entity.curhp, maxhp);
+  entity.maxhp = maxhp;
+  entity.abilities = [
+    ...(classData
+      ? classData.abilities.filter((a) =>
+          hasAbility(a, level, !!entity.isJuggernaut),
+        )
+      : []),
+    ...(weaponData
+      ? weaponData.abilities.filter((a) =>
+          hasAbility(a, level, !!entity.isJuggernaut),
+        )
+      : []),
+  ] as any[];
+  return oldLvl;
+}
+
 function handleSetLevel(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
   if (!game) return sendPm(user.name, "No active game in this room.");
@@ -1178,44 +1206,41 @@ function handleSetLevel(room: Room, user: User, args: string) {
 
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 2 || !parts[0] || !parts[1]) {
-    return sendPm(user.name, "Usage: %setlevel <entity>, <level>");
+    return sendPm(user.name, "Usage: %setlevel <entity|all>, <level>");
   }
-
-  const entity = getEntity(game, parts[0]);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
   const level = parseInt(parts[1]);
   if (isNaN(level) || level < 1 || level > 10) {
     return sendPm(user.name, "Level must be 1-10.");
   }
 
-  // Recalculate HP from class + weapon base
-  const classData = classes.get(toId(entity.className));
-  const weaponData = weapons.get(toId(entity.weaponName));
-  if (!classData || !weaponData) {
-    return sendPm(user.name, "Could not look up class/weapon data.");
+  // %setlevel all, <level> — level every player in one go.
+  if (toId(parts[0]) === "all") {
+    const players = game.entities.filter((e) => !e.isMonster);
+    if (players.length === 0) {
+      return sendPm(user.name, "No players in the game.");
+    }
+    pushSnapshot(game);
+    const rows = players.map((e) => {
+      const oldLvl = applyEntityLevel(e, level);
+      return `${e.num} (${e.name}) ${oldLvl} -> ${level}`;
+    });
+    send(
+      room.id,
+      `**All ${players.length} player(s) set to level ${level}.** ${rows.join(" | ")}`,
+    );
+    broadcastPages(game);
+    return;
   }
 
-  const maxhp = parseInt(classData.stats.hp) + parseInt(weaponData.stats.hp);
-  const oldLvl = entity.classLevel;
-  entity.classLevel = level;
-  entity.weaponLevel = level;
-  entity.curhp = Math.min(entity.curhp, maxhp);
-  entity.maxhp = maxhp;
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
-  // Update abilities to match new level
-  entity.abilities = [
-    ...classData.abilities.filter((a) =>
-      hasAbility(a, level, !!entity.isJuggernaut),
-    ),
-    ...weaponData.abilities.filter((a) =>
-      hasAbility(a, level, !!entity.isJuggernaut),
-    ),
-  ] as any[];
-
+  pushSnapshot(game);
+  const oldLvl = applyEntityLevel(entity, level);
   send(
     room.id,
-    `${entity.num} (${entity.name}) level: ${oldLvl} -> ${level} (${maxhp} HP)`,
+    `${entity.num} (${entity.name}) level: ${oldLvl} -> ${level} (${entity.maxhp} HP)`,
   );
   broadcastPages(game);
 }
