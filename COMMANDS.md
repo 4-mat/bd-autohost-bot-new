@@ -122,9 +122,12 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%vs [player]`                      | View player stats.      |
 | `%vl [player]`                      | View player levels.     |
 | `%vi [player]`                      | View player items.      |
-| `%sc [player], [class]`             | Change player class (host any time; players can change their own until the game starts).    |
-| `%sw [player], [weapon]`            | Change player weapon (host any time; players can change their own until the game starts).   |
-| `%sco [player], [class], [weapon]`  | Set a player's class AND weapon in one go (host any time; players can change their own until the game starts). |
+| `%sc [class]`                       | Change YOUR class until the game starts.    |
+| `%sw [weapon]`                      | Change YOUR weapon until the game starts.   |
+| `%sco [class], [weapon]`            | Set YOUR class AND weapon in one go until the game starts. |
+| `%setclass [player], [class]`       | Host-only: set any player's class (any time).              |
+| `%setweapon [player], [weapon]`     | Host-only: set any player's weapon (any time).             |
+| `%setloadout [player], [class], [weapon]` | Host-only: set any player's class AND weapon (any time).     |
 | `%regp [player], [class], [weapon]` | Register a player.      |
 
 ### Loot/Progression Commands
