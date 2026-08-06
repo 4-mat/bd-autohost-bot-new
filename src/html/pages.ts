@@ -8,6 +8,7 @@ import {
   dist,
   DIRECTION_LABELS,
   parseFrequency,
+  formatChatTime,
   type Game,
   type Entity,
   type AbilityData,
@@ -64,10 +65,12 @@ const PLAYER_LABEL =
 function buildToasts(game: Game): string {
   if (game.toasts.length === 0) return "";
   const items = game.toasts
-    .map(
-      (e) =>
-        `<div class="toast"><b>${esc(e.user)}:</b> ${esc(e.message)}</div>`,
-    )
+    .map((e) => {
+      const timeTag = formatChatTime(e.time)
+        ? `<span style="color:#999">${formatChatTime(e.time)}</span> `
+        : "";
+      return `<div class="toast">${timeTag}<b>${esc(e.user)}:</b> ${esc(e.message)}</div>`;
+    })
     .join("");
   return `<div class="toast-wrap">${items}</div>`;
 }
