@@ -3,6 +3,7 @@ import {
   type Entity,
   type AbilityData,
   type StatusEffect,
+  Terrain,
   chebyshev,
   dealDamage,
   hasLineOfSight,
@@ -129,6 +130,12 @@ export interface UnknownEffect {
   text: string;
 }
 
+export interface TileEffect {
+  type: "tile";
+  terrain: number;
+  range: number;
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -148,6 +155,7 @@ export type Effect =
   | PhaseEffect
   | DelayLandEffect
   | MultiHitMod
+  | TileEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -208,7 +216,8 @@ const RESOURCE_NAMES = [
 function canonicalResource(name: string): string | null {
   const lower = name.toLowerCase();
   if (RESOURCE_NAMES.includes(lower)) return lower;
-  if (RESOURCE_NAMES.includes(lower.replace(/s$/, ""))) return lower.replace(/s$/, "");
+  if (RESOURCE_NAMES.includes(lower.replace(/s$/, "")))
+    return lower.replace(/s$/, "");
   return null;
 }
 
@@ -451,6 +460,13 @@ function parseClause(clause: string): Effect[] {
   // Shield: "Shield N for M rounds" or "N Shield/M"
   const shield = parseShield(lower);
   if (shield.length > 0) return shield;
+
+  // Tile placement: "Place X tiles" or "X tiles"
+  const tileEffect = parseTilePlacement(lower);
+  if (tileEffect) {
+    effects.push(tileEffect);
+    return effects;
+  }
 
   // Fallback: unknown
   effects.push({ type: "unknown", text: clause });
@@ -772,6 +788,51 @@ function parseShield(lower: string): Effect[] {
   return effects;
 }
 
+export function terrainFromName(name: string): number {
+  const map: Record<string, number> = {
+    normal: Terrain.Normal,
+    stop: Terrain.Stop,
+    water: Terrain.Water,
+    forest: Terrain.Forest,
+    ice: Terrain.Ice,
+    air: Terrain.Air,
+    sticky: Terrain.Sticky,
+    lava: Terrain.Lava,
+    broken: Terrain.Broken,
+    bone: Terrain.Bone,
+    stone: Terrain.Stone,
+    hearth: Terrain.Hearth,
+    boost: Terrain.Boost,
+  };
+  return map[name.toLowerCase().trim()] ?? Terrain.Normal;
+}
+
+export function parseTilePlacement(text: string): TileEffect | null {
+  const lower = text.toLowerCase().trim();
+  // "Place X tiles" or "Set X on tiles" or "Create X tiles"
+  const match = lower.match(
+    /(?:place|set|create|summon)\s+(\w+)\s+(?:terrain\s+)?tiles?(?:\s+range\s+(\d+))?/,
+  );
+  if (match) {
+    const terrain = terrainFromName(match[1]);
+    const range = match[2] ? parseInt(match[2]) : 1;
+    return { type: "tile", terrain, range };
+  }
+  // "X tiles" shorthand
+  const short = lower.match(/^(\w+)\s+tiles?(?:\s+range\s+(\d+))?$/);
+  if (short && short[1] !== "all" && short[1] !== "any") {
+    const terrain = terrainFromName(short[1]);
+    if (terrain !== Terrain.Normal) {
+      return {
+        type: "tile",
+        terrain,
+        range: short[2] ? parseInt(short[2]) : 1,
+      };
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -1046,9 +1107,12 @@ export function evaluateCondition(
   const aliveMatch = lower.match(/^target is (alive|dead)$/);
   if (aliveMatch) {
     const wantAlive = aliveMatch[1] === "alive";
-    return (target.curhp > 0) === wantAlive ? "then" : "else";
+    return target.curhp > 0 === wantAlive ? "then" : "else";
   }
-  if (lower === "target dies" || /target has been (killed|defeated)/.test(lower)) {
+  if (
+    lower === "target dies" ||
+    /target has been (killed|defeated)/.test(lower)
+  ) {
     return target.curhp <= 0 ? "then" : "else";
   }
 
@@ -1063,9 +1127,7 @@ export function evaluateCondition(
       .filter(Boolean);
     const entity = which === "user" ? user : target;
     for (const cand of candidates) {
-      const has = entity.statuses.some(
-        (s) => toId(s.name) === toId(cand),
-      );
+      const has = entity.statuses.some((s) => toId(s.name) === toId(cand));
       if (has) return "then";
     }
     return "else";
@@ -1450,7 +1512,11 @@ export function* applyEffectStream(
       }
 
       case "conditional": {
-        const { outcome, messages: condMsgs } = applyConditional(user, target, effect);
+        const { outcome, messages: condMsgs } = applyConditional(
+          user,
+          target,
+          effect,
+        );
         messages.push(...condMsgs);
         // "unknown" defaults to then-branch (legacy fallback). "else" without
         // an else-branch drops the sub-effects entirely.
@@ -1546,6 +1612,18 @@ export function* applyEffectStream(
           ability,
         );
         messages.push(...chosenMsgs.map((m) => `    ${m}`));
+        break;
+      }
+
+      case "tile": {
+        messages.push(
+          `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
+        );
+        break;
+      }
+
+      case "unknown": {
+        messages.push(`  ${effect.text}`);
         break;
       }
     }
@@ -1757,10 +1835,7 @@ export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
         // debuff for "-10% damage" arrives here with percent = -10.
         if (typeof e.percent === "number") {
           out.damagePercent += e.percent;
-        } else if (
-          typeof e.amount === "number" &&
-          e.percent === undefined
-        ) {
+        } else if (typeof e.amount === "number" && e.percent === undefined) {
           out.flatDamage += e.amount;
         }
       }
@@ -1793,7 +1868,10 @@ function classifyIgnore(what: string, out: CombatIgnoreMetadata): void {
     out.atkMag = true;
     return;
   }
-  if (lower.includes("outside damage factor") || lower.includes("outside factor")) {
+  if (
+    lower.includes("outside damage factor") ||
+    lower.includes("outside factor")
+  ) {
     out.outsideFactors = true;
     return;
   }
