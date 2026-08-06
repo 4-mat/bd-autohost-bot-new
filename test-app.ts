@@ -786,7 +786,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   #resize-handle { width: 4px; background: #333; cursor: col-resize; flex-shrink: 0; }
   #resize-handle:hover { background: #00aaff; }
   #gui-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  #gui-header { background: #16213e; padding: 4px 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+  #gui-header { background: #16213e; padding: 4px 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
   #gui-header span { color: #8888aa; font-size: 11px; }
   #gui-tabs { display: flex; gap: 4px; }
   #gui-pinned { display: flex; align-items: center; }
@@ -882,8 +882,8 @@ const HTML_PAGE = `<!DOCTYPE html>
   <div id="resize-handle"></div>
   <div id="gui-panel">
     <div id="gui-header">
-      <span>GUI Preview</span>
       <div id="gui-pinned"></div>
+      <span>GUI Preview</span>
       <span style="flex:1"></span>
       <div id="gui-tabs"></div>
     </div>
