@@ -236,6 +236,7 @@ function handleHost(room: Room, user: User) {
     log: [],
     snapshots: [],
     mode: "FFA",
+    modeChosen: false,
     phase: "setup",
     started: false,
     kills: {},
@@ -311,6 +312,7 @@ function handleSetGame(room: Room, user: User, args: string) {
   }
 
   game.mode = mode.toUpperCase();
+  game.modeChosen = true;
 
   // Manually setting a mode supersedes any ongoing vote / runoff.
   const voteCancelled = game.voteOpen;
@@ -477,6 +479,7 @@ function handleEndVote(room: Room, user: User) {
   game.voteOpen = false;
   game.voteRunoff = null;
   game.mode = top.mode.toUpperCase();
+  game.modeChosen = true;
   const hint = juggSetupHint(top.mode);
   send(
     room.id,
@@ -613,6 +616,7 @@ function handleGenPos(room: Room, user: User, args: string) {
     teamA.forEach((e) => (e.team = 1));
     teamB.forEach((e) => (e.team = 2));
     game.mode = `${a}V${b}`;
+    game.modeChosen = true;
     // Setting a mode directly supersedes any ongoing vote / runoff.
     game.voteOpen = false;
     game.votes = {};
@@ -663,6 +667,10 @@ function handleGenPos(room: Room, user: User, args: string) {
   if (n > 9) {
     return sendPm(user.name, "%genpos supports up to 9 players.");
   }
+
+  // Record the mode choice (FFA-style) so the header reflects it.
+  game.mode = mode.toUpperCase();
+  game.modeChosen = true;
 
   // Snapshot BEFORE clearing teams so %undo restores a prior team setup.
   pushSnapshot(game);

@@ -252,6 +252,8 @@ export interface Game {
   log: ActionLogEntry[];
   snapshots: string[];
   mode: string;
+  /** Whether the gamemode was explicitly chosen (%setgame, the vote, or %genpos). */
+  modeChosen?: boolean;
   phase: "setup" | "playing" | "ended";
   started: boolean;
   kills: Record<string, number>; // entity num -> kill count

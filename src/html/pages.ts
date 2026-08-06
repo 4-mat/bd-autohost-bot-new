@@ -175,9 +175,13 @@ export function buildHostPage(game: Game): string {
   const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game);
   const controls = buildControls(game);
+  // "FFA" is just the placeholder until a mode is actually chosen (%setgame, the
+  // vote, or %genpos) — don't claim a mode in the header before then.
+  const modeSeg =
+    game.modeChosen || game.started ? ` -- ${esc(game.mode)} --` : "";
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
-  <b>Game: ${esc(game.id)}</b> -- ${esc(game.mode)} -- Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
+  <b>Game: ${esc(game.id)}</b>${modeSeg} Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
   <hr>${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}<hr>${controls}
   ${buildToasts(game)}
 </div>`;
@@ -543,13 +547,14 @@ function buildActionLog(game: Game, collapsed = false): string {
 // -- Controls (Host) ----------------------------------------------------------
 
 function buildControls(game: Game): string {
-  return `<b>Controls</b><br>
+  return `<details style="margin-top:4px"><summary style="cursor:pointer;user-select:none"><b>Controls</b></summary>
 <div style="margin-top:4px">
   ${btn("%next", "Next Turn")}
   ${btn("%back", "Undo")}
   <span style="color:#888;margin:0 4px">|</span>
   ${btn("%r 1d20", "d20")}
-</div>`;
+</div>
+</details>`;
 }
 
 // -- Entity Stats (Player) ----------------------------------------------------
