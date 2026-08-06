@@ -1,0 +1,59 @@
+import { describe, expect, test } from "bun:test";
+import { GAMEMODE_MAPS, modeIdFor, recommendedMaps } from "../data/gamemodes.js";
+import { getMapByName } from "../data/maps.js";
+
+describe("GAMEMODE_MAPS", () => {
+  test("every designated map exists in the curated map list", () => {
+    for (const [mode, pool] of Object.entries(GAMEMODE_MAPS)) {
+      for (const name of pool) {
+        expect(
+          getMapByName(name),
+          `${mode} pool: "${name}" is not a curated map`,
+        ).toBeDefined();
+      }
+    }
+  });
+
+  test("pools are non-empty and have no duplicates", () => {
+    for (const [mode, pool] of Object.entries(GAMEMODE_MAPS)) {
+      expect(pool.length, `${mode} pool is empty`).toBeGreaterThan(0);
+      expect(new Set(pool).size, `${mode} pool has duplicates`).toBe(
+        pool.length,
+      );
+    }
+  });
+});
+
+describe("modeIdFor", () => {
+  test("resolves known modes and aliases", () => {
+    expect(modeIdFor("ffa")).toBe("ffa");
+    expect(modeIdFor("FFA")).toBe("ffa");
+    expect(modeIdFor("ntr")).toBe("ntr");
+    expect(modeIdFor("jugg")).toBe("jugg");
+    expect(modeIdFor("juggernaut")).toBe("jugg");
+    expect(modeIdFor("pvp")).toBe("pvp");
+    expect(modeIdFor("2v2")).toBe("pvp");
+    expect(modeIdFor("3v3")).toBe("pvp");
+    expect(modeIdFor("1v1")).toBe("1v1");
+    expect(modeIdFor("duel")).toBe("1v1");
+  });
+
+  test("returns undefined for unknown modes", () => {
+    expect(modeIdFor("solo")).toBeUndefined();
+    expect(modeIdFor("co-op")).toBeUndefined();
+    expect(modeIdFor("")).toBeUndefined();
+    expect(modeIdFor("  ")).toBeUndefined();
+  });
+});
+
+describe("recommendedMaps", () => {
+  test("returns the designated pool for a mode", () => {
+    expect(recommendedMaps("ffa")).toEqual(GAMEMODE_MAPS.ffa);
+    expect(recommendedMaps("2v2")).toEqual(GAMEMODE_MAPS.pvp);
+    expect(recommendedMaps("duel")).toEqual(GAMEMODE_MAPS["1v1"]);
+  });
+
+  test("returns undefined when the mode has no pool", () => {
+    expect(recommendedMaps("unknown")).toBeUndefined();
+  });
+});

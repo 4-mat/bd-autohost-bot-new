@@ -177,6 +177,7 @@ function sendSpectatorGui(username: string) {
   %addp Player1, Bard, Crossbow<br>
   %addp Player2, Cleric, Longbow<br>
   %setlevel P1, 3<br>
+  %setmap arena<br>
   %start
 </div>
 `) + spectatorWidget(findSession(username)?.team ?? 0);
@@ -594,6 +595,7 @@ wss.on("connection", (ws) => {
   %addp Player1, Bard, Crossbow<br>
   %addp Player2, Cleric, Longbow<br>
   %setlevel P1, 3<br>
+  %setmap arena<br>
   %start
 </div>
 `;
@@ -1076,6 +1078,7 @@ const HTML_PAGE = `<!DOCTYPE html>
         %addp Player1, Bard, Crossbow<br>
         %addp Player2, Cleric, Longbow<br>
         %setlevel P1, 3<br>
+        %setmap arena<br>
         %start
       </div>
     </div>
