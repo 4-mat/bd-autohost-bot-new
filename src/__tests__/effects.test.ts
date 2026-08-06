@@ -89,6 +89,7 @@ function makeGame(opts: {
     signupsOpen: false,
     votes: {},
     voteOpen: false,
+    voteRunoff: null,
   };
 }
 

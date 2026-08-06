@@ -13,7 +13,7 @@ import {
   type AbilityData,
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
-import { tallyVotes, voteOptionsFor } from "../data/gamemodes.js";
+import { runoffOptions, tallyVotes, voteOptionsFor } from "../data/gamemodes.js";
 
 // -- Premove Mode Tracking -----------------------------------------------------
 
@@ -69,13 +69,18 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
   if (!game.voteOpen) return "";
 
   const players = game.entities.filter((e) => !e.isMonster);
-  const options = voteOptionsFor(players.length);
+  // During a runoff only the tied modes are shown/votable.
+  const runoff = game.voteRunoff;
+  const options = runoff ? runoffOptions(runoff) : voteOptionsFor(players.length);
   const tally = new Map(tallyVotes(game.votes).map((t) => [t.mode, t.count]));
   const voted = Object.keys(game.votes).length;
 
   let html =
     '<div style="margin:6px 0;padding:6px 10px;border:1px solid #a0c;border-left:3px solid #a0c;background:rgba(160,0,204,0.08)">';
-  html += `<b style="color:#a0c">GAMEMODE VOTE</b> <span style="color:#888">(${voted}/${players.length} voted)</span><br>`;
+  const heading = runoff
+    ? `<b style="color:#c33">GAMEMODE VOTE — RUNOFF</b> <span style="color:#888">tie! only ${runoff.join(" / ")} count</span>`
+    : `<b style="color:#a0c">GAMEMODE VOTE</b>`;
+  html += `${heading} <span style="color:#888">(${voted}/${players.length} voted)</span><br>`;
   html += `<span style="color:#888;font-size:10px">New to a mode? Hover the buttons, or use %wt modes to learn them all.</span><br>`;
 
   if (options.length === 0) {

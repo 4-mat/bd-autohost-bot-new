@@ -328,3 +328,21 @@ export function tallyVotes(votes: Record<string, string>): {
     .map(([mode, count]) => ({ mode, count }))
     .sort((a, b) => b.count - a.count);
 }
+
+/**
+ * The modes tied for first place in a tally, or null when there is a unique
+ * winner (or no votes at all). Used to start a runoff vote on a tie.
+ */
+export function tieModes(tally: { mode: string; count: number }[]): string[] | null {
+  if (tally.length < 2) return null;
+  const [top, second] = tally;
+  if (second.count !== top.count) return null;
+  return tally.filter((t) => t.count === top.count).map((t) => t.mode);
+}
+
+/**
+ * Vote options available during a runoff — only the tied modes remain votable.
+ */
+export function runoffOptions(runoff: string[]): VoteOption[] {
+  return VOTE_OPTIONS.filter((o) => runoff.includes(o.id));
+}
