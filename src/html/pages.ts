@@ -225,6 +225,46 @@ function buildMapTable(game: Game, self: Entity | null): string {
   return html;
 }
 
+// -- Buff/Shield Display Helpers ----------------------------------------------
+
+const DISPLAY_STATS = new Set(["atk", "mag", "pd", "md", "eva", "mp"]);
+
+function statBonus(entity: Entity, stat: string): number {
+  let bonus = 0;
+  for (const b of entity.buffs) {
+    if (b.stat === stat) bonus += b.amount;
+    if (b.stat === "def" && (stat === "pd" || stat === "md")) bonus += b.amount;
+  }
+  return bonus;
+}
+
+function buildStatCell(entity: Entity, stat: string, base: number): string {
+  const bonus = statBonus(entity, stat);
+  const value = Math.max(0, base + bonus);
+  if (bonus === 0) return `<td style="padding:0px 8px">${value}</td>`;
+  const color = bonus > 0 ? "#c90" : "#c00";
+  return `<td style="padding:0px 8px"><i style="color:${color}">${value}</i></td>`;
+}
+
+function buildBuffSuffix(entity: Entity): string {
+  const parts: string[] = [];
+  for (const b of entity.buffs) {
+    if (DISPLAY_STATS.has(b.stat) || b.stat === "def") continue;
+    const sign = b.amount > 0 ? "+" : "";
+    parts.push(`${sign}${b.amount} ${b.stat.toUpperCase()}/${b.rounds}r`);
+  }
+  if (parts.length === 0) return "";
+  return ` <span style="color:#888;font-size:10px">(${parts.join(", ")})</span>`;
+}
+
+function buildHpCell(entity: Entity): string {
+  const shield = entity.statuses.find((s) => s.name.toLowerCase() === "shield");
+  if (!shield || shield.damage <= 0) {
+    return `${entity.curhp}/${entity.maxhp}`;
+  }
+  return `${entity.curhp} + <span style="color:#08c">(${shield.damage})</span>/${entity.maxhp}`;
+}
+
 // -- Player Data Table (Host) -------------------------------------------------
 
 function buildPlayerDataTable(game: Game): string {
@@ -286,7 +326,7 @@ title="${esc(e.className)}, ${esc(e.weaponName)}">
 </th>
 `;
 
-    html += `<th style="padding:0px 8px">${esc(e.name)}</th>`;
+    html += `<th style="padding:0px 8px">${esc(e.name)}${buildBuffSuffix(e)}</th>`;
 
     html += `
 <th style="padding:0px 8px">
@@ -294,13 +334,13 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
 </th>
 `;
 
-    html += `<th style="padding:0px 8px">${e.curhp}/${e.maxhp}</th>`;
-    html += `<th style="padding:0px 8px">${e.atk}</th>`;
-    html += `<th style="padding:0px 8px">${e.mag}</th>`;
-    html += `<th style="padding:0px 8px">${e.pd}</th>`;
-    html += `<th style="padding:0px 8px">${e.md}</th>`;
-    html += `<th style="padding:0px 8px">${e.eva}</th>`;
-    html += `<th style="padding:0px 8px">${e.mp}</th>`;
+    html += `<th style="padding:0px 8px">${buildHpCell(e)}</th>`;
+    html += buildStatCell(e, "atk", e.atk);
+    html += buildStatCell(e, "mag", e.mag);
+    html += buildStatCell(e, "pd", e.pd);
+    html += buildStatCell(e, "md", e.md);
+    html += buildStatCell(e, "eva", e.eva);
+    html += buildStatCell(e, "mp", e.mp);
 
     html += `</tr>`;
   }
