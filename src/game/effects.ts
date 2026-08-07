@@ -136,6 +136,18 @@ export interface TileEffect {
   range: number;
 }
 
+export interface PerEffect {
+  type: "per";
+  trigger: string;
+  effects: Effect[];
+}
+
+export interface TriggerEffect {
+  type: "trigger";
+  event: string;
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -156,6 +168,8 @@ export type Effect =
   | DelayLandEffect
   | MultiHitMod
   | TileEffect
+  | PerEffect
+  | TriggerEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -386,6 +400,28 @@ function parseClause(clause: string): Effect[] {
       type: "channel",
       stat: channelMatch[1],
       rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
+    });
+    return effects;
+  }
+
+  // Per: "Per hit: EFFECT" / "Per 5 CP: EFFECT" / "Per X: EFFECT"
+  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
+  if (perMatch) {
+    effects.push({
+      type: "per",
+      trigger: perMatch[1].trim(),
+      effects: parseEffects(perMatch[2]),
+    });
+    return effects;
+  }
+
+  // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
+  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
+  if (whenMatch) {
+    effects.push({
+      type: "trigger",
+      event: whenMatch[1].trim(),
+      effects: parseEffects(whenMatch[2]),
     });
     return effects;
   }
@@ -1637,6 +1673,25 @@ export function* applyEffectStream(
         break;
       }
 
+      case "per": {
+        // Per-hit/Per-X triggers are evaluated during resolution based on
+        // their trigger condition (e.g. "Per hit: lose 2 Blood.").
+        // Parsed but applied separately.
+        messages.push(
+          `  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`,
+        );
+        break;
+      }
+
+      case "trigger": {
+        // When-X triggers fire when their event condition is met.
+        // Parsed but applied separately (e.g. "When user damages a foe: heal 1/8").
+        messages.push(
+          `  [When ${effect.event}]: ${summariseEffects(effect.effects)}`,
+        );
+        break;
+      }
+
     }
   }
 
@@ -1650,6 +1705,11 @@ export function* applyEffectStream(
  * -- this matches the legacy "fan out" log and lets unit tests assert on the
  * output without driving interaction.
  */
+/** Join sub-effect summaries into a single string. */
+function summariseEffects(effects: Effect[]): string {
+  return effects.map(summariseEffect).join(", ");
+}
+
 function drainApplyStream(
   gen: Generator<EffectChoosePrompt, string[], string>,
 ): string[] {
@@ -1724,6 +1784,10 @@ function summariseEffect(eff: Effect): string {
       return `if [${eff.condition}]`;
     case "delayLand":
       return "delay attacks always land";
+    case "per":
+      return `per ${eff.trigger} (...)`;
+    case "trigger":
+      return `when ${eff.event} (...)`;
     case "unknown":
       return eff.text.slice(0, 40);
   }
