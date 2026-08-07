@@ -14,8 +14,8 @@ import {
   type AbilityData,
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
-import { getEffectiveStat } from "../game/resolve.js";
-import { classes, weapons } from "../data/index.js";
+import { eva43 } from "../game/resolve.js";
+import { getVersionData } from "../data/version43.js";
 import {
   runoffOptions,
   tallyVotes,
@@ -279,13 +279,14 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   // (e.g. after the gamemode vote decides the mode, before the map is set).
   let loadout = "";
   if (!game.started) {
-    const classOpts = [...classes.values()]
+    const data = getVersionData(game.version);
+    const classOpts = [...data.classes.values()]
       .map(
         (c) =>
           `<option value="${esc(c.name)}"${c.name === entity.className ? " selected" : ""}>${esc(c.name)}</option>`,
       )
       .join("");
-    const weaponOpts = [...weapons.values()]
+    const weaponOpts = [...data.weapons.values()]
       .map(
         (w) =>
           `<option value="${esc(w.name)}"${w.name === entity.weaponName ? " selected" : ""}>${esc(w.name)}</option>`,
@@ -504,8 +505,8 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
     html += buildStatCell(e, "pd", e.pd);
     html += buildStatCell(e, "md", e.md);
     if (is43) {
-      const pe = Math.floor(getEffectiveStat(e, "pd") / 10);
-      const me = Math.floor(getEffectiveStat(e, "md") / 10);
+      const pe = eva43(e, "Physical");
+      const me = eva43(e, "Magical");
       html += `<td style="padding:0px 8px">${pe}/${me}</td>`;
     } else {
       html += buildStatCell(e, "eva", e.eva);

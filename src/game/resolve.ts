@@ -50,7 +50,7 @@ function defensiveStat(entity: Entity, damageType: string): number {
 }
 
 // BD 4.3 evasion: physical uses PE (PD/10), magical uses ME (MD/10), max 9.
-function eva43(entity: Entity, damageType: string): number {
+export function eva43(entity: Entity, damageType: string): number {
   const base =
     damageType === "Physical"
       ? getEffectiveStat(entity, "pd")

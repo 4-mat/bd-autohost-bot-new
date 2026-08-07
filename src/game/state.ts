@@ -151,7 +151,12 @@ export function parseFrequency(frequency: string) {
 
   if (f.includes("every other turn") || f.includes("eot")) {
     cooldown = 2;
-  } else if (f.includes("every third turn") || f.includes("e3t")) {
+  } else if (
+    f.includes("every third turn") ||
+    f.includes("every two turns") ||
+    f.includes("e3t") ||
+    f.includes("e2t")
+  ) {
     cooldown = 3;
   }
 
