@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   map-pr:
-    if: startsWith(github.event.issue.title, 'Map: ')
+    if: "${{ startsWith(github.event.issue.title, 'Map: ') }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +40,11 @@ jobs:
           MODES=$(printf '%s' "$BODY" | sed -n 's/^Modes:[[:space:]]*//p' | head -1)
           if [ -z "$CONTENT" ]; then
             gh issue comment $N --body "Couldn't find the map text (a \`\`\`txt\`\`\` code block) in the issue body."
+            exit 1
+          fi
+          ERR="$(CONTENT="$CONTENT" NAME="$NAME" node -e 'const MC = require("./mapeditor/mapcore.cjs"); try { MC.parseTxt(process.env.CONTENT, process.env.NAME + ".txt"); } catch (e) { console.error(e.message); process.exit(1); }' 2>&1)" || true
+          if [ -n "$ERR" ]; then
+            gh issue comment $N --body "The map text didn't pass validation — **$ERR** (same rules as the bot's \`maps/\` import). Fix the issue body and reopen."
             exit 1
           fi
           if git cat-file -e "HEAD:maps/$NAME.txt" 2>/dev/null; then
