@@ -27,8 +27,15 @@ jobs:
           set -euo pipefail
           N=${{ github.event.issue.number }}
           TITLE=$(gh api repos/${{ github.repository }}/issues/$N --jq .title)
-          BODY=$(gh api repos/${{ github.repository }}/issues/$N --jq .body)
-          NAME=$(printf '%s' "$TITLE" | sed 's/^Map: //' | sed 's/[[:space:]]*$//' | tr -d '\r')
+          BODY=$(gh api repos/${{ github.repository }}/issues/$N --jq .body | tr -d '\r')
+          NAME=$(printf '%s' "$TITLE" | sed 's/^Map: //' | sed 's/[[:space:]]*$//')
+          NAME_SAFE=$(printf '%s' "$NAME" | tr -cd 'a-zA-Z0-9_-')
+          if [ "$NAME_SAFE" != "$NAME" ]; then
+            gh issue comment $N --body "Map name **$NAME** has characters that aren't allowed in file names (letters, numbers, - and _ only). Rename it and open a new proposal."
+            gh issue close $N
+            exit 0
+          fi
+          NAME=$NAME_SAFE
           CONTENT=$(printf '%s' "$BODY" | awk '/^```txt/{f=1;next} f&&/^```/{f=0} f{print}')
           if [ -z "$CONTENT" ]; then
             gh issue comment $N --body "Couldn't find the map text (a \`\`\`txt\`\`\` code block) in the issue body."
@@ -39,9 +46,14 @@ jobs:
             gh issue close $N
             exit 0
           fi
+          BRANCH="map/$(printf '%s' "$NAME" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')"
+          if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            gh issue comment $N --body "A pull request for **$NAME** is already open — closing this duplicate proposal."
+            gh issue close $N
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          BRANCH="map/$(printf '%s' "$NAME" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')"
           git checkout -b "$BRANCH"
           printf '%s\n' "$CONTENT" > "maps/$NAME.txt"
           git add "maps/$NAME.txt"
