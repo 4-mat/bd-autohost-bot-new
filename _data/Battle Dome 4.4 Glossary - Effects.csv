@@ -1,0 +1,20 @@
+Term,Description
+Statuses,
+"Damaging statuses deal damage just before the affected entity's turn. They do not stack together, even if they are the same type. If an entity currently has a damaging status, they cannot be affected by a new one unless the new one is unremovable and the old one isn’t, in which case the new status overrides the old one. A damaging status is typically denoted with X (Status)/Y, which means the status deals X damage and has a duration of Y rounds. A Non-Damaging Status is typically denoted with (Status)/Y, which means the status has a duration of Y rounds. Reapplying a non damaging status restarts the status with its new specified duration.",
+Damaging Statuses,
+Bleed,Reduces damage by 5.
+Burn,Reduces accuracy by 2.
+Curse,Reduces Defence by 4.
+Poison,Reduces Evasions by 2.
+Non-Damaging Statuses,
+Confusion,"If the affected player rolls 16+ for accuracy while under the effects of Confusion, the user takes their higher offensive stat (ATK/MAG) in damage. This damage cannot be taken more than once for multi-hit moves."
+Cripple,Cripple is denoted with X Cripple/Y. The affected player loses X HP for every tile they willingly move while affected. This effect lasts for Y rounds.
+Root,The affected player is unable to use their movement action while affected.
+Seal,"The affected player can only use Basic Abilities other than Attack of Opportunity, unless the move states it can be used while sealed. Passives are unaffected."
+Slow,"The affected player can only move up to half their MP stat, rounded up."
+Stun,"The affected player is unable to use any action, including reactions, until the effect wears off. Self-inflicted stun cannot be removed or suppressed in any way."
+Other Effects,
+Shield,"Whenever a player with a Shield would take damage, the Shield does instead until it runs out of HP or its duration ends. While a player has a shield, abilities that target them cannot inflict non-damaging statuses. This does not remove current ones."
+Buff / Debuff,"Buffs are always underlined and Debuffs are always italicised in ability effects.
+(In general, a Buff or Debuff is a finite duration effect that increases or decreases an entity's stats, accuracy, or damage.)"
+,
