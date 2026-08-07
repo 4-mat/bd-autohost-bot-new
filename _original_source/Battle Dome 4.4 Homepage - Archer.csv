@@ -1,0 +1,74 @@
+Name,Lv.,Frequency,MR,Damage,,,Target,,,Effect
+,,,,Roll,Type,Action,Amount,Group,Range,
+Basic Abilities,,,,,,,,,,
+Basic Attack,B,Every Turn,2,1d10+2,Physical or Magical,Standard,1,Foe,Melee,"This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+Basic Movement,B,Every Turn,-,-,-,Movement,-,Self,-,"The user spends MP to move an equal amount of tiles.
+(For all purposes, Basic Movement is not an ability, but is still an action.)"
+Dash,B,Every Turn,-,-,-,Full,-,Self,-,The user spends MP to move up to x1.5 that amount of tiles (rounded down).
+Backstep,B,Passive,-,-,-,-,-,Self,-,"During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+Attack of Opportunity,B,Every Turn,2,1d10+2,Physical or Magical,Reaction,1,Foe,Melee,This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)
+Archer Abilities,,,,,,,,,,
+,,,,,,,,,,
+"Crossbow (Zuko743, Elissem)",,,,,,,,,,
+65 HP | 15 ATK | 10 MAG | 3 PDEF | 3 MDEF | 1 EVA | 2 MP ,,,,,,"""A weapon with increased effectiveness the more you hunt an enemy down.""",,,,
+Hunter's Mark,1,Passive,-,-,-,-,-,-,-,"When the user's Crossbow attack resolves, targets of that attack each gain one Mark. The user's attacks deal +1d4 damage for every Mark on any one of its targets. Marks only apply to their user's abilities."
+Arrow Flurry,1,Every Turn,3,2d8+7,Physical,Standard,1,Foe,Range 6,"If the original target has a Mark, this move has Splash 1. If the target has 3+ Marks, this move instead has Splash 2."
+ Cursed Bolts,2,EoT,3,2d8+4,Magical,Standard,1,Foe,Line 6,"The target is inflicted with 3X Curse/1, where X is Marks on the target. If the target has 3+ Marks, this move ignores negative outside damage factors."
+Arrow Net,3,E3T,4,3d8+4,Physical,Standard,1,Foe,Range 6,"Before damage, the target takes 3 damage every time they gain a Mark from the user for one round."
+Pierce,4,EoT,5,2d8+5,Physical,Standard,AoE,Foes,Pierce 6,"If a target has 1+ Marks, this move ignores evasions and 1/4 DEF. If a target has 2+ Marks, this move also ignores negative accuracy modifiers and ignores 1/2 DEF instead."
+Bolt Compaction,5,Twice/EoT,-,-,-,Free,1,Self,-,"This turn, the user negates the secondary effects of their Standard Crossbow attacks. Next turn, regardless of if the negated attack hit, their first Standard attack has +1 dice and the negated effects."
+Quick Scope,5,Twice/EoT,3,1d4+4,Physical,Swift ,1,Foe,Range 6,"This move ignores ATK/MAG, half of the target's DEF, and outside damage factors (except Hunter's Mark)."
+Explosive Shot,6,Once,4,2d8+2,Physical,Standard,1,Foe,Range 6,"The target holds a ""Bomb"". If a foe with a Bomb targets another foe (including their allies) they transfer the Bomb to one of their targets.
+After one round or when the holder dies, the Bomb detonates and deals Xd4 Bomb damage to foes in the Bomb's Burst 1. X = the foe who held the Bomb with the most Marks."
+Tornado Bolt,7,Twice/EoT,4,1d8+4,Magical,Standard,1,Foe,Line 6,"This move has Push X equal to 1 + # of Marks on the target. If the target cannot be pushed the full distance, they gain +1 Mark."
+Shadow Quiver,8,Once,-,-,-,Swift ,-,Self,-,"The user's next standard attack becomes Magical, treats non-player obstructions as Air tiles, and ignores non-targets. This attack loses 2 damage per Air tile passed through."
+Serrated Arrows,9,Twice/E3T,4,2d8+5,Physical,Standard,1,Foe,Range 6,The target is inflicted with X Bleed/1 equal to half of the damage from this attack's Hunter's Mark.
+Final Hour ,10,Once,-,-,-,Free ,1,Self,-,"On the user's next attack, Hunter's Mark has +4 dice faces."
+Bolt Arsenal,EX1,Every Turn,-,-,-,Trigger,-,Self,-,"When they use a single-target Standard Crossbow attack, the user chooses one Bolt:
+Bounty Bolt: The target additionally gains half the Marks of the latest foe that died.
+Split-Head Bolt: The attack targets another foe, but loses Splash.
+Reeling Bolt: The target is pulled to a tile in the user's Line 3-6 (in the direction of the attack).
+These Bolts can only be used once until refresh. As a Swift action, refresh these Bolts."
+Quiver of Thunder,EX2,Once,-,-,-,Free,AoE,Foes,Global,"For one round, foes can only target entities in their Line 8. If they attack the user in Melee, they gain +1 Mark."
+"Longbow (Salient, Felucia)",,,,,,,,,,
+60 HP | 19 ATK | 13 MAG | 0 PDEF | 2 MDEF | 0.6 EVA | 0 MP ,,,,,,"""A magical bow with massive range and a few tricks up its sleeve for melee combat.""",,,,
+Bound Bow,1,Passive,-,-,-,-,-,-,-,"The user's Physical attacks become Magical when they target at least one entity at Range 3+. Once per turn, when the user attacks at Range 1-2, the user gains +3 DEF/1."
+Swift Shot,1,Every Turn,3,2d10+7,Physical,Standard,1,Foe,Range 10,"If the target is at Range 7+, this move critical hits on 14+. If the target is at under Range 3, gain +1 MP for 2 rounds."
+Crippling Shot,2,Every Turn,3,2d8+5,Physical,Standard,1,Foe,Range 10,"This move's effect changes based on the Range it is used on.
+1-2: This move inflicts Slow/1.
+3+: This move inflicts 2 Cripple/1 on accuracy rolls of 14+.
+7+: This move inflicts Cripple regardless of accuracy."
+Blessed Arrow,3,Every Turn,3,2d10+2,Physical,Standard,1,Foe,Range 10,"For one round, all healing and buffs received or given by allies (including self) within Star 2 of the target is increased by x1.25, and any debuffs given to foes within Star 2 of the target are increased by x1.25 (these effects do not stack). As a non-damaging Standard, this move is 1/Tile/Range 10."
+Scatter Shot,4,EoT,4,2d10+5,Physical,Standard,1 or AoE,Foe(s),Range 10 or Burst 1,"If the original target is at Range 7+, this move gains Splash 1. "
+Dispell Bow,5,E3T,-,-,-,Free,1,Self,-,"This turn, the user has +2 MP and the user's ranged attacks have their Range reduced to 3 . Next turn, the user has +1 MP and the user's ranged attacks have their Range reduced to 6. "
+Arcane Shot,6,Twice/EoT,5,3d10+6,Magical,Standard,1,Foe,Range 10,"If the target is at under Range 3, this move has Push 3. If the target is at Range 7+, this move ignores up to 10 DEF."
+Chase Arrow,7,Twice/EoT,3,1d10+5,Physical,Standard,1,Foe,Homing 10,"Targets must be within 8 tiles of the user. This move may target any foes on the path towards the original target, so long as the path taken doesn't exceed the move's range. Damage to these foes does not add ATK/MAG and ignores DEF."
+Volley,8,Twice/EoT,4,"1d10+5
+(Double Hit)",Physical,Standard,1,Foe,Range 10,"If the target is 7+ tiles away this move gains +1 hit, if there are any foes within Splash 1 of the original target, this move gains an additional +2 hits. These bonus hits each target a random foe (including ice/stone tiles) in Splash 1 from the original target (including the original target), each apply half of the targets' DEF, and do not add ATK/MAG."
+Fireworks,9,Once,5,4d8+4,Physical,Standard,1,Foe,Range 10,"If the target is at Range 7+, this move has Bomb dice. If the target is under Range 3, before damage, Bound Bow's bonuses become +5 DEF/1 and +1 MP/1 until the user attacks at Range 3+."
+Sniper's Focus,10,Every Turn,-,-,-,Trigger,-,Self,-,"This turn, the user's Standard actions are Full actions and their Range 7+ effects trigger at Range 4+."
+Bound Gauntlet,EX1,Passive,-,-,-,-,-,Self,-,"After dealing damage with a physical attack, deal magic damage equal to the damage (after subtracting DEF) to a different enemy in Melee range (if one exists). After dealing damage with a magical attack, your next physical attack ignores 5 DEF and cannot miss."
+Tactical Sniper,EX2,Passive,-,-,-,-,-,Self,-,"At the start of the game, designate one foe as the Bounty. Attacks against the Bounty treat obstructions as Air tiles and have +1 range. Melee attacks against the Bounty gain +1 dice. When the Bounty dies, immediately designate a new Bounty."
+"Shortbow (bro torterra, Felucia)",,,,,,,,,,
+60 HP | 13 ATK | 11 MAG | 2 PDEF | 1 MDEF | 0.3 EVA | 3 MP ,,,,,,"""A high consistency weapon that boosts its own accuracy. The brave may instead sacrifice accuracy for a high chance at deadly crits.""",,,,
+Hawkeye,1,Passive,-,-,-,-,-,Self,-,"The user has +2 ACC on all attacks. As a Trigger action before a Standard, they may sacrifice up to 5 ACC to gain an equivalent amount of CR until the start of their next turn."
+Blitz,1,Every Turn,3,"1d8+1
+(Double Hit)",Physical,Standard,1,Foe,Range 4,"This attack critical hits on 18+. For each successful hit, the user gains +4 damage on their next attack."
+Windmill,2,EoT,4,2d8+4,Physical,Standard or Swift,AoE,Any,Burst 1,"The non-Foe targets gain either +X ACC or CR/1, where X is the amount of players in range. As a Swift, buffs are halved. This is only an attack as a Standard against Foes."
+Hook Shot,3,E3T,4,4d6+2,Magical,Standard,1,Foe or Ally,Range 4,"If this attack has at least +2 CR, the user may pull themselves within Range 2 of the target or the target within Range 2 of the user. This is not an attack if used on Allies."
+Splinter,4,EoT,4,"2d8+0 
+(Double Hit)",Physical,Standard,1,Foe,Range 4,Each critical hit on this attack gives the user's next attack -1.5 dice faces and +1 base dice. Dice faces round up and cannot go below 1.
+Salvo ,5,EoT,4,"1d6+4
+(Triple Hit)",Magical,Standard,1,Foe,Range 4,The user may target different foes with each hit. This adds ATK/MAG and applies damage effects to each target.
+Trick Shot,6,Twice/EoT,4,3d8+3,Physical,Standard,1,Foe,Range 4,"If this move has +ACC, it gains Splash 1. If this move has at least +4 ACC, it becomes Magical and gains Splash 2."
+Surge,7,EoT,5,"1d4+3
+(Triple Hit)",Magical,Standard,1,Foe,Range 4,Each critical hit on this attack gives the user's next multi-hit attack +1 hit.
+Venom Shot,8,Twice/EoT,4,2d8+3,Physical,Standard,1,Foe,Range 4 ,"This attack treats non-Hawkeye +ACC as +CR and inflicts Poison/1 equal to 2 * the +CR on this attack. If this is 12+, halve poison damage and extend it by one round."
+Sagittarian Pride,9,Twice,4,2d6-1,Magical,Standard,AoE,Foes,Pierce 4,This attack has hits equal to the number of moves targets used since the start of the user's last turn.
+Arrow Storm,10,Once,5,"2d8-4
+(Quad. Hit)",Physical,Standard,1,Foe,Range 4,This attack critical hits on 18+.
+Shrapnel Tip,EX1,EoT,5,1d8-2 (Triple Hit),Physical,Standard,1,Foe,Range 4,"Each time this attack critical hits, it gains an additional hit with MR3 and a roll of 2d3+0."
+Overdraw,EX2,EoT,4,4d8+0,Physical,Standard,AoE,Foes,Pierce 4,"The user's next attack gains one of the following bonuses:
+If single-hit, the non-duration numbers in its effect are doubled, including X.
+If multi-hit, its +ACC is instead treated as +dice faces on its accuracy rolls."
+,,,,,,,,,,
