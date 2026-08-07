@@ -341,6 +341,61 @@
 	}
 
 	/**
+	 * Move a rectangular block of tiles (and any tokens inside it) by (dr, dc).
+	 * Mutates `map` in place. Returns the selection box at its new position
+	 * ({r0, c0, r1, c1}, inclusive) or null if the move would go out of bounds.
+	 * A token from outside the block sitting on a destination cell is displaced
+	 * (the moved token wins).
+	 */
+	function translateBlock(map, sel, dr, dc) {
+		dr = Math.round(dr) || 0;
+		dc = Math.round(dc) || 0;
+		if (!dr && !dc) return { r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 };
+		const s = {
+			r0: Math.min(sel.r0, sel.r1), c0: Math.min(sel.c0, sel.c1),
+			r1: Math.max(sel.r0, sel.r1), c1: Math.max(sel.c0, sel.c1)
+		};
+		const w = s.r1 - s.r0 + 1, h = s.c1 - s.c0 + 1;
+		const nr0 = s.r0 + dr, nc0 = s.c0 + dc;
+		if (nr0 < 0 || nc0 < 0 || nr0 + w > map.rows || nc0 + h > map.cols) return null;
+
+		// Snapshot the block (tiles + tokens inside it).
+		const block = [];
+		for (let r = s.r0; r <= s.r1; r++)
+			for (let c = s.c0; c <= s.c1; c++)
+				block.push(map.tiles[r][c]);
+		const blockTokens = [];
+		for (const name in map.tokens) {
+			const t = map.tokens[name];
+			if (t.row >= s.r0 && t.row <= s.r1 && t.col >= s.c0 && t.col <= s.c1) {
+				blockTokens.push({ name, row: t.row - s.r0, col: t.col - s.c0, color: t.color });
+			}
+		}
+
+		// Cut: clear the source region.
+		for (let r = s.r0; r <= s.r1; r++)
+			for (let c = s.c0; c <= s.c1; c++)
+				map.tiles[r][c] = 'normal';
+		for (const bt of blockTokens) delete map.tokens[bt.name];
+
+		// Paste at the destination.
+		let i = 0;
+		for (let r = s.r0; r <= s.r1; r++)
+			for (let c = s.c0; c <= s.c1; c++)
+				map.tiles[nr0 + (r - s.r0)][nc0 + (c - s.c0)] = block[i++];
+		for (const bt of blockTokens) {
+			const tr = nr0 + bt.row, tc = nc0 + bt.col;
+			for (const name in map.tokens) {
+				const o = map.tokens[name];
+				if (o.row === tr && o.col === tc) delete map.tokens[name];
+			}
+			map.tokens[bt.name] = { row: tr, col: tc, color: bt.color || tokenColorFor(bt.name) };
+		}
+
+		return { r0: nr0, c0: nc0, r1: nr0 + w - 1, c1: nc0 + h - 1 };
+	}
+
+	/**
 	 * Volunteer .txt format for maps/ in this repo. Note: player tokens are
 	 * editor-only and not representable in this format (they're ignored).
 	 */
@@ -440,6 +495,7 @@
 		toJSON,
 		toTextGrid,
 		tileCounts,
-		tokenAt
+		tokenAt,
+		translateBlock
 	};
 }));

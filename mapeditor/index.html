@@ -192,6 +192,7 @@
 	.tool .ti { font-size: 16px; }
 	.tool:hover { color: var(--text); border-color: var(--accent); }
 	.tool.active { border-color: var(--accent); background: #22304d; color: var(--text); box-shadow: 0 0 0 3px rgba(110,168,255,.25); }
+	.tool.wide { grid-column: 1 / -1; }
 
 	.size-row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
 	.size-row label { font-size: 11px; color: var(--text-dim); width: 38px; }
@@ -262,6 +263,18 @@
 		color: rgba(255,255,255,.55);
 		text-shadow: 0 0 3px rgba(0,0,0,.9);
 	}
+
+	/* select & translate */
+	.gcell.tile.sel { box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 5px var(--accent); z-index: 4; }
+	.gcell.tile.cut { filter: brightness(.75) saturate(.4); }
+	.gcell.tile.cut::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: repeating-linear-gradient(45deg, rgba(0,0,0,.35) 0 5px, rgba(255,255,255,.12) 5px 10px);
+		pointer-events: none;
+	}
+	.gcell.tile.ghost { opacity: .45; outline: 2px dashed #fff; outline-offset: -2px; z-index: 3; }
 
 	/* ---------- status bar ---------- */
 	footer {
@@ -443,6 +456,7 @@
 				<div class="tool" data-tool="fill" title="Flood fill (F)"><span class="ti">🪣</span>Fill</div>
 				<div class="tool" data-tool="eyedrop" title="Pick terrain &amp; token (E)"><span class="ti">💧</span>Eyedrop</div>
 				<div class="tool" data-tool="erase" title="Erase to normal / remove token"><span class="ti">🧽</span>Erase</div>
+				<div class="tool wide" data-tool="select" title="Select a box of tiles, then drag inside it (or arrow keys) to move the whole block — Del erases it, Esc clears"><span class="ti">🔲</span>Select &amp; Move</div>
 			</div>
 		</div>
 
@@ -465,6 +479,7 @@
 			<h3>Tips</h3>
 			<p style="font-size:11px;color:var(--text-dim);line-height:1.6">
 				<span class="btn small" style="cursor:default">Left-drag</span> paint<br>
+				<span class="btn small" style="cursor:default">🔲 Select</span> box → drag inside to move<br>
 				<span class="btn small" style="cursor:default">Right-click</span> remove token / clear<br>
 				<span class="btn small" style="cursor:default">1–9</span> pick terrain &nbsp;<kbd>F</kbd> fill<br>
 				<kbd>E</kbd> eyedrop &nbsp;<kbd>S</kbd> save &nbsp;<kbd>Ctrl</kbd>+<kbd>Z</kbd> undo<br>
@@ -578,6 +593,9 @@ let history = [];
 let historyIdx = -1;
 let savedName = '';
 let drag = null;               // {startRow, startCol, snapshot}
+let selBox = null;             // selected box {r0,c0,r1,c1} inclusive (select tool)
+let selDrag = null;            // marquee being drawn {r, c}
+let translateDrag = null;      // box being moved {startR, startC, before, ghost}
 
 const $ = (id) => document.getElementById(id);
 
@@ -660,8 +678,10 @@ function renderTools() {
 }
 function setTool(t) {
 	tool = t;
+	if (t !== 'select') { selBox = null; selDrag = null; translateDrag = null; }
 	renderTools();
 	updateSelectionUI();
+	render();
 }
 function updateSelectionUI() {
 	document.querySelectorAll('#terrainPalette .swatch').forEach((s, idx) => {
@@ -706,8 +726,17 @@ function render() {
 			const terrain = map.tiles[r][c] || 'normal';
 			const t = MC.TERRAINS[terrain] || MC.TERRAINS.normal;
 			const cell = document.createElement('div');
-			cell.className = 'gcell tile';
+			const inSel = !!selBox && r >= selBox.r0 && r <= selBox.r1 && c >= selBox.c0 && c <= selBox.c1;
+			let cls = 'gcell tile';
+			if (tool === 'select' && !translateDrag && inSel) cls += ' sel';
+			if (tool === 'select' && translateDrag && translateDrag.ghost) {
+				const g = translateDrag.ghost;
+				const inG = r >= g.r && r <= g.r + (selBox.r1 - selBox.r0) && c >= g.c && c <= g.c + (selBox.c1 - selBox.c0);
+				cls += inG ? ' ghost' : (inSel ? ' cut' : '');
+			}
+			cell.className = cls;
 			cell.style.background = t.color;
+			if (tool === 'select') cell.style.cursor = translateDrag ? 'grabbing' : (inSel ? 'move' : 'crosshair');
 			cell.dataset.r = r;
 			cell.dataset.c = c;
 
@@ -772,6 +801,7 @@ function renderCounts() {
 function cellDown(e, r, c) {
 	e.preventDefault();
 	if (e.button === 2) return;
+	if (tool === 'select') { selectDown(e, r, c); return; }
 	const before = snapshot();
 	drag = { r, c, before };
 	applyToCell(r, c, e);
@@ -781,9 +811,9 @@ function cellDown(e, r, c) {
 }
 function dragMove(e) {
 	if (!drag) return;
-	const target = document.elementFromPoint(e.clientX, e.clientY);
-	if (!target || !target.classList.contains('tile')) return;
-	applyToCell(Number(target.dataset.r), Number(target.dataset.c), e);
+	const hit = cellFromPoint(e.clientX, e.clientY);
+	if (!hit) return;
+	applyToCell(hit.r, hit.c, e);
 	render();
 }
 function dragUp() {
@@ -795,11 +825,27 @@ function dragUp() {
 	document.removeEventListener('mouseup', dragUp);
 }
 function cellHover(e, r, c) {
+	if (tool === 'select') {
+		if (selBox) {
+			const w = selBox.r1 - selBox.r0 + 1, h = selBox.c1 - selBox.c0 + 1;
+			$('cellInfo').textContent = '🔲 ' + w + '×' + h + ' — drag inside to move · ↑↓←→ nudge · Del erase · Esc clear';
+		} else {
+			$('cellInfo').textContent = '🔲 drag to select a box of tiles — tokens move too';
+		}
+		return;
+	}
 	const terrain = map.tiles[r][c] || 'normal';
 	const tok = MC.tokenAt(map, r, c);
 	$('cellInfo').textContent = MC.rowLabel(r) + (c + 1) + ' · ' + terrain + (tok ? ' · ' + tok.name : '');
 }
 function cellRight(e, r, c) {
+	if (tool === 'select') {
+		selBox = null;
+		selDrag = null;
+		translateDrag = null;
+		render();
+		return;
+	}
 	const before = snapshot();
 	const tok = MC.tokenAt(map, r, c);
 	if (tok) delete map.tokens[tok.name];
@@ -854,6 +900,74 @@ function floodFill(sr, sc, target) {
 }
 
 /* ------------------------------------------------------------------ */
+/* select & translate (box move)                                       */
+/* ------------------------------------------------------------------ */
+function cellFromPoint(x, y) {
+	const el = document.elementFromPoint(x, y);
+	if (!el) return null;
+	const cell = el.closest ? el.closest('.tile') : null;
+	if (!cell || cell.dataset.r === undefined) return null;
+	return { r: Number(cell.dataset.r), c: Number(cell.dataset.c) };
+}
+function selectDown(e, r, c) {
+	// Clicking inside an existing selection starts moving the block.
+	if (selBox && r >= selBox.r0 && r <= selBox.r1 && c >= selBox.c0 && c <= selBox.c1) {
+		translateDrag = { startR: r, startC: c, before: snapshot(), ghost: null };
+		document.addEventListener('mousemove', translateMove);
+		document.addEventListener('mouseup', translateUp);
+		return;
+	}
+	// Otherwise start a new marquee selection.
+	selDrag = { r, c };
+	selBox = { r0: r, c0: c, r1: r, c1: c };
+	document.addEventListener('mousemove', selMove);
+	document.addEventListener('mouseup', selUp);
+	render();
+}
+function selMove(e) {
+	if (!selDrag) return;
+	const hit = cellFromPoint(e.clientX, e.clientY);
+	if (!hit) return;
+	selBox = {
+		r0: Math.min(selDrag.r, hit.r), c0: Math.min(selDrag.c, hit.c),
+		r1: Math.max(selDrag.r, hit.r), c1: Math.max(selDrag.c, hit.c)
+	};
+	render();
+}
+function selUp() {
+	document.removeEventListener('mousemove', selMove);
+	document.removeEventListener('mouseup', selUp);
+	selDrag = null;
+}
+function translateMove(e) {
+	if (!translateDrag) return;
+	const hit = cellFromPoint(e.clientX, e.clientY);
+	if (!hit) return;
+	const s = selBox;
+	const w = s.r1 - s.r0 + 1, h = s.c1 - s.c0 + 1;
+	let gr = s.r0 + (hit.r - translateDrag.startR);
+	let gc = s.c0 + (hit.c - translateDrag.startC);
+	gr = Math.max(0, Math.min(map.rows - w, gr));
+	gc = Math.max(0, Math.min(map.cols - h, gc));
+	translateDrag.ghost = { r: gr, c: gc };
+	render();
+}
+function translateUp() {
+	document.removeEventListener('mousemove', translateMove);
+	document.removeEventListener('mouseup', translateUp);
+	if (!translateDrag) return;
+	const g = translateDrag.ghost;
+	const s = selBox;
+	if (g && (g.r !== s.r0 || g.c !== s.c0)) {
+		const ns = MC.translateBlock(map, s, g.r - s.r0, g.c - s.c0);
+		if (ns) selBox = ns;
+		if (translateDrag.before !== snapshot()) pushHistory();
+	}
+	translateDrag = null;
+	render();
+}
+
+/* ------------------------------------------------------------------ */
 /* size / maps                                                          */
 /* ------------------------------------------------------------------ */
 function resizeGrid(rows, cols) {
@@ -868,6 +982,7 @@ function resizeGrid(rows, cols) {
 		if (t.row < rows && t.col < cols) nm.tokens[name] = t;
 	}
 	map = nm;
+	if (selBox && (selBox.r1 >= rows || selBox.c1 >= cols)) { selBox = null; selDrag = null; translateDrag = null; }
 	if (before !== snapshot()) pushHistory();
 	render();
 }
@@ -883,6 +998,9 @@ function setMap(newMap, opts) {
 	historyIdx = 0;
 	updateHistoryButtons();
 	savedName = '';
+	selBox = null;
+	selDrag = null;
+	translateDrag = null;
 	render();
 	if (!opts.silent) toast('Loaded map "' + map.name + '"', 'ok');
 }
@@ -1121,6 +1239,13 @@ function closeModals() {
 window.addEventListener('keydown', (e) => {
 	if (e.key === 'Escape') {
 		closeModals();
+		if (tool === 'select' && selBox) {
+			selBox = null;
+			selDrag = null;
+			translateDrag = null;
+			render();
+			return;
+		}
 		const el = document.activeElement;
 		if (el && el.blur) el.blur();
 		return;
@@ -1132,6 +1257,37 @@ window.addEventListener('keydown', (e) => {
 	switch (e.key.toLowerCase()) {
 		case 'f': setTool('fill'); break;
 		case 'e': setTool('eyedrop'); break;
+		case 'arrowup': case 'arrowdown': case 'arrowleft': case 'arrowright': {
+			if (tool !== 'select' || !selBox) break;
+			e.preventDefault();
+			const before = snapshot();
+			const dr = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0;
+			const dc = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+			const ns = MC.translateBlock(map, selBox, dr, dc);
+			if (ns) {
+				selBox = ns;
+				if (before !== snapshot()) pushHistory();
+				render();
+			}
+			break;
+		}
+		case 'delete': case 'backspace': {
+			if (tool !== 'select' || !selBox) break;
+			e.preventDefault();
+			const before = snapshot();
+			for (let r = selBox.r0; r <= selBox.r1; r++)
+				for (let c = selBox.c0; c <= selBox.c1; c++) map.tiles[r][c] = 'normal';
+			for (const name in map.tokens) {
+				const t = map.tokens[name];
+				if (t.row >= selBox.r0 && t.row <= selBox.r1 && t.col >= selBox.c0 && t.col <= selBox.c1) delete map.tokens[name];
+			}
+			selBox = null;
+			selDrag = null;
+			translateDrag = null;
+			if (before !== snapshot()) pushHistory();
+			render();
+			break;
+		}
 		case '1': case '2': case '3': case '4': case '5':
 		case '6': case '7': case '8': case '9': {
 			const names = Object.keys(MC.TERRAINS);
