@@ -2602,10 +2602,15 @@
       /* copy-as-text & shareable links                                       */
       /* ------------------------------------------------------------------ */
       function b64EncodeUnicode(str) {
-        return btoa(unescape(encodeURIComponent(str)));
+        const bytes = new TextEncoder().encode(str);
+        let bin = "";
+        for (const b of bytes) bin += String.fromCharCode(b);
+        return btoa(bin);
       }
       function b64DecodeUnicode(str) {
-        return decodeURIComponent(escape(atob(str)));
+        const bin = atob(str);
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        return new TextDecoder().decode(bytes);
       }
       function decodeShareFragment(hash) {
         if (!hash || hash.indexOf("#map=") !== 0) return null;
