@@ -4,7 +4,8 @@ Synthetic Greptile review of the entire `bd-autohost-bot-new` repository.
 Because a whole-repo diff exceeds Greptile's limits, the codebase was split into 13 chunks, each reviewed against an empty tree base (`empty-base`) so the diff is exactly the chunk's files. Greptile's graph index still provides full-repo context.
 
 - Method: Greptile CLI `greptile review -b empty-base` per chunk + Greptile GitHub app reviews on chunk PRs (with flowcharts).
-- 16 real findings (15 P1, 1 P2), 6 chunk-artifact false positives, 2 `.xlsx` binaries not reviewed.
+- 20 real findings (19 P1, 1 P2), 6 chunk-artifact false positives, 2 `.xlsx` binaries not reviewed.
+- 13 chunk reviews (PRs #74–#86) plus a deep adversarial pass over the game engine (PR #88).
 
 ## Real findings
 
@@ -30,33 +31,44 @@ Because a whole-repo diff exceeds Greptile's limits, the codebase was split into
 8. **P1 — Forced movement ignores occupants** (`src/game/state.ts:943`)
    `isPassable` checks only terrain, so push/pull can move entities onto occupied tiles (overlap).
 
+**Deep adversarial pass (PR #88, deep-game)** — review ID `002354cf-ce2c-4a80-a9c7-d5ce2e3a5a40`. Engine reviewed together with its test suite.
+
+9. **P1 — Resource effects leave stale state** (`src/game/effects.ts:1391`)
+   Gain/spend/lose branches only log and never update `user.resources`, so later costs and Thirst read unchanged values.
+10. **P1 — Unsupported conditions activate effects** (`src/game/effects.ts:1521`)
+    `evaluateCondition` failure falls through to `thenEffects`, so guarded damage/statuses/buffs fire without their prerequisite.
+11. **P1 — Cost consumed before target validation** (`src/game/resolve.ts:183`)
+    A paid ability with no valid/invalid target deducts HP/MP/resource and never refunds it.
+12. **P1 — Pathfinding crosses occupied tiles** (`src/game/state.ts:417`)
+    The BFS enqueues a living-entity tile as an intermediate node, so destinations behind a blocker report as reachable.
+
 ### src/commands/ (PR #76, review-commands)
 
-9. **P1 Security — `%back` undo without authorization** (`src/commands/game.ts:907`)
-   Any room user routed to `%back` pops the latest game snapshot with no host/controller check.
+13. **P1 Security — `%back` undo without authorization** (`src/commands/game.ts:907`)
+    Any room user routed to `%back` pops the latest game snapshot with no host/controller check.
 
 ### connection / login / parser (PR #77, review-core)
 
-10. **P1 — Room-framed / batched Showdown payloads dropped** (`src/connection.ts:18`)
+14. **P1 — Room-framed / batched Showdown payloads dropped** (`src/connection.ts:18`)
     The inbound handler assumes one pipe-prefixed event per WebSocket message, discarding `>room` headers and newline-batched events (room chat, commands, membership).
 
 ### src/html + src/sheets (PR #78, review-htmlsheets)
 
-11. **P1 — Multiline CSV cells split into fake rows** (`src/sheets/scraper.ts:32`)
+15. **P1 — Multiline CSV cells split into fake rows** (`src/sheets/scraper.ts:32`)
     Quoted fields containing newlines are split into separate records before CSV parsing, corrupting diffs and compliance results.
-12. **P1 — Pending snapshot replaces approved baseline** (`src/sheets/scraper.ts:126`)
+16. **P1 — Pending snapshot replaces approved baseline** (`src/sheets/scraper.ts:126`)
     On a second check before approval, `pending` becomes the comparison baseline, so an unchanged remote sheet reports no changes even though edits remain unapproved.
-13. **P1 — First-run crash in `savePending`** (`src/sheets/state.ts:54`)
+17. **P1 — First-run crash in `savePending`** (`src/sheets/state.ts:54`)
     `writeFileSync` runs before `.sheets-state/` exists, causing ENOENT on first check.
 
 ### \_data/ (PR #84, review-databin)
 
-14. **P1 — `.docx` files are plain text mislabeled** (`_data/How to Play BD 4.4.docx`, `_data/Kyubs Help Page.docx`)
+18. **P1 — `.docx` files are plain text mislabeled** (`_data/How to Play BD 4.4.docx`, `_data/Kyubs Help Page.docx`)
     Both use the `.docx` extension without Office Open XML package structure; DOCX readers reject them.
 
 ### \_original_source/ (PR #85, review-origsource)
 
-15. **P2 — Unavailable working-copy paths** (`_original_source/README-ORIGINAL.txt:9`)
+19. **P2 — Unavailable working-copy paths** (`_original_source/README-ORIGINAL.txt:9`)
     Preservation guidance points to `../_data/` and `../src/`, which don't exist in this checkout; contributors can't follow the documented update process.
 
 ## Chunk-artifact false positives (not real)
@@ -95,7 +107,8 @@ No findings (5/5 confidence): `review-bigdata` (data/abilities.json + .sheets-st
 | review-databin    | #84 | 26d8ccec-433a-4ed9-a49b-bcdabcad842b |
 | review-origsource | #85 | 03c02809-f816-40bb-a776-9fb3d5baf67e |
 | review-tests      | #86 | 82c4596f-57fb-4210-8063-85287d915160 |
+| deep-game         | #88 | 002354cf-ce2c-4a80-a9c7-d5ce2e3a5a40 |
 
 Re-open a CLI review anytime with `greptile review show <ID>` (run from the `bd-autohost-fullreview` worktree).
 
-The 13 PRs (#74–#86, base `empty-base`) are synthetic review-only PRs — **do not merge**; safe to close.
+The PRs (#74–#86, #88, base `empty-base`) are synthetic review-only PRs — **do not merge**; safe to close.
