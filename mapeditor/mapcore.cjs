@@ -473,6 +473,50 @@
 		return counts;
 	}
 
+	// Rotate the map 90° clockwise, turns times (1-3). Returns a new map object (tiles + tokens + dims).
+	function rotateMap(map, turns) {
+		const m = normalizeMap(map);
+		turns = ((Math.floor(turns) || 0) % 4 + 4) % 4;
+		let tiles = m.tiles, rows = m.rows, cols = m.cols, tokens = m.tokens;
+		for (let i = 0; i < turns; i++) {
+			const nt = [];
+			for (let c = 0; c < cols; c++) {
+				const row = [];
+				for (let r = rows - 1; r >= 0; r--) row.push(tiles[r][c]);
+				nt.push(row);
+			}
+			const ntoks = {};
+			for (const name in tokens) {
+				const t = tokens[name];
+				ntoks[name] = { row: t.col, col: rows - 1 - t.row, color: t.color };
+			}
+			tiles = nt; tokens = ntoks;
+			const oldRows = rows; rows = cols; cols = oldRows;
+		}
+		return normalizeMap({ name: m.name, displayName: m.displayName, rows, cols, tiles, tokens });
+	}
+
+	// Mirror the map: 'h' = left-right, 'v' = top-bottom. Returns a new map object.
+	function flipMap(map, axis) {
+		const m = normalizeMap(map);
+		const tiles = [];
+		const tokens = {};
+		if (axis === 'h') {
+			for (let r = 0; r < m.rows; r++) tiles.push(m.tiles[r].slice().reverse());
+			for (const name in m.tokens) {
+				const t = m.tokens[name];
+				tokens[name] = { row: t.row, col: m.cols - 1 - t.col, color: t.color };
+			}
+		} else {
+			for (let r = m.rows - 1; r >= 0; r--) tiles.push(m.tiles[r].slice());
+			for (const name in m.tokens) {
+				const t = m.tokens[name];
+				tokens[name] = { row: m.rows - 1 - t.row, col: t.col, color: t.color };
+			}
+		}
+		return normalizeMap({ name: m.name, displayName: m.displayName, rows: m.rows, cols: m.cols, tiles, tokens });
+	}
+
 	return {
 		TERRAINS,
 		DEFAULT_TOKEN_COLORS,
@@ -496,6 +540,8 @@
 		toTextGrid,
 		tileCounts,
 		tokenAt,
-		translateBlock
+		translateBlock,
+		rotateMap,
+		flipMap
 	};
 }));
