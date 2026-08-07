@@ -972,12 +972,7 @@ function handleRoll(target: string, args: string) {
 function handlePremove(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
 
-  let entity: Entity | null = null;
-  if (isHost) {
-    entity = getCurrentEntity(game);
-  } else {
-    entity = getCurrentEntity(game);
-  }
+  const entity = getCurrentEntity(game);
 
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -1038,12 +1033,7 @@ function handleTileChoice(game: Game, user: User, args: string) {
 function handlePassMove(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
 
-  let entity: Entity | null = null;
-  if (isHost) {
-    entity = getCurrentEntity(game);
-  } else {
-    entity = getCurrentEntity(game);
-  }
+  const entity = getCurrentEntity(game);
 
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {

@@ -1,5 +1,6 @@
 import {
   type Game,
+  checkGameOver,
   type Entity,
   type AbilityData,
   type AbilityCost,
@@ -334,9 +335,11 @@ function* resolveAttackFlow(
   // Bug fix carried over: check win condition once after all deaths this
   // action, not once per death (was producing duplicate "Game over!" lines
   // on multi-kill splash/AoE).
-  if (result.deaths.length > 0 && isWinCondition(game)) {
+  if (result.deaths.length > 0 && checkGameOver(game)) {
     result.gameOver = true;
-    const winner = game.entities[0];
+    const winner = game.winner
+      ? game.entities.find((e) => e.num === game.winner) ?? null
+      : game.entities[0] ?? null;
     result.messages.push(
       winner
         ? `**Game over! ${winner.num} (${winner.name}) wins!**`
@@ -890,17 +893,7 @@ function setCooldown(entity: Entity, ability: AbilityData) {
   if (cooldown) entity.cooldowns[ability.name] = cooldown;
 }
 
-function isWinCondition(game: Game): boolean {
-  if (game.mode.includes("ffa") || game.mode.includes("pvp")) {
-    return game.entities.filter((e) => e.curhp > 0).length <= 1;
-  }
-  const teams = new Map<number, boolean>();
-  for (const e of game.entities) {
-    if (!teams.has(e.team)) teams.set(e.team, false);
-    if (e.curhp > 0) teams.set(e.team, true);
-  }
-  return [...teams.values()].filter(Boolean).length <= 1;
-}
+
 
 function parseMultiHit(ability: AbilityData): number {
   const roll = ability.roll.toLowerCase();
