@@ -254,7 +254,7 @@ export function parseEffects(text: string): Effect[] {
   // The regex tolerates either ", " or ". " before "Otherwise", and an
   // optional trailing period at the end of the else-branch.
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?),\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
   if (fullIfMatch) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
@@ -375,27 +375,34 @@ function parseClause(clause: string): Effect[] {
 
 /** Structured clauses with a fixed keyword prefix (If/Thirst/Apex/...). */
 function parseClauseStructured(lower: string): Effect[] | null {
-  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
+  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]" or "If CONDITION: EFFECT"
+  // The colon form lets glossary authors write "If you control moon: gain +1"
+  // without the comma before the effect, which is easier to read inside
+  // longer abilities. Master only accepted the comma form, so we add `:`.
   const ifMatch = lower.match(
-    /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
   );
   if (ifMatch) {
-    return [{
-      type: "conditional",
-      condition: ifMatch[1].trim(),
-      thenEffects: parseEffects(ifMatch[2]),
-      elseEffects: ifMatch[3] ? parseEffects(ifMatch[3]) : undefined,
-    }];
+    return [
+      {
+        type: "conditional",
+        condition: ifMatch[1].trim(),
+        thenEffects: parseEffects(ifMatch[2]),
+        elseEffects: ifMatch[3] ? parseEffects(ifMatch[3]) : undefined,
+      },
+    ];
   }
 
   // Thirst: "Thirst N: EFFECT"
   const thirstMatch = lower.match(/^thirst\s+(\d+):\s*(.+)$/);
   if (thirstMatch) {
-    return [{
-      type: "thirst",
-      threshold: parseInt(thirstMatch[1]),
-      effects: parseEffects(thirstMatch[2]),
-    }];
+    return [
+      {
+        type: "thirst",
+        threshold: parseInt(thirstMatch[1]),
+        effects: parseEffects(thirstMatch[2]),
+      },
+    ];
   }
 
   // Apex: "Apex: EFFECT"
@@ -420,11 +427,13 @@ function parseClauseStructured(lower: string): Effect[] | null {
     /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
   );
   if (channelMatch) {
-    return [{
-      type: "channel",
-      stat: channelMatch[1],
-      rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
-    }];
+    return [
+      {
+        type: "channel",
+        stat: channelMatch[1],
+        rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
+      },
+    ];
   }
 
   // Phase: "Phase: PHASE_NAME"
@@ -433,6 +442,24 @@ function parseClauseStructured(lower: string): Effect[] | null {
   );
   if (phaseMatch) {
     return [{ type: "phase", phase: phaseMatch[1] }];
+  }
+
+  // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
+  // Used when a single ability clause triggers a different effect on each
+  // moon phase. Master has no support for this; without it glossary lines
+  // like "New Moon: gain +1 initiative" fall through to the default parser
+  // and are misread as an Apex on an empty name.
+  const phaseCondMatch = lower.match(
+    /^(new moon|waxing|full moon|waning):\s*(.+)$/,
+  );
+  if (phaseCondMatch) {
+    return [
+      {
+        type: "conditional",
+        condition: `phase is ${phaseCondMatch[1]}`,
+        thenEffects: parseEffects(phaseCondMatch[2]),
+      },
+    ];
   }
 
   // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
@@ -467,7 +494,9 @@ function parseClauseStructured(lower: string): Effect[] | null {
 interface StatusPattern {
   re: RegExp;
   /** Extract name/damage/rounds from a match; null when the pattern has no status. */
-  extract: (m: RegExpMatchArray) => { name: string; damage: number; rounds: number } | null;
+  extract: (
+    m: RegExpMatchArray,
+  ) => { name: string; damage: number; rounds: number } | null;
 }
 
 // Patterns tried in order: "inflict N Status for M rounds", "inflict N
@@ -661,7 +690,7 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+(\d+(?:-\d+)?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+(\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
@@ -1121,7 +1150,10 @@ function evalAlive(lower: string, target: Entity): ConditionOutcome | null {
     const wantAlive = m[1] === "alive";
     return target.curhp > 0 === wantAlive ? "then" : "else";
   }
-  if (lower === "target dies" || /target has been (killed|defeated)/.test(lower)) {
+  if (
+    lower === "target dies" ||
+    /target has been (killed|defeated)/.test(lower)
+  ) {
     return target.curhp <= 0 ? "then" : "else";
   }
   return null;
@@ -1307,10 +1339,7 @@ type EffectHandler = (
   effect: any,
 ) => Generator<EffectChoosePrompt, void, string>;
 
-function* handleStatus(
-  { target, messages }: EffectCtx,
-  effect: StatusInflict,
-) {
+function* handleStatus({ target, messages }: EffectCtx, effect: StatusInflict) {
   const hasShield = target.statuses.some((s) => toId(s.name) === "shield");
   if (hasShield && effect.damage === 0) {
     messages.push(`  ${target.num}'s Shield blocks ${effect.name}!`);
@@ -1337,14 +1366,12 @@ function* handleStatus(
   }
 }
 
-function* handleStatMod(
-  { target, messages }: EffectCtx,
-  effect: StatMod,
-) {
+function* handleStatMod({ target, messages }: EffectCtx, effect: StatMod) {
   const mult = effect.type === "buff" ? 1 : -1;
   if (effect.percent) {
     const baseStat = getBaseStat(target, effect.stat);
-    const amount = mult * Math.floor(baseStat * (Math.abs(effect.percent) / 100));
+    const amount =
+      mult * Math.floor(baseStat * (Math.abs(effect.percent) / 100));
     target.buffs.push({
       stat: effect.stat,
       amount,
@@ -1365,14 +1392,13 @@ function* handleStatMod(
   }
 }
 
-function* handleDamageMod(
-  { target, messages }: EffectCtx,
-  effect: DamageMod,
-) {
+function* handleDamageMod({ target, messages }: EffectCtx, effect: DamageMod) {
   const label = effect.percent
     ? `${effect.percent > 0 ? "+" : ""}${effect.percent}% damage`
     : `${effect.flat! > 0 ? "+" : ""}${effect.flat} DMG`;
-  messages.push(`  ${target.num} ${label}${effect.rounds ? `/${effect.rounds}` : ""}.`);
+  messages.push(
+    `  ${target.num} ${label}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+  );
 }
 
 function* handleHeal(
@@ -1387,14 +1413,13 @@ function* handleHeal(
       `  ${target.num} healed for ${healed} HP (${target.curhp}/${target.maxhp}).`,
     );
   } else {
-    messages.push(`  ${user.num} heals ${target.num}. (Manual resolution needed)`);
+    messages.push(
+      `  ${user.num} heals ${target.num}. (Manual resolution needed)`,
+    );
   }
 }
 
-function* handleShield(
-  { target, messages }: EffectCtx,
-  effect: ShieldEffect,
-) {
+function* handleShield({ target, messages }: EffectCtx, effect: ShieldEffect) {
   const existingShield = target.statuses.find((s) => s.name === "Shield");
   if (existingShield) {
     existingShield.damage = Math.max(existingShield.damage, effect.amount);
@@ -1417,21 +1442,25 @@ function* handleDisplacement(
   { game, user, target, messages }: EffectCtx,
   effect: Displacement,
 ) {
-  const source = effect.type === "push"
-    ? effect.toward === "user"
-      ? user.pos
-      : target.pos
-    : user.pos;
-  const { moved, path } = effect.type === "push"
-    ? pushEntity(game, target, source, effect.amount ?? 1)
-    : pullEntity(game, target, source, effect.amount ?? 1);
+  const source =
+    effect.type === "push"
+      ? effect.toward === "user"
+        ? user.pos
+        : target.pos
+      : user.pos;
+  const { moved, path } =
+    effect.type === "push"
+      ? pushEntity(game, target, source, effect.amount ?? 1)
+      : pullEntity(game, target, source, effect.amount ?? 1);
   if (moved > 0) {
     const pathStr = path.map((p) => `${p[0]},${p[1]}`).join(" -> ");
     messages.push(
       `  ${target.num} ${effect.type === "push" ? "pushed" : "pulled"} ${moved} tile${moved > 1 ? "s" : ""} to ${pathStr}.`,
     );
   } else {
-    messages.push(`  ${target.num} could not be ${effect.type === "push" ? "pushed" : "pulled"}.`);
+    messages.push(
+      `  ${target.num} could not be ${effect.type === "push" ? "pushed" : "pulled"}.`,
+    );
   }
 }
 
@@ -1447,10 +1476,7 @@ function* handleSwap(
   );
 }
 
-function* handleSimple(
-  { user, messages }: EffectCtx,
-  effect: any,
-) {
+function* handleSimple({ user, messages }: EffectCtx, effect: any) {
   switch (effect.type) {
     case "teleport":
       messages.push(
@@ -1463,16 +1489,22 @@ function* handleSimple(
       );
       return;
     case "resource":
-      messages.push(`  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`);
+      messages.push(
+        `  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`,
+      );
       return;
     case "delay":
-      messages.push(`  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`);
+      messages.push(
+        `  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`,
+      );
       return;
     case "ignore":
       messages.push(`  Ignores ${effect.what}.`);
       return;
     case "channel":
-      messages.push(`  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`);
+      messages.push(
+        `  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`,
+      );
       return;
     case "phase":
       messages.push(`  Phase shifts to ${effect.phase}.`);
@@ -1483,7 +1515,9 @@ function* handleSimple(
     case "recoil":
       // Recoil damage itself is applied in resolve.ts after on-hit damage
       // is dealt. Here we just announce the marker so the log is readable.
-      messages.push(`  ${user.num} takes ${effect.percent}% recoil on damage dealt.`);
+      messages.push(
+        `  ${user.num} takes ${effect.percent}% recoil on damage dealt.`,
+      );
       return;
     case "tile":
       messages.push(
@@ -1502,16 +1536,34 @@ function* handleConditional(
   { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: ConditionalEffect,
 ) {
-  const { outcome, messages: condMsgs } = applyConditional(user, target, effect);
+  const { outcome, messages: condMsgs } = applyConditional(
+    user,
+    target,
+    effect,
+  );
   messages.push(...condMsgs);
   // "unknown" defaults to then-branch (legacy fallback). "else" without
   // an else-branch drops the sub-effects entirely.
   if (outcome === "then" || outcome === "unknown") {
-    const thenMsgs = yield* applyEffectStream(game, user, target, effect.thenEffects, ability, routeBuffsToUser);
+    const thenMsgs = yield* applyEffectStream(
+      game,
+      user,
+      target,
+      effect.thenEffects,
+      ability,
+      routeBuffsToUser,
+    );
     messages.push(...thenMsgs.map((m) => `    ${m}`));
   }
   if (outcome === "else" && effect.elseEffects) {
-    const elseMsgs = yield* applyEffectStream(game, user, target, effect.elseEffects, ability, routeBuffsToUser);
+    const elseMsgs = yield* applyEffectStream(
+      game,
+      user,
+      target,
+      effect.elseEffects,
+      ability,
+      routeBuffsToUser,
+    );
     messages.push(...elseMsgs.map((m) => `    ${m}`));
   }
 }
@@ -1526,8 +1578,17 @@ function* handleThirst(
     );
     return;
   }
-  const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
-  messages.push(...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`));
+  const thirstMsgs = yield* applyEffectStream(
+    game,
+    user,
+    target,
+    effect.effects,
+    ability,
+    routeBuffsToUser,
+  );
+  messages.push(
+    ...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`),
+  );
 }
 
 function* handleApex(
@@ -1539,10 +1600,18 @@ function* handleApex(
     return;
   }
   if (!isApexActive(game, user, target, ability)) {
-    messages.push(`  [Apex] inactive (target not at max listed range of ${ability.range}).`);
+    messages.push(
+      `  [Apex] inactive (target not at max listed range of ${ability.range}).`,
+    );
     return;
   }
-  const apexMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability);
+  const apexMsgs = yield* applyEffectStream(
+    game,
+    user,
+    target,
+    effect.effects,
+    ability,
+  );
   messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
 }
 
@@ -1567,7 +1636,13 @@ function* handleChoose(
   } satisfies EffectChoosePrompt;
   const idx = parseChosenIdx(chosenId, effect.options.length);
   messages.push(`  [Choose] user picked option ${idx + 1}.`);
-  const chosenMsgs = yield* applyEffectStream(game, user, target, effect.options[idx], ability);
+  const chosenMsgs = yield* applyEffectStream(
+    game,
+    user,
+    target,
+    effect.options[idx],
+    ability,
+  );
   messages.push(...chosenMsgs.map((m) => `    ${m}`));
 }
 
@@ -1608,7 +1683,14 @@ export function* applyEffectStream(
   routeBuffsToUser = false,
 ): Generator<EffectChoosePrompt, string[], string> {
   const messages: string[] = [];
-  const ctx: EffectCtx = { game, user, target, ability, messages, routeBuffsToUser };
+  const ctx: EffectCtx = {
+    game,
+    user,
+    target,
+    ability,
+    messages,
+    routeBuffsToUser,
+  };
 
   for (const effect of effects) {
     const handler = EFFECT_HANDLERS[effect.type];
@@ -1669,12 +1751,14 @@ const SUMMARISE: Record<string, (eff: any) => string> = {
   heal: (e) => `heal ${e.amount ?? "?"} HP`,
   shield: (e) => `Shield ${e.amount}/${e.rounds}`,
   push: (e) => `push ${e.amount ?? 1}`,
-  pull: (e) => `pull ${e.amount ?? 1}${e.toward === "user" ? " toward user" : ""}`,
+  pull: (e) =>
+    `pull ${e.amount ?? 1}${e.toward === "user" ? " toward user" : ""}`,
   swap: () => "swap positions",
   teleport: (e) => `teleport${e.range ? ` to ${e.range}` : ""}`,
   move: (e) => `move up to ${e.amount}`,
   resource: (e) => `${e.action} ${e.amount} ${e.resource}`,
-  damageMod: (e) => `${e.percent ?? ""}${e.flat != null ? e.flat + " DMG" : ""}`,
+  damageMod: (e) =>
+    `${e.percent ?? ""}${e.flat != null ? e.flat + " DMG" : ""}`,
   delay: (e) => `delay ${e.rounds}r`,
   recoil: (e) => `recoil ${e.percent}%`,
   ignore: (e) => `ignore ${e.what}`,
