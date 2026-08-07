@@ -1,0 +1,615 @@
+{
+  "meta": {
+    "sheet": "Archer",
+    "version": "1.0",
+    "lang": "BD Lang"
+  },
+  "Basic Attack": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "mr": 2,
+    "damage": {
+      "roll": "1d10+2",
+      "type": "Physical or Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+  },
+  "Basic Movement": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "action": "Movement",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends MP to move an equal amount of tiles.\n(For all purposes, Basic Movement is not an ability, but is still an action.)"
+  },
+  "Dash": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "action": "Full",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends MP to move up to x1.5 that amount of tiles (rounded down)."
+  },
+  "Backstep": {
+    "level": "B",
+    "frequency": "Passive",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+  },
+  "Attack of Opportunity": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "mr": 2,
+    "damage": {
+      "roll": "1d10+2",
+      "type": "Physical or Magical"
+    },
+    "action": "Reaction",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)"
+  },
+  "Hunter's Mark": {
+    "level": "1",
+    "frequency": "Passive",
+    "effect": "When the user's Crossbow attack resolves, targets of that attack each gain one Mark. The user's attacks deal +1d4 damage for every Mark on any one of its targets. Marks only apply to their user's abilities."
+  },
+  "Arrow Flurry": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "2d8+7",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 6",
+    "effect": "If the original target has a Mark, this move has Splash 1. If the target has 3+ Marks, this move instead has Splash 2."
+  },
+  "Cursed Bolts": {
+    "level": "2",
+    "frequency": "EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "2d8+4",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Line 6",
+    "effect": "The target is inflicted with 3X Curse/1, where X is Marks on the target. If the target has 3+ Marks, this move ignores negative outside damage factors."
+  },
+  "Arrow Net": {
+    "level": "3",
+    "frequency": "E3T",
+    "mr": 4,
+    "damage": {
+      "roll": "3d8+4",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 6",
+    "effect": "Before damage, the target takes 3 damage every time they gain a Mark from the user for one round."
+  },
+  "Pierce": {
+    "level": "4",
+    "frequency": "EoT",
+    "mr": 5,
+    "damage": {
+      "roll": "2d8+5",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Pierce 6",
+    "effect": "If a target has 1+ Marks, this move ignores evasions and 1/4 DEF. If a target has 2+ Marks, this move also ignores negative accuracy modifiers and ignores 1/2 DEF instead."
+  },
+  "Bolt Compaction": {
+    "level": "5",
+    "frequency": "Twice/EoT",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Self"
+    },
+    "effect": "This turn, the user negates the secondary effects of their Standard Crossbow attacks. Next turn, regardless of if the negated attack hit, their first Standard attack has +1 dice and the negated effects."
+  },
+  "Quick Scope": {
+    "level": "5",
+    "frequency": "Twice/EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "1d4+4",
+      "type": "Physical"
+    },
+    "action": "Swift",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 6",
+    "effect": "This move ignores ATK/MAG, half of the target's DEF, and outside damage factors (except Hunter's Mark)."
+  },
+  "Explosive Shot": {
+    "level": "6",
+    "frequency": "Once",
+    "mr": 4,
+    "damage": {
+      "roll": "2d8+2",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 6",
+    "effect": "The target holds a \"Bomb\". If a foe with a Bomb targets another foe (including their allies) they transfer the Bomb to one of their targets.\nAfter one round or when the holder dies, the Bomb detonates and deals Xd4 Bomb damage to foes in the Bomb's Burst 1. X = the foe who held the Bomb with the most Marks."
+  },
+  "Tornado Bolt": {
+    "level": "7",
+    "frequency": "Twice/EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "1d8+4",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Line 6",
+    "effect": "This move has Push X equal to 1 + # of Marks on the target. If the target cannot be pushed the full distance, they gain +1 Mark."
+  },
+  "Shadow Quiver": {
+    "level": "8",
+    "frequency": "Once",
+    "action": "Swift",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user's next standard attack becomes Magical, treats non-player obstructions as Air tiles, and ignores non-targets. This attack loses 2 damage per Air tile passed through."
+  },
+  "Serrated Arrows": {
+    "level": "9",
+    "frequency": "Twice/E3T",
+    "mr": 4,
+    "damage": {
+      "roll": "2d8+5",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 6",
+    "effect": "The target is inflicted with X Bleed/1 equal to half of the damage from this attack's Hunter's Mark."
+  },
+  "Final Hour": {
+    "level": "10",
+    "frequency": "Once",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Self"
+    },
+    "effect": "On the user's next attack, Hunter's Mark has +4 dice faces."
+  },
+  "Bolt Arsenal": {
+    "level": "EX1",
+    "frequency": "Every Turn",
+    "action": "Trigger",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "When they use a single-target Standard Crossbow attack, the user chooses one Bolt:\nBounty Bolt: The target additionally gains half the Marks of the latest foe that died.\nSplit-Head Bolt: The attack targets another foe, but loses Splash.\nReeling Bolt: The target is pulled to a tile in the user's Line 3-6 (in the direction of the attack).\nThese Bolts can only be used once until refresh. As a Swift action, refresh these Bolts."
+  },
+  "Quiver of Thunder": {
+    "level": "EX2",
+    "frequency": "Once",
+    "action": "Free",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Global",
+    "effect": "For one round, foes can only target entities in their Line 8. If they attack the user in Melee, they gain +1 Mark."
+  },
+  "Bound Bow": {
+    "level": "1",
+    "frequency": "Passive",
+    "effect": "The user's Physical attacks become Magical when they target at least one entity at Range 3+. Once per turn, when the user attacks at Range 1-2, the user gains +3 DEF/1."
+  },
+  "Swift Shot": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "2d10+7",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 10",
+    "effect": "If the target is at Range 7+, this move critical hits on 14+. If the target is at under Range 3, gain +1 MP for 2 rounds."
+  },
+  "Crippling Shot": {
+    "level": "2",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "2d8+5",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 10",
+    "effect": "This move's effect changes based on the Range it is used on.\n1-2: This move inflicts Slow/1.\n3+: This move inflicts 2 Cripple/1 on accuracy rolls of 14+.\n7+: This move inflicts Cripple regardless of accuracy."
+  },
+  "Blessed Arrow": {
+    "level": "3",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "2d10+2",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 10",
+    "effect": "For one round, all healing and buffs received or given by allies (including self) within Star 2 of the target is increased by x1.25, and any debuffs given to foes within Star 2 of the target are increased by x1.25 (these effects do not stack). As a non-damaging Standard, this move is 1/Tile/Range 10."
+  },
+  "Scatter Shot": {
+    "level": "4",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "2d10+5",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe(s)"
+    },
+    "range": "Range 10 or Burst 1",
+    "effect": "If the original target is at Range 7+, this move gains Splash 1."
+  },
+  "Dispell Bow": {
+    "level": "5",
+    "frequency": "E3T",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Self"
+    },
+    "effect": "This turn, the user has +2 MP and the user's ranged attacks have their Range reduced to 3 . Next turn, the user has +1 MP and the user's ranged attacks have their Range reduced to 6."
+  },
+  "Arcane Shot": {
+    "level": "6",
+    "frequency": "Twice/EoT",
+    "mr": 5,
+    "damage": {
+      "roll": "3d10+6",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 10",
+    "effect": "If the target is at under Range 3, this move has Push 3. If the target is at Range 7+, this move ignores up to 10 DEF."
+  },
+  "Chase Arrow": {
+    "level": "7",
+    "frequency": "Twice/EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "1d10+5",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Homing 10",
+    "effect": "Targets must be within 8 tiles of the user. This move may target any foes on the path towards the original target, so long as the path taken doesn't exceed the move's range. Damage to these foes does not add ATK/MAG and ignores DEF."
+  },
+  "Volley": {
+    "level": "8",
+    "frequency": "Twice/EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "1d10+5\n(Double Hit)",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 10",
+    "effect": "If the target is 7+ tiles away this move gains +1 hit, if there are any foes within Splash 1 of the original target, this move gains an additional +2 hits. These bonus hits each target a random foe (including ice/stone tiles) in Splash 1 from the original target (including the original target), each apply half of the targets' DEF, and do not add ATK/MAG."
+  },
+  "Fireworks": {
+    "level": "9",
+    "frequency": "Once",
+    "mr": 5,
+    "damage": {
+      "roll": "4d8+4",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 10",
+    "effect": "If the target is at Range 7+, this move has Bomb dice. If the target is under Range 3, before damage, Bound Bow's bonuses become +5 DEF/1 and +1 MP/1 until the user attacks at Range 3+."
+  },
+  "Sniper's Focus": {
+    "level": "10",
+    "frequency": "Every Turn",
+    "action": "Trigger",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "This turn, the user's Standard actions are Full actions and their Range 7+ effects trigger at Range 4+."
+  },
+  "Bound Gauntlet": {
+    "level": "EX1",
+    "frequency": "Passive",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "After dealing damage with a physical attack, deal magic damage equal to the damage (after subtracting DEF) to a different enemy in Melee range (if one exists). After dealing damage with a magical attack, your next physical attack ignores 5 DEF and cannot miss."
+  },
+  "Tactical Sniper": {
+    "level": "EX2",
+    "frequency": "Passive",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "At the start of the game, designate one foe as the Bounty. Attacks against the Bounty treat obstructions as Air tiles and have +1 range. Melee attacks against the Bounty gain +1 dice. When the Bounty dies, immediately designate a new Bounty."
+  },
+  "Hawkeye": {
+    "level": "1",
+    "frequency": "Passive",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user has +2 ACC on all attacks. As a Trigger action before a Standard, they may sacrifice up to 5 ACC to gain an equivalent amount of CR until the start of their next turn."
+  },
+  "Blitz": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "1d8+1\n(Double Hit)",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "This attack critical hits on 18+. For each successful hit, the user gains +4 damage on their next attack."
+  },
+  "Windmill": {
+    "level": "2",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "2d8+4",
+      "type": "Physical"
+    },
+    "action": "Standard or Swift",
+    "target": {
+      "count": "AoE",
+      "group": "Any"
+    },
+    "range": "Burst 1",
+    "effect": "The non-Foe targets gain either +X ACC or CR/1, where X is the amount of players in range. As a Swift, buffs are halved. This is only an attack as a Standard against Foes."
+  },
+  "Hook Shot": {
+    "level": "3",
+    "frequency": "E3T",
+    "mr": 4,
+    "damage": {
+      "roll": "4d6+2",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe or Ally"
+    },
+    "range": "Range 4",
+    "effect": "If this attack has at least +2 CR, the user may pull themselves within Range 2 of the target or the target within Range 2 of the user. This is not an attack if used on Allies."
+  },
+  "Splinter": {
+    "level": "4",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "2d8+0 \n(Double Hit)",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "Each critical hit on this attack gives the user's next attack -1.5 dice faces and +1 base dice. Dice faces round up and cannot go below 1."
+  },
+  "Salvo": {
+    "level": "5",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "1d6+4\n(Triple Hit)",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "The user may target different foes with each hit. This adds ATK/MAG and applies damage effects to each target."
+  },
+  "Trick Shot": {
+    "level": "6",
+    "frequency": "Twice/EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "3d8+3",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "If this move has +ACC, it gains Splash 1. If this move has at least +4 ACC, it becomes Magical and gains Splash 2."
+  },
+  "Surge": {
+    "level": "7",
+    "frequency": "EoT",
+    "mr": 5,
+    "damage": {
+      "roll": "1d4+3\n(Triple Hit)",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "Each critical hit on this attack gives the user's next multi-hit attack +1 hit."
+  },
+  "Venom Shot": {
+    "level": "8",
+    "frequency": "Twice/EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "2d8+3",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "This attack treats non-Hawkeye +ACC as +CR and inflicts Poison/1 equal to 2 * the +CR on this attack. If this is 12+, halve poison damage and extend it by one round."
+  },
+  "Sagittarian Pride": {
+    "level": "9",
+    "frequency": "Twice",
+    "mr": 4,
+    "damage": {
+      "roll": "2d6-1",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Pierce 4",
+    "effect": "This attack has hits equal to the number of moves targets used since the start of the user's last turn."
+  },
+  "Arrow Storm": {
+    "level": "10",
+    "frequency": "Once",
+    "mr": 5,
+    "damage": {
+      "roll": "2d8-4\n(Quad. Hit)",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "This attack critical hits on 18+."
+  },
+  "Shrapnel Tip": {
+    "level": "EX1",
+    "frequency": "EoT",
+    "mr": 5,
+    "damage": {
+      "roll": "1d8-2 (Triple Hit)",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "Each time this attack critical hits, it gains an additional hit with MR3 and a roll of 2d3+0."
+  },
+  "Overdraw": {
+    "level": "EX2",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "4d8+0",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Pierce 4",
+    "effect": "The user's next attack gains one of the following bonuses:\nIf single-hit, the non-duration numbers in its effect are doubled, including X.\nIf multi-hit, its +ACC is instead treated as +dice faces on its accuracy rolls."
+  }
+}
