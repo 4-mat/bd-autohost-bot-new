@@ -127,6 +127,35 @@ describe("parseMapFile", () => {
     ).toContain("map too small: 6 row(s), need at least 7");
   });
 
+  it("allows 5x5 maps tagged for ntr", () => {
+    const five = "nnnnn\nnnnnn\nnnnnn\nnnnnn\nnnnnn\n";
+    const m = parseMapFile(`name: tiny_ntr\nmodes: ntr\n\n${five}`, "t.txt");
+    expect(m.rows).toBe(5);
+    expect(m.cols).toBe(5);
+    expect(m.modes).toEqual(["ntr"]);
+  });
+
+  it("rejects 5x5 maps without an ntr tag", () => {
+    const five = "nnnnn\nnnnnn\nnnnnn\nnnnnn\nnnnnn\n";
+    expect(parseError(`name: tiny\nmodes: ffa\n\n${five}`)).toContain(
+      "need at least 7",
+    );
+  });
+
+  it("rejects unknown game modes in the modes header", () => {
+    expect(parseError(`name: m\nmodes: solo\n\n${seven}`)).toContain(
+      'unknown game mode "solo"',
+    );
+  });
+
+  it("normalizes mode aliases and dedupes the modes list", () => {
+    const m = parseMapFile(
+      `name: m\nmodes: ntr, 1v1, ntr, juggernaut\n\n${seven}`,
+      "t.txt",
+    );
+    expect(m.modes).toEqual(["ntr", "1v1", "jugg"]);
+  });
+
   it("rejects maps narrower than 7", () => {
     const row = "n".repeat(6);
     expect(

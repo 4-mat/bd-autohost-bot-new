@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parseMapFile } from "../src/data/parse-map-file.js";
+import type { MapDef } from "../src/data/maps.js";
 
 const root = process.cwd();
 const mapsDir = join(root, "maps");
@@ -13,13 +14,7 @@ const curatedNames = new Set(
 );
 
 const errors: string[] = [];
-const parsed: {
-  name: string;
-  displayName: string;
-  rows: number;
-  cols: number;
-  grid: number[][];
-}[] = [];
+const parsed: MapDef[] = [];
 const seen = new Set<string>();
 
 for (const file of files) {
@@ -66,6 +61,7 @@ for (const m of parsed) {
   out.push(`  {`);
   out.push(`    name: "${m.name}",`);
   out.push(`    displayName: "${m.displayName}",`);
+  if (m.modes) out.push(`    modes: ${JSON.stringify(m.modes)},`);
   out.push(`    rows: ${m.rows},`);
   out.push(`    cols: ${m.cols},`);
   out.push(`    grid: [`);
@@ -83,5 +79,6 @@ console.log(
   `Imported ${parsed.length} volunteer map(s) into src/data/volunteer-maps.ts`,
 );
 for (const m of parsed) {
-  console.log(`  ${m.name} (${m.rows}x${m.cols}) — ${m.displayName}`);
+  const tags = m.modes ? ` [${m.modes.join(", ")}]` : "";
+  console.log(`  ${m.name} (${m.rows}x${m.cols})${tags} — ${m.displayName}`);
 }

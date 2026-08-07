@@ -1,4 +1,6 @@
 import { Terrain } from "../game/state.js";
+import { GAMEMODE_MIN_SIZE, modeIdFor } from "./gamemodes.js";
+import type { GameModeId } from "./gamemodes.js";
 import type { MapDef } from "./maps.js";
 
 export const MIN_DIM = 7;
@@ -32,7 +34,13 @@ export class MapError extends Error {
 
 const NAME_RE = /^[a-z0-9_-]{1,40}$/;
 const GEN_RE = /^gen\d*$/;
-const HEAD_RE = /^(name|display)\s*:\s*(.*)$/;
+const HEAD_RE = /^(name|display|modes)\s*:\s*(.*)$/;
+
+/** Smallest allowed dimension for a map declaring the given modes. */
+export function minDimFor(modes: readonly GameModeId[]): number {
+  if (modes.length === 0) return MIN_DIM;
+  return Math.max(...modes.map((m) => GAMEMODE_MIN_SIZE[m]));
+}
 
 export function displayFromName(name: string): string {
   return name
@@ -47,6 +55,7 @@ export const displayNameFor = displayFromName;
 export function parseMapFile(text: string, file = "map"): MapDef {
   let name = "";
   let disp: string | undefined;
+  const modes: GameModeId[] = [];
   const rows: { text: string; line: number }[] = [];
   let n = 0;
 
@@ -72,10 +81,23 @@ export function parseMapFile(text: string, file = "map"): MapDef {
             n,
             `"${name}" is reserved for %setmap gen (procedural maps)`,
           );
-      } else {
+      } else if (head[1] === "display") {
         disp = val;
         if (!disp || disp.length > 60)
           throw new MapError(file, n, "display name must be 1-60 chars");
+      } else {
+        for (const rawMode of val.split(/[\s,]+/).filter(Boolean)) {
+          const id = modeIdFor(rawMode);
+          if (!id)
+            throw new MapError(
+              file,
+              n,
+              `unknown game mode "${rawMode}" — use ffa, ntr, jugg, pvp or 1v1`,
+            );
+          if (!modes.includes(id)) modes.push(id);
+        }
+        if (modes.length === 0)
+          throw new MapError(file, n, "modes list is empty");
       }
       continue;
     }
@@ -84,11 +106,12 @@ export function parseMapFile(text: string, file = "map"): MapDef {
   }
 
   if (!name) throw new MapError(file, 0, "missing a `name: <id>` line");
-  if (rows.length < MIN_DIM)
+  const minDim = minDimFor(modes);
+  if (rows.length < minDim)
     throw new MapError(
       file,
       0,
-      `map too small: ${rows.length} row(s), need at least ${MIN_DIM}`,
+      `map too small: ${rows.length} row(s), need at least ${minDim}`,
     );
   if (rows.length > MAX_DIM)
     throw new MapError(
@@ -98,11 +121,11 @@ export function parseMapFile(text: string, file = "map"): MapDef {
     );
 
   const cols = rows[0].text.length;
-  if (cols < MIN_DIM)
+  if (cols < minDim)
     throw new MapError(
       file,
       rows[0].line,
-      `map too narrow: ${cols} columns, need at least ${MIN_DIM}`,
+      `map too narrow: ${cols} columns, need at least ${minDim}`,
     );
   if (cols > MAX_DIM)
     throw new MapError(
@@ -136,6 +159,7 @@ export function parseMapFile(text: string, file = "map"): MapDef {
     rows: grid.length,
     cols,
     grid,
+    modes: modes.length > 0 ? modes : undefined,
   };
 }
 
