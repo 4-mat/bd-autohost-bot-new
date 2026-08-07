@@ -60,6 +60,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -d maps ]; then mkdir -p maps; fi
           git checkout -b "$BRANCH"
           if [ -n "$MODES" ]; then
             printf '# Modes: %s\n' "$MODES" > "maps/$NAME.txt"
