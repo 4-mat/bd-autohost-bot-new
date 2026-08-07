@@ -63,7 +63,7 @@
 	const COLOR_TO_TERRAIN = {};
 	for (const t in TERRAINS) COLOR_TO_TERRAIN[TERRAINS[t].color.toLowerCase()] = t;
 
-	const MIN_DIM = 7;
+	const MIN_DIM = 5;
 	const MAX_DIM = 60;
 
 	function rowLabel(i) {
