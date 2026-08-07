@@ -148,6 +148,14 @@ export interface TriggerEffect {
   effects: Effect[];
 }
 
+export type PhaseTiming = "before-acc" | "before-damage" | "on-miss" | "regardless";
+
+export interface PhaseEffect {
+  type: "phaseEffect";
+  phase: PhaseTiming;
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -170,6 +178,7 @@ export type Effect =
   | TileEffect
   | PerEffect
   | TriggerEffect
+  | PhaseEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -400,6 +409,26 @@ function parseClause(clause: string): Effect[] {
       type: "channel",
       stat: channelMatch[1],
       rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
+    });
+    return effects;
+  }
+
+  // Phase-prefixed: "Before accuracy: EFFECT" / "On Miss: EFFECT" / etc.
+  const phasePrefixMatch = lower.match(
+    /^(before accuracy|before damage|on miss|regard(?:less)?):\s*(.+)$/,
+  );
+  if (phasePrefixMatch) {
+    const phaseMap: Record<string, PhaseTiming> = {
+      "before accuracy": "before-acc",
+      "before damage": "before-damage",
+      "on miss": "on-miss",
+      "regardless": "regardless",
+      "regard": "regardless",
+    };
+    effects.push({
+      type: "phaseEffect",
+      phase: phaseMap[phasePrefixMatch[1]],
+      effects: parseEffects(phasePrefixMatch[2]),
     });
     return effects;
   }
@@ -1673,6 +1702,18 @@ export function* applyEffectStream(
         break;
       }
 
+      case "phaseEffect": {
+        // Phase effects are applied at specific timing points in the pipeline.
+        // When reached at the right phase, expand sub-effects.
+        for (const sub of effect.effects) {
+          const subMsgs = yield* applyEffectStream(
+            game, user, target, [sub], ability,
+          );
+          messages.push(...subMsgs);
+        }
+        break;
+      }
+
       case "per": {
         // Per-hit/Per-X triggers are evaluated during resolution based on
         // their trigger condition (e.g. "Per hit: lose 2 Blood.").
@@ -1788,6 +1829,8 @@ function summariseEffect(eff: Effect): string {
       return `per ${eff.trigger} (...)`;
     case "trigger":
       return `when ${eff.event} (...)`;
+    case "phaseEffect":
+      return `[${eff.phase}] ...`;
     case "unknown":
       return eff.text.slice(0, 40);
   }
