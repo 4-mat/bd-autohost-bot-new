@@ -18,6 +18,7 @@ import { classes, weapons, loadGameData } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
 import {
   GAMEMODE_MAPS,
+  mapsForMode,
   modeIdFor,
   pendingVoterIds,
   randomMapForMode,
@@ -1499,7 +1500,8 @@ function handleSetMap(room: Room, user: User, args: string) {
 
   const lower = mapName.toLowerCase();
 
-  // %setmap <gamemode> — set a random curated map from that mode's pool
+  // %setmap <gamemode> — set a random map from that mode's pool (curated
+  // recommendations plus any volunteer maps tagged for the mode).
   // (e.g. %setmap pvp, %setmap 1v1, %setmap 2v2).
   const modeId = modeIdFor(lower);
   if (modeId) {
@@ -1573,7 +1575,7 @@ function handleListMaps(room: Room, user: User, args: string) {
   const modeId = modeIdFor(filter);
   if (modeId) {
     const byName = new Map(listMaps().map((m) => [m.name, m]));
-    const names = GAMEMODE_MAPS[modeId]
+    const names = mapsForMode(filter)
       .map((n) => byName.get(n)?.displayName ?? n)
       .join(", ");
     return sendPm(

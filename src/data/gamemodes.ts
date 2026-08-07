@@ -1,11 +1,25 @@
+import { MAPS } from "./maps.js";
+
 // Recommended curated maps per game mode.
 //
 // Hosts always pick maps freely via %setmap / %listmaps — these pools are
 // suggestions surfaced by %listmaps so a host setting up a game for a
 // particular mode can quickly find a fitting map. Every name must exist in
 // `src/data/maps.ts` (enforced by src/__tests__/gamemodes.test.ts).
+// Volunteer maps tagged with a `modes:` header are merged into the pools at
+// runtime via mapsForMode().
 
 export type GameModeId = "ffa" | "ntr" | "jugg" | "pvp" | "1v1";
+
+// Smallest allowed map size per mode. NTR maps may be as small as 5x5 so
+// volunteers can make tight centre-hold maps; other modes keep the 7x7 floor.
+export const GAMEMODE_MIN_SIZE: Record<GameModeId, number> = {
+  ffa: 7,
+  ntr: 5,
+  jugg: 7,
+  pvp: 7,
+  "1v1": 7,
+};
 
 export const GAMEMODE_MAPS: Record<GameModeId, string[]> = {
   // Free-for-all: varied, open mid-size maps with fun terrain.
@@ -105,12 +119,27 @@ export function modeIdFor(mode: string): GameModeId | undefined {
 }
 
 /**
+ * Full map-name pool for a mode string: the curated recommendations plus any
+ * volunteer maps tagged for the mode via a `modes:` header in maps/*.txt.
+ * Empty when the mode has no designated pool.
+ */
+export function mapsForMode(mode: string): string[] {
+  const id = modeIdFor(mode);
+  if (!id) return [];
+  const volunteer = [...MAPS.values()]
+    .filter((m) => m.modes?.includes(id))
+    .map((m) => m.name)
+    .sort();
+  return [...GAMEMODE_MAPS[id], ...volunteer];
+}
+
+/**
  * Recommended map-name pool for a mode string, or undefined when the mode has
  * no designated pool.
  */
 export function recommendedMaps(mode: string): string[] | undefined {
   const id = modeIdFor(mode);
-  return id ? [...GAMEMODE_MAPS[id]] : undefined;
+  return id ? mapsForMode(mode) : undefined;
 }
 
 /**
@@ -120,7 +149,7 @@ export function recommendedMaps(mode: string): string[] | undefined {
 export function randomMapForMode(mode: string): string | undefined {
   const id = modeIdFor(mode);
   if (!id) return undefined;
-  const pool = GAMEMODE_MAPS[id];
+  const pool = mapsForMode(mode);
   return pool[Math.floor(Math.random() * pool.length)];
 }
 

@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   GAMEMODE_MAPS,
+  GAMEMODE_MIN_SIZE,
   VOTE_OPTIONS,
   describeModes,
+  mapsForMode,
   modeDescription,
   modeIdFor,
   normalizeVoteMode,
@@ -34,6 +36,35 @@ describe("GAMEMODE_MAPS", () => {
       expect(new Set(pool).size, `${mode} pool has duplicates`).toBe(
         pool.length,
       );
+    }
+  });
+
+  test("ntr maps may be as small as 5x5", () => {
+    expect(GAMEMODE_MIN_SIZE.ntr).toBe(5);
+    for (const [mode, min] of Object.entries(GAMEMODE_MIN_SIZE)) {
+      if (mode !== "ntr") expect(min).toBeGreaterThanOrEqual(7);
+    }
+  });
+});
+
+describe("mapsForMode", () => {
+  test("merges volunteer maps tagged for a mode into its pool", () => {
+    expect(mapsForMode("ntr")).toContain("example-ntr");
+    expect(mapsForMode("ffa")).not.toContain("example-ntr");
+  });
+
+  test("returns empty for unknown modes", () => {
+    expect(mapsForMode("solo")).toEqual([]);
+  });
+
+  test("recommendedMaps includes volunteer-tagged maps", () => {
+    expect(recommendedMaps("ntr")).toContain("example-ntr");
+  });
+
+  test("randomMapForMode can pick a volunteer-tagged map", () => {
+    const pool = recommendedMaps("ntr")!;
+    for (let i = 0; i < 50; i++) {
+      expect(pool).toContain(randomMapForMode("ntr"));
     }
   });
 });
@@ -188,7 +219,10 @@ describe("normalizeVoteMode", () => {
 describe("VOTE_OPTIONS descriptions", () => {
   test("every vote option has a non-empty description", () => {
     for (const opt of VOTE_OPTIONS) {
-      expect(opt.description.trim().length, `${opt.id} missing description`).toBeGreaterThan(0);
+      expect(
+        opt.description.trim().length,
+        `${opt.id} missing description`,
+      ).toBeGreaterThan(0);
     }
   });
 });
@@ -283,9 +317,7 @@ describe("pendingVoterIds", () => {
   });
 
   test("returns empty when everyone voted", () => {
-    expect(pendingVoterIds({ p1: "FFA", p2: "NTR" }, ["p1", "p2"])).toEqual(
-      [],
-    );
+    expect(pendingVoterIds({ p1: "FFA", p2: "NTR" }, ["p1", "p2"])).toEqual([]);
   });
 });
 
