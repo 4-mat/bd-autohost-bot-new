@@ -212,8 +212,7 @@ export const DIRECTION_LABELS: Record<string, string> = {
 
 export function needsDirection(ability: AbilityData): boolean {
   const r = ability.range.toLowerCase().trim();
-  return false;
-  // return /^(cone|line|beam|pierce)\b/.test(r);
+  return /^(cone|line|beam|pierce)\b/.test(r);
 }
 
 export function getDirectionCandidates(): string[] {
@@ -857,19 +856,20 @@ function isValidGroupTarget(
   target: Entity,
   group: string,
 ): boolean {
-  if (group === "self") return target.num === user.num;
-  if (group === "ally")
+  const g = group.replace(/foes/, "foe").replace(/allies/, "ally");
+  if (g === "self") return target.num === user.num;
+  if (g === "ally")
     return target.team === user.team && target.num !== user.num;
-  if (group === "foe") return target.team !== user.team;
-  if (group === "any") return true;
-  if (group === "tile") return false;
-  if (group.includes("self and allies")) return target.team === user.team;
-  if (group.includes("self or ally")) return target.team === user.team;
-  if (group.includes("self or foe"))
+  if (g === "foe") return target.team !== user.team;
+  if (g === "any") return true;
+  if (g === "tile") return false;
+  if (g.includes("self and ally")) return target.team === user.team;
+  if (g.includes("self or ally")) return target.team === user.team;
+  if (g.includes("self or foe"))
     return target.team === user.team || target.team !== user.team;
-  if (group.includes("foe or ally")) return target.num !== user.num;
-  if (group.includes("self, foes, allies")) return true;
-  return true;
+  if (g.includes("foe or ally")) return target.num !== user.num;
+  if (g.includes("self, foes, allies")) return true;
+  return false;
 }
 
 // Push an entity X tiles away from a source in a straight line
@@ -943,7 +943,10 @@ function moveEntityInLine(
 function isPassable(game: Game, r: number, c: number): boolean {
   if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length)
     return false;
-  return isStandable(game.map[r][c]);
+  if (!isStandable(game.map[r][c])) return false;
+  if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c && e.curhp > 0))
+    return false;
+  return true;
 }
 
 // Roll accuracy check
@@ -1023,7 +1026,7 @@ export function dealDamage(
   }
 
   const actual = remaining;
-  entity.curhp -= remaining;
+  entity.curhp = Math.max(0, entity.curhp - remaining);
   return { actual, shieldAbsorbed, shieldBreaks };
 }
 
@@ -1108,12 +1111,16 @@ export function processEndOfTurn(
 }
 
 export function removeEntity(game: Game, entity: Entity) {
-  game.entities = game.entities.filter((e) => e.num !== entity.num);
-  game.turnOrder = game.turnOrder.filter((n) => n !== entity.num);
+  const removedNum = entity.num;
+  const oldIdx = game.turnOrder.indexOf(removedNum);
+  game.entities = game.entities.filter((e) => e.num !== removedNum);
+  game.turnOrder = game.turnOrder.filter((n) => n !== removedNum);
+  if (oldIdx !== -1 && oldIdx < game.turnIndex) {
+    game.turnIndex--;
+  }
   if (game.turnIndex >= game.turnOrder.length) {
     game.turnIndex = 0;
   }
-  // Drop any gamemode vote the removed entity had cast.
   delete game.votes[entity.id];
 }
 
