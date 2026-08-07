@@ -111,7 +111,7 @@ export interface AbilityData {
   frequency: string;
   mr: number;
   roll: string;
-  damageType: "Physical" | "Magical" | "";
+  damageType: "Physical" | "Magical" | "Varies" | "";
   actionType:
     | "Standard"
     | "Full"
@@ -128,6 +128,13 @@ export interface AbilityData {
   maxUses?: number;
   cost?: AbilityCost;
   choices?: AbilityChoice[];
+  variants?: {
+    id: string;
+    label: string;
+    damageType: "Physical" | "Magical";
+    range?: string;
+    effect?: string;
+  }[];
 }
 
 // Parse an ability frequency into a per-battle use limit and a cooldown in turns.
