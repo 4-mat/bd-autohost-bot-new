@@ -469,9 +469,9 @@
 		</div>
 
 		<div class="section">
-			<h3>Grid size <span class="hint">7–60</span></h3>
-			<div class="size-row"><label>Rows</label><input type="number" id="sizeRows" min="7" max="60" value="11"></div>
-			<div class="size-row"><label>Cols</label><input type="number" id="sizeCols" min="7" max="60" value="11"></div>
+			<h3>Grid size <span class="hint">5–60</span></h3>
+			<div class="size-row"><label>Rows</label><input type="number" id="sizeRows" min="5" max="60" value="11"></div>
+			<div class="size-row"><label>Cols</label><input type="number" id="sizeCols" min="5" max="60" value="11"></div>
 			<button class="btn small" id="btnResize" style="width:100%;justify-content:center">Resize grid</button>
 		</div>
 
@@ -562,8 +562,8 @@
 		<div class="modal-head"><h2>✨ New map</h2><button class="btn" data-close="newModal">✕</button></div>
 		<div class="modal-body">
 			<div class="form-row"><label>Name</label><input type="text" id="newName" placeholder="my-arena" spellcheck="false"></div>
-			<div class="form-row"><label>Rows (A–…)</label><input type="number" id="newRows" min="7" max="60" value="11"></div>
-			<div class="form-row"><label>Cols (1–…)</label><input type="number" id="newCols" min="7" max="60" value="11"></div>
+			<div class="form-row"><label>Rows (A–…)</label><input type="number" id="newRows" min="5" max="60" value="11"></div>
+			<div class="form-row"><label>Cols (1–…)</label><input type="number" id="newCols" min="5" max="60" value="11"></div>
 		</div>
 		<div class="modal-foot">
 			<button class="btn" data-close="newModal">Cancel</button>
@@ -1309,8 +1309,8 @@ $('btnNew').addEventListener('click', () => {
 });
 $('btnCreate').addEventListener('click', () => {
 	const name = MC.sanitizeName($('newName').value || 'untitled');
-	const rows = Math.max(7, Math.min(MC.MAX_DIM, Number($('newRows').value) || 11));
-	const cols = Math.max(7, Math.min(MC.MAX_DIM, Number($('newCols').value) || 11));
+	const rows = Math.max(5, Math.min(MC.MAX_DIM, Number($('newRows').value) || 11));
+	const cols = Math.max(5, Math.min(MC.MAX_DIM, Number($('newCols').value) || 11));
 	setMap(MC.emptyMap(rows, cols, name), { silent: true });
 	$('newModal').classList.remove('show');
 	render();
@@ -1319,8 +1319,8 @@ $('btnCreate').addEventListener('click', () => {
 $('btnUndo').addEventListener('click', undo);
 $('btnRedo').addEventListener('click', redo);
 $('btnResize').addEventListener('click', () => {
-	const rows = Math.max(7, Math.min(MC.MAX_DIM, Number($('sizeRows').value) || 11));
-	const cols = Math.max(7, Math.min(MC.MAX_DIM, Number($('sizeCols').value) || 11));
+	const rows = Math.max(5, Math.min(MC.MAX_DIM, Number($('sizeRows').value) || 11));
+	const cols = Math.max(5, Math.min(MC.MAX_DIM, Number($('sizeCols').value) || 11));
 	resizeGrid(rows, cols);
 });
 $('btnDuplicate').addEventListener('click', () => {
