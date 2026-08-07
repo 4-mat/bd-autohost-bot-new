@@ -136,6 +136,18 @@ export interface TileEffect {
   range: number;
 }
 
+export interface PerEffect {
+  type: "per";
+  trigger: string;
+  effects: Effect[];
+}
+
+export interface TriggerEffect {
+  type: "trigger";
+  event: string;
+  effects: Effect[];
+}
+
 export interface OnMissEffect {
   type: "onMiss";
   effects: Effect[];
@@ -161,6 +173,8 @@ export type Effect =
   | DelayLandEffect
   | MultiHitMod
   | TileEffect
+  | PerEffect
+  | TriggerEffect
   | OnMissEffect
   | UnknownEffect;
 
@@ -343,6 +357,7 @@ function parseClause(clause: string): Effect[] {
   const clauseMatch = parseClauseStructured(lower);
   if (clauseMatch) return clauseMatch;
 
+
   // Inflict: "inflict N Status/M" or "inflict Status/M" or "N Status/M" or "Status/M"
   const statusEffects = parseStatusInflict(lower);
   if (statusEffects.length > 0) return statusEffects;
@@ -450,6 +465,26 @@ function parseClauseStructured(lower: string): Effect[] | null {
       type: "conditional",
       condition: `phase is ${phaseCondMatch[1]}`,
       thenEffects: parseEffects(phaseCondMatch[2]),
+    }];
+  }
+
+  // Per: "Per hit: EFFECT" / "Per 5 CP: EFFECT" / "Per X: EFFECT"
+  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
+  if (perMatch) {
+    return [{
+      type: "per",
+      trigger: perMatch[1].trim(),
+      effects: parseEffects(perMatch[2]),
+    }];
+  }
+
+  // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
+  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
+  if (whenMatch) {
+    return [{
+      type: "trigger",
+      event: whenMatch[1].trim(),
+      effects: parseEffects(whenMatch[2]),
     }];
   }
 
@@ -1508,6 +1543,21 @@ function* handleSimple(
         `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
       );
       return;
+    case "per":
+      // Per-hit/Per-X triggers are evaluated during resolution based on
+      // their trigger condition (e.g. "Per hit: lose 2 Blood.").
+      // Parsed but applied separately.
+      messages.push(
+        `  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`,
+      );
+      return;
+    case "trigger":
+      // When-X triggers fire when their event condition is met.
+      // Parsed but applied separately (e.g. "When user damages a foe: heal 1/8").
+      messages.push(
+        `  [When ${effect.event}]: ${summariseEffects(effect.effects)}`,
+      );
+      return;
     case "unknown":
       messages.push(`  ${effect.text}`);
       return;
@@ -1614,6 +1664,8 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   multiHit: handleSimple,
   recoil: handleSimple,
   tile: handleSimple,
+  per: handleSimple,
+  trigger: handleSimple,
   unknown: handleSimple,
 };
 
@@ -1648,6 +1700,11 @@ export function* applyEffectStream(
  * -- this matches the legacy "fan out" log and lets unit tests assert on the
  * output without driving interaction.
  */
+/** Join sub-effect summaries into a single string. */
+function summariseEffects(effects: Effect[]): string {
+  return effects.map(summariseEffect).join(", ");
+}
+
 function drainApplyStream(
   gen: Generator<EffectChoosePrompt, string[], string>,
 ): string[] {
@@ -1704,6 +1761,8 @@ const SUMMARISE: Record<string, (eff: any) => string> = {
   choose: () => "choose (...)",
   conditional: (e) => `if [${e.condition}]`,
   delayLand: () => "delay attacks always land",
+  per: (e) => `per ${e.trigger} (${summariseEffects(e.effects)})`,
+  trigger: (e) => `when ${e.event} (${summariseEffects(e.effects)})`,
   unknown: (e) => e.text.slice(0, 40),
 };
 
