@@ -141,6 +141,18 @@ export interface OnMissEffect {
   effects: Effect[];
 }
 
+export interface PerEffect {
+  type: "per";
+  trigger: string;
+  effects: Effect[];
+}
+
+export interface TriggerEffect {
+  type: "trigger";
+  event: string;
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -162,6 +174,8 @@ export type Effect =
   | MultiHitMod
   | TileEffect
   | OnMissEffect
+  | PerEffect
+  | TriggerEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -1631,6 +1645,11 @@ export function* applyEffectStream(
  * -- this matches the legacy "fan out" log and lets unit tests assert on the
  * output without driving interaction.
  */
+/** Join sub-effect summaries into a single string. */
+function summariseEffects(effects: Effect[]): string {
+  return effects.map(summariseEffect).join(", ");
+}
+
 function drainApplyStream(
   gen: Generator<EffectChoosePrompt, string[], string>,
 ): string[] {
