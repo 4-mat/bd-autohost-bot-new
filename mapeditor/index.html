@@ -416,6 +416,17 @@ kbd {
 	font-family: var(--mono);
 	color: var(--text-dim);
 }
+#mapSearch {
+	width: 100%;
+	box-sizing: border-box;
+	margin-bottom: 4px;
+	padding: 4px 6px;
+	font-size: 12px;
+	border: 1px solid #aaa;
+	border-radius: 5px;
+	background: #fff;
+	color: var(--text);
+}
 @media (max-width: 900px) {
 	aside { width: 190px; padding: 10px; }
 	.gcell { width: 22px; height: 22px; }
@@ -439,6 +450,7 @@ kbd {
 	<aside>
 		<div class="section">
 			<h3>Maps <span class="hint" id="mapCount"></span></h3>
+			<input type="search" id="mapSearch" placeholder="Filter maps…" autocomplete="off">
 			<select id="mapSelect"></select>
 			<div class="maprow">
 				<button class="btn small" id="btnDuplicate" title="Duplicate current map">⧉ dup</button>
@@ -1034,6 +1046,33 @@ function groupLabel(fmt) {
 	return fmt === 'txt' ? 'Volunteer maps' : fmt === 'curated' ? 'Curated maps' : 'Saved maps';
 }
 
+function renderSelect(filter) {
+	const sel = $('mapSelect');
+	sel.innerHTML = '';
+	filter = (filter || '').trim().toLowerCase();
+	const list = filter
+		? repoMaps.filter((m) => ((m.display || m.name) + ' ' + m.name).toLowerCase().includes(filter))
+		: repoMaps;
+	if (!list.length) {
+		sel.innerHTML = '<option value="">' + (filter ? '(no matches)' : '(no maps in repo)') + '</option>';
+		return;
+	}
+	const groups = {};
+	for (const m of list) (groups[m.format] = groups[m.format] || []).push(m);
+	for (const fmt of ['txt', 'curated', 'json']) {
+		if (!groups[fmt]) continue;
+		const og = document.createElement('optgroup');
+		og.label = groupLabel(fmt);
+		for (const m of groups[fmt]) {
+			const opt = document.createElement('option');
+			opt.value = m.name;
+			opt.textContent = (m.display || m.name) + ' (' + m.rows + '×' + m.cols + ')';
+			og.appendChild(opt);
+		}
+		sel.appendChild(og);
+	}
+}
+
 async function refreshMapList(select) {
 	const sel = $('mapSelect');
 	repoMaps = [];
@@ -1048,20 +1087,7 @@ async function refreshMapList(select) {
 		$('mapCount').textContent = '';
 		return;
 	}
-	const groups = {};
-	for (const m of repoMaps) (groups[m.format] = groups[m.format] || []).push(m);
-	for (const fmt of ['txt', 'curated', 'json']) {
-		if (!groups[fmt]) continue;
-		const og = document.createElement('optgroup');
-		og.label = groupLabel(fmt);
-		for (const m of groups[fmt]) {
-			const opt = document.createElement('option');
-			opt.value = m.name;
-			opt.textContent = (m.display || m.name) + ' (' + m.rows + '×' + m.cols + ')';
-			og.appendChild(opt);
-		}
-		sel.appendChild(og);
-	}
+	renderSelect($('mapSearch') ? $('mapSearch').value : '');
 	if (select && repoMaps.some((m) => m.name === select)) sel.value = select;
 	else if (sel.options.length) sel.selectedIndex = 0;
 	$('mapCount').textContent = repoMaps.length + ' in repo';
@@ -1361,6 +1387,20 @@ $('btnDuplicate').addEventListener('click', () => {
 $('btnDelete').addEventListener('click', deleteMap);
 $('mapSelect').addEventListener('change', () => {
 	if ($('mapSelect').value) loadMap($('mapSelect').value);
+});
+$('mapSearch').addEventListener('input', () => {
+	renderSelect($('mapSearch').value);
+	const cur = map && map.name;
+	const opts = $('mapSelect').options;
+	if (cur && cur !== 'untitled') {
+		for (let i = 0; i < opts.length; i++) if (opts[i].value === cur) { $('mapSelect').selectedIndex = i; break; }
+	}
+});
+$('mapSearch').addEventListener('keydown', (e) => {
+	if (e.key !== 'Enter') return;
+	const sel = $('mapSelect');
+	const v = sel.value || (sel.options[0] && sel.options[0].value);
+	if (v) loadMap(v);
 });
 $('mapName').addEventListener('change', () => { map.name = MC.sanitizeName($('mapName').value); });
 document.querySelectorAll('.tool').forEach((t) => t.addEventListener('click', () => setTool(t.dataset.tool)));
