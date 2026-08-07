@@ -1,4 +1,6 @@
 import { Terrain } from "../game/state.js";
+import { volunteerMaps } from "./volunteer-maps.js";
+import type { GameModeId } from "./gamemodes.js";
 
 export interface MapDef {
   name: string;
@@ -6,6 +8,7 @@ export interface MapDef {
   rows: number;
   cols: number;
   grid: Terrain[][];
+  modes?: GameModeId[];
 }
 
 export const MAPS = new Map<string, MapDef>();
@@ -3774,6 +3777,10 @@ MAPS.set("l", {
     [0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0]
   ],
 });
+
+for (const m of volunteerMaps) {
+  MAPS.set(m.name, m);
+}
 
 export function getMapByName(name: string): MapDef | undefined {
   const id = name.toLowerCase().replace(/\s+/g, "");
