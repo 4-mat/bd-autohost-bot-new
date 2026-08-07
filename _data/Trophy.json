@@ -1,0 +1,561 @@
+{
+  "meta": {
+    "sheet": "Trophy",
+    "version": "1.0",
+    "lang": "BD Lang"
+  },
+  "Basic Attack": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "mr": 2,
+    "damage": {
+      "roll": "1d10+2",
+      "type": "Physical or Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+  },
+  "Basic Movement": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "action": "Movement",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends MP to move an equal amount of tiles.\n(For all purposes, Basic Movement is not an ability, but is still an action.)"
+  },
+  "Dash": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "action": "Full",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends MP to move up to x1.5 that amount of tiles (rounded down)."
+  },
+  "Backstep": {
+    "level": "B",
+    "frequency": "Passive",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+  },
+  "Attack of Opportunity": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "mr": 2,
+    "damage": {
+      "roll": "1d10+2",
+      "type": "Physical or Magical"
+    },
+    "action": "Reaction",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)"
+  },
+  "Scoundrel": {
+    "level": "1",
+    "frequency": "Passive",
+    "effect": "When the user rolls 13 or below on their damage roll of a Cutlass attack (excluding base modifier and ATK/MAG/DEF), the user gains 1 Coin. Any number of Coins can be spent when the user uses a Cutlass move that's effect contains \"chooses\", the user then chooses an additional option."
+  },
+  "Dirty Trick": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "3d8+3",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "The user chooses Push/Pull, Splash, Buff, or Status. For one round, the target's Standard attacks do not have the chosen attribute or apply the chosen effect (other parts of its effect still apply if possible)."
+  },
+  "Fancy Footwork": {
+    "level": "2",
+    "frequency": "EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "4d6+2",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "The user chooses Trip or Slip. Trip: For one round, the target must move at least 2 tiles per direction they willingly move. Slip: The user teleports to a tile in an entity's Melee within Range 4."
+  },
+  "Scallywag Slice": {
+    "level": "3",
+    "frequency": "E3T",
+    "mr": 3,
+    "damage": {
+      "roll": "3d8+0",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "The user chooses Outwit or Befuddle. Outwit: This attack gains +1 CR, and the target's Crit Range becomes 1 for the first hit of their next Standard attack. Befuddle: Before accuracy, the target ignores positive effects of tiles for one round."
+  },
+  "Blinding Sheen": {
+    "level": "4",
+    "frequency": "Twice/E3T",
+    "mr": 2,
+    "damage": {
+      "roll": "3d8-8",
+      "type": "Physical"
+    },
+    "action": "Swift",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "The user may spend a Coin to inflict -DEF equal to this attack's damage until the end of this turn. This move ignores outside factors, ATK/MAG, and DEF."
+  },
+  "Swindler": {
+    "level": "5",
+    "frequency": "Passive",
+    "effect": "When the user spends a Coin on an attack, roll 1d2. 1: The user gains -1 dice to the attack and +DMG equal to half the size of the dice removed. 2: The attack treats base rolls of 13 or lower (excluding base modifier) as 16."
+  },
+  "Boot Pin": {
+    "level": "6",
+    "frequency": "Twice/EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "4d6-2",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 3",
+    "effect": "The user chooses to inflict 6 Poison/2 or 6 Cripple/2 on the target. The user gains +3 DMG/1 at the start of their turns for every 6 damage the target takes from the statuses inflicted by this move. The target can remove a status from this move as a Swift."
+  },
+  "Shady Bet": {
+    "level": "7",
+    "frequency": "Once",
+    "mr": 4,
+    "damage": {
+      "roll": "4d6-2",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "If this attack causes the user to gain a Coin, the user gains a Trick Coin instead, which functions like a Coin and has the user choose the effect of Swindler. The user can spend a Coin to gain a Trick Coin from this attack, ignoring Scoundrel."
+  },
+  "Buy Time": {
+    "level": "8",
+    "frequency": "Twice",
+    "action": "Free",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends a Coin to extend the next Cutlass attack's effect by +1 round."
+  },
+  "High Ground": {
+    "level": "9",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "4d8+0",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "The user chooses Pistol or Taunt. Pistol: This attack is AoE/Foes/Pierce 5, and targets' Item moves become Movement actions for one round. Taunt: For one round, targets' AoE attacks become Pierce and must target the user."
+  },
+  "Swashbuckler": {
+    "level": "10",
+    "frequency": "Once",
+    "mr": 4,
+    "damage": {
+      "roll": "3d10-4",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "The user chooses Cruel, Sly, or Daring. Cruel: This attack gains +1 dice. Sly: Before accuracy, the target's duration-based buffs and inflicted debuffs end. Daring: The user gains 10 Shield/1."
+  },
+  "Deathly Crew": {
+    "level": "EX1",
+    "frequency": "Passive",
+    "effect": "If the user spends a Coin on an attack that kills a foe, the user gains 1 Trick Coin. Until they spend the Trick Coin gained from this effect, they have +4 DEF and +1 CR. The user cannot gain another Trick Coin from this effect if they have one already."
+  },
+  "Captain's Order": {
+    "level": "EX2",
+    "frequency": "E3T",
+    "mr": 4,
+    "damage": {
+      "roll": "4d6+2",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "The target chooses Plank or Marooning. If Plank is chosen, the target is pushed 2 tiles and they take 4 damage for each of the user's ongoing Cutlass effects they have. If Marooning is chosen, the target's next Standard attack has 25% recoil."
+  },
+  "Bloodthirst": {
+    "level": "1",
+    "frequency": "Passive",
+    "effect": "The user can have up to 10 Blood. At the end of their turn, they gain 2 Blood, and gain 1 whenever they are hit by an attack. When they reach 10 Blood, the next attack on them automatically hits, causes the user to lose all Blood, and if it would already hit, it also deals double damage.\nThe user's Thirst N effects are active as long as the user has N or more Blood when they select the move (those effects are mandatory)."
+  },
+  "Twin Fangs": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "2d6+4",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "Every time this move hits, the user loses 2 Blood.\nThirst 5 : This move gains 3 MR and becomes Double Hit."
+  },
+  "Otherworldly Attraction": {
+    "level": "2",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "3d6+7",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 2,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "Roll accuracy separately for each target. Statuses inflicted by this move are ignored when moving towards the user.\nThis move inflicts Slow/1.\nThirst 4 : Also inflict Cripple 4/1."
+  },
+  "The Urge": {
+    "level": "3",
+    "frequency": "Passive",
+    "effect": "The user gets all the following :\nThirst 3: The user gets +1 MP. (Active as long as the user has 3 or more Blood).\nThirst 4: The user cannot be Slowed, Rooted, Sealed or Stunned, and takes half damage from Confusion and Cripple.\nThirst 6: The user's attacks have +1 base dice."
+  },
+  "Draw Blood": {
+    "level": "4",
+    "frequency": "Twice/E3T",
+    "damage": {
+      "roll": "1d6",
+      "type": "Physical"
+    },
+    "action": "Swift",
+    "target": {
+      "count": 1,
+      "group": "Self"
+    },
+    "effect": "This move does not add ATK / DEF and automatically hits (it still rolls accuracy).\nThe user gets +1 MP this turn. If this move deals 5 or more damage, the user gains 1 additional Blood and their next attack this turn also gains +1 base dice."
+  },
+  "Uninvited Guest": {
+    "level": "5",
+    "frequency": "Twice",
+    "mr": 3,
+    "damage": {
+      "roll": "3d10+0",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "If this user's first attack on the target, gain 2 Blood.\nIf one of the user or the target has attacked the other during their previous turn but not the other way around, this move gains +8 CR."
+  },
+  "Blood Wave": {
+    "level": "6",
+    "frequency": "Twice/EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "3d6+5",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Pierce 5",
+    "effect": "If the user was attacked multiple times during their previous turn, they may gain 1 Blood when using this move, before Thirst effects.\nThirst 3: Also inflict each target with -X DEF/2, where X is the user's Blood.\nThirst 5: The user may have this move become AoE / Foes / Beam 5."
+  },
+  "Indulge": {
+    "level": "7",
+    "frequency": "Once",
+    "mr": 4,
+    "damage": {
+      "roll": "1d4+2",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This move ignores the target's DEF.\nThirst 7: If this move hits, lose half your current Blood (rounded up), and heal equal to 30% of the damage dealt, then the user cannot gain Blood until the start of their next turn.\nThirst 10: This move has no effects instead."
+  },
+  "Blood Whirl": {
+    "level": "8",
+    "frequency": "Twice/E3T",
+    "mr": 5,
+    "damage": {
+      "roll": "2d10+7",
+      "type": "Physical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Burst 1",
+    "effect": "Roll accuracy separately for each target. Lose X Blood, where X is the number of targets hit.\nThirst 4: This move becomes Star 2. \nThirst 7: Before accuracy, teleport up to 2 tiles."
+  },
+  "Night Visitor": {
+    "level": "9",
+    "frequency": "Once",
+    "mr": 4,
+    "damage": {
+      "roll": "4d10+5",
+      "type": "Physical"
+    },
+    "action": "Full",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Global",
+    "effect": "This move can only be used on a foe that the user has damaged this game that is not in melee range. Before accuracy, teleport to any tile within melee range of its target.\nThirst 5: This move attacks to foes in Star 1 of the user (after the teleport) and inflicts Slow/1 on all targets hit.\nThirst 9: This move can be used even in melee and hits foes in Star 2 instead of Star 1 and if this move hits, lose 1 Blood +1 per target hit."
+  },
+  "Sky Turns Red": {
+    "level": "10",
+    "frequency": "Once",
+    "action": "Swift",
+    "effect": "The user's next 2 Fangs attacks on foes cannot cause the user to lose Blood and gain \"Thirst X: This move ignores X DEF, and heals equal to 5 * X% of the damage dealt to one target.\" (X is equal to the user's Blood).\nThis effect ends if the user reaches 10 Blood, if they use Indulge (before accuracy), or if they use a Free action to end it early."
+  },
+  "Nocturnal Predator": {
+    "level": "EX1",
+    "frequency": "Passive",
+    "effect": "The user does not get an extra Standard nor take their action normally during their turn, but instead takes an extra turn after every foe's turn. Effects with a turn duration and frequencies count down only when the user would normally take their turn. During those extra turns, the user's MP is halved."
+  },
+  "Sanguine Explosion": {
+    "level": "EX2",
+    "frequency": "Once",
+    "mr": 5,
+    "damage": {
+      "roll": "3d4+2",
+      "type": "Magical"
+    },
+    "action": "Reaction",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Star 4\n(Push 2)",
+    "effect": "This move can be used when the user reaches 10 Blood. It inflicts Slow/1 on all targets hit. It can also be used without consuming a use whenever a foe dies, in which case the move originates from the foe and becomes Burst 2 instead and loses Push."
+  },
+  "Ramping Magic": {
+    "level": "1",
+    "frequency": "Passive",
+    "effect": "When the user targets 2+ foes with a Scissors attack, all of the user's Weapon attack and effects have their AoE range increased by +1 and Push/Pull effects increased by +1. This Passive only triggers once between the start of the user's turns."
+  },
+  "Lasting Cuts": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "mr": 2,
+    "damage": {
+      "roll": "4d6+2",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Cone 1",
+    "effect": "Targets are inflicted with 3 Cripple/1. If a target is already inflicted with Cripple, their Cripple is increased by 2, and its' duration is set to one round if it is less than that."
+  },
+  "Savage Spin-out": {
+    "level": "2",
+    "frequency": "EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "2d8+7",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4\n(Splash)",
+    "effect": "This attack's Splash is a Beam 1 behind the target. The original target is Pulled 3 tiles, while the splashed targets are Pushed 1 tile."
+  },
+  "Silk Cocoon": {
+    "level": "3",
+    "frequency": "E3T",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Tile"
+    },
+    "range": "Homing 4",
+    "effect": "Create a Silk Cocoon [Star tile] on an unoccupied tile in range. If the user already has a Silk Cocoon, the previous one is destroyed. It acts like an Ice tile with 25 HP, but the user's attacks deal only a maximum of 15 damage to it, and the user's Scissors effects ignore its Ice Clause. Tiles in the Silk Cocoon's Burst 1 take an additional 1 MP to enter. This effect does not stack and its range cannot be increased."
+  },
+  "Debilitate": {
+    "level": "4",
+    "frequency": "E3T",
+    "mr": 4,
+    "damage": {
+      "roll": "3d10+5",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This attack ignores 4 DEF, increased by another 4 per Ramping Magic proc. If this attack ignores all of the target's MDEF, it triggers Ramping Magic."
+  },
+  "Piercing Jab": {
+    "level": "5",
+    "frequency": "E3T",
+    "mr": 4,
+    "damage": {
+      "roll": "1d12+5",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Pierce 3",
+    "effect": "For every 30 damage the user has taken since the start of their last turn, this attack gains +1 dice and has its' range upgraded (Pierce -> Beam -> Cone)."
+  },
+  "Enchanted Blade": {
+    "level": "6",
+    "frequency": "Twice/E3T",
+    "mr": 3,
+    "damage": {
+      "roll": "3d8+3",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Beam 2",
+    "effect": "Targets are inflicted with 4 Curse/1 or 4 Bleed/1. If there are multiple targets, inflict both, but their damage does not stack."
+  },
+  "Handle Bash": {
+    "level": "7",
+    "frequency": "Thrice/EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "2d10+7",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Cone 1",
+    "effect": "This attack has Pull 1 or Push 1, chosen by the user. The user teleports to a tile in Beam 2 in the direction of this attack (Push) or in the opposite direction (Pull). On their next turn, all of the target's actions, including Basic Movement, cost 1 MP to use."
+  },
+  "Weaver's Whirl": {
+    "level": "8",
+    "frequency": "E3T",
+    "action": "Swift",
+    "target": {
+      "count": "AoE",
+      "group": "Allies and Self"
+    },
+    "range": "Burst 1",
+    "effect": "Targets gain 2d8 Shield/1. When this Shield is broken, foes in their Star 1 are inflicted with -2 MP/1. This can stack to a maximum of -4."
+  },
+  "Thirteenfold Cut": {
+    "level": "9",
+    "frequency": "Twice/E3T",
+    "mr": 4,
+    "damage": {
+      "roll": "2d6+12",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Cone 1",
+    "effect": "Pick up to 3 players in range to inflict with -5 DEF/1. Those players may choose to negate this debuff on themselves. For each one that does, the user gains +4 DEF/1."
+  },
+  "Guillotine": {
+    "level": "10",
+    "frequency": "Every Turn",
+    "mr": 4,
+    "damage": {
+      "roll": "3d10+7",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Cone 1",
+    "effect": "This attack starts at zero uses and gains a use whenever Ramping Magic activates. This attack has +1 dice for each time Ramping Magic has activated, and -1 dice per target."
+  },
+  "Jammed Blades": {
+    "level": "EX1",
+    "frequency": "Passive",
+    "effect": "The user's Silk Cocoon's Frequency is Every Turn and it is immune to damage, but disappears at the start of their next turn. Piercing Jab cannot gain more than 3 dice."
+  },
+  "Silken Suit": {
+    "level": "EX2",
+    "frequency": "Passive",
+    "effect": "The first time the user damages or is damaged by a foe, they take 20% less damage from all attacks for one round."
+  }
+}

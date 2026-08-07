@@ -1,0 +1,70 @@
+Name,Lv.,Frequency,MR,Damage,,,Target,,,Effect
+,,,,Roll,Type,Action,Amount,Group,Range,
+Basic Abilities,,,,,,,,,,
+Basic Attack,B,Every Turn,2,1d10+2,Physical or Magical,Standard,1,Foe,Melee,"This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+Basic Movement,B,Every Turn,-,-,-,Movement,-,Self,-,"The user spends MP to move an equal amount of tiles.
+(For all purposes, Basic Movement is not an ability, but is still an action.)"
+Dash,B,Every Turn,-,-,-,Full,-,Self,-,The user spends MP to move up to x1.5 that amount of tiles (rounded down).
+Backstep,B,Passive,-,-,-,-,-,Self,-,"During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+Attack of Opportunity,B,Every Turn,2,1d10+2,Physical or Magical,Reaction,1,Foe,Melee,This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)
+Noble Abilities,,,,,,,,,,
+,,,,,,,,,,
+"Crown (God evening, Datdoiboi, Zuko743)",,,,,,,,,,
+65 HP | 12 ATK | 9 MAG | 3 PDEF | 3 MDEF | 0.5 EVA | 2 MP ,,,,,,"""Builds up their defences over time as they decay and refresh.""",,,,
+Right to Rule,1,Passive,-,-,-,-,-,Self,-,"The user starts the game with 3 Campaigns (maximum of 3), granting +2 DEF each. The user loses a Campaign when they deal or receive 10 or more damage at once.
+When the user makes an attack with no Campaigns, it has +1 dice and +1 accuracy."
+Coronation,1,Every Turn,-,-,-,Reaction or Trigger,-,Self,-,"This may be used immediately when the user reaches 0 Campaigns, or at the start of the user's turn when they have no Campaigns. Right to Rule's maximum is increased by 1, and the user gains maximum Campaigns."
+Besiege,1,Every Turn,2,2d8+4,Magical,Standard,1,Foe,Range 2,Before accuracy the user may sacrifice up to 10 HP to gain an equal Shield/1. This shield is increased 1.5x if the target has more than half of their max HP.
+Bastion,2,EoT,3,3d8+1,Magical,Standard,AoE,Foes,Pierce 4,"For one round, Foes attacks entering the user's Cone 1 (in a chosen direction) lose 2 dice. Until the user leaves Melee range of their current tile they have +4 DEF."
+Catapult Campaign,3,EoT,4,2d10+5,Physical,Standard,1,Foe,"Range 4
+(Splash 1)","This attack can't be used in Range 2. Targets with >75% HP are inflicted with 5 Bleed/1. If possible, the user may inflict themselves with 10 Bleed/1 to double the Bleed damage."
+Ambush,4,Thrice / E3T,3,2d12+8,Physical,Standard,AoE,Foes,Pierce 3,The user loses all Campaigns and Coronation is disabled until the start of the user's next turn. The user gains +0.5 MP/1 and +2 damage/1 for every Campaign lost. This may be used as a non-damaging Swift on the user.
+Entrench,5,E3T,3,1d10+8,Magical,Standard,1,Foe,Line 4,"If the user has less than 6 bonus DEF, gain +3 DEF/1. For one round, the user loses an additional Campaign for each instance of Right to Rule"
+Crusade,6,Thrice / E3T,-,-,-,Swift,AoE,Self and Allies,Burst 1,Until the start of their next turn the user gains +1 MP and Right to Rule's bonuses are increased by 1. For this duration targetted allies gain +1 MP and the user's unmodified Right to Rule bonuses
+War of Attrition,7,E3T,3,2d8+7,Physical,Standard,AoE,Foes,Burst 1,Before damage this attack inflicts the inverse of the user's active Right to Rule bonuses for one round.
+Shock and Awe,8,Twice / EoT,4,3d10+0,Magical,Standard,AoE,Foes,Cone 1,"If the user has at least 3 Campaigns, attacks against the user are immune to positive outside factors to damage and accuracy for one round."
+The Art of War,9,Twice / E3T,4,2d6+4,Varies,Standard,1,Foe,Melee,"The user chooses War or Peace:
+War: Physical. If the user has no Campaigns this attack has +dice faces equal to 1.5x the user's Campaign maximum.
+Peace: Magical. Until their next Standard/Full attack resolves, the target has -X/3 MP and -2X ATK/MAG where X is the number of Campaigns the user currently has."
+Last Stand,10,Once,4,2d12+2,Magical,Standard,1,Foe,Melee,"For one round, when the user would take more than 55-3X damage, where X is the user's Campaign maximum, the attacker takes 3d8+2 damage and the damage of the attack is reduced by 3X."
+Declaration of War,EX1,Passive,-,-,-,-,-,-,-,The user gains only +1.5 DEF from each Campaign. The user starts the game with 0 or 4 Campaigns (user's choice).
+Imperial Tyranny,EX2,Passive,-,-,-,-,-,-,-,Foes in the user's Star 3 have -0.5 DEF and -0.5 ATK/MAG for every Campaign the user has. If the user has no Campaigns Foes attacking the user take 10% recoil.
+"Katana (Celeryyyy, Taistelu, god evening)",,,,,,,,,,
+65 HP | 16 ATK | 14 MAG | 2 PDEF | 1 MDEF | 0.6 EVA | 3 MP ,,,,,,"""The more health you lose, the more powerful you become.""",,,,
+Resolute Blade,1,Passive,-,-,-,-,-,-,,"The user gains/loses 1 Resolve (min. 0) per HP lost/gained, respectively. When the user misses or a target dies due to the user, regain any Resolve spent on that attack. If the user has over 100 Resolve before using an attack, it has Advantage damage dice. The user can only gain 20 Resolve via self-damage (including tiles) per round."
+Cursed Slice,1,Every Turn,3,3d7+4,Physical,Standard,1,Foe,Melee,"This attack has +1 CR, and the target's next Standard/Full attack has 5% Recoil. The user may spend 10 Resolve up to 5 times to increase these values by 1 and 5, respectively."
+Lunge,2,Every Turn,3,2d6+7,Physical,Standard,1,Foe,Range 4,"The user moves as close to the target as possible (even on miss), and may lower this attack's MR by 1 for 20 Resolve up to 3 times. After damage, the user may choose to take and deal 10% more damage for one round."
+Blade of Woe,3,EoT,4,3d6+2,Magical,Standard,1,Foe,Range 3,"Before damage, both the user and target are inflicted with 5 Curse/1. The first time the user spends Resolve after taking a total of 55+ damage while Cursed, the amount of Resolve applied to the effect is 1/3 more than the amount spent."
+Fallen Blade,4,Passive,-,-,-,-,-,-,-,"When the user is missing 25%, 50%, or 75% (rounded down) of their max HP, they gain 1 Enrage. Each Enrage can only be gained once, even if healed above the threshold. The user's attacks have +1 dice per Enrage."
+Kensei,4,E3T,-,-,-,Trigger,-,-,-,"At the start of the user's next turn, gain Resolve equal to X% of Resolve gained since this ability was used, where X = 150 - User's Max HP (before multipliers, max 20%)."
+Lotus Strike,5,Twice/E3T,5,2d6+1,Physical,Standard,1,Foe,Melee,"The user spends all their Resolve. This attack has X hits, where X = Spent Resolve/30. This attack also has 5*X% recoil, which does not generate Resolve."
+Delirium,6,Twice/E3T,-,-,-,Swift,1,Foe,Melee,"The user may inflict the target with the following debuffs, each costing 25 Resolve, where X is the user's current Enrage: -X ACC and CR/1, -X dice/1, -5X DEF/1.
+The user may spend an additional 30 Resolve to add the following effect: 
+""If these debuffs are cleansed or cannot be inflicted, the target gains disadvantage damage dice for one round."""
+Provoke,7,EoT,4,2d8+5,Magical,Standard,1,Foe,Range 3,"If the target doesn't deal at least 45 damage to the user with an attack that targets them on their next turn, the user's Resolve gain is multiplied by 1.75x for one round and the Resolve the user gained since Provoke was used is also multiplied by 1.75x."
+Bloodspill,8,Twice/EoT,4,3d4+5,Physical,Standard,AoE,Foes,Cone 1,"The user may spend 40 Resolve to make this attack either Burst 1 or Cone 2 or 70 Resolve to make this attack Burst 2 or Cone 3. For each target killed with this ability, do not consume a use, gain 1 Enrage, and lower the Resolve threshold for advantage by 20."
+Bushido,8,Once,-,-,-,Swift,2,Ally,Range 3,"Select up to two allies in range. For one round, the user gains extra Resolve equal to 50% of the damage these allies took from attacks that targetted them but did not target the user."
+Rising Sun,9,Once,4,3d8+3,Magical,Standard,1,Foe,Melee,"The user spends up to 100 Resolve to gain X% of this attack's damage (not including overkill) as Shield/1, where X = Spent Resolve/1.5. If this is the first ability the user has used this turn, their turn does not end until they use another (non-Standard/Full) that does not move them away from the target or enable further standards.
+While this Shield is active, healing does not decrease the user's Resolve."
+Giant Slayer,10,Once,5,1d8+10,Physical,Standard,1,Foe,Melee,"If the user has less HP than the target, they may spend up to X Resolve, where X is the difference between the user’s and target’s HP. For every 10 Resolve spent, gain +2+Y damage, where Y is current Enrage."
+Zanshin,EX1,Passive,-,-,-,-,-,-,-,"The user's Resolve cannot exceed 150. Whenever the user would exceed their max Resolve, their next attack gains +1 ACC/CR. Fallen Blade's Enrage thresholds are converted to every 1/6th of HP."
+Fudoshin,EX2,Passive,-,-,-,-,-,-,-,Zanshin's bonuses for exceeding Resolve are doubled. Bonus Enrage dice are doubled on critical hits.
+"Rapier (God evening,ThrohOrFalse, Datjoiboi, Kry)",,,,,,,,,,
+60 HP | 14 ATK | 12 MAG | 5 PDEF | 5 MDEF | 1 EVA | 3 MP ,,,,,,"""Thwart even the most powerful attacks with flawlessly timed reactions""",,,,
+Allez,1,Every Turn,-,-,-,Reaction,-,Self,-,"This may be used on an attack involving the user, once between the starts of the user's turns. Remove 1 dice and store a Focus with a value of half of the removed dice faces."
+Point-in-Line,1,Every Turn,3,2d8+4,Physical,Standard,AoE,Foes,Pierce 3,"Targets are inflicted with -2 dice faces/1. If this debuff is not active on use, the user gains +2 dice faces/1. The user may spend a Focus to increase one effect by half of its value."
+Thrust,2,EoT,3,2d10+2,Physical,Standard,1,Foe,Range 5,"The user moves to a tile in the target's Melee. If this attack has damage removed by outside factors, inflict 2 Bleed/1. The user may spend a Focus to increase the Bleed damage by its value or extend the duration by 1 round."
+Deflect,3,EoT,2,1d6+3,-,Reaction,1,Foe,Global,"This may be used on a Foe attacking the user. The attack loses 10% of its damage and the user stores this value as a Focus. If the attack moves the user, this attack has Pull 2 after the attack resolves. This attack ignores non-Rapier outside factors."
+Counter,4,E3T,4,1d12+6,Physical,Standard or Reaction,1,Foe,Range 2,"This may be used on a Foe dealing 40+ damage to the user, ignoring ATK/MAG/DEF and non-Rapier outside factors. The user's active Rapier effects are extended by 1 round and their next spent Focus increased 1.5x."
+En Garde,5,Thrice / EoT,-,-,-,Free,2,Self and Allies,Range 3,"The user may spend up to two Focus. For each Focus, a chosen target may gain either HP or +DEF/1 equal to it's value. The user may move 2 tiles after their next reaction."
+Feint,6,E3T,4,3d8+6,Physical,Standard,AoE,Foes,Beam 2,"For one round, targets take half of the damage that other targets take from the user's out-of-turn damage. The user may spend a Focus to give a chosen target Focus*2% recoil on attacks for one round."
+Parry,7,Once,-,-,-,Reaction,-,Self,-,"This may be used on an attack involving the user, if the user has not used a Rapier reaction since the acting player's last turn ended. The attack loses all damage and dice buffs. Store a Focus with a removed buff's value."
+Patinando,8,Twice,3,4d6+0,Physical,Standard,2,Foes,"Melee
+(Push 1)","For each damage dice that rolls 4+, this attack gains 1 Push. For each damage dice that rolls <4, inflict (stacking) 3 Cripple/1. After damage the user may spend Focus to replace damage dice with its value."
+Moulinet,9,Twice / E3T,4,4d4+6,Physical,Standard,1,Foe,Line 4,"The target gains +4 DMG/1 or +4 DEF/1. The user may spend a Focus to heal 3 HP each time the target uses an ability during their next turn. If the user does not spend Focus, the next time they spend Focus they gain a Focus of half it's value."
+Redoublement,10,Once,5,"2d4-1
+(Double Hit)",Physical,Standard,1,Foe,Melee,The user may spend any number of Focus to give this attack +1 hit for each one spent. Each hit gained by Focus has +CR equal to the value of that Focus.
+One for All,EX1,Once,5,2d12+6,Physical,Standard,1,Foe,"Line 4
+(Splash 2)","This attack ignores 1/4 DEF. The user may make the splash Star 2 to ignore 1/2 DEF, or Line 2 to ignore 3/4 DEF. For each target, the user gains a Focus equal to the DEF this attack ignores on them."
+All for One,EX2,Every Turn,-,-,-,Reaction,-,Self,-,"This may be used when the user spends Focus. If the reacted ability targets a player the user has already spent Focus targeting, gain a Focus of half the spent value."
+,,,,,,,,,,
