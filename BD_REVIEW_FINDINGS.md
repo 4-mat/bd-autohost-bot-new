@@ -4,8 +4,8 @@ Synthetic Greptile review of the entire `bd-autohost-bot-new` repository.
 Because a whole-repo diff exceeds Greptile's limits, the codebase was split into 13 chunks, each reviewed against an empty tree base (`empty-base`) so the diff is exactly the chunk's files. Greptile's graph index still provides full-repo context.
 
 - Method: Greptile CLI `greptile review -b empty-base` per chunk + Greptile GitHub app reviews on chunk PRs (with flowcharts).
-- 28 real findings (23 P1, 5 P2), 6 chunk-artifact false positives, 2 `.xlsx` binaries not reviewed.
-- 13 chunk reviews (PRs #74–#86) plus a deep adversarial pass over the game engine (PR #88), a combat-flow conformance check (PR #89), an attack-builder review (PR #91), and a BD-lang design review (PR #92).
+- 31 real findings (26 P1, 5 P2), 6 chunk-artifact false positives, 2 `.xlsx` binaries not reviewed.
+- 13 chunk reviews (PRs #74–#86) plus a deep adversarial pass over the game engine (PR #88), a combat-flow conformance check (PR #89), an attack-builder review (PR #91), a BD-lang design review (PR #92), and a complete-coverage BD-lang design pass (PR #94, resulting in `BD_LANG_V1_SPEC.md`).
 
 ## Real findings
 
@@ -101,6 +101,19 @@ Design consultation on the spec docs (BD_LANG_SPEC, BD_LANG_REWORDING_GUIDE, EFF
 28. **P2 — Unknown conditions execute as true** (`src/game/effects.ts:1523`)
     Unhandled conditions (e.g. `at maximum range`) fall through `evaluateCondition` to the positive branch, applying gated effects instead of erroring or remaining unapplied.
 
+## BD lang complete-coverage design (PR #94, review-bdlang2)
+
+Follow-up to the bdlang design review. Chunk = the FULL corpus (`_data/*.json` 373 abilities), `_original_source/` raw sheets, `move_sort_csv` grids, `EFFECT_SORT.md`, current specs, `_group_effects.mjs`, and `effects.ts` (review ID `b0638d02-62c0-419e-8602-9fb28f80debf`). Confidence 2/5 on the draft specs.
+
+29. **P1 — Corpus coverage remains unaudited** (`BD_LANG_SPEC.md:1-3`)
+    The spec claims completeness with no exhaustive sentence-pattern mapping (counts + rewrites), so collapsed mechanics can't be caught during parser validation.
+30. **P1 — Stat syntax breaks round trips** (`BD_LANG_SPEC.md:166-170`)
+    `Buff: +ATK 5 for 1 round` / HP modifiers: `parseStatMods` expects the number before the stat, captures durations only as `/N`, and excludes HP — so duration or the whole modifier is lost on execution.
+31. **P1 — Fallback defeats deterministic parsing** (`BD_LANG_SPEC.md:255-257`)
+    `plain_english_text` accepts any unmatched effect as valid opaque text, so unsupported mechanics pass validation unparsed/un-round-tripped.
+
+**Outcome — `BD_LANG_V1_SPEC.md`** (on PR #94): a complete prose-first BD lang designed against the corpus — full EBNF grammar (no fallback; unknown sentences are parse errors with line:column), one canonical template per grid category (T01–T40, each annotated HANDLED/PARTIAL/NEW vs `effects.ts`), example ability/weapon/class, a corpus pattern→template coverage audit with counts and verbatim nasty-sentence rewrites, ordered implementation steps (vocab → tokenizer → splitter → matchers → AST → round-trip validator → executor extension), and 8 deliberately open grammar holes (tabled rolls, event-history conditions, HP-percentage conditions, damage redirection, subweapon branches, etc.).
+
 ## Combat-flow conformance (PR #89, flowcheck-combat)
 
 The attack-resolution pipeline was checked against the intended 10-step combat flowchart (review ID `a198d421-8df3-4bfc-a14b-56904b61d5bb`). Overall verdict: the order is roughly right (costs → target → acc → damage → cleanup), but the code is **not conformant**.
@@ -160,7 +173,8 @@ No findings (5/5 confidence): `review-bigdata` (data/abilities.json + .sheets-st
 | flowcheck-combat     | #89 | a198d421-8df3-4bfc-a14b-56904b61d5bb |
 | review-attackbuilder | #91 | 814833e3-cd97-4665-9dbd-a957e92954e4 |
 | review-bdlang        | #92 | 0c853c3a-ab3a-44b3-9d0e-3304f73efcb8 |
+| review-bdlang2       | #94 | b0638d02-62c0-419e-8602-9fb28f80debf |
 
 Re-open a CLI review anytime with `greptile review show <ID>` (run from the `bd-autohost-fullreview` worktree).
 
-The PRs (#74–#86, #88, #89, #91, #92, base `empty-base`) are synthetic review-only PRs — **do not merge**; safe to close.
+The PRs (#74–#86, #88, #89, #91, #92, #94, base `empty-base`) are synthetic review-only PRs — **do not merge**; safe to close.
