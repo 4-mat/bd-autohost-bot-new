@@ -111,11 +111,6 @@ export interface ChannelEffect {
   rounds: number;
 }
 
-export interface PhaseEffect {
-  type: "phase";
-  phase: string;
-}
-
 export interface DelayLandEffect {
   type: "delayLand";
 }
@@ -153,6 +148,18 @@ export interface TriggerEffect {
   effects: Effect[];
 }
 
+export type PhaseTiming =
+  | "before-acc"
+  | "before-damage"
+  | "on-miss"
+  | "regardless";
+
+export interface PhaseEffect {
+  type: "phaseEffect";
+  phase: PhaseTiming;
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -176,6 +183,7 @@ export type Effect =
   | OnMissEffect
   | PerEffect
   | TriggerEffect
+  | PhaseEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -350,7 +358,6 @@ function parseClause(clause: string): Effect[] {
 
   const clauseMatch = parseClauseStructured(lower);
   if (clauseMatch) return clauseMatch;
-
   // Inflict: "inflict N Status/M" or "inflict Status/M" or "N Status/M" or "Status/M"
   const statusEffects = parseStatusInflict(lower);
   if (statusEffects.length > 0) return statusEffects;
@@ -448,14 +455,6 @@ function parseClauseStructured(lower: string): Effect[] | null {
         rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
       },
     ];
-  }
-
-  // Phase: "Phase: PHASE_NAME"
-  const phaseMatch = lower.match(
-    /^phase:\s*(new moon|waxing|full moon|waning)$/,
-  );
-  if (phaseMatch) {
-    return [{ type: "phase", phase: phaseMatch[1] }];
   }
 
   // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
@@ -1687,13 +1686,12 @@ function* handleChoose(
 }
 
 function* handlePer({ messages }: EffectCtx, effect: PerEffect) {
-  messages.push(`  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`);
+  messages.push(
+    `  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`,
+  );
 }
 
-function* handleTrigger(
-  { messages }: EffectCtx,
-  effect: TriggerEffect,
-) {
+function* handleTrigger({ messages }: EffectCtx, effect: TriggerEffect) {
   messages.push(
     `  [When ${effect.event}]: ${summariseEffects(effect.effects)}`,
   );
@@ -1754,7 +1752,7 @@ export function* applyEffectStream(
     } else {
       // No registered handler: surface the raw clause text.
       messages.push(`  ${(effect as { text?: string }).text ?? ""}`);
-        }
+    }
   }
 
   return messages;
@@ -1800,7 +1798,8 @@ function drainApplyStream(
 
 function summariseEffect(eff: Effect): string {
   const fn = SUMMARISE[eff.type];
-  return fn ? fn(eff as any) : "";}
+  return fn ? fn(eff as any) : "";
+}
 
 /** Per-effect-type one-line summary, used in choose-prompt option labels. */
 const SUMMARISE: Record<string, (eff: any) => string> = {
@@ -1833,7 +1832,6 @@ const SUMMARISE: Record<string, (eff: any) => string> = {
   trigger: (e) => `when ${e.event} (...)`,
   unknown: (e) => e.text.slice(0, 40),
 };
-
 function parseChosenIdx(chosenId: string, total: number): number {
   const m = chosenId.match(/:(\d+)$/);
   if (!m) return 0;

@@ -47,6 +47,8 @@ import {
   extractCombatMetadata,
   type CombatMetadata,
   type EffectChoosePrompt,
+  type Effect,
+  type PhaseTiming,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
@@ -809,6 +811,16 @@ export function isValidTarget(
   return matchesTargetGroup(user, target, group.toLowerCase());
 }
 
+/** Filter effects array to those matching a specific phase. */
+function filterByPhase(effects: Effect[], phase: PhaseTiming): Effect[] {
+  return effects.filter((e) => e.type === "phaseEffect" && e.phase === phase);
+}
+
+/** Returns effects that fire on hit (all non-PhaseEffect effects). PhaseEffect wrappers are applied at their specific timing points. */
+function filterNonPhase(effects: Effect[]): Effect[] {
+  return effects.filter((e) => e.type !== "phaseEffect");
+}
+
 function* resolveSingleTarget(
   game: Game,
   user: Entity,
@@ -819,6 +831,18 @@ function* resolveSingleTarget(
   confusionAlreadyApplied = false,
 ): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
+
+  // Parse effects once, before any phase hooks.
+  const allEffects = parseEffects(ability.effect);
+
+  // --- Before Accuracy ---
+  const beforeAccEffects = filterByPhase(allEffects, "before-acc");
+  if (beforeAccEffects.length > 0) {
+    const accMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, beforeAccEffects, ability),
+    );
+    result.messages.push(...accMsgs);
+  }
 
   const userAccBonus = getStatBonus(user, "acc");
   const targetEva =
@@ -837,31 +861,113 @@ function* resolveSingleTarget(
 
   // --- Hit resolves first (damage to target first) ---
   if (hit) {
-    const resolved = yield* resolveHitDamage(
-      game,
-      user,
-      ability,
-      target,
-      combat,
-      crit,
-      hitLabel,
-      result,
+    const damageRoll = rollDice(ability.roll);
+    const userOff = combat.ignore.atkMag
+      ? 0
+      : offensiveStat(user, ability.damageType);
+    const targetDef = applyIgnoreToDefense(
+      defensiveStat(target, ability.damageType),
+      combat.ignore,
     );
-    if (resolved === "user-defeated") return result;
-  } else {
-    // --- On Miss: apply miss-only effects to the attacker ---
-    const allEffects = parseEffects(ability.effect);
-    const onMiss = allEffects.filter((e) => e.type === "onMiss");
-    if (onMiss.length > 0) {
-      result.messages.push(`  [On Miss]`);
-      for (const om of onMiss) {
-        if (om.type !== "onMiss") continue;
-        const missMsgs: string[] = yield* runEffectStream(
-          applyEffectStream(game, user, user, om.effects, ability),
+
+    // --- Before Damage ---
+    const beforeDmgEffects = filterByPhase(allEffects, "before-damage");
+    if (beforeDmgEffects.length > 0) {
+      const dmgMsgs = yield* runEffectStream(
+        applyEffectStream(game, user, target, beforeDmgEffects, ability),
+      );
+      result.messages.push(...dmgMsgs);
+    }
+
+    let baseDamage = damageRoll.total + userOff - targetDef;
+
+    if (crit) {
+      const critRoll = rollDice(ability.roll);
+      baseDamage += critRoll.total;
+      result.messages.push(
+        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+      );
+    }
+
+    const bleed = hasStatus(user, "bleed") ? 5 : 0;
+    // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
+    // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
+    // multiplicative 1.69x. extractCombatMetadata already summed the
+    // percent values additively.
+    let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
+    finalDamage += combat.flatDamage;
+    finalDamage = Math.max(0, Math.floor(finalDamage));
+    finalDamage = Math.max(0, finalDamage - bleed);
+
+    const dmgResult = dealDamage(target, finalDamage);
+    const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
+    result.messages.push(
+      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    );
+    emitDamageModTrail(result.messages, combat, finalDamage);
+
+    if (dmgResult.shieldAbsorbed > 0) {
+      result.messages.push(
+        `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+      );
+    }
+
+    // --- On Hit effects (non-phase-tagged effects fire here) ---
+    const onHitEffects = filterNonPhase(allEffects);
+    const effectMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, onHitEffects, ability),
+    );
+    result.messages.push(...effectMsgs);
+
+    // Apply recoil damage after hit damage (reuse the parsed `effects`
+    // array rather than re-running the regex-based clause splitter).
+    // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
+    // Recoil 25%" combo reflects the boosted total.
+    for (const e of allEffects) {
+      if (e.type === "recoil") {
+        const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
+        dealDamage(user, recoilDmg);
+        result.messages.push(
+          `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
         );
-        result.messages.push(...missMsgs);
       }
     }
+
+    if (target.curhp <= 0) {
+      result.messages.push(
+        `  **${target.num} (${target.name}) has been defeated!**`,
+      );
+      removeEntity(game, target);
+      result.deaths.push(target);
+    }
+
+    // Check if recoil killed the user (after target death is recorded)
+    if (user.curhp <= 0) {
+      result.messages.push(
+        `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
+      );
+      removeEntity(game, user);
+      result.deaths.push(user);
+      return result;
+    }
+  } else {
+    // --- On Miss ---
+    const onMissEffects = filterByPhase(allEffects, "on-miss");
+    if (onMissEffects.length > 0) {
+      const missMsgs = yield* runEffectStream(
+        applyEffectStream(game, user, target, onMissEffects, ability),
+      );
+      result.messages.push(...missMsgs);
+    }
+  }
+
+  // --- Regard of Hit ---
+  const regardlessEffects = filterByPhase(allEffects, "regardless");
+  if (regardlessEffects.length > 0) {
+    const regMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, regardlessEffects, ability),
+    );
+    result.messages.push(...regMsgs);
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
@@ -1133,8 +1239,14 @@ function isWinCondition(game: Game): boolean {
     }
     return [...teams.values()].filter(Boolean).length <= 1;
   }
-  if (id === "ffa" || id === "ntr" || id === "pvp" || id === "1v1" ||
-      mode.includes("ffa") || mode.includes("pvp")) {
+  if (
+    id === "ffa" ||
+    id === "ntr" ||
+    id === "pvp" ||
+    id === "1v1" ||
+    mode.includes("ffa") ||
+    mode.includes("pvp")
+  ) {
     return game.entities.filter((e) => e.curhp > 0).length <= 1;
   }
   const teams = new Map<number, boolean>();
