@@ -427,6 +427,16 @@ kbd {
 	background: #fff;
 	color: var(--text);
 }
+.search-hint {
+	display: block;
+	margin: 2px 0 4px;
+	font-size: 10px;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+.search-hint:hover { text-decoration: underline; }
+.mode-check { display: inline-flex; align-items: center; gap: 4px; margin: 0 12px 6px 0; font-size: 12px; cursor: pointer; }
+.mode-check input { accent-color: var(--accent); }
 .btn.propose { background: linear-gradient(to bottom, #e9f7ec, #cdeeda); border-color: #5d9b6e; color: #174a25; }
 .btn.propose:hover { background: linear-gradient(to bottom, #f1faf3, #cdeeda); }
 @media (max-width: 900px) {
@@ -454,6 +464,7 @@ kbd {
 		<div class="section">
 			<h3>Maps <span class="hint" id="mapCount"></span></h3>
 			<input type="search" id="mapSearch" placeholder="Filter maps…" autocomplete="off">
+			<span class="search-hint" id="mapSearchHint" hidden></span>
 			<select id="mapSelect"></select>
 			<div class="maprow">
 				<button class="btn small" id="btnDuplicate" title="Duplicate current map">⧉ dup</button>
@@ -593,6 +604,21 @@ kbd {
 		<div class="modal-foot">
 			<button class="btn" data-close="newModal">Cancel</button>
 			<button class="btn primary" id="btnCreate">Create</button>
+		</div>
+	</div>
+</div>
+
+<!-- submit map modal -->
+<div class="modal-back" id="proposeModal">
+	<div class="modal" style="width:min(420px,92vw)">
+		<div class="modal-head"><h2>🚀 Submit map</h2><button class="btn" data-close="proposeModal">✕</button></div>
+		<div class="modal-body">
+			<p class="hint">This will save <b>maps/<span id="proposeName"></span>.txt</b> and open a pre-filled issue — a bot turns it into a pull request.</p>
+			<div class="form-row"><label>Gamemodes this map is for</label><div id="proposeModeList"></div></div>
+		</div>
+		<div class="modal-foot">
+			<button class="btn" data-close="proposeModal">Cancel</button>
+			<button class="btn primary" id="btnProposeGo">Open issue</button>
 		</div>
 	</div>
 </div>
@@ -1108,6 +1134,19 @@ async function ensureCurated() {
 	return cache;
 }
 
+let modesCache = null;
+async function loadModes() {
+	if (modesCache) return modesCache;
+	try {
+		const res = await fetch('../maps/modes.json');
+		const data = await res.json();
+		modesCache = { modes: data.modes || {}, labels: data.labels || {} };
+	} catch (e) {
+		modesCache = { modes: {}, labels: {} };
+	}
+	return modesCache;
+}
+
 async function loadMap(name) {
 	const entry = repoMaps.find((x) => x.name === name);
 	if (!entry) { toast('Could not find "' + name + '"', 'err'); return; }
@@ -1169,18 +1208,46 @@ async function saveMap() {
 		: 'Offline mode — downloaded maps/' + name + '.txt. Put it in maps/ and commit.', 'ok');
 }
 
-function proposeMap() {
+async function proposeMap() {
+	let name = MC.sanitizeName($('mapName').value || map.name || 'untitled');
+	$('proposeName').textContent = name;
+	const modes = await loadModes();
+	const list = $('proposeModeList');
+	list.innerHTML = '';
+	const keys = Object.keys(modes.modes);
+	if (!keys.length) {
+		list.innerHTML = '<p class="hint">(could not load gamemode pools — the map will be submitted unassigned)</p>';
+	} else {
+		for (const k of keys) {
+			const label = document.createElement('label');
+			label.className = 'mode-check';
+			const cb = document.createElement('input');
+			cb.type = 'checkbox';
+			cb.value = k;
+			label.appendChild(cb);
+			label.appendChild(document.createTextNode(' ' + ((modes.labels && modes.labels[k]) || k)));
+			list.appendChild(label);
+		}
+	}
+	$('proposeModal').classList.add('show');
+}
+
+async function proposeGo() {
 	let name = MC.sanitizeName($('mapName').value || map.name || 'untitled');
 	const out = MC.toJSON(map);
 	out.name = name;
 	let txt;
 	try { txt = MC.toTxt(out); }
 	catch (e) { toast(e.message, 'err'); return; }
+	const modes = [];
+	for (const el of $('proposeModeList').querySelectorAll('input:checked')) modes.push(el.value);
 	download('maps/' + name + '.txt', txt);
 	const title = 'Map: ' + name;
-	const body = 'Map name: ' + name + '\n\n```txt\n' + txt + '\n```';
+	const modeLine = modes.length ? 'Modes: ' + modes.join(', ') + '\n' : '';
+	const body = 'Map name: ' + name + '\n' + modeLine + '\n```txt\n' + txt + '\n```';
 	const url = 'https://github.com/4-mat/bd-autohost-bot-new/issues/new?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);
 	window.open(url, '_blank');
+	$('proposeModal').classList.remove('show');
 	toast('Opened a pre-filled issue — submit it and the bot opens the PR (.txt also downloaded)', 'ok');
 }
 
@@ -1410,9 +1477,25 @@ $('mapSearch').addEventListener('input', () => {
 	renderSelect($('mapSearch').value);
 	const cur = map && map.name;
 	const opts = $('mapSelect').options;
+	let found = false;
 	if (cur && cur !== 'untitled') {
-		for (let i = 0; i < opts.length; i++) if (opts[i].value === cur) { $('mapSelect').selectedIndex = i; break; }
+		for (let i = 0; i < opts.length; i++) if (opts[i].value === cur) { $('mapSelect').selectedIndex = i; found = true; break; }
 	}
+	const hint = $('mapSearchHint');
+	if (cur && cur !== 'untitled' && !found) {
+		hint.textContent = 'current: ' + cur + ' — click to clear search';
+		hint.hidden = false;
+	} else {
+		hint.hidden = true;
+	}
+});
+$('mapSearchHint').addEventListener('click', () => {
+	$('mapSearch').value = '';
+	renderSelect('');
+	const cur = map && map.name;
+	const opts = $('mapSelect').options;
+	if (cur) for (let i = 0; i < opts.length; i++) if (opts[i].value === cur) { $('mapSelect').selectedIndex = i; break; }
+	$('mapSearchHint').hidden = true;
 });
 $('mapSearch').addEventListener('keydown', (e) => {
 	if (e.key !== 'Enter') return;
@@ -1421,6 +1504,7 @@ $('mapSearch').addEventListener('keydown', (e) => {
 	if (v) loadMap(v);
 });
 $('btnPropose').addEventListener('click', proposeMap);
+$('btnProposeGo').addEventListener('click', proposeGo);
 $('mapName').addEventListener('change', () => { map.name = MC.sanitizeName($('mapName').value); });
 document.querySelectorAll('.tool').forEach((t) => t.addEventListener('click', () => setTool(t.dataset.tool)));
 $('btnZoomIn').addEventListener('click', () => zoomBy(0.25));
