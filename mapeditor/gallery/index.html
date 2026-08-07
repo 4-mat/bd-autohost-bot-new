@@ -61,7 +61,8 @@
 		color: #222;
 	}
 	table.bdmap td.tile { font-weight: normal; }
-	.map-stage { margin-top: 14px; }
+	.map-stage { margin-top: 14px; width: 100%; overflow-x: auto; }
+	table.bdmap { margin: 0 auto; }
 
 	/* index sections */
 	.mode-row { margin: 8px 0 14px; }
@@ -94,6 +95,8 @@
 	.map-card h3 { margin: 0 0 4px; font-size: 13px; }
 	.map-card h3 a { text-decoration: none; }
 	.map-card .meta { color: #888; font-size: 11px; margin: 0 0 6px; }
+	.map-card .meta a.edit-link { color: #4466aa; text-decoration: none; }
+	.map-card .meta a.edit-link:hover { text-decoration: underline; }
 	.map-card .thumb { display: inline-block; border: 1px solid #888; background: rgba(120,120,225,0.10); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
 	.map-card .thumb table.bdmap { border: 0; background: transparent; }
 	.map-card .thumb table.bdmap td { min-width: auto; height: auto; padding: 0; font-size: 0; }
@@ -255,7 +258,7 @@ async function renderMap(name, mode) {
 	const prev = idx > 0 ? ctx[idx - 1] : null;
 	const next = idx >= 0 && idx < ctx.length - 1 ? ctx[idx + 1] : null;
 
-	let top = '<a class="button" href="./index.html">← Return to index</a> <a class="button" href="./index.html?view=all">🗺 All maps</a>';
+	let top = '<a class="button" href="./index.html">← Return to index</a> <a class="button" href="./index.html?view=all">🗺 All maps</a> <a class="button" href="../index.html?map=' + encodeURIComponent(name) + '" title="Edit ' + esc(name) + ' in the map editor">✏️ Edit in editor</a>';
 	if (mode && modeLabels[mode]) {
 		top += ' <a class="button" href="./index.html?mode=' + encodeURIComponent(mode) + '#mode-' + encodeURIComponent(mode) + '">Return to ' + esc(modeLabels[mode]) + '</a>';
 	}
@@ -267,7 +270,7 @@ async function renderMap(name, mode) {
 	$('content').innerHTML =
 		'<div class="center"><h1>' + esc(display) + '</h1>' +
 		'<p class="map-info">' + map.rows + '×' + map.cols + (mode && modeLabels[mode] ? ' · ' + esc(modeLabels[mode]) + ' pool' : '') + '</p>' +
-		'<div class="map-stage"><div style="display:inline-block;overflow-x:auto">' + tableHTML(map) + '</div></div></div>';
+		'<div class="map-stage">' + tableHTML(map) + '</div></div>';
 }
 
 /* ---------------- all maps (scrollable wall) ---------------- */
@@ -304,7 +307,7 @@ async function renderAll() {
 			const card = document.createElement('div');
 			card.className = 'map-card';
 			card.innerHTML = '<h3><a href="./index.html?map=' + encodeURIComponent(m.name) + '">' + esc(m.display || m.name) + '</a></h3>' +
-				'<p class="meta">' + (ok ? map.rows + '×' + map.cols : m.rows + '×' + m.cols + ' · failed to load') + '</p>' +
+				'<p class="meta">' + (ok ? map.rows + '×' + map.cols : m.rows + '×' + m.cols + ' · failed to load') + ' · <a class="edit-link" href="../index.html?map=' + encodeURIComponent(m.name) + '">edit in editor</a></p>' +
 				(ok ? '<a class="thumb" href="./index.html?map=' + encodeURIComponent(m.name) + '" title="Open ' + esc(m.display || m.name) + '">' + thumbHTML(map) + '</a>' : '');
 			wallCards.push({ name: m.name, display: m.display || m.name, mode: modeOf(m.name), card: card, search: ((m.display || m.name) + ' ' + m.name).toLowerCase() });
 		});
