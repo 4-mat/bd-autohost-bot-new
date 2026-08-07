@@ -186,7 +186,7 @@ function renderIndex() {
 	const other = manifest.filter((m) => m.format === 'curated' && !poolNames.has(m.name));
 
 	let html = '<h1>Battle Dome — Map Browser</h1>';
-	html += '<p class="map-info">' + manifest.length + ' maps · <a href="./MAPS.md">SVG gallery</a> · <a href="../index.html">map editor</a></p>';
+	html += '<p class="map-info">' + manifest.length + ' maps · <a href="./MAPS.md">SVG gallery</a> · <a href="../pools/index.html">edit pools</a> · <a href="../index.html">map editor</a></p>';
 	html += '<div class="mode-row">';
 	if (Object.keys(modes).length) {
 		for (const k in modes) {
