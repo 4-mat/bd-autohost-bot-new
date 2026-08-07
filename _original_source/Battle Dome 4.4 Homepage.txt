@@ -1,0 +1,811 @@
+=== Sheet: Home Page ===
+ | Battle Dome 4.4 Home Page |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  | 
+ | Ability Resources |  |  |  |  |  |  |  | 
+ | Archer | Clairvoyant | Dark | Dueler | Heavy | Noble | Sorcerer | Trophy | 
+ | Classes |  | BETA |  | Stats |  | Loot Table |  | 
+ | Items |  |  |  |  |  |  |  | 
+ | Main (Stay tuned!) |  |  | PvE |  | Legacy PvE |  | 1vE | 
+ | Other Resources |  |  |  |  |  |  |  | 
+ | 4.4 Host Guide |  |  |  | Glossary |  |  |  | 
+ | How to Play |  |  |  | Changelog |  |  |  | 
+You have lost The Game |  |  |  |  |  |  |  |  | kry stinks
+
+=== Sheet: BETA ===
+ |  |  |  |  |  |  | 
+ | BETA |  |  |  |  |  | 
+ | Beta is for content in a testing phase. To host beta content, users must ask for special permission to host, and you can use the highlight word betasignup. Beta games are looted as normal. To discuss feedback, feel free to use the BD Discord.
+Additions to Beta must have a chance of being added and require the endorsement of a staff member. Beta content exists by default for 1 month. This may be extended as long as the content is being developed or tested.
+Beta games go in groupchats. |  |  |  |  |  | 
+ | Date Added | Change | Created by | Approved by | Last Edited | Last Reviewed | 
+ | 2026-07-07 00:00:00 | Beta Items | ThrohOrFalse | ThrohOrFalse | 2026-07-07 00:00:00 | 2026-07-07 00:00:00 | 
+ | 2026-07-08 00:00:00 | Banner | Ocean | Ocean | 2026-07-08 00:00:00 | 2026-07-08 00:00:00 | 
+ | 2026-07-20 00:00:00 | Longbow Rework | Salient | Elissem |  |  | 
+ |  |  |  |  |  |  | 
+ |  |  |  |  |  |  | 
+ |  |  |  |  |  |  | 
+ |  |  |  |  |  |  | 
+ |  |  |  |  |  |  | 
+ |  |  |  |  |  |  | 
+ |  |  |  |  |  |  | 
+ |  |  |  |  |  |  | 
+ |  |  |  |  |  |  | 
+
+=== Sheet: Classes ===
+Name | Lv. | Frequency | MR | Damage |  |  | Target |  |  | Effect
+ |  |  |  | Roll | Type | Action | Amount | Group | Range | 
+Basic Abilities |  |  |  |  |  |  |  |  |  | 
+Basic Attack | B | Every Turn | 2.0 | 1d10+2 | Physical or Magical | Standard | 1.0 | Foe | Melee | This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal.
+Basic Movement | B | Every Turn | - | - | - | Movement | - | Self | - | The user spends MP to move an equal amount of tiles.
+(For all purposes, Basic Movement is not an ability, but is still an action.)
+Dash | B | Every Turn | - | - | - | Full | - | Self | - | The user spends MP to move up to x1.5 that amount of tiles (rounded down).
+Backstep | B | Passive | - | - | - | - | - | Self | - | During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee.
+Attack of Opportunity | B | Every Turn | 2.0 | 1d10+2 | Physical or Magical | Reaction | 1.0 | Foe | Melee | This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)
+Class Abilities |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  | 
+Bard (Taistelu, Felucia) |  |  |  |  |  |  |  |  |  | 
+=Stats!A4 & " HP | " & Stats!B4 & " ATK | " & Stats!C4 & " MAG | " & Stats!D4 & " PDEF | " & Stats!E4 & " MDEF | " & Stats!F4 & " EVA | " & Stats!G4 & " MP " |  |  |  |  |  | "A support class that links to an ally to maximise the impact of their class abilities." |  |  |  | 
+Duet | 1.0 | Every Turn | - | - | - | Free | 1.0 | Ally | Global | Apply Duet to one player. Bard abilities also originate from that player and consider them an ally. The user may also use this ability to end their Duet. Effects stack on targets in the overlap; Bard attack targets take an additional hit that uses the same accuracy roll.
+Rising Hope | 1.0 | Passive | - | - | - | - | AoE | Self and Allies | Burst 1 | The user and allies within range have +1 ACC and CR. Players can benefit from a maximum of 2 Rising Hopes at a time.
+Dissonance | 2.0 | EoT | 3.0 | 2d6+0 | Magical | Swift | AoE | Foes | Cone 2 | Inflict 3 Bleed/1. This attack's hits ignore ATK/MAG, half foes' DEF, and outside damage factors. Damage on targets hit twice is increased by 3 for one round.
+Primadonna | 3.0 | Twice/E3T | - | - | - | Free | AoE | Self and Allies | Star 4 | If the player this ability originates from has more MAG than ATK, target's gain +4 MAG/1 and -3 MDEF/1; otherwise, targets gain +4 ATK/1 and -3 MDEF/1. Targets whose ATK and MAG are buffed by this also gain +1 damage dice/1, which doubles on critical hits.
+Fantasia | 4.0 | Thrice/EoT | - | - | - | Free | 1.0 | Self | - | Select a bonus: +3 ATK/MAG, +1 ACC/CR, +4 DEF. Until the start of the user's next turn, Rising Hope becomes Star 2 and additionally grants the bonuses selected during this and prior uses of Fantasia. The user may not pick the same bonus more than once.
+Staccato | 5.0 | Once | 2.0 | 1d6+0 | - | Reaction | 1.0 | Foe | Global | This may be used when a foe attacks the user or their Duet ally, after damage is rolled. Apply hits to the target and foes within Star 2 of the user and Duet ally. Each hit inflicts -2 DEF/1 and -1 EVA/1. If the attacker kills the Duet ally, the user gains a permanent +2 MP, ACC and CR. This attack ignores outside damage factors.
+Blacksmith (Methridium) |  |  |  |  |  |  |  |  |  | 
+=Stats!H4 & " HP | " & Stats!I4 & " ATK | " & Stats!J4 & " MAG | " & Stats!K4 & " PDEF | " & Stats!L4 & " MDEF | " & Stats!M4 & " EVA | " & Stats!N4 & " MP " |  |  |  |  |  | "A specialist in trapping and area denial; corner your foes, or make them regret approaching you." |  |  |  | 
+Ironclad | 1.0 | Passive | - | - | - | - | - | - | - | When an attack deals 40+ damage to the user, the attacker is inflicted with 2 Cripple/1; if 55+ (before this effect), 10% of its damage is nullified, and dealt back to the attacker.
+Mantrap | 1.0 | Thrice/EoT | - | - | - | Free | 1.0 | Tile | Homing 5 | When a foe ends their turn within or willingly enters the targeted tile's Star 1, the user may, as a Reaction, inflict them with 3 Cripple/1 and -4 DMG/1, removing this effect.
+Smokescreen | 2.0 | E3T | - | - | - | Free | - | Self | - | Until the start of the user's next turn, all attacks entering the user's Burst 2 have -2 Range and -7 DMG, and attacks used within the user's Burst 2 have -2 Range.
+Tinker's Dam | 3.0 | Once | - | - | - | Swift | 1.0 | Tile | Range 3 | The user creates a wall of Stone on unoccupied tiles on the target and its Line 2 in a chosen direction, which is removed after 2 rounds, or can be removed on the user's turn as a Free action. Foes ending their turn with any of these Stone tiles in their melee take 5 damage and are Burned 3/1. Stone tiles function like Ice, but take 30 damage to break and have 1 EVA. 
+Reforge | 4.0 | E3T | - | - | - | Movement | 1.0 | Foe or Ally | Melee | Choose one of the target's base stats, except HP. If the target is a foe, reduce the chosen base stat by 1/3 for one round, and the target cannot receive buffs to that stat while under this effect. If the target is an ally, the chosen base stat is 1.5x for one round.
+Mending Mantel | 5.0 | Once | - | - | - | Full | 1.0 | Tile | Homing 3 | Place a Hearth tile on the target. Hearth tiles give +5 DEF/1 and 5 HP in healing to the user and allies whenever they end their turn in its Star 3 (ignoring Foe obstructions). Hearth tiles also have the effects of Stone, and are removed when the user dies.
+Cleric (Ocean, Vrji) |  |  |  |  |  |  |  |  |  | 
+=Stats!O4 & " HP | " & Stats!P4 & " ATK | " & Stats!Q4 & " MAG | " & Stats!R4 & " PDEF | " & Stats!S4 & " MDEF | " & Stats!T4 & " EVA | " & Stats!U4 & " MP " |  |  |  |  |  | "A naturally frail class dedicated to healing and supporting its allies." |  |  |  | 
+First Aid | 1.0 | EoT | - | 3d4+6 | - | Swift | 1.0 | Self or Ally | Range 3 | The target is healed the rolled amount. If the target is an ally, this may be used as a Standard action to add the user's ATK or MAG to the roll. This can only be used on a target that has been attacked in the last round.
+Ward | 2.0 | E3T | - | - | - | Swift | AoE | Self and Allies | Burst 2 | Targets cannot be inflicted with debuffs or statuses for one round.
+Heaven's Wind | 3.0 | EoT | - | - | - | Swift | 2.0 | Any | Range 4 | The targets teleport and swap locations.
+Martyrdom | 4.0 | E3T | - | - | - | Free | - | Self | - | For one round, the user's healing is increased by 15% and players who are healed by their moves receive +1 EVA/MP (max +3) until the start of the user's next turn. For each ally that has died, this healing bonus is increased by 15%.
+Vestments | 5.0 | Twice | - | - | - | Free | 1.0 | Self or Ally | Range 4 | Choose one primary target and one secondary target (they can be the same player). For one round, the primary target heals 1/4 of the damage taken by the secondary target. The primary target can only be Self if two uses of this move are available; it then uses up two uses. Players can only be the primary target of one Vestments at a time.
+Dancer (Ocean, Taistelu) |  |  |  |  |  |  |  |  |  | 
+=Stats!V4 & " HP | " & Stats!W4 & " ATK | " & Stats!X4 & " MAG | " & Stats!Y4 & " PDEF | " & Stats!Z4 & " MDEF | " & Stats!AA4 & " EVA | " & Stats!AB4 & " MP " |  |  |  |  |  | "An offensive support class with mastery over the turn order and action economy." |  |  |  | 
+Pas de Deux | 1.0 | E3T | - | - | - | Standard or Full | 1.0 | Ally | Melee | The target immediately takes their turn after the user. Then, turn order resumes as normal. The target cannot use Pas de Deux on the given turn. If the target is a Juggernaut, they only have access to one Standard. If this is used as a Standard, the target cannot use their Movement action.
+Emboîté | 2.0 | Once | - | - | - | Swift | AoE | Self and Allies | Burst 1 | The targets' abilities that are on cooldown may be used one round earlier.
+(E3T becomes EoT; EoT becomes Every Turn, etc.)
+Fouetté | 3.0 | Once | - | - | - | Swift | 1.0 | Self or Ally | Range 3 | Until the start of the user's next turn, the target may use one Once/Twice/Thrice move without expending a Use, even if the move is out of Uses. This cannot be used on Reaction or Trigger actions.
+En Pointe | 4.0 | Passive | - | - | - | - | - | - | - | The user may use their Class and Item Swift actions as if they are Frees. Whenever the user targets an ally with a Dancer action, they gain a copy of this passive until the end of their next turn.
+Divertissement | 5.0 | Once | - | - | - | Swift | 1.0 | Self or Ally | Range 3 | The target's next Standard/Full attack on their next turn gains +dice faces equal to the number of actions previously used that turn (except Basic Movement), max +5 dice faces. This ability’s action type is unaffected by En Pointe.
+Monk (Ocean, Vrji) |  |  |  |  |  |  |  |  |  | 
+=Stats!A6 & " HP | " & Stats!B6 & " ATK | " & Stats!C6 & " MAG | " & Stats!D6 & " PDEF | " & Stats!E6 & " MDEF | " & Stats!F6 & " EVA | " & Stats!G6 & " MP " |  |  |  |  |  | "A slow burn offensive class that gets more powerful every turn." |  |  |  | 
+Qi Force | 1.0 | Passive | - | - | - | - | - | - | - | After the player uses a non- Free or Swift attack, they gain a Qi stack, max 5. Each Qi stack gives +2 ATK/MAG. The user can gain a maximum of 2 Qi between the start of one of their turns and the start of the next. Whenever an ally dies, the user gains a stack of Qi.
+Soulstep | 2.0 | Twice/EoT | 2.0 | 1d6+3 | Magical | Movement | 1.0 | Foe | Melee | The user moves up to their MP. Targetting may be done either before or after this movement. This move is immune to outside damage factors, ignores DEF, and does not add ATK/MAG.
+Eightfold Shield | 3.0 | EoT | - | - | - | Free | 1.0 | Self or Ally | Melee | The user spends at least two Qi. For one round, the target gains +1d4+1 DEF per Qi spent.
+Conversion | 4.0 | Twice | - | - | - | Free | - | Self | - | The user spends between 1 and 3 Qi. The user's attacks this turn become the opposite damage type and the user's ATK and MAG are swapped. Additionally, for every Qi spent, their attacks ignore 5 DEF and gain +1 Range.
+Nirvana | 5.0 | Once | - | - | - | Free | - | Self | - | The user spends any amount of Qi to gain +1 dice and +2 damage on their next attack per Qi spent.
+Paladin (Ocean) |  |  |  |  |  |  |  |  |  | 
+=Stats!H6 & " HP | " & Stats!I6 & " ATK | " & Stats!J6 & " MAG | " & Stats!K6 & " PDEF | " & Stats!L6 & " MDEF | " & Stats!M6 & " EVA | " & Stats!N6 & " MP " |  |  |  |  |  | "The tank. Protects allies and has excellent survivability, but moves slowly." |  |  |  | 
+Aegis | 1.0 | EoT | - | - | - | Reaction | 1.0 | Ally | Homing 4 | This may be used when an ally in range is damaged by an attack. The user moves as close to the target as possible, and 25% of the attack's damage is redirected to the user. The user is not considered a target of the attack if they were not before Aegis was used.
+Pavise | 2.0 | E3T | - | - | - | Free | - | Self | - | For one round, whenever the user or allies in their Burst 2 are hit by an attack, players damaged by that attack gain +3 DEF/1 per each such damaged player.
+Impasse | 3.0 | E3T | - | - | - | Free | 1.0 | Any | Melee | If used on self or an ally, the target cannot be inflicted with Push/Pull and stat reduction by foes for one round. If used on a foe, the target's buffs are removed.
+Radiance | 4.0 | Twice | - | - | - | Swift | - | Self | - | For one round, the user takes 80% damage from attacks, and Aegis's damage interception is increased to 50%.
+Oathkeeper | 5.0 | Once | - | - | - | Free | 1.0 | Ally | Global | The user and target gain Oath of Mercy. At the start of an affected player's turn, they heal 2 HP and gain +1 ATK/MAG (max +5). This does not stack with multiple uses of the ability. When the user or target dies, Oath of Mercy ends and all ATK/MAG gained is lost.
+Rifter (Taistelu, Beautifications) |  |  |  |  |  |  |  |  |  | 
+=Stats!O6 & " HP | " & Stats!P6 & " ATK | " & Stats!Q6 & " MAG | " & Stats!R6 & " PDEF | " & Stats!S6 & " MDEF | " & Stats!T6 & " EVA | " & Stats!U6 & " MP " |  |  |  |  |  | "Cheat the rules to bend the situation to your favour." |  |  |  | 
+Rewind | 1.0 | EoT | - | - | - | Reaction | 1.0 | Self or Foe | Global | This may be used when the user or a foe attacking the user rolls damage for an attack. Reroll up to 3 damage dice. Rerolled dice cannot trigger or negate Bomb dice.
+Warp | 2.0 | Twice/EoT | - | - | - | Movement | - | - | - | The user teleports to a tile in Range 4 (ignoring player obstructions). Inflict -5 DEF/1 on foes in Burst 1 of that tile, and for the rest of the turn, the user's attacks can pass through players.
+Superposition | 3.0 | Every Turn | - | - | - | Standard | - | Self | - | Roll a d20 and store the result (max one stored result). As a Reaction, before the user rolls an accuracy check, they may substitute it with the stored roll. The user may also react to a foe attacking in Range 4 after accuracy. If so, replace that attack's accuracy roll with this one (this cannot make that attack miss).
+Fractal Division | 4.0 | Twice/EoT | - | - | - | Swift | - | Self | - | This turn, the user's next single-target attack may target 2 foes. The targets must be within Range 4, and the attack loses Splash. (If a secondary effect relies on one target, the user picks which one.)
+Time's Edge | 5.0 | Once | - | - | - | Free | - | Self | - | This turn, the user uses an additional Standard action which has -3 MR. The next two Standard/Full actions this turn only add 25% ATK/MAG. If the first Standard/Full deals damage, the second Standard ignores outside damage factors and ATK/MAG/DEF. The user can only use Reactions and Triggers between these actions, unless specified otherwise.
+Skirmisher (Methridium, Werewolf) |  |  |  |  |  |  |  |  |  | 
+=Stats!V6 & " HP | " & Stats!W6 & " ATK | " & Stats!X6 & " MAG | " & Stats!Y6 & " PDEF | " & Stats!Z6 & " MDEF | " & Stats!AA6 & " EVA | " & Stats!AB6 & " MP " |  |  |  |  |  | "An elusive attacker that pressures opponents with strong positioning and blinding mobility." |  |  |  | 
+Adrenaline | 1.0 | Passive | - | - | - | - | - | - | - | The user's Basic Movement only has a -1 MP Backstep penalty, rather than -2. The user may use Basic Movement multiple times per turn (which still spends MP to move). 
+Lightspeed | 1.0 | EoT | - | - | - | Free | 1.0 | Self or Ally | Range 3 | If the target uses Dash before the user's next turn, they may use Glide or Rushdown.
+Glide: The user moves up to 2 tiles per MP spent instead of 1.5 (max 12 tiles).
+Rushdown: After Dash, the user may immediately use a Standard, which cannot target outside of the user's Melee. Rushdown moves a max of 10 tiles and is immune to AoO.
+Outmaneuver | 2.0 | EoT | - | - | - | Free | - | Self | - | The user spends any amount of MP to use this move. Until the start of the user's next turn, the user's attacks used from their maximum range have +1 ACC per 2 MP spent. (Homing takes the shortest possible path.)
+Quick Thinking | 3.0 | EoT | - | - | - | Movement | - | Self | - | This may be used after the user resolves their last Standard action of their turn. They spend MP to move one tile per two MP spent. This Movement ignores Backstep penalty.
+Tunneling | 4.0 | Twice/E3T | - | - | - | Swift | - | Self | - | This turn, the user moves through all tiles and foes as if they were Normal tiles. (They cannot perform or end actions standing on obstructions or Broken tiles.)
+Wormhole | 5.0 | Once | - | - | - | Free | 1.0 | Tile | Range 2 | The user places a "Wormhole" on the target tile. Then, as a Swift action, the user or an ally may spend half of their MP (rounded up) to teleport to it. The Wormhole expires on use, or after two rounds.
+ |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Archer ===
+Name | Lv. | Frequency | MR | Damage |  |  | Target |  |  | Effect
+ |  |  |  | Roll | Type | Action | Amount | Group | Range | 
+Basic Abilities |  |  |  |  |  |  |  |  |  | 
+=Classes!A4 | =Classes!B4 | =Classes!C4 | =Classes!D4 | =Classes!E4 | =Classes!F4 | =Classes!G4 | =Classes!H4 | =Classes!I4 | =Classes!J4 | =Classes!K4
+=Classes!A5 | =Classes!B5 | =Classes!C5 | =Classes!D5 | =Classes!E5 | =Classes!F5 | =Classes!G5 | =Classes!H5 | =Classes!I5 | =Classes!J5 | =Classes!K5
+=Classes!A6 | =Classes!B6 | =Classes!C6 | =Classes!D6 | =Classes!E6 | =Classes!F6 | =Classes!G6 | =Classes!H6 | =Classes!I6 | =Classes!J6 | =Classes!K6
+=Classes!A7 | =Classes!B7 | =Classes!C7 | =Classes!D7 | =Classes!E7 | =Classes!F7 | =Classes!G7 | =Classes!H7 | =Classes!I7 | =Classes!J7 | =Classes!K7
+=Classes!A8 | =Classes!B8 | =Classes!C8 | =Classes!D8 | =Classes!E8 | =Classes!F8 | =Classes!G8 | =Classes!H8 | =Classes!I8 | =Classes!J8 | =Classes!K8
+Archer Abilities |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  | 
+Crossbow (Zuko743, Elissem) |  |  |  |  |  |  |  |  |  | 
+=Stats!A9 & " HP | " & Stats!B9 & " ATK | " & Stats!C9 & " MAG | " & Stats!D9 & " PDEF | " & Stats!E9 & " MDEF | " & Stats!F9 & " EVA | " & Stats!G9 & " MP " |  |  |  |  |  | "A weapon with increased effectiveness the more you hunt an enemy down." |  |  |  | 
+Hunter's Mark | 1.0 | Passive | - | - | - | - | - | - | - | When the user's Crossbow attack resolves, targets of that attack each gain one Mark. The user's attacks deal +1d4 damage for every Mark on any one of its targets. Marks only apply to their user's abilities.
+Arrow Flurry | 1.0 | Every Turn | 3.0 | 2d8+7 | Physical | Standard | 1.0 | Foe | Range 6 | If the original target has a Mark, this move has Splash 1. If the target has 3+ Marks, this move instead has Splash 2.
+ Cursed Bolts | 2.0 | EoT | 3.0 | 2d8+4 | Magical | Standard | 1.0 | Foe | Line 6 | The target is inflicted with 3X Curse/1, where X is Marks on the target. If the target has 3+ Marks, this move ignores negative outside damage factors.
+Arrow Net | 3.0 | E3T | 4.0 | 3d8+4 | Physical | Standard | 1.0 | Foe | Range 6 | Before damage, the target takes 3 damage every time they gain a Mark from the user for one round.
+Pierce | 4.0 | EoT | 5.0 | 2d8+5 | Physical | Standard | AoE | Foes | Pierce 6 | If a target has 1+ Marks, this move ignores evasions and 1/4 DEF. If a target has 2+ Marks, this move also ignores negative accuracy modifiers and ignores 1/2 DEF instead.
+Bolt Compaction | 5.0 | Twice/EoT | - | - | - | Free | 1.0 | Self | - | This turn, the user negates the secondary effects of their Standard Crossbow attacks. Next turn, regardless of if the negated attack hit, their first Standard attack has +1 dice and the negated effects.
+Quick Scope | 5.0 | Twice/EoT | 3.0 | 1d4+4 | Physical | Swift  | 1.0 | Foe | Range 6 | This move ignores ATK/MAG, half of the target's DEF, and outside damage factors (except Hunter's Mark).
+Explosive Shot | 6.0 | Once | 4.0 | 2d8+2 | Physical | Standard | 1.0 | Foe | Range 6 | The target holds a "Bomb". If a foe with a Bomb targets another foe (including their allies) they transfer the Bomb to one of their targets.
+After one round or when the holder dies, the Bomb detonates and deals Xd4 Bomb damage to foes in the Bomb's Burst 1. X = the foe who held the Bomb with the most Marks.
+Tornado Bolt | 7.0 | Twice/EoT | 4.0 | 1d8+4 | Magical | Standard | 1.0 | Foe | Line 6 | This move has Push X equal to 1 + # of Marks on the target. If the target cannot be pushed the full distance, they gain +1 Mark.
+Shadow Quiver | 8.0 | Once | - | - | - | Swift  | - | Self | - | The user's next standard attack becomes Magical, treats non-player obstructions as Air tiles, and ignores non-targets. This attack loses 2 damage per Air tile passed through.
+Serrated Arrows | 9.0 | Twice/E3T | 4.0 | 2d8+5 | Physical | Standard | 1.0 | Foe | Range 6 | The target is inflicted with X Bleed/1 equal to half of the damage from this attack's Hunter's Mark.
+Final Hour  | 10.0 | Once | - | - | - | Free  | 1.0 | Self | - | On the user's next attack, Hunter's Mark has +4 dice faces.
+Bolt Arsenal | EX1 | Every Turn | - | - | - | Trigger | - | Self | - | When they use a single-target Standard Crossbow attack, the user chooses one Bolt:
+Bounty Bolt: The target additionally gains half the Marks of the latest foe that died.
+Split-Head Bolt: The attack targets another foe, but loses Splash.
+Reeling Bolt: The target is pulled to a tile in the user's Line 3-6 (in the direction of the attack).
+These Bolts can only be used once until refresh. As a Swift action, refresh these Bolts.
+Quiver of Thunder | EX2 | Once | - | - | - | Free | AoE | Foes | Global | For one round, foes can only target entities in their Line 8. If they attack the user in Melee, they gain +1 Mark.
+Longbow (Salient, Felucia) |  |  |  |  |  |  |  |  |  | 
+=Stats!A11 & " HP | " & Stats!B11 & " ATK | " & Stats!C11 & " MAG | " & Stats!D11 & " PDEF | " & Stats!E11 & " MDEF | " & Stats!F11 & " EVA | " & Stats!G11 & " MP " |  |  |  |  |  | "A magical bow with massive range and a few tricks up its sleeve for melee combat." |  |  |  | 
+Bound Bow | 1.0 | Passive | - | - | - | - | - | - | - | The user's Physical attacks become Magical when they target at least one entity at Range 3+. Once per turn, when the user attacks at Range 1-2, the user gains +3 DEF/1.
+Swift Shot | 1.0 | Every Turn | 3.0 | 2d10+7 | Physical | Standard | 1.0 | Foe | Range 10 | If the target is at Range 7+, this move critical hits on 14+. If the target is at under Range 3, gain +1 MP for 2 rounds.
+Crippling Shot | 2.0 | Every Turn | 3.0 | 2d8+5 | Physical | Standard | 1.0 | Foe | Range 10 | This move's effect changes based on the Range it is used on.
+1-2: This move inflicts Slow/1.
+3+: This move inflicts 2 Cripple/1 on accuracy rolls of 14+.
+7+: This move inflicts Cripple regardless of accuracy.
+Blessed Arrow | 3.0 | Every Turn | 3.0 | 2d10+2 | Physical | Standard | 1.0 | Foe | Range 10 | For one round, all healing and buffs received or given by allies (including self) within Star 2 of the target is increased by x1.25, and any debuffs given to foes within Star 2 of the target are increased by x1.25 (these effects do not stack). As a non-damaging Standard, this move is 1/Tile/Range 10.
+Scatter Shot | 4.0 | EoT | 4.0 | 2d10+5 | Physical | Standard | 1 or AoE | Foe(s) | Range 10 or Burst 1 | If the original target is at Range 7+, this move gains Splash 1. 
+Dispell Bow | 5.0 | E3T | - | - | - | Free | 1.0 | Self | - | This turn, the user has +2 MP and the user's ranged attacks have their Range reduced to 3 . Next turn, the user has +1 MP and the user's ranged attacks have their Range reduced to 6. 
+Arcane Shot | 6.0 | Twice/EoT | 5.0 | 3d10+6 | Magical | Standard | 1.0 | Foe | Range 10 | If the target is at under Range 3, this move has Push 3. If the target is at Range 7+, this move ignores up to 10 DEF.
+Chase Arrow | 7.0 | Twice/EoT | 3.0 | 1d10+5 | Physical | Standard | 1.0 | Foe | Homing 10 | Targets must be within 8 tiles of the user. This move may target any foes on the path towards the original target, so long as the path taken doesn't exceed the move's range. Damage to these foes does not add ATK/MAG and ignores DEF.
+Volley | 8.0 | Twice/EoT | 4.0 | 1d10+5
+(Double Hit) | Physical | Standard | 1.0 | Foe | Range 10 | If the target is 7+ tiles away this move gains +1 hit, if there are any foes within Splash 1 of the original target, this move gains an additional +2 hits. These bonus hits each target a random foe (including ice/stone tiles) in Splash 1 from the original target (including the original target), each apply half of the targets' DEF, and do not add ATK/MAG.
+Fireworks | 9.0 | Once | 5.0 | 4d8+4 | Physical | Standard | 1.0 | Foe | Range 10 | If the target is at Range 7+, this move has Bomb dice. If the target is under Range 3, before damage, Bound Bow's bonuses become +5 DEF/1 and +1 MP/1 until the user attacks at Range 3+.
+Sniper's Focus | 10.0 | Every Turn | - | - | - | Trigger | - | Self | - | This turn, the user's Standard actions are Full actions and their Range 7+ effects trigger at Range 4+.
+Bound Gauntlet | EX1 | Passive | - | - | - | - | - | Self | - | After dealing damage with a physical attack, deal magic damage equal to the damage (after subtracting DEF) to a different enemy in Melee range (if one exists). After dealing damage with a magical attack, your next physical attack ignores 5 DEF and cannot miss.
+Tactical Sniper | EX2 | Passive | - | - | - | - | - | Self | - | At the start of the game, designate one foe as the Bounty. Attacks against the Bounty treat obstructions as Air tiles and have +1 range. Melee attacks against the Bounty gain +1 dice. When the Bounty dies, immediately designate a new Bounty.
+Shortbow (bro torterra, Felucia) |  |  |  |  |  |  |  |  |  | 
+=Stats!A13 & " HP | " & Stats!B13 & " ATK | " & Stats!C13 & " MAG | " & Stats!D13 & " PDEF | " & Stats!E13 & " MDEF | " & Stats!F13 & " EVA | " & Stats!G13 & " MP " |  |  |  |  |  | "A high consistency weapon that boosts its own accuracy. The brave may instead sacrifice accuracy for a high chance at deadly crits." |  |  |  | 
+Hawkeye | 1.0 | Passive | - | - | - | - | - | Self | - | The user has +2 ACC on all attacks. As a Trigger action before a Standard, they may sacrifice up to 5 ACC to gain an equivalent amount of CR until the start of their next turn.
+Blitz | 1.0 | Every Turn | 3.0 | 1d8+1
+(Double Hit) | Physical | Standard | 1.0 | Foe | Range 4 | This attack critical hits on 18+. For each successful hit, the user gains +4 damage on their next attack.
+Windmill | 2.0 | EoT | 4.0 | 2d8+4 | Physical | Standard or Swift | AoE | Any | Burst 1 | The non-Foe targets gain either +X ACC or CR/1, where X is the amount of players in range. As a Swift, buffs are halved. This is only an attack as a Standard against Foes.
+Hook Shot | 3.0 | E3T | 4.0 | 4d6+2 | Magical | Standard | 1.0 | Foe or Ally | Range 4 | If this attack has at least +2 CR, the user may pull themselves within Range 2 of the target or the target within Range 2 of the user. This is not an attack if used on Allies.
+Splinter | 4.0 | EoT | 4.0 | 2d8+0 
+(Double Hit) | Physical | Standard | 1.0 | Foe | Range 4 | Each critical hit on this attack gives the user's next attack -1.5 dice faces and +1 base dice. Dice faces round up and cannot go below 1.
+Salvo  | 5.0 | EoT | 4.0 | 1d6+4
+(Triple Hit) | Magical | Standard | 1.0 | Foe | Range 4 | The user may target different foes with each hit. This adds ATK/MAG and applies damage effects to each target.
+Trick Shot | 6.0 | Twice/EoT | 4.0 | 3d8+3 | Physical | Standard | 1.0 | Foe | Range 4 | If this move has +ACC, it gains Splash 1. If this move has at least +4 ACC, it becomes Magical and gains Splash 2.
+Surge | 7.0 | EoT | 5.0 | 1d4+3
+(Triple Hit) | Magical | Standard | 1.0 | Foe | Range 4 | Each critical hit on this attack gives the user's next multi-hit attack +1 hit.
+Venom Shot | 8.0 | Twice/EoT | 4.0 | 2d8+3 | Physical | Standard | 1.0 | Foe | Range 4  | This attack treats non-Hawkeye +ACC as +CR and inflicts Poison/1 equal to 2 * the +CR on this attack. If this is 12+, halve poison damage and extend it by one round.
+Sagittarian Pride | 9.0 | Twice | 4.0 | 2d6-1 | Magical | Standard | AoE | Foes | Pierce 4 | This attack has hits equal to the number of moves targets used since the start of the user's last turn.
+Arrow Storm | 10.0 | Once | 5.0 | 2d8-4
+(Quad. Hit) | Physical | Standard | 1.0 | Foe | Range 4 | This attack critical hits on 18+.
+Shrapnel Tip | EX1 | EoT | 5.0 | 1d8-2 (Triple Hit) | Physical | Standard | 1.0 | Foe | Range 4 | Each time this attack critical hits, it gains an additional hit with MR3 and a roll of 2d3+0.
+Overdraw | EX2 | EoT | 4.0 | 4d8+0 | Physical | Standard | AoE | Foes | Pierce 4 | The user's next attack gains one of the following bonuses:
+If single-hit, the non-duration numbers in its effect are doubled, including X.
+If multi-hit, its +ACC is instead treated as +dice faces on its accuracy rolls.
+ |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Clairvoyant ===
+Name | Lv. | Frequency | MR | Damage |  |  | Target |  |  | Effect
+ |  |  |  | Roll | Type | Action | Amount | Group | Range | 
+Basic Abilities |  |  |  |  |  |  |  |  |  | 
+=Classes!A4 | =Classes!B4 | =Classes!C4 | =Classes!D4 | =Classes!E4 | =Classes!F4 | =Classes!G4 | =Classes!H4 | =Classes!I4 | =Classes!J4 | =Classes!K4
+=Classes!A5 | =Classes!B5 | =Classes!C5 | =Classes!D5 | =Classes!E5 | =Classes!F5 | =Classes!G5 | =Classes!H5 | =Classes!I5 | =Classes!J5 | =Classes!K5
+=Classes!A6 | =Classes!B6 | =Classes!C6 | =Classes!D6 | =Classes!E6 | =Classes!F6 | =Classes!G6 | =Classes!H6 | =Classes!I6 | =Classes!J6 | =Classes!K6
+=Classes!A7 | =Classes!B7 | =Classes!C7 | =Classes!D7 | =Classes!E7 | =Classes!F7 | =Classes!G7 | =Classes!H7 | =Classes!I7 | =Classes!J7 | =Classes!K7
+=Classes!A8 | =Classes!B8 | =Classes!C8 | =Classes!D8 | =Classes!E8 | =Classes!F8 | =Classes!G8 | =Classes!H8 | =Classes!I8 | =Classes!J8 | =Classes!K8
+Clairvoyant Abilities |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  | 
+Cards (Felucia / beautifications) |  |  |  |  |  |  |  |  |  | 
+=Stats!H9 & " HP | " & Stats!I9 & " ATK | " & Stats!J9 & " MAG | " & Stats!K9 & " PDEF | " & Stats!L9 & " MDEF | " & Stats!M9 & " EVA | " & Stats!N9 & " MP " |  |  |  |  |  | "A high variance weapon that rewards the fortunate." |  |  |  | 
+Card Flip | 1.0 | Every Turn | 3.0 | 3d8+5 | Magical | Standard | 1.0 | Foe | Range 4 | Roll a d3 after rolling damage. If a 1 is rolled, this move deals 0.8x damage. If a 3 is rolled, this move deals 1.3x damage. Outside factors to damage are also affected by these multipliers.
+Discard | 2.0 | EoT | 2.0 | 3d10+2 | Magical | Standard | 1.0 | Foe | Range 5 | Roll a d20, on 15+ store a reroll that can be used to reroll any cards effect as a Once/Trigger action.
+Roulette | 3.0 | EoT | 3.0 | 3d8+5 | Magical | Standard | 1.0 | Foe | Range 4 | Roll a 1d8 to inflict a random status on the opponent, then roll a d3. If the d3 roll is 1, status the user instead. Statuses: 1 = 10 Bleed/1, 2 = 10 Poison/1, 3 = 10 Burn/1, 4 = 6 Cripple/1, 5 = Root/1, 6 = Seal/1, 7 = Stun/1, 8 = Confusion/1.
+Gamble | 4.0 | Twice/EoT | 3.0 | 3d8+3 | Magical | Standard | 1.0 | Foe | Range 3 | Roll d7. 1 = subtract the target's ATK and MAG. 2 = subtract the higher of the target's offensive stats. 3 = subtract the user's ATK. 4 = add the user's ATK. 5 = add the target's higher offense stat. 6 = add the user's MAG again. 7 = add the user's ATK and the target's ATK and MAG. This attack still adds the user's MAG and ignores 10 DEF.
+Double or Nothing | 4.0 | Twice/EoT | - | - | - | Trigger | 1.0 | Any | Range 4 | The user rolls a d2. On a 1, the target can't use Swift/Free actions until the end of the user's next turn. On a 2, the target gains an extra Swift action (or multiple Free actions) until the start of the user's next turn. If used on Self, this must be used at the start of the user's turn.
+Blackjack | 5.0 | Twice/EoT | 3.0 | 3d8+5 | Magical | Standard | 1.0 | Foe | Range 3 | On a successful hit, roll 2d10, treating 1s as either 1 or 11 (user’s choice). The user may choose to roll additional 1d10s to add to the roll. If the total is 17-20, this attack gains 1 base dice. On a total of 21, this attack instead gains 3 base dice and activates Jackpot. On a total of 22 or higher, the attack instead loses 2 base dice.
+Craps | 6.0 | Twice/E3T | 5.0 | 5d10-10 | Magical | Standard | 1.0 | Foe | Range 3 | This attack has Bomb dice. For every Bomb dice that triggers, the user may pick another foe within the target's Splash 1 to target (the same foe cannot be picked more than once). If 5+ bomb dice is triggered, this attack activates Jackpot. This attack is immune to (non-Cards) positive damage factors. On a critical hit, the extra dice from the critical hit do NOT have Bomb dice. 
+Jackpot | 7.0 | Passive | - | - | - | - | - | - | - | When the user rolls the maximum roll on all dice in an accuracy, damage, or effect roll, for a total of at least 8, they gain +7 ATK/MAG, +7 DEF, +1 EVA, +1 ACC, and +2 MP for one round. This does not activate on Hi-Lo rolls, but instead activates when Hi-Lo reaches maximum dice. Repeated activation does not stack, but instead refreshes the duration.
+Slots Spin | 8.0 | Once | 4.0 | 5d8+0 | Magical | Standard | 1.0 | Foe | Range 4 | Roll 3d4. For every 4 rolled, this attack gains +1 dice. If no 4s are rolled, this attack gains -1 dice. if all dice are 4s, this attack gains an additional +1 dice.
+Hi-Lo | 9.0 | Twice/EoT | 4.0 | Xd10+5 | Magical | Standard | 1.0 | Foe | Range 3 | Roll a d10. The user predicts whether the next d10 result will be higher or lower than the previous result, then rolls again. On a correct guess, this attack gains +2 base dice and the user may continue predicting and rolling (max 5 guesses) or choose to stop. On a failed guess, the user stops and the attack loses half of its total base dice. If the roll is the same as the previous, reroll that dice.
+Stacked Deck | 10.0 | Once | - | 6d8+0 | Magical | Standard | 1.0 | Foe | Melee | In place of an accuracy roll, roll a 1d14 for an effect. 
+1. The opponent is healed by the roll, 
+2. The user takes 2x damage from all sources for one round,
+3. The attack misses, 
+4. After damage, the user and target swap their current HP (can overheal, foes with over 200 HP are considered to have 200 HP for this effect), 
+5. For one round, attacks automatically hit the user,
+6. The user and target gain a random position change,
+7. The user and target are both Stunned/1,
+8. 50% of this attack's damage is dealt to a random foe instead,
+9. For one round, the user's attacks automatically hit,
+10. The user gains a 1/Any/Global Once/Reaction: "Reroll one accuracy roll.",
+11. Cleanse all statuses and numerical debuffs from the user & reset their other moves' frequencies,
+12. Target is Sealed/1, 
+13. Next turn, the user may choose numbers for their cards effects, rather than rolling dice for them,
+14. This attack has unremovable thrice base dice.
+Card Counter | EX1 | Every Turn | - | - | - | Reaction | - | Self | - | Once per turn, the user may choose to reroll their Cards dice effect (for Craps, reroll the damage dice).
+High Roller | EX2 | Every Turn | - | - | - | Trigger | - | Self | - | The user may choose to roll a 1d5 for each standard action the user has remaining this turn. The standard actions targeting amount becomes equal to the roll-1 (If a one is rolled, the standard is lost).
+Lunar Rod (Elissem) |  |  |  |  |  |  |  |  |  | 
+=Stats!H11 & " HP | " & Stats!I11 & " ATK | " & Stats!J11 & " MAG | " & Stats!K11 & " PDEF | " & Stats!L11 & " MDEF | " & Stats!M11 & " EVA | " & Stats!N11 & " MP " |  |  |  |  |  | "Count the phases and strike when the Moon shines the brightest." |  |  |  | 
+Lunar Phase | 1.0 | Passive | - | - | - | - | - | Self | - | At the start of their first turn, the user picks a Phase. At the start of each following turn, the user shifts Phases in the following order. This Passive cannot be disabled.
+New Moon (+1 range) -->
+Waxing (+2 dice faces on accuracy and attacks) -->
+Full Moon (-1 dice on attacks targeting the user) -->
+Waning (+1 dice on attacks) --> New Moon, etc.
+Moonblast | 1.0 | Every Turn | 3.0 | 2d8+5 | Magical | Standard | 1.0 | Foe | Range 3 | The user's next Phase effect's value is increased by 1.
+Dark Reflection | 2.0 | EoT | 4.0 | 2d8+9 | Magical | Standard | 1.0 | Foe | Range 4 | For one round, the target is inflicted with the inverse effect of the user's Phase.
+Holy Light | 3.0 | EoT | 3.0 | 1d8+7 | Magical | Standard | 1.0 | Foe | Range 6 | If the user has Moonblast's or Celestial Blessing's effect, the target's status effects (except Seal and Stun) are extended by +1 round.
+Lunar Shift | 4.0 | E3T | - | - | - | Free | 1.0 | Self | - | The user shifts to their next Lunar Phase. If Moonblast's effect is active, it is transferred to the new Phase.
+Harvest Moon | 5.0 | Twice/EoT | 3.0 | 2d10+6 | Magical | Standard | 1.0 | Foe | Range 4 | If the user is in New Moon or Full Moon, they heal 1d10+2 HP. Otherwise, they do not shift Phases on their next turn. This may be used as a non-attack Standard.
+Tidal Wave | 6.0 | EoT | 4.0 | 3d8+7 | Magical | Standard | AoE | Foes | Burst 1 | Targets are inflicted with Confusion/1. New Moon grants +AoE range on this attack.
+Double Tide | 7.0 | Twice | 4.0 | 2d6+2
+(Double Hit) | Magical | Standard | 1.0 | Foe | Range 4 | This attack Critical Hits on 16+. If this attack Critical Hits at least once, the user gains Moonblast's effect.
+Blood Moon | 8.0 | EoT | 4.0 | 2d8+6 | Magical  | Standard | 2.0 | Foes | Range 3 | If the user is in Waxing or Waning, targets are inflicted with 2d6 Poison/1. Otherwise, targets are inflicted with 3d4 Bleed/1.
+Celestial Blessing | 9.0 | Twice/EoT | - | - | - | Free | AoE | Self and Allies | Burst 1 | Until the start of the user's next turn, targets gain the user's next Phase effect. Next turn, the user's Phase effect is disabled.
+Gravity Crash | 10.0 | Once | 5.0 | 2d10+9 | Magical | Standard | 1.0 | Foe | Melee | This attack has a different effect based on the user's Phase.
+New Moon: Homing 4. For one round, the target cannot use moves with Usage Limits.
+Waxing: Push 1d6. The target is inflicted with 4 Cripple/2.
+Full Moon: For one round, foes' abilities only deal 75% damage to allies in Range 5.
+Waning: This attack has Bomb dice.
+Far Side of the Moon | EX1 | Passive | - | - | - | - | - | Self | - | The user picks another Lunar Phase effect that doesn't shift in any way. This effect is active when their original Phase is not affected by Moonblast or Celestial Blessing. Lunar Rod attacks may use this Phase for effects instead of the original Phase.
+Fatal Moonlight | EX2 | Once | 5.0 | 2d10+10 | Magical | Standard | 2.0 | Foes | Range 3 | This attack has two effects if the user has two different Phases.
+New Moon: One target at max range is inflicted with Seal/1.
+Waxing: The user permanently gains +2d6 DEF.
+Full Moon: This attack may target +2 foes.
+Waning: This attack ignores negative damage factors.
+Orb (Taistelu) |  |  |  |  |  |  |  |  |  | 
+=Stats!H13 & " HP | " & Stats!I13 & " ATK | " & Stats!J13 & " MAG | " & Stats!K13 & " PDEF | " & Stats!L13 & " MDEF | " & Stats!M13 & " EVA | " & Stats!N13 & " MP " |  |  |  |  |  | "A weapon that delays its own attacks to maximise their impact. Plan ahead and be rewarded." |  |  |  | 
+Future Sight | 1.0 | Passive | - | - | - | - | - | - | - | The user's Delay attacks always land if they hit, even if the user is dead.
+Delay: Delay moves have their damage and effects delayed for a specified number of rounds, landing at the start of the user's turn. Damage is rolled when the move is used, with damage altering effects applied on use.
+Augur | 1.0 | Every Turn | 3.0 | 3d8+0 | Magical | Standard | 1.0 | Foe | Range 5 | The user may give this move Delay-1 for +5 DMG or +3 CR on this move, or Delay-2 for both.
+Eventide | 2.0 | EoT | 4.0 | 3d6+4 | Magical | Standard | 1.0 | Foe | Range 7 | This ability has Delay-1. The target gains 3 Curse before damage until Eventide lands. The user may choose Delay-2 to increase the -DEF of Eventide's Curse by 2.
+Echo Burst | 3.0 | Every Turn | 3.0 | 2d8+6 | Magical | Standard | 1.0 | Foe | Homing 5
+(Splash 1) | The user may give this move Delay-1. If so, it loses Splash, but the user gains +5 DEF until the move lands. This move cannot stack with itself.
+Omen | 4.0 | Twice/E3T | - | - | - | Free | 1.0 | Self | - | The user's next attack has an extra turn of delay with a doubled delay bonus (does not stack).
+Corruption | 5.0 | Twice/EoT | 4.0 | 3d8+3 | Magical | Standard | 1.0 | Foe | Homing 5 | On hit, the target takes damage equal to 5% of their max HP (before multipliers) over 100. This ability may be up to Delay-2, increasing the previous percentage by 5*Delay. Until Corruption lands, damaging statuses on the target deal bonus damage equal to half of the on-hit damage.
+Astral Touch | 6.0 | Twice | - | - | - | Free | 1.0 | Foe | Range 7 | If the target kills the user within one round, then decrease the user's delays on them by 1. If the target dies within one round, then the user may transfer one delay on them to a new target in the original's Range 7.
+Foresight | 6.0 | Once | - | - | - | Reaction | 1.0 | Foe | - | This may be used when the user is attacked, after damage is rolled. 10% of the attack's damage on each target is removed and, after damage, added to either 1) their delayed attacks, or 2) the user's HP, multiplied by the number of the user's delayed attacks.
+Dawn Break | 7.0 | EoT | 3.0 | 1d8+9 | Magical | Standard | 1.0 | Foe | Range 7 | This ability has Delay-2. Until this ability lands, all of the user's attacks on the target have -1 MR. The user may increase the Delay by 1 for an additional -1 MR on the target.
+Oracle | 8.0 | Twice/E3T | 4.0 | 2d6+8 | Magical | Standard | 1.0 | Foe | Homing 6 | The user may choose to add or remove a turn of delay from any number of the users currently delayed attacks. The user may instead use this ability as a self-targetting non-damaging Movement+Swift ability.
+Scry | 9.0 | EoT | 3.0 | 2d8+3 | Magical | Standard | AoE | Foes | Cone 2 | The user may give this Delay-1 to extend its Cone by 1. Select one target. Add 10*X% of the user's total delay on that target to this attack, where X = number of targets.
+Prophecy | 10.0 | Twice/E3T | 5.0 | 1d8+4 | Magical | Standard | 1.0 | Foe | Homing 5 | This attack gains +2.5 ACC and +2 DMG per delayed move that landed at the start of the user's current turn. The user may give this ability Delay-1 or 2. If so, lose the prior bonuses and gain +8 DMG per delayed move that will land at the same time as Prophecy. This bonus damage updates when delays are used.
+Fateweave | EX1 | Once | 0.0 | 3d6+5 | Magical | Standard | 4.0 | Foes | Global | Select a Delay between 1 and 5. For every foe who dies on the turn this lands, permenantly gain +2 ACC and +4 CR. After this ability lands, delays with 2 or less immediately land when the user dies. This ability is disabled after it hits, ignores ATK/MAG and outside damage factors and gains another use if it misses.
+Psychic Overlord | EX2 | Passive | - | - | - | - | - | - | - | When a foe dies to Delay damage (including through Oracle's effect), the user heals half of the overkill and gains +4 MAG. The user then selects a foe who has unlanded Delay damage, who is inflicted with -2 EVA/1 and -25% damage/1.
+ |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Dark ===
+Name | Lv. | Frequency | MR | Damage |  |  | Target |  |  | Effect
+ |  |  |  | Roll | Type | Action | Amount | Group | Range | 
+Basic Abilities |  |  |  |  |  |  |  |  |  | 
+=Classes!A4 | =Classes!B4 | =Classes!C4 | =Classes!D4 | =Classes!E4 | =Classes!F4 | =Classes!G4 | =Classes!H4 | =Classes!I4 | =Classes!J4 | =Classes!K4
+=Classes!A5 | =Classes!B5 | =Classes!C5 | =Classes!D5 | =Classes!E5 | =Classes!F5 | =Classes!G5 | =Classes!H5 | =Classes!I5 | =Classes!J5 | =Classes!K5
+=Classes!A6 | =Classes!B6 | =Classes!C6 | =Classes!D6 | =Classes!E6 | =Classes!F6 | =Classes!G6 | =Classes!H6 | =Classes!I6 | =Classes!J6 | =Classes!K6
+=Classes!A7 | =Classes!B7 | =Classes!C7 | =Classes!D7 | =Classes!E7 | =Classes!F7 | =Classes!G7 | =Classes!H7 | =Classes!I7 | =Classes!J7 | =Classes!K7
+=Classes!A8 | =Classes!B8 | =Classes!C8 | =Classes!D8 | =Classes!E8 | =Classes!F8 | =Classes!G8 | =Classes!H8 | =Classes!I8 | =Classes!J8 | =Classes!K8
+Dark Abilities |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  | 
+Athame (Ocean) |  |  |  |  |  |  |  |  |  | 
+=Stats!O9 & " HP | " & Stats!P9 & " ATK | " & Stats!Q9 & " MAG | " & Stats!R9 & " PDEF | " & Stats!S9 & " MDEF | " & Stats!T9 & " EVA | " & Stats!U9 & " MP " |  |  |  |  |  | "Sacrifice your life force to boost your power without limit." |  |  |  | 
+Crimson Pact | 1.0 | Passive | - | - | - | - | - | - | - | Whenever the user damages a foe, they sacrifice HP equal to 10% of the total damage the foe took, if able. Then, they gain permanent bonus damage equal to the HP sacrificed. (Bonus damage is also gained through effect-derived CP.)
+Bloodrush | 1.0 | Every Turn | 2.0 | 2d8+4 | Magical | Standard | 1.0 | Foe | Range 4 | If this move is used from maximum range, the user gains +5 DMG and +1 MP/1.
+Defile | 2.0 | EoT | 4.0 | 1d10+5 | Magical | Standard | AoE | Foes | Pierce 4 | Targets are inflicted with 3 Curse/1. Whenever a foe takes damage from this Curse, the user takes an equal amount in Crimson Pact.
+Purloin Youth | 3.0 | E3T | 3.0 | 3d6+5 | Magical | Standard | 1.0 | Foe | Melee | For one round, attacks targeting the user have 10% recoil. The user sacrifices HP to Crimson Pact equal to half the recoil.
+Sanctified Blade | 4.0 | Once | - | - | - | Swift | 1.0 | Self | - | Crimson Pact's sacrifice amount on the user's next single-target attack is increased by 10%. If the Foe has targeted the user since the beginning of their last turn, the amount is increased by an additional 5%.
+Pentagram | 5.0 | E3T | 4.0 | 2d6+3 | Magical | Standard | AoE | Foes | Burst 1 | At the start of the user's next turn, foes in the user's Burst 1 take 2d6+3 plus the user's Crimson Pact in damage.
+Black Magic | 6.0 | Passive | - | - | - | - | - | - | - |  For every 5 CP the user has, they have +1 DEF. For every 7 CP, they have +1 ACC.  For every 10 CP, they have +1 damage dice.
+Massacre | 7.0 | Once | 3.0 | 2d8+11 | Magical | Standard | 1.0 | Foe | Melee | If this kills the target, the user gains twice the amount of Crimson Pact from it and an additional use of Massacre. Otherwise, this move does not trigger Crimson Pact sacrifice.
+Covenant | 7.0 | Once | - | - | - | Free | 1.0 | Ally | Range 3 | For one round, the target shares the user's Black Magic buffs and gains the Crimson Pact passive. Crimson Pact gained by the target is applied to the user instead.
+Exsanguinate | 8.0 | Once | 4.0 | 2d8+6 | Magical | Standard | 1.0 | Foe | Melee | If the user acquires a Black Magic bonus from the Crimson Pact gained from this move, the bonus gained is increased by 1.
+Siphon Soul | 9.0 | Twice/EoT | 4.0 | 3d8+2 | Magical | Standard | 1.0 | Foe | Range 3 | Before accuracy, the user heals HP equal to their Crimson Pact.
+Oblation | 10.0 | Once | - | - | - | Swift | - | Self | - | The user's next attack this turn gets double bonus damage from Crimson Pact.
+Total Depravity | EX1 | Passive | - | - | - | - | - | - | - | The user's Crimson Pact sacrifice is increased by 5%. At the start of each turn, if the user attacked on their last turn, they take damage equal to their Crimson Pact. This cannot kill the user.
+Bloodbind | EX2 | Every Turn | - | - | - | Trigger | - | - | - | This may be used up to twice per turn before the user attacks. The user sacrifices any amount of CP. For each point sacrificed, they gain +1 DMG this turn and heal 1 HP when using Standard/Full attacks, regardless of hit.
+Scythe (Ocean) |  |  |  |  |  |  |  |  |  | 
+=Stats!O11 & " HP | " & Stats!P11 & " ATK | " & Stats!Q11 & " MAG | " & Stats!R11 & " PDEF | " & Stats!S11 & " MDEF | " & Stats!T11 & " EVA | " & Stats!U11 & " MP " |  |  |  |  |  | "Steals the opponent's HP with every attack." |  |  |  | 
+Reaper's Touch | 1.0 | Passive | - | - | - | - | - | - | - | Whenever the user damages a foe, the user heals 1/8 of the damage dealt.
+Reap | 1.0 | Every Turn | 2.0 | 2d8+3 | Magical | Standard | 1.0 | Foe | Melee | Reaper's Touch heals 1/5 of the damage dealt on this attack instead of 1/8.
+Hades' Toll | 2.0 | EoT | 3.0 | 2d10+1 | Magical | Standard | 1.0 | Foe | Homing 4 | For two rounds, the user's Reaper's Touch heal is increased 50% on attacks against the target.
+Haunted Swing | 3.0 | EoT | 4.0 | 3d6+4 | Magical | Standard | AoE | Foes | Beam 2 | Targets at full HP take an additional 5 damage. The user heals 5 HP for each target this triggers on.
+Wither Soul | 4.0 | EoT | 3.0 | 2d8+6 | Magical | Standard | AoE | Foes | Burst 1 | For each debuff or status that any target is under, the user heals an additional 3 HP from Reaper's Touch.
+Pestilent Strike | 5.0 | EoT | 3.0 | 2d10+8 | Magical | Standard | 1.0 | Foe | Range 3 | The target is inflicted with Poison/1 equal to the amount of Reaper's Touch healing calculated from this attack. If this amount is at least 6, the poison damage is halved and extended one round. 
+Coup de Grâce | 6.0 | E3T | 3.0 | 2d8+5 | Magical | Standard | 1.0 | Foe | Homing 5 | If this kills a target, the user heals 10 HP and gains +5 damage to their next attack.
+Spirit Break | 7.0 | Twice | 4.0 | 5d6+5 | Magical | Standard | 1.0 | Foe | Range 3 | The target is inflicted with -3 DEF/1, and the user gains +3 DMG/1.
+Memento Mori | 8.0 | Twice/EoT | 4.0 | 4d8+5 | Magical | Standard | 1.0 | Foe | Range 5 | This attack's damage is delayed for one turn. The user may choose to delay it for up to 2 additional turns. For each additional turn delayed, the user heals an additional 1/8 of the damage from Reaper's Touch.
+Phantasmal Shield | 8.0 | Once | - | - | - | Swift | 1.0 | Self or Ally | Melee | For one round, the target heals 15% of the damage taken from all attacks. Each time the target is hit by a Standard/Full attack with this effect, it is decreased by 5% (minimum 0%).
+Stroke of Midnight | 9.0 | Twice/E3T | 4.0 | 2d6+12 | Magical | Standard | 1.0 | Foe | Range 3 | Before damage, for one round, the user's Reaper Touch healing is instead converted into additional damage on that attack. Other Scythe-sourced healing is converted into +DMG/1.
+Phantom Blade | 10.0 | Once | 4.0 | 6d6+6 | Magical | Standard | 1.0 | Foe | Melee | The amount the user heals from Reaper's Touch on this attack is equal to amount of HP the user has healed from Scythe abilities (except Phantom Blade) in the last round.
+Immortal Coil | EX1 | Passive | - | - | - | - | - | - | - | When the user would die for the first time, they are instead set to 1 HP and immediately take their turn. The user cannot take damage during this bonus turn. Then, they take damage equal to the overkill amount of the attack that would have killed them. Turn order then resumes normally.
+Quietus | EX2 | Passive | - | - | - | - | - | - | - | The user's attacks automatically hit and kill targets below 25% HP.
+Totems (God evening, Methridium) |  |  |  |  |  |  |  |  |  | 
+=Stats!O13 & " HP | " & Stats!P13 & " ATK | " & Stats!Q13 & " MAG | " & Stats!R13 & " PDEF | " & Stats!S13 & " MDEF | " & Stats!T13 & " EVA | " & Stats!U13 & " MP " |  |  |  |  |  | "Carve and control a Totem tile to support or punish nearby players." |  |  |  | 
+Whittle | 1.0 | Every Turn | - | - | - | Free | 1.0 | Tile | Homing 2 | The user sacrifices 10 HP to create a Totem tile on the target, removing any existing Totem tile. Totems have a range of Burst 1 and can have one of three types: Blood, Bone, or Soul, starting in Blood when placed. Totem tiles cannot be overwritten. 
+Totem of Blood | 1.0 | EoT | - | - | - | Trigger | - | - | - | The user's Totem becomes a Totem of Blood. Within Homing 6 of their Totem of Blood, the user may originate Totems moves from it, granting +5 DMG and -1 Range.
+Void's Call | 1.0 | Every Turn | 2.0 | 1d12+6 | Magical | Standard | 2.0 | Foes | Homing 3
+(Pull 2) | Targets are pulled towards the user's Totem tile instead of the user, if one exists.
+Left-Hand Path | 2.0 | EoT | 3.0 | 3d8+5 | Magical | Standard | 1.0 | Foe | Line 6 | The user moves along the line, from it's origin, until they hit a non-entity obstruction. If the user has no active Totem, the target is inflicted with -2 EVA/1 and -3 DEF/1.
+Totem of Bone | 3.0 | EoT | - | - | - | Trigger | - | - | - | The user's Totem becomes a Totem of Bone. Within a Totem of Bone's range, the user and their allies have +5 DEF, and cannot be targetted by AoE moves or Splash damage used by foes outside of its range.
+Heredity | 4.0 | Twice | 3.0 | 2d8+8 | Magical | Standard | 1.0 | Foe | Homing 5 | The user's Totem moves as close to the target as possible, and the user heals any HP they sacrificed to create it. If the user has no Totem, they place one on the target's tile.
+Totem of Soul | 5.0 | EoT | - | - | - | Trigger | - | - | - | The user's Totem becomes a Totem of Soul. The user and allies may sacrifice 8 HP while within a Totem of Soul's range as an Every Turn Free action to gain +1 MP that turn and +2 dice on their next attack that turn. Numerical values are halved for allies.
+Feral Spark | 6.0 | EoT | 3.0 | 3d6+5 | Magical | Standard | 1.0 | Foe | Range 4 | For one round the target has 10% recoil on attacks and numerical effects of the user's current Totem type are doubled.
+Blasphemy | 7.0 | E3T | 4.0 | 2d10+3 | Magical | Standard | AoE | Foes | Beam 2 | Targets are inflicted with 6 Curse/1. While this Curse is active, targets who target an Ally have the Curse extended by one round.
+Effigial Pyre | 8.0 | Once | - | - | - | Swift | - | - | - | The user destroys their Totem tile and inflicts 13 Burn/1 to foes within the tile's Burst 1. For the rest of the game, the user's current Totem type loses all of its effects, but the user's Totem range becomes Burst 2.
+Sacrificial Lamb | 9.0 | Twice/E3T | 6.0 | 2d8+7 | Magical | Full | 0.0 | Foes | Range 3 | Before accuracy, all players within the user's Totem's range sacrifice 5 HP. For each player that sacrificed, this move gains +1 target, +1 base dice, and -1 MR.
+Ancestral Wrath | 10.0 | Once | 4.0 | 2d10+4 | Magical | Full | AoE | Foes | Varies | This ability may only be used if the user's Totem is within their Range 5 (ignoring players), and targets within the user's Totem range, with effects depending on its type:
+
+Blood: For one round, targets cannot leave the user's Totem's range willingly.
+Bone: The user and allies in range are cleansed of debuffs and statuses. Foes in range are cleansed of buffs.
+Soul: The user and allies in range are healed for 1/3 of the damage dealt by this attack.
+Animatus | EX1 | Every Turn | - | - | - | Trigger | - | Self | - | If the user has a non-Animated Totem on an unoccupied tile, it is Animated, and the user sacrifices any amount of HP to become its HP stat, and to be gained by the Totem as Shield/1. An Animated Totem is an entity allied with the user, sharing the user's DEF. When the user or Totem runs out of HP, it is removed.
+
+If the user has an Animated Totem they may, in any order, move it a number of tiles up to their MP, and deal 3d10 to foes in its Totem range.
+Egregore | EX2 | Passive | - | - | - | - | - | - | - | When the user kills a foe, their Animated Totem gains any overkill damage as HP. If their Totem is not Animated, it becomes so with HP equal to the overkill. The user may choose one active ability from the foe, which may be used (with its frequency) by Animated Totems for the rest of the game, in place of Animatus dealing damage.
+ |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Dueler ===
+Name | Lv. | Frequency | MR | Damage |  |  | Target |  |  | Effect
+ |  |  |  | Roll | Type | Action | Amount | Group | Range | 
+Basic Abilities |  |  |  |  |  |  |  |  |  | 
+=Classes!A4 | =Classes!B4 | =Classes!C4 | =Classes!D4 | =Classes!E4 | =Classes!F4 | =Classes!G4 | =Classes!H4 | =Classes!I4 | =Classes!J4 | =Classes!K4
+=Classes!A5 | =Classes!B5 | =Classes!C5 | =Classes!D5 | =Classes!E5 | =Classes!F5 | =Classes!G5 | =Classes!H5 | =Classes!I5 | =Classes!J5 | =Classes!K5
+=Classes!A6 | =Classes!B6 | =Classes!C6 | =Classes!D6 | =Classes!E6 | =Classes!F6 | =Classes!G6 | =Classes!H6 | =Classes!I6 | =Classes!J6 | =Classes!K6
+=Classes!A7 | =Classes!B7 | =Classes!C7 | =Classes!D7 | =Classes!E7 | =Classes!F7 | =Classes!G7 | =Classes!H7 | =Classes!I7 | =Classes!J7 | =Classes!K7
+=Classes!A8 | =Classes!B8 | =Classes!C8 | =Classes!D8 | =Classes!E8 | =Classes!F8 | =Classes!G8 | =Classes!H8 | =Classes!I8 | =Classes!J8 | =Classes!K8
+Dueler Abilities |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  | 
+Gladius (bro torterra) |  |  |  |  |  |  |  |  |  | 
+=Stats!V9 & " HP | " & Stats!W9 & " ATK | " & Stats!X9 & " MAG | " & Stats!Y9 & " PDEF | " & Stats!Z9 & " MDEF | " & Stats!AA9 & " EVA | " & Stats!AB9 & " MP " |  |  |  |  |  | "Swap between three different weapons to respond to any situation!" |  |  |  | 
+Triumvirate | 1.0 | Passive | - | - | - | - | - | Self | - | The user may swap between the following subweapons, each with respective effects:
+ - Gladius: +1 dice on the user's attacks,
+ - Scutum: attacks from range against the user lose 5 damage,
+ - Pilum: Melee attacks gain +3 range.
+As a Standard action, the user may swap to any subweapon. Swapping due to a move effect occurs regardless of hit or miss. The user starts the game in Gladius.
+Exercitus | 1.0 | Every Turn | 3.0 | 3d6+6 | Physical | Standard | 1.0 | Foe | Melee | If in Gladius, swap to Scutum. If in Scutum, this has Push 3 and swap to Pilum. If in Pilum, this inflicts 4 Cripple/1 and swap to Gladius. 
+Disengage | 2.0 | EoT | 4.0 | 2d10+7 | Physical | Standard | 1.0 | Foe | Melee | If used in Gladius, this attack inflicts -2d6 DEF/1 and has Push 1. If used in Scutum, the user takes half damage from AoE attacks for one round and is pushed back one tile. The user switches to Pilum.
+Forward Jab | 3.0 | EoT | 3.0 | 1d12+10 | Physical | Standard | 1.0 | Foe | Line 6
+(Pull 3) | The user must be in Pilum to use this move. This attack has +1 base dice and Pull 4 against targets over 4 tiles away. The user switches to either Gladius or Scutum.
+Breach | 4.0 | EoT | 4.0 | 2d8+8 | Physical | Standard | 1.0 | Foe | Range 4 | The user switches to either Gladius or Scutum. If Gladius, for one round, foes who enter the user's melee take 3d8 damage. If Scutum, for one round, the user and allies in Burst 2 cannot have their DEF ignored. The user must switch subweapons.
+Phalanx | 5.0 | Twice/EoT | 3.0 | 3d4+1 | Physical | Reaction | 1.0 | Foe | Range 4 | If in Scutum, this may be used on a foe hitting the user or an ally in the user's melee. If the target is in melee, this has +1 dice and the user swaps to Gladius. Else, swap to Pilum. This ignores outside factors, does not add ATK/MAG, and ignores half DEF.
+Shield Wall | 6.0 | Twice/EoT | 4.0 | 2d10+4 | Physical | Standard | AoE | Foes | Cone 1 | The user must be in either Gladius or Pilum to use this move. The user switches to Scutum and for one round, the flat modifier in base rolls on attacks targeting the user become negative. This may be used as a non-damaging Standard.
+Iberian Steel | 7.0 | EoT | - | - | - | Free | - | Self | - | Subweapons are "used" when the user uses a weapon attack or weapon standard in it. 
+The user's next attack this turn in a subweapon with fewer uses than both others gains +1 dice. If it has 2+ fewer uses than both others, it also gains +2 ACC.
+Deus Vult | 8.0 | Once | 4.0 | 2d12+2 | Physical | Standard | 1.0 | Foe | Melee | If used in Scutum, before accuracy, for one round, the user cannot be affected by any status or debuff and has any such effect removed.
+Invigorate  | 9.0 | EoT | - | - | - | Swift | AoE | Self and Allies | Burst 2 | This move grants a different bonus based on the user's subweapon.
+Gladius: +5 DMG/1. Scutum: 7 Shield/1. Pilum: +1 ACC and CR/1.
+Dual Wield | 9.0 | E3T | - | - | - | Swift | - | Self | - | This must be used before the user moves. The user's MP is halved and they choose an additional subweapon to wield until the start of their next turn. Only the user's original subweapon is considered for subweapon swapping.
+Weapon Crash | 10.0 | Once | 5.0 | 2d10+3 | Physical | Standard | Varies | Foe(s) | Varies | This move has a different range and effect depending on the user's subweapon(s).
+Gladius: 1/Foe/Melee, and this attack has +3 dice faces.
+Scutum: AoE/Foes/Cone 2, and for one round, attacks targeting the user are immune to positive outside factors to accuracy and damage.
+Pilum: AoE/Foes/Pierce 5, and has -3 MR.
+If Dual Wield is active, the user picks one range and one effect from the subweapons.
+Impede | EX1 | EoT | 4.0 | 4d8+0 | Physical | Standard | AoE | Foes | Pierce 4 | If in Pilum, steal targets' buffs and set their duration to one round. Switch to Scutum.
+If in Scutum, this becomes AoE/Foes/Beam 4. Switch to Gladius. 
+If in Gladius, gain +1 MP/1 and lower other cooldowns by one round. Switch to Pilum. 
+Hastiliarius | EX2 | Passive | - | - | - | - | - | - | - | Each subweapon gains additional passive bonuses:
+Gladius: +0.5X dice, Scutum: +X DEF, Pilum: +0.5X ACC
+X is equal to the amount of times the user has used their least used subweapon.
+Quarterstaff (Taistelu) |  |  |  |  |  |  |  |  |  | 
+=Stats!V11 & " HP | " & Stats!W11 & " ATK | " & Stats!X11 & " MAG | " & Stats!Y11 & " PDEF | " & Stats!Z11 & " MDEF | " & Stats!AA11 & " EVA | " & Stats!AB11 & " MP " |  |  |  |  |  | "A weapon focused on counterplay and anti-bullshit." |  |  |  | 
+Thwack | 1.0 | Every Turn | 2.0 | 2d6+6 | Physical | Standard | 1.0 | Foe | Melee | No status or effect, except Stun, can prevent this move's use. This ability has +1 dice for every 5 ATK or MAG (whichever is higher) the target has above 20.
+Grave of Titans | 2.0 | E3T | 4.0 | 3d8+0 | Physical | Standard | 1.0 | Foe | Range 3 | This attack ignores DEF. For every 10 max HP (before multipliers) the target has above 120, this attack gains +3 DMG and -1 MR. If this attack's damage is reduced by foes, the user's next Standard/Full attack has +1 ACC/CR and damage dice.
+Inertial Shift | 3.0 | EoT | 3.0 | 2d10+6 | Physical | Standard | 1.0 | Foe | Melee
+(Push 3) | If, in the last round, a foe's ability moved or attempted to move the user, this ability has +2 dice and becomes Homing 8 (Pull 7).
+Pole Vault | 4.0 | Twice/EoT | 6.0 | 3d10+5 | Physical | Standard | 1.0 | Tile | Range 3
+(Splash 1) | Select an unoccupied tile in range, ignoring range reduction. The user teleports to this tile (even on miss) and targets foes (including Ice/Stone) in its Splash. If no foes are targetted, this is not an attack.
+Adaptive | 5.0 | Passive | - | - | - | - | - | - | - | When the user misses a Standard/Full attack, any buffs that attack would benefit from are applied to the user's next Standard/Full attack, which also gains +2 ACC, 10% of the damage the missed attack would have dealt, and ignores 5 DEF.
+Fair Fight | 5.0 | Twice/E3T | - | - | - | Free | 1.0 | Self | - | The target of the user's next single-target attack is the Duel Partner for two rounds or until the user or target dies or the user damages another foe. The user deals and takes 30 less damage from all foes except their DP. If the DP has allies or is a monster, this value is reduced to 5.
+Hardwood Slam | 6.0 | Twice/EoT | 3.0 | 2d8+4 | Physical | Standard | 1.0 | Foe | Melee | The user chooses the status inflicted if its conditions are met. This attack also gains -2 MR (if Poison), +2 dice (if Confusion), or heals the user 5 HP (if Bleed).
+5 Poison/2: If the user's accuracy modifier is negative or the target has increased EVA.
+Confusion/2: If the target's accuracy modifiers caused them to hit an attack or trigger an effect they otherwise would not have on the user or their allies.
+6 Bleed/2: If the target has critical hit or had +dice on an attack on the user and allies.
+Exploit Feign | 7.0 | Twice/EoT | 4.0 | 1d10+3
+(Double Hit) | Physical | Standard | 1.0 | Foe | Melee | Targets are inflicted with -4 DEF/1 or -4 DMG/1. If the user is debuffed by foes, they are cleansed before accuracy, this attack gains a hit, and the debuff inflicted is doubled.
+Stance Breaker | 8.0 | E3T | 4.0 | 4d8-2 | Physical | Standard | 1.0 | Foe | Range 4 | If, in the last round, the target gained more than 5 DEF, HP or Shield, this attack has advantage damage dice. The user gains 75% of the DEF, HP or Shield (whichever is highest) that the target recieved in this time as Shield/1.
+Defiance | 9.0 | EoT | 2.0 | 2d4+5 | - | Reaction | 1.0 | Foe | Global | This may be used on a foe that statuses the user or targets them outside Range 4. The user teleports to an unoccupied tile in their Melee (even on miss) and gains +2 ACC and +5 DMG to their next Standard/Full attack. This attack ignores outside damage factors.
+Calamitous Trance | 10.0 | Once | 5.0 | 4d6+3 | Physical | Standard | 1.0 | Foe | Melee | If the target dealt 50+ damage to the user in the last round, this attack gains +3 dice. If 75+, this attack also gains +4 dice faces. This attack has -1 MR per attack that hit the user since their last turn, inflicting Confusion/2 when MR<4.
+Paragon | EX1 | Passive | - | - | - | - | - | - | - | Adaptive's numerical bonuses are tripled. On the user's turns, they gain 5X Shield and their attacks gain +5X% damage, where X = the number of times they were targetted by foes' abilities since their last turn.
+Martial Mastery | EX2 | Twice/EoT | - | - | - | Movement | - | - | - | The user moves up to their MP+1, treating all tiles except the final as Normal. For the rest of the turn, the user's attacks ignore obstructions and DEF and invert foe's negative numerical outside damage factors.
+Tonfa (bro torterra) |  |  |  |  |  |  |  |  |  | 
+=Stats!V13 & " HP | " & Stats!W13 & " ATK | " & Stats!X13 & " MAG | " & Stats!Y13 & " PDEF | " & Stats!Z13 & " MDEF | " & Stats!AA13 & " EVA | " & Stats!AB13 & " MP " |  |  |  |  |  | "A defensive control weapon that manipulates and then punishes foes." |  |  |  | 
+Disarm | 1.0 | Every Turn | 2.0 | 2d8+5 | Physical | Standard | 2.0 | Foes | Melee | Each target's next Standard/Full attack on the user has -1 dice and halved DEF ignore.
+Spurn | 2.0 | EoT | 3.0 | 3d6+5 | Magical | Standard | 1.0 | Foe | Range 5 | On their next turn, if the target can attack the user from Melee but does not, the user may use Attack of Opportunity against them at the end of the turn.
+Figure 8 | 3.0 | Every Turn | 2.0 | 2d8+10 | Physical | Reaction | 1.0 | Foe | Global | This may be used against a Foe who willingly moves out of the user's Range 2 from Melee or when the user is able to use an Attack of Opportunity. This ignores half DEF.
+Reversal | 4.0 | Twice/EoT | 4.0 | 4d6+2 | Physical | Standard | 1.0 | Foe | Range 3 | On their next turn, if the target can end their turn on a different tile type, but does not, the user gains +2 ACC/1 and their next attack ignores half of the target's DEF.
+Wear Down | 5.0 | EoT | - | - | - | Free | 1.0 | Foe | Range 4 | For each MP the target uses on their next turn, the user gains +3 DEF until the start of their next turn. 
+Guard | 5.0 | Thrice | - | - | - | Trigger | 1.0 | Ally | Range 3 | The user's next Tonfa move replaces instances of "the user" with the target of this move.
+Yin Yang | 6.0 | E3T | 4.0 | 3d8+7 | Varies | Standard | 1.0 | Foe | Varies | Choose Yin or Yang.
+Yin: Physical/Melee. If the target does not damage the user with an attack on their next turn, they take 1d8+5 damage.
+Yang: Magical/Homing 4. For one round, foes take 1d8+5 damage each time they damage the user with attacks.
+Standoff | 7.0 | Twice/EoT | 4.0 | 2d10+8 | Physical | Standard | 1.0 | Foe | Melee | If the target ends their next turn in the user's Melee, the user may AoO them without adding ATK/MAG.
+Dazing Hook | 8.0 | E3T | 4.0 | 2d12+3 | Magical | Full | 1.0 | Foe | Line 4
+(Pull 3) | This move's range cannot be reduced. If the target attacked the user outside of Melee in the last round, they are inflicted with Confusion and Inverse Bomb dice/1.
+Hold Over | 9.0 | Twice/EoT | - | - | - | Free | - | Self | - | Declare a range type. For one round, if foes target the user with attacks of that range type outside of the user's Melee, the user may AoO them after the attack.
+Gale Force | 10.0 | Once | 4.0 | 3d10+6 | Magical | Standard or Movement | AoE | Self, Foes, Allies | Burst 2 | Regardless of accuracy, the user may teleport any targets to any unoccupied tiles in range. This is not an attack against Allies or when used as Movement.
+Aikido | EX1 | Passive | - | - | - | - | - | - | - | When the user uses two attacks of the same damage type in one turn, they gain +2 DEF and ATK/MAG of the opposite damage type. These reset if this effect does not occur.
+Tempest Sweep | EX2 | EoT | 3.0 | 3d8+3 | Varies | Standard  | 1.0 | Foe | Homing 3 | Choose Honte or Gyakute.
+Honte: Physical. On their next turn, the user's Tonfa attack effects that last one round/turn last an additional round/turn, respectively.
+Gyakute: Magical. The user's next Tonfa attack gains a Star 2 Splash range.
+ |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Heavy ===
+Name | Lv. | Frequency | MR | Damage |  |  | Target |  |  | Effect
+ |  |  |  | Roll | Type | Action | Amount | Group | Range | 
+Basic Abilities |  |  |  |  |  |  |  |  |  | 
+=Classes!A4 | =Classes!B4 | =Classes!C4 | =Classes!D4 | =Classes!E4 | =Classes!F4 | =Classes!G4 | =Classes!H4 | =Classes!I4 | =Classes!J4 | =Classes!K4
+=Classes!A5 | =Classes!B5 | =Classes!C5 | =Classes!D5 | =Classes!E5 | =Classes!F5 | =Classes!G5 | =Classes!H5 | =Classes!I5 | =Classes!J5 | =Classes!K5
+=Classes!A6 | =Classes!B6 | =Classes!C6 | =Classes!D6 | =Classes!E6 | =Classes!F6 | =Classes!G6 | =Classes!H6 | =Classes!I6 | =Classes!J6 | =Classes!K6
+=Classes!A7 | =Classes!B7 | =Classes!C7 | =Classes!D7 | =Classes!E7 | =Classes!F7 | =Classes!G7 | =Classes!H7 | =Classes!I7 | =Classes!J7 | =Classes!K7
+=Classes!A8 | =Classes!B8 | =Classes!C8 | =Classes!D8 | =Classes!E8 | =Classes!F8 | =Classes!G8 | =Classes!H8 | =Classes!I8 | =Classes!J8 | =Classes!K8
+Heavy Abilities |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  | 
+Axe (bro torterra) |  |  |  |  |  |  |  |  |  | 
+=Stats!A16 & " HP | " & Stats!B16 & " ATK | " & Stats!C16 & " MAG | " & Stats!D16 & " PDEF | " & Stats!E16 & " MDEF | " & Stats!F16 & " EVA | " & Stats!G16 & " MP " |  |  |  |  |  | "Prioritises colossal damage and ATK over everything else." |  |  |  | 
+Bloodlust | 1.0 | Passive | - | - | - | - | - | - | - | Whenever the user deals or takes 15+ damage from an attack, they gain 1 Rage stack.
+Feral Chop | 1.0 | Every Turn | 3.0 | 2d10+X | Physical | Standard | 1.0 | Foe | Melee | X = 2.5 * the user's current Rage.
+Chain Axe | 2.0 | Every Turn | 4.0 | 1d10+2 | Physical | Standard | 1.0 | Foe | Range 4
+(Pull 3) | For one round, Bloodlust gives an extra Rage per instance of damage.
+Power Swing | 3.0 | EoT | 6.0 | 3d10+6 | Physical | Standard | 1.0 | Foe | Melee | The user spends X Rage to give this move -X MR and +2X Crit Range.
+Wide Slash | 4.0 | EoT | 4.0 | 2d10+7 | Physical | Standard | AoE | Foes | Cone 1 | Up to 2 times, the user may spend 2 Rage to give this attack +1 range.
+Vindictive | 5.0 | Passive | - | - | - | - | - | - | - | The user gains 2 Rage when they kill a foe or miss a Standard/Full attack.
+Knockback | 6.0 | EoT | 4.0 | 2d10+6 | Physical | Standard | 1.0 | Foe | Melee
+(Push 1) | This attack inflicts Slow/1. The user may spend a Rage stack to increase this move's Push by 1 and/or instead inflict Cripple 6/1.
+Franciscate | 7.0 | Twice  | 4.0 | 3d10+3 | Physical | Standard | 1.0 | Self or Foe | Line 6 | The user gains +2 MP and is Sealed for one round. The user may spend 1 rage to negate the Seal. This may be used as a non-damaging Standard targeting the user.
+Gash | 8.0 | E3T | 5.0 | 2d10+8 | Physical | Standard | 1.0 | Foe | Melee | The user may spend Rage on this attack. The target is inflicted with 5 Bleed/X, where X is the amount of Rage spent.
+Sever | 9.0 | Twice/E3T | 3.0 | 1d10+1 | Physical | Standard | 1.0 | Foe | Melee | The user may spend Rage on this attack to give it +1 hit and +1 MR per Rage spent.
+Amped Strike | 10.0 | Once | 5.0 | 3d10+6 | Physical | Standard | 1.0 | Foe | Melee
+(Splash 1) | This attack has +damage equal to 4 * the user's Rage. The user loses all Rage.
+Swing Cycle | EX1 | Passive | - | - | - | - | - | - | - | At the start of each turn, the user may spend 2 Rage to reset the cooldowns and frequencies of their last two attacks.
+Chain Axe becomes EoT. The user starts the game with 1 Rage.
+Wrath | EX2 | EoT | 5.0 | 1d10+10 | Physical | Standard | 1.0 | Tile or Foe | Melee | The user may spend 2 Rage per effect to gain any combination of the following effects: 
++4d10 to the base roll, Splash 2, -3 MR. 
+This cost increases by 1 each time this is used. This has -2 ACC if used on a Tile.
+Hammer (Methridium, Felucia) |  |  |  |  |  |  |  |  |  | 
+=Stats!A18 & " HP | " & Stats!B18 & " ATK | " & Stats!C18 & " MAG | " & Stats!D18 & " PDEF | " & Stats!E18 & " MDEF | " & Stats!F18 & " EVA | " & Stats!G18 & " MP " |  |  |  |  |  | "An AoE-heavy weapon that capitalizes on both player and tile obstructions." |  |  |  | 
+Unstoppable Force | 1.0 | Passive | - | - | - | - | - | - | - | If a foe blocks a target from being Pushed the full distance by one of the user's attacks, that foe is hit and targeted by the attack. Foes hit via this ability are pushed towards the tile the target that collided with them would have reached unobstructed, and no further.
+Cyclone Sweep | 1.0 | Every Turn | 3.0 | 1d8+8 | Physical | Standard | AoE | Foes | Cone 1
+(Push 2) | This attack gains +dice equal to the number of targets hit.
+Storm Strike | 2.0 | Every Turn | 3.0 | 2d10+6 | Physical | Standard | 1.0 | Foe | Range 5
+(Splash 1) | The user teleports to a chosen tile in the original target's Splash 1. Targets are Slowed/1.
+Seismic Smash | 3.0 | EoT | 3.0 | 3d8+0 | Physical | Standard | 1.0 | Foe | Melee
+(Push 4) | Targets are inflicted with 2 Cripple/2.
+Masonry | 4.0 | EoT | - | - | - | Free | 1.0 | Tile | Melee | If unoccupied, the targeted tile becomes a Stone tile, which functions like Ice, but with 30 HP and 1 EVA. Stone tiles created by this move are removed after two rounds, and can be Pushed and Pulled, taking no damage from moves that do so.
+Stonemason | 4.0 | Passive | - | - | - | - | - | - | - | The user's Hammer abilities' effects ignore Ice Clause on player-created tiles.
+Crush | 5.0 | EoT | 4.0 | 2d10+5 | Physical | Standard | 1.0 | Foe | Melee
+(Push 2) | If a target cannot be pushed the full distance, they take an additional 1d10+5 damage.
+Earth Render | 6.0 | E3T | 4.0 | 3d10+2 | Physical | Standard | 1.0 | Foe | Line 3
+(Splash 1) | After damage or on miss, within Burst 2 of the original target, the user may choose to replace up to 2 unoccupied tiles with Broken. These Broken tiles last either 2 rounds, until the user dies, or until the user decides to remove them as a Trigger action.
+Lagging Spin | 7.0 | E3T | 4.0 | 1d8+10 | Physical | Standard | AoE | Foes | Star 1 | This move ignores 4 DEF per MP the user spent moving away from the tile they started their turn on. If the user spent all of their MP moving away, this move gains +2 dice.
+Gravity Well | 8.0 | E3T | - | - | - | Swift | - | - | - | When the user next attacks this turn, before accuracy, they choose any of the attack's non-Splash, non-Unstoppable Force targets. They may then Pull another entity within that target's Burst 2 to a chosen tile in that target's Burst 1.
+Shockwave Slam | 9.0 | Twice/E3T | 4.0 | 2d10+4 | Physical | Standard | 1.0 | Foe | Melee
+(Splash Star 2) | This move's Splash hits foes in the original target's Star, rather than Burst. The original target may be Pushed 2 tiles in a chosen direction. Splash targets are Pushed 2 tiles directly away from the original target.
+Collision Course | 10.0 | Once | 5.0 | 4d10+0 | Physical | Full | 1.0 | Foe | Melee | The original target is Pushed to a chosen tile in their Range 5. Subsequent targets are Pushed to a chosen tile in their Range 3. This move can Push the user and allies via Unstoppable Force, dealing no damage. Each target can only be hit and Pushed once. 
+Aftershock | EX1 | EoT | - | - | - | Reaction | 1.0 | Foe | Global | This may be used after the user pushes the target with an attack, to move up to the number of tiles they were pushed, in the direction they were pushed. After moving, deal 1d10+6 damage to any foes in the user's Burst 1.
+Fissure | EX2 | Once | 4.0 | 3d10+10 | Physical | Standard | 1.0 | Foe | Melee
+(Push 7) | Regardless of hit, the target is pushed, and all unoccupied tiles targets exited while pushed become unremovable, unignorable Broken tiles. Foes entering Burst 1 of any of this move's Broken tiles take 2d8 damage, once per turn per Foe. On their turns, the user may choose any number of these Brokens to remove as a Trigger action.
+Tomahawk (Kry, God evening, howisthisworking) |  |  |  |  |  |  |  |  |  | 
+=Stats!A20 & " HP | " & Stats!B20 & " ATK | " & Stats!C20 & " MAG | " & Stats!D20 & " PDEF | " & Stats!E20 & " MDEF | " & Stats!F20 & " EVA | " & Stats!G20 & " MP " |  |  |  |  |  | "A weapon reliant on positioning, benefitting from pushing people away." |  |  |  | 
+Heavy Weapon | 1.0 | Passive | - | - | - | - | - | - | - | The user cannot willingly leave a foe's Melee without teleporting. When a Tomahawk ability targets a player at its maximum listed range, it gains its Apex effect. Apex includes the final row/column of Beam ranges.
+Razor Rust | 1.0 | Every Turn | 3.0 | 2d10+3 | Physical | Standard | AoE | Foes | Pierce 4 | For one round, the target only has 3 MP. Apex: Additionally, inflict 5 Cripple/1.
+Tomahawk Toss | 2.0 | EoT | 3.0 | 2d10+6 | Physical | Standard | 1.0 | Foe | Line 4
+(Push X) | X = 4 - the range this attack is used at. Apex: This attack has Pull 3 and inflicts Slow/1.
+Plate Crusher | 2.0 | Passive | - | - | - | - | - | - | - | When the user moves a Foe with a non-Apex Tomahawk ability, they take 2 damage for each tile travelled. The user's Apex attacks ignore 5 DEF.
+Kip Up | 3.0 | EoT | 3.0 | 1d10+0 | Physical | Movement or Swift | 1.0 | Foe | Line 1
+(Push 1) | This attack Pushes regardless of hit. The user may negate the Push to teleport a tile away from the target. This attack ignores outside damage factors, ATK/MAG, and DEF.
+Repulse Slice | 4.0 | Twice / E3T | 4.0 | 2d10+4 | Physical | Standard | 1.0 | Foe | Line 3
+(Push 2) | This move does not push targets in Apex. Apex: For each tile the target moves towards the user on their next turn, the values of the user's next instance of Plate Crusher are increased by 1.
+Continental Crash | 5.0 | Twice / EoT | 4.0 | 3d10+6 | Physical | Standard | 1.0 | Foe | Line 2
+(Push 3) | After Push, the user places a Broken tile in the target's Melee lasting for 3 rounds. The user may remove this as a Trigger during their turns. Foes ending their turn in this tile's Melee take 10 damage. Apex: After Push, this attack hits foes in the target's Splash 1.
+Discipline | 6.0 | E3T | - | - | - | Free | 1.0 | Foe | Line 3 | At the start of the target's next turn, the user gains +3X DEF/1, where X = 3 - the range this move is used at. Apex: If the user's last attack had Apex, the user's next attack applies the effects of that Apex (excluding extra hits).
+Kinetic Impact | 7.0 | E3T | 4.0 | 3d10+2 | Physical | Standard | 1.0 | Foe | Line 5
+(Push 2) | If the target cannot be moved the full distance, this attack has +1 dice. Apex: This attack has -2 Push and +2 dice faces.
+Two Handed | 8.0 | Twice | 5.0 | 3d10+4 | Physical | Standard | 1.0 | Foe | Line 2
+(Push 3) | If the user did not push the target during their last turn, this attack gains +2 Push. Apex: If the target cannot be moved the full distance, inflict 7 Bleed/1.
+Elastic Collision | 9.0 | Twice / E3T | 4.0 | Xd10+2 | Physical | Full | 1.0 | Foe | Line 1
+(Push X/2) | Before targeting, the user moves up to their MP value in a straight line (half for diagonals). X = 1 + the number of tiles the user moved with this attack. Apex: This attack has +2 CR.
+Supreme Strikes | 10.0 | Once | 6.0 | 1d10+3 | Physical | Standard | AoE | Foes | Pierce 4 | This attack has 1 Push for every successful hit. This attack may target in two directions, or gain a Hit and target in only one direction. Each direction rolls accuracy and checks for Apex independently. Apex: Gain +2 Hits in this direction.
+Fleet Footwork | EX1 | Passive | - | - | - | - | - | - | - | Once per turn, when the user makes an attack with Apex, they may teleport themselves or a target of the attack up to 2 tiles after the attack resolves.
+Line Out | EX2 | EoT | - | - | - | Trigger | - | Self | - | If the user's next attack (ignoring players outside of Apex) can target a foe in Apex, the attack's range may be treated as Pierce instead of Line.
+ |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Noble ===
+Name | Lv. | Frequency | MR | Damage |  |  | Target |  |  | Effect
+ |  |  |  | Roll | Type | Action | Amount | Group | Range | 
+Basic Abilities |  |  |  |  |  |  |  |  |  | 
+=Classes!A4 | =Classes!B4 | =Classes!C4 | =Classes!D4 | =Classes!E4 | =Classes!F4 | =Classes!G4 | =Classes!H4 | =Classes!I4 | =Classes!J4 | =Classes!K4
+=Classes!A5 | =Classes!B5 | =Classes!C5 | =Classes!D5 | =Classes!E5 | =Classes!F5 | =Classes!G5 | =Classes!H5 | =Classes!I5 | =Classes!J5 | =Classes!K5
+=Classes!A6 | =Classes!B6 | =Classes!C6 | =Classes!D6 | =Classes!E6 | =Classes!F6 | =Classes!G6 | =Classes!H6 | =Classes!I6 | =Classes!J6 | =Classes!K6
+=Classes!A7 | =Classes!B7 | =Classes!C7 | =Classes!D7 | =Classes!E7 | =Classes!F7 | =Classes!G7 | =Classes!H7 | =Classes!I7 | =Classes!J7 | =Classes!K7
+=Classes!A8 | =Classes!B8 | =Classes!C8 | =Classes!D8 | =Classes!E8 | =Classes!F8 | =Classes!G8 | =Classes!H8 | =Classes!I8 | =Classes!J8 | =Classes!K8
+Noble Abilities |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  | 
+Crown (God evening, Datdoiboi, Zuko743) |  |  |  |  |  |  |  |  |  | 
+=Stats!H16 & " HP | " & Stats!I16 & " ATK | " & Stats!J16 & " MAG | " & Stats!K16 & " PDEF | " & Stats!L16 & " MDEF | " & Stats!M16 & " EVA | " & Stats!N16 & " MP " |  |  |  |  |  | "Builds up their defences over time as they decay and refresh." |  |  |  | 
+Right to Rule | 1.0 | Passive | - | - | - | - | - | Self | - | The user starts the game with 3 Campaigns (maximum of 3), granting +2 DEF each. The user loses a Campaign when they deal or receive 10 or more damage at once.
+When the user makes an attack with no Campaigns, it has +1 dice and +1 accuracy.
+Coronation | 1.0 | Every Turn | - | - | - | Reaction or Trigger | - | Self | - | This may be used immediately when the user reaches 0 Campaigns, or at the start of the user's turn when they have no Campaigns. Right to Rule's maximum is increased by 1, and the user gains maximum Campaigns.
+Besiege | 1.0 | Every Turn | 2.0 | 2d8+4 | Magical | Standard | 1.0 | Foe | Range 2 | Before accuracy the user may sacrifice up to 10 HP to gain an equal Shield/1. This shield is increased 1.5x if the target has more than half of their max HP.
+Bastion | 2.0 | EoT | 3.0 | 3d8+1 | Magical | Standard | AoE | Foes | Pierce 4 | For one round, Foes attacks entering the user's Cone 1 (in a chosen direction) lose 2 dice. Until the user leaves Melee range of their current tile they have +4 DEF.
+Catapult Campaign | 3.0 | EoT | 4.0 | 2d10+5 | Physical | Standard | 1.0 | Foe | Range 4
+(Splash 1) | This attack can't be used in Range 2. Targets with >75% HP are inflicted with 5 Bleed/1. If possible, the user may inflict themselves with 10 Bleed/1 to double the Bleed damage.
+Ambush | 4.0 | Thrice / E3T | 3.0 | 2d12+8 | Physical | Standard | AoE | Foes | Pierce 3 | The user loses all Campaigns and Coronation is disabled until the start of the user's next turn. The user gains +0.5 MP/1 and +2 damage/1 for every Campaign lost. This may be used as a non-damaging Swift on the user.
+Entrench | 5.0 | E3T | 3.0 | 1d10+8 | Magical | Standard | 1.0 | Foe | Line 4 | If the user has less than 6 bonus DEF, gain +3 DEF/1. For one round, the user loses an additional Campaign for each instance of Right to Rule
+Crusade | 6.0 | Thrice / E3T | - | - | - | Swift | AoE | Self and Allies | Burst 1 | Until the start of their next turn the user gains +1 MP and Right to Rule's bonuses are increased by 1. For this duration targetted allies gain +1 MP and the user's unmodified Right to Rule bonuses
+War of Attrition | 7.0 | E3T | 3.0 | 2d8+7 | Physical | Standard | AoE | Foes | Burst 1 | Before damage this attack inflicts the inverse of the user's active Right to Rule bonuses for one round.
+Shock and Awe | 8.0 | Twice / EoT | 4.0 | 3d10+0 | Magical | Standard | AoE | Foes | Cone 1 | If the user has at least 3 Campaigns, attacks against the user are immune to positive outside factors to damage and accuracy for one round.
+The Art of War | 9.0 | Twice / E3T | 4.0 | 2d6+4 | Varies | Standard | 1.0 | Foe | Melee | The user chooses War or Peace:
+War: Physical. If the user has no Campaigns this attack has +dice faces equal to 1.5x the user's Campaign maximum.
+Peace: Magical. Until their next Standard/Full attack resolves, the target has -X/3 MP and -2X ATK/MAG where X is the number of Campaigns the user currently has.
+Last Stand | 10.0 | Once | 4.0 | 2d12+2 | Magical | Standard | 1.0 | Foe | Melee | For one round, when the user would take more than 55-3X damage, where X is the user's Campaign maximum, the attacker takes 3d8+2 damage and the damage of the attack is reduced by 3X.
+Declaration of War | EX1 | Passive | - | - | - | - | - | - | - | The user gains only +1.5 DEF from each Campaign. The user starts the game with 0 or 4 Campaigns (user's choice).
+Imperial Tyranny | EX2 | Passive | - | - | - | - | - | - | - | Foes in the user's Star 3 have -0.5 DEF and -0.5 ATK/MAG for every Campaign the user has. If the user has no Campaigns Foes attacking the user take 10% recoil.
+Katana (Celeryyyy, Taistelu, god evening) |  |  |  |  |  |  |  |  |  | 
+=Stats!H18 & " HP | " & Stats!I18 & " ATK | " & Stats!J18 & " MAG | " & Stats!K18 & " PDEF | " & Stats!L18 & " MDEF | " & Stats!M18 & " EVA | " & Stats!N18 & " MP " |  |  |  |  |  | "The more health you lose, the more powerful you become." |  |  |  | 
+Resolute Blade | 1.0 | Passive | - | - | - | - | - | - |  | The user gains/loses 1 Resolve (min. 0) per HP lost/gained, respectively. When the user misses or a target dies due to the user, regain any Resolve spent on that attack. If the user has over 100 Resolve before using an attack, it has Advantage damage dice. The user can only gain 20 Resolve via self-damage (including tiles) per round.
+Cursed Slice | 1.0 | Every Turn | 3.0 | 3d7+4 | Physical | Standard | 1.0 | Foe | Melee | This attack has +1 CR, and the target's next Standard/Full attack has 5% Recoil. The user may spend 10 Resolve up to 5 times to increase these values by 1 and 5, respectively.
+Lunge | 2.0 | Every Turn | 3.0 | 2d6+7 | Physical | Standard | 1.0 | Foe | Range 4 | The user moves as close to the target as possible (even on miss), and may lower this attack's MR by 1 for 20 Resolve up to 3 times. After damage, the user may choose to take and deal 10% more damage for one round.
+Blade of Woe | 3.0 | EoT | 4.0 | 3d6+2 | Magical | Standard | 1.0 | Foe | Range 3 | Before damage, both the user and target are inflicted with 5 Curse/1. The first time the user spends Resolve after taking a total of 55+ damage while Cursed, the amount of Resolve applied to the effect is 1/3 more than the amount spent.
+Fallen Blade | 4.0 | Passive | - | - | - | - | - | - | - | When the user is missing 25%, 50%, or 75% (rounded down) of their max HP, they gain 1 Enrage. Each Enrage can only be gained once, even if healed above the threshold. The user's attacks have +1 dice per Enrage.
+Kensei | 4.0 | E3T | - | - | - | Trigger | - | - | - | At the start of the user's next turn, gain Resolve equal to X% of Resolve gained since this ability was used, where X = 150 - User's Max HP (before multipliers, max 20%).
+Lotus Strike | 5.0 | Twice/E3T | 5.0 | 2d6+1 | Physical | Standard | 1.0 | Foe | Melee | The user spends all their Resolve. This attack has X hits, where X = Spent Resolve/30. This attack also has 5*X% recoil, which does not generate Resolve.
+Delirium | 6.0 | Twice/E3T | - | - | - | Swift | 1.0 | Foe | Melee | The user may inflict the target with the following debuffs, each costing 25 Resolve, where X is the user's current Enrage: -X ACC and CR/1, -X dice/1, -5X DEF/1.
+The user may spend an additional 30 Resolve to add the following effect: 
+"If these debuffs are cleansed or cannot be inflicted, the target gains disadvantage damage dice for one round."
+Provoke | 7.0 | EoT | 4.0 | 2d8+5 | Magical | Standard | 1.0 | Foe | Range 3 | If the target doesn't deal at least 45 damage to the user with an attack that targets them on their next turn, the user's Resolve gain is multiplied by 1.75x for one round and the Resolve the user gained since Provoke was used is also multiplied by 1.75x.
+Bloodspill | 8.0 | Twice/EoT | 4.0 | 3d4+5 | Physical | Standard | AoE | Foes | Cone 1 | The user may spend 40 Resolve to make this attack either Burst 1 or Cone 2 or 70 Resolve to make this attack Burst 2 or Cone 3. For each target killed with this ability, do not consume a use, gain 1 Enrage, and lower the Resolve threshold for advantage by 20.
+Bushido | 8.0 | Once | - | - | - | Swift | 2.0 | Ally | Range 3 | Select up to two allies in range. For one round, the user gains extra Resolve equal to 50% of the damage these allies took from attacks that targetted them but did not target the user.
+Rising Sun | 9.0 | Once | 4.0 | 3d8+3 | Magical | Standard | 1.0 | Foe | Melee | The user spends up to 100 Resolve to gain X% of this attack's damage (not including overkill) as Shield/1, where X = Spent Resolve/1.5. If this is the first ability the user has used this turn, their turn does not end until they use another (non-Standard/Full) that does not move them away from the target or enable further standards.
+While this Shield is active, healing does not decrease the user's Resolve.
+Giant Slayer | 10.0 | Once | 5.0 | 1d8+10 | Physical | Standard | 1.0 | Foe | Melee | If the user has less HP than the target, they may spend up to X Resolve, where X is the difference between the user’s and target’s HP. For every 10 Resolve spent, gain +2+Y damage, where Y is current Enrage.
+Zanshin | EX1 | Passive | - | - | - | - | - | - | - | The user's Resolve cannot exceed 150. Whenever the user would exceed their max Resolve, their next attack gains +1 ACC/CR. Fallen Blade's Enrage thresholds are converted to every 1/6th of HP.
+Fudoshin | EX2 | Passive | - | - | - | - | - | - | - | Zanshin's bonuses for exceeding Resolve are doubled. Bonus Enrage dice are doubled on critical hits.
+Rapier (God evening,ThrohOrFalse, Datjoiboi, Kry) |  |  |  |  |  |  |  |  |  | 
+=Stats!H20 & " HP | " & Stats!I20 & " ATK | " & Stats!J20 & " MAG | " & Stats!K20 & " PDEF | " & Stats!L20 & " MDEF | " & Stats!M20 & " EVA | " & Stats!N20 & " MP " |  |  |  |  |  | "Thwart even the most powerful attacks with flawlessly timed reactions" |  |  |  | 
+Allez | 1.0 | Every Turn | - | - | - | Reaction | - | Self | - | This may be used on an attack involving the user, once between the starts of the user's turns. Remove 1 dice and store a Focus with a value of half of the removed dice faces.
+Point-in-Line | 1.0 | Every Turn | 3.0 | 2d8+4 | Physical | Standard | AoE | Foes | Pierce 3 | Targets are inflicted with -2 dice faces/1. If this debuff is not active on use, the user gains +2 dice faces/1. The user may spend a Focus to increase one effect by half of its value.
+Thrust | 2.0 | EoT | 3.0 | 2d10+2 | Physical | Standard | 1.0 | Foe | Range 5 | The user moves to a tile in the target's Melee. If this attack has damage removed by outside factors, inflict 2 Bleed/1. The user may spend a Focus to increase the Bleed damage by its value or extend the duration by 1 round.
+Deflect | 3.0 | EoT | 2.0 | 1d6+3 | - | Reaction | 1.0 | Foe | Global | This may be used on a Foe attacking the user. The attack loses 10% of its damage and the user stores this value as a Focus. If the attack moves the user, this attack has Pull 2 after the attack resolves. This attack ignores non-Rapier outside factors.
+Counter | 4.0 | E3T | 4.0 | 1d12+6 | Physical | Standard or Reaction | 1.0 | Foe | Range 2 | This may be used on a Foe dealing 40+ damage to the user, ignoring ATK/MAG/DEF and non-Rapier outside factors. The user's active Rapier effects are extended by 1 round and their next spent Focus increased 1.5x.
+En Garde | 5.0 | Thrice / EoT | - | - | - | Free | 2.0 | Self and Allies | Range 3 | The user may spend up to two Focus. For each Focus, a chosen target may gain either HP or +DEF/1 equal to it's value. The user may move 2 tiles after their next reaction.
+Feint | 6.0 | E3T | 4.0 | 3d8+6 | Physical | Standard | AoE | Foes | Beam 2 | For one round, targets take half of the damage that other targets take from the user's out-of-turn damage. The user may spend a Focus to give a chosen target Focus*2% recoil on attacks for one round.
+Parry | 7.0 | Once | - | - | - | Reaction | - | Self | - | This may be used on an attack involving the user, if the user has not used a Rapier reaction since the acting player's last turn ended. The attack loses all damage and dice buffs. Store a Focus with a removed buff's value.
+Patinando | 8.0 | Twice | 3.0 | 4d6+0 | Physical | Standard | 2.0 | Foes | Melee
+(Push 1) | For each damage dice that rolls 4+, this attack gains 1 Push. For each damage dice that rolls <4, inflict (stacking) 3 Cripple/1. After damage the user may spend Focus to replace damage dice with its value.
+Moulinet | 9.0 | Twice / E3T | 4.0 | 4d4+6 | Physical | Standard | 1.0 | Foe | Line 4 | The target gains +4 DMG/1 or +4 DEF/1. The user may spend a Focus to heal 3 HP each time the target uses an ability during their next turn. If the user does not spend Focus, the next time they spend Focus they gain a Focus of half it's value.
+Redoublement | 10.0 | Once | 5.0 | 2d4-1
+(Double Hit) | Physical | Standard | 1.0 | Foe | Melee | The user may spend any number of Focus to give this attack +1 hit for each one spent. Each hit gained by Focus has +CR equal to the value of that Focus.
+One for All | EX1 | Once | 5.0 | 2d12+6 | Physical | Standard | 1.0 | Foe | Line 4
+(Splash 2) | This attack ignores 1/4 DEF. The user may make the splash Star 2 to ignore 1/2 DEF, or Line 2 to ignore 3/4 DEF. For each target, the user gains a Focus equal to the DEF this attack ignores on them.
+All for One | EX2 | Every Turn | - | - | - | Reaction | - | Self | - | This may be used when the user spends Focus. If the reacted ability targets a player the user has already spent Focus targeting, gain a Focus of half the spent value.
+ |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Sorcerer ===
+Name | Lv. | Frequency | MR | Damage |  |  | Target |  |  | Effect
+ |  |  |  | Roll | Type | Action | Amount | Group | Range | 
+Basic Abilities |  |  |  |  |  |  |  |  |  | 
+=Classes!A4 | =Classes!B4 | =Classes!C4 | =Classes!D4 | =Classes!E4 | =Classes!F4 | =Classes!G4 | =Classes!H4 | =Classes!I4 | =Classes!J4 | =Classes!K4
+=Classes!A5 | =Classes!B5 | =Classes!C5 | =Classes!D5 | =Classes!E5 | =Classes!F5 | =Classes!G5 | =Classes!H5 | =Classes!I5 | =Classes!J5 | =Classes!K5
+=Classes!A6 | =Classes!B6 | =Classes!C6 | =Classes!D6 | =Classes!E6 | =Classes!F6 | =Classes!G6 | =Classes!H6 | =Classes!I6 | =Classes!J6 | =Classes!K6
+=Classes!A7 | =Classes!B7 | =Classes!C7 | =Classes!D7 | =Classes!E7 | =Classes!F7 | =Classes!G7 | =Classes!H7 | =Classes!I7 | =Classes!J7 | =Classes!K7
+=Classes!A8 | =Classes!B8 | =Classes!C8 | =Classes!D8 | =Classes!E8 | =Classes!F8 | =Classes!G8 | =Classes!H8 | =Classes!I8 | =Classes!J8 | =Classes!K8
+Sorcerer Abilities |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  | 
+Shillelagh (Taistelu) |  |  |  |  |  |  |  |  |  | 
+=Stats!O16 & " HP | " & Stats!P16 & " ATK | " & Stats!Q16 & " MAG | " & Stats!R16 & " PDEF | " & Stats!S16 & " MDEF | " & Stats!T16 & " EVA | " & Stats!U16 & " MP" |  |  |  |  |  | "A versatile weapon that manipulates the terrain to harm foes and aid allies." |  |  |  | 
+Terraform | 1.0 | EoT | - | - | - | Trigger | - | - | - | Place up to three Forest or up to three Water tiles in Cone 1 or cardinal Line 3.
+Rototill | 1.0 | Every Turn | 3.0 | 2d6+6 | Physical or Magical | Standard | 1.0 | Foe | Range 4
+(Pull 3) | This attack is either Physical or Magical. If the target is on a non-Normal tile, this attack loses Pull 3 but gains +1 ACC and +1 dice.
+Bioturbation | 2.0 | Every Turn | 3.0 | 3d6+5 | Magical | Standard | 1.0 | Foe | Range 6 | If there is a non-Normal tile in the user's Burst 1, they may move to a tile of the same type within Range 8. The user may pass through players but cannot end this movement farther away from the target than they started. Players passed through have -7 DEF and -1 EVA for one round.
+Blackthorn | 3.0 | E3T | 4.0 | 3d4+5 | Physical or Magical | Standard | 1.0 | Foe | Range 4
+(Splash 1) | This attack is either Physical or Magical. Before damage, targets have inverted positive tile effects for one round. Gain +4 dice on secondary targets.
+Bloom | 4.0 | E3T | - | - | - | Free | - | Tile | Star 3 | For one round, Normal tiles in range grant +1 ACC to the user and allies. For this duration, they also grant +4 MAG to these entities if the user's last Standard was Physical, or +4 ATK if the user's last Standard was Magical.
+Cryosphere | 4.0 | Twice/EoT | - | - | - | Swift | - | Tile | Pierce 5 or Burst 1 | Replace up to three unoccupied Water/Stop/Stone tiles in Pierce 5 or Burst 1 (ignoring Range Rule) with Ice for two rounds. Foes ending their turn in melee of this Ice take 15 damage (replaced Stops cannot be entirely surrounded by other Stops).
+Hydrolysis | 5.0 | Twice/EoT | 4.0 | 5d4+4 | Physical | Standard | AoE | Foes | Pierce 5 | This attack gain +2 dice face per foe on Water or Lava.
+Wildfire | 6.0 | Twice/EoT | 4.0 | 3d10+0 | Magical | Standard | 1.0 | Foe | Range 4 | If the target's tile is Forest, set "Wildfire" on that tile, all Forest tiles cardinally adjacent to that tile, and so on.
+Wildfire: Lasts two rounds. Players who start their turn on Wildfire take 3d4 DMG and have -7 damage on their next Standard/Full attack.
+Nature's Madness | 7.0 | Twice/EoT | 4.0 | 3d8+4 | Physical | Standard | 1.0 | Foe | Range 3 | This move is immune to air tiles, and is augmented depending on the number of certain tile types (X) in the user's Burst 1. After damage, convert utilised tiles to Normal.
+Air/Sticky/Boost: +X Range and Damage (max. 3). If X>1, +1 target.
+Forest/Water/Lava/Ice: Choose one tile type, and inflict X Bleed (Forest), Poison (Water), Burn (Lava), or Curse (Ice) / 1. If X>3, extend the status duration by one round.
+Windstorm | 8.0 | EoT | 3.0 | 2d8+6 | Magical | Standard | AoE | Foes | Cone 2
+(Push 2) | Targets are pushed in the direction of the cone. Within range, the user may place either: 4 Air, 4 Sticky, or 1 Boost tile(s). If the user or allies have already placed Windstorm tiles, they are converted to Normal. This may be used as a non-damaging Standard targeting only tiles in range.
+Flower Crown | 9.0 | Twice/EoT | - | - | - | Swift or Standard | AoE | Self and Allies | Global | Targets on Forest tiles gain +10% DMG/1, while targets on Water tiles heal 5d4 HP. The user may use this as a Standard to double these values to 20% and 10d4 respectively. This cannot targets players not on either.
+Scorched Earth | 10.0 | Once | 4.0 | 1d8+0 | Physical | Standard | 1.0 | Foe | Range 3
+(Push 1) | Before push, tiles in the target's Star 1 become Lava. This lava counts as damage from the user. Entities cannot take damage for entering more than once per turn.
+All-Terrain Master | EX1 | Passive | - | - | - | - | - | - | - | Terraform becomes Every Turn, and may, up to Twice, place Normal, Sticky or Air instead of Water or Forest. The player gains a bonus for one round based on the tile they end their turn on:
+Normal: +1 ACC. Forest: +10% DMG. Water: 5d4 heal. Air: attacks ignore Air and gain +1 Range. Boost: +6 CR. Sticky: +2 EVA and -1 range on incoming attacks. Lava: +1 Standard that does not check ATK/MAG/DEF.
+The Serenity of Nature | EX2 | Once | - | - | - | Swift | 1.0 | Tile | Melee | If the user has attacked or been attacked, sacrifice 50-100 HP and max HP to summon a "Nature Spirit" in the user's Melee which acts after the user's turns. Players do not win until the user and Nature Spirit are both defeated. This ability is disabled after use.
+
+Nature Spirit: Stats: 125% of Sacrificed HP | 17 ATK/MAG | 5 DEF | 1 EVA | 4 MP. Moves: Basic Abilities, Terraform (1 tile max), Rototill, Bioturbation, Wildfire, Bloom, Flower Crown. 
+Spellbook (Methridium, beautifications) |  |  |  |  |  |  |  |  |  | 
+=Stats!O18 & " HP | " & Stats!P18 & " ATK | " & Stats!Q18 & " MAG | " & Stats!R18 & " PDEF | " & Stats!S18 & " MDEF | " & Stats!T18 & " EVA | " & Stats!U18 & " MP" |  |  |  |  |  | "A jack-of-all-trades that spends Mana to use and combine its abilities." |  |  |  | 
+Attuned | 1.0 | Passive | - | - | - | - | - | - | - | The user starts with 5 Mana, and gains 5 at the start of each turn per Spellbook attack used on their previous turn, to a capacity of 10. They also gain 2 per non-Spellbook Standard/Full attack they used last turn. Attacks with a Mana cost only use Mana on hit.
+Fireball | 1.0 | Every Turn | 3.0 | 2d6+0 | Magical | Standard | 1.0 | Foe | Line 5 | Costs 2 Mana. The user may spend more Mana to add +1 base dice per extra Mana spent. If any of this move's damage dice roll a 1, inflict targets with 3 Burn/1.
+Hex | 2.0 | EoT | 2.0 | 1d6-2 | Magical | Standard | 1.0 | Foe | Range 3 | Costs 3 Mana. The next Standard/Full attack on each target gains +2 ACC and +2 dice.
+Plague | 3.0 | E3T | 4.0 | 3d6+1 | Magical | Standard | 1.0 | Foe | Range 4
+(Splash 1) | Costs 3 Mana. After the move resolves, the user chooses Bleed, Burn, Curse or Poison. Targets are inflicted with 3 [Chosen Status]/1, or /2 at a cost of 1 additional Mana.
+Spellweave | 4.0 | Every Turn | - | - | - | Trigger | - | Self | - | The user chooses any number of distinct usable Spellbook moves to "Spellweave", consuming a use of each move. Their next Spellbook attack this turn adds the base rolls and all secondary effects (including Mana costs) of the Spellwoven moves to its own.
+Sandstorm | 5.0 | EoT | 3.0 | 1d6+0 | Magical | Standard | AoE | Foes | Beam 3
+(Push 2) | Costs 3 Mana. Targets deal -25% damage on their next Standard/Full attack. Targets are pushed in the direction of the Beam, if applicable.
+Faith | 6.0 | EoT | - | 2d6+2 | - | Free | 1.0 | Self or Ally | Range 4 | Costs 2 Mana. Instead of dealing damage, targets are healed equal to the roll. If Spellwoven, the move gaining this effect remains an attack, but has its targeting group become Ally/Allies, and can only target players attacked by a foe within the last round.
+Scourge | 7.0 | E3T | 4.0 | 4d6+3 | Magical | Standard | 1.0 | Foe | Homing 6 | Costs 4 Mana. The user chooses one of each target's non-Basic, non-Level 1, non-EX moves. For one round, targets cannot use any of the selected moves.
+Tornado | 8.0 | EoT | - | - | - | Movement or Standard | 1.0 | Ally | Global | Costs 1 Mana. The user moves up to half their MP (rounded down) and swaps locations with a chosen target via teleport, in either order. After, the user cannot move this turn.
+Fog | 9.0 | Twice/E3T | 3.0 | 1d6+1 | Magical | Standard | 2.0 | Foes | Homing 6 | Costs 3 Mana. For one round, targets cannot target anything from a greater distance than this move was used at. Only add half MAG against targets outside of Range 2.
+Maelstrom | 10.0 | Once | 4.0 | 2d6+13 | Magical | Standard | 1.0 | Foe | Homing 4 | Costs 6 Mana. Before accuracy, the user chooses two of the following effects for this move to gain: +5 damage, +2 accuracy, +5 DEF/1 on hit, or +3 MP/2 on hit.
+Ichorous | EX1 | Passive | - | - | - | - | - | - | - | The user starts with 10 Mana instead of 5, and gains 1 when hit by any attack. The user can hold infinite Mana at once. At the start of their turn (after Attuned), the user takes damage equal to 3 times the amount of Mana they have above their capacity of 10.
+Catalysis | EX2 | Passive | - | - | - | - | - | - | - | When the user uses a Spellbook move, including through Spellweave, it may be used regardless of Frequency for the rest of the turn. When an ability is Spellwoven, the user may spend 2 Mana (before accuracy) to add targets to the recipient ability from within the Spellwoven ability's targeting amount and range, once per Spellwoven move.
+Talisman (Ocean, bro torterra) |  |  |  |  |  |  |  |  |  | 
+=Stats!O20 & " HP | " & Stats!P20 & " ATK | " & Stats!Q20 & " MAG | " & Stats!R20 & " PDEF | " & Stats!S20 & " MDEF | " & Stats!T20 & " EVA | " & Stats!U20 & " MP" |  |  |  |  |  | "A support weapon with a wide arsenal of buffs that require strategic application.” |  |  |  | 
+Conduit | 1.0 | Passive | - | - | - | - | - | - | - | The user's buffs and debuffs originating from their Talisman abilities are permanent but only take effect when "channeled" by certain effects. Buffs that would be removed are un-channeled instead. Dice are channeled when DMG is channeled.
+Resonate | 1.0 | Once | - | - | - | Free | 1.0 | Self | - | This move restores a Use after the player uses a Standard/Full Talisman ability. 
+The user gains a buff equal to: +3 DMG, +3 PDEF, +3 MDEF, or +1 ACC.
+Smite | 1.0 | Every Turn | 3.0 | 2d8+4 | Magical | Standard or Swift | 1.0 | Foe | Homing 5 | Before accuracy, the user chooses a buff to channel for one round.
+This may be used as a non-damaging Swift targeting the user.
+Divine Merit | 2.0 | Twice/EoT | - | - | - | Standard | - | Self or Ally | Homing 4 | The target gains +2d4+1 damage to their next attack. If this targets the user, channel DMG next turn. This cannot be used on a target who already has this buff.
+Serpent's Gate | 3.0 | EoT | 4.0 | 2d10-2
+(Double Hit) | Magical | Standard | 2.0 | Foes | Range 2 | Before accuracy, the user channels ACC and CR until the start of their next turn. For each accuracy roll of 11+, the user gains +1 damage dice. Else, gain -1 damage dice.
+Compass | 4.0 | E3T | 3.0 | 3d4+6 | Magical | Standard | 1.0 | Foe | Line 3 | The user gains +2 ACC. If they miss while this buff is channeled, the user gains +3 CR.
+Sanctuary | 5.0 | Once | - | - | - | Swift | - | Self | - | The user's next channeling is extended by one round.
+Absolution | 6.0 | Twice/E3T | 4.0 | 4d6+4 | Magical | Standard | AoE | Foes | Beam 2 | The user chooses a target. The chosen target's debuffs are inflicted to all other targets for one round. Allies in range are cleansed of debuffs.
+Seal of Solomon | 7.0 | Twice/EoT | 4.0 | 3d8+3 | Magical | Standard | 1.0 | Foe | Range 4 | The user chooses a buff (e.g. PDEF) channeled on this attack to invert and apply to the target as a debuff for one round. The target is inflicted with Confusion/1.
+Providence | 8.0 | Twice/E3T | 4.0 | 2d8+7 | Magical | Standard | AoE | Foes | Star 3 | The user chooses either PDEF or MDEF to channel and apply to allies in range for one round. This may be used as a non-damaging Standard action.
+Transcendence | 9.0 | Twice | 4.0 | 5d4+8 | Magical | Standard | 1.0 | Foe | Homing 4 | Before accuracy, convert +ACC to +CR and vice versa as well as +DMG to either +PDEF or +MDEF and vice versa. Converted buffs are channeled for one round.
+Echo of Light | 10.0 | Once | 4.0 | 2d10+7 | Magical | Standard | AoE | Foes | Pierce 3 | Buffs the user channels next turn are doubled for the duration of the channel.
+Heaven's Will | EX1 | Passive | - | - | - | - | - | - | - | Resonate becomes a Trigger action that can be used up to twice per turn. If one of the user's buffs is removed by a foe, the effect is applied as a debuff to all foes in Star 2 for one round.
+Judgment | EX2 | Once | 3.0 | 3d10+6 | Magical | Standard | 1.0 | Foe | Homing 5 | The target is inflicted with Evil Eye permanently. 
+Evil Eye: Debuffs inflicted on the affected player last for an additional round. At the start of their turn, they take d4+2 damage for every debuff they are under. The Talisman heals HP equal to the damage dealt.
+ |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Trophy ===
+Name | Lv. | Frequency | MR | Damage |  |  | Target |  |  | Effect
+ |  |  |  | Roll | Type | Action | Amount | Group | Range | 
+Basic Abilities |  |  |  |  |  |  |  |  |  | 
+=Classes!A4 | =Classes!B4 | =Classes!C4 | =Classes!D4 | =Classes!E4 | =Classes!F4 | =Classes!G4 | =Classes!H4 | =Classes!I4 | =Classes!J4 | =Classes!K4
+=Classes!A5 | =Classes!B5 | =Classes!C5 | =Classes!D5 | =Classes!E5 | =Classes!F5 | =Classes!G5 | =Classes!H5 | =Classes!I5 | =Classes!J5 | =Classes!K5
+=Classes!A6 | =Classes!B6 | =Classes!C6 | =Classes!D6 | =Classes!E6 | =Classes!F6 | =Classes!G6 | =Classes!H6 | =Classes!I6 | =Classes!J6 | =Classes!K6
+=Classes!A7 | =Classes!B7 | =Classes!C7 | =Classes!D7 | =Classes!E7 | =Classes!F7 | =Classes!G7 | =Classes!H7 | =Classes!I7 | =Classes!J7 | =Classes!K7
+=Classes!A8 | =Classes!B8 | =Classes!C8 | =Classes!D8 | =Classes!E8 | =Classes!F8 | =Classes!G8 | =Classes!H8 | =Classes!I8 | =Classes!J8 | =Classes!K8
+Trophy Abilities |  |  |  |  |  |  |  |  |  | 
+The Trophy Branch is a rotating branch. Weapons are added through the Trophy Contests! Latest Update: July 2026 (Trophy 2) |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  | 
+Cutlass (SilverPath) |  |  |  |  |  |  |  |  |  | 
+65 HP | 12 ATK | 5 MAG | 6 PD | 4 MD | 0.6 EVA | 2 MP |  |  |  |  |  | "Best foes, even when you're down, with disruptive utility!" |  |  |  | 
+Scoundrel | 1.0 | Passive | - | - | - | - | - | - | - | When the user rolls 13 or below on their damage roll of a Cutlass attack (excluding base modifier and ATK/MAG/DEF), the user gains 1 Coin. Any number of Coins can be spent when the user uses a Cutlass move that's effect contains "chooses", the user then chooses an additional option. 
+Dirty Trick | 1.0 | Every Turn | 3.0 | 3d8+3 | Physical | Standard | 1.0 | Foe | Melee | The user chooses Push/Pull, Splash, Buff, or Status. For one round, the target's Standard attacks do not have the chosen attribute or apply the chosen effect (other parts of its effect still apply if possible).
+Fancy Footwork | 2.0 | EoT | 3.0 | 4d6+2 | Physical | Standard | 1.0 | Foe | Range 4 | The user chooses Trip or Slip. Trip: For one round, the target must move at least 2 tiles per direction they willingly move. Slip: The user teleports to a tile in an entity's Melee within Range 4.
+Scallywag Slice  | 3.0 | E3T | 3.0 | 3d8+0 | Physical | Standard | 1.0 | Foe | Melee | The user chooses Outwit or Befuddle. Outwit: This attack gains +1 CR, and the target's Crit Range becomes 1 for the first hit of their next Standard attack. Befuddle: Before accuracy, the target ignores positive effects of tiles for one round.
+Blinding Sheen | 4.0 | Twice/E3T | 2.0 | 3d8-8 | Physical | Swift | 1.0 | Foe | Range 4 | The user may spend a Coin to inflict -DEF equal to this attack's damage until the end of this turn. This move ignores outside factors, ATK/MAG, and DEF.
+Swindler | 5.0 | Passive | - | - | - | - | - | - | - | When the user spends a Coin on an attack, roll 1d2. 1: The user gains -1 dice to the attack and +DMG equal to half the size of the dice removed. 2: The attack treats base rolls of 13 or lower (excluding base modifier) as 16.
+Boot Pin | 6.0 | Twice/EoT | 3.0 | 4d6-2 | Physical | Standard | 1.0 | Foe | Range 3 | The user chooses to inflict 6 Poison/2 or 6 Cripple/2 on the target. The user gains +3 DMG/1 at the start of their turns for every 6 damage the target takes from the statuses inflicted by this move. The target can remove a status from this move as a Swift.
+Shady Bet | 7.0 | Once | 4.0 | 4d6-2 | Physical | Standard | 1.0 | Foe | Melee | If this attack causes the user to gain a Coin, the user gains a Trick Coin instead, which functions like a Coin and has the user choose the effect of Swindler. The user can spend a Coin to gain a Trick Coin from this attack, ignoring Scoundrel.
+Buy Time | 8.0 | Twice | - | - | - | Free | - | Self | - | The user spends a Coin to extend the next Cutlass attack's effect by +1 round.
+High Ground | 9.0 | EoT | 4.0 | 4d8+0 | Physical | Standard | 1.0 | Foe | Melee | The user chooses Pistol or Taunt. Pistol: This attack is AoE/Foes/Pierce 5, and targets' Item moves become Movement actions for one round. Taunt: For one round, targets' AoE attacks become Pierce and must target the user.
+Swashbuckler  | 10.0 | Once | 4.0 | 3d10-4 | Physical | Standard | 1.0 | Foe | Melee | The user chooses Cruel, Sly, or Daring. Cruel: This attack gains +1 dice. Sly: Before accuracy, the target's duration-based buffs and inflicted debuffs end. Daring: The user gains 10 Shield/1.
+Deathly Crew | EX1 | Passive | - | - | - | - | - | - | - | If the user spends a Coin on an attack that kills a foe, the user gains 1 Trick Coin. Until they spend the Trick Coin gained from this effect, they have +4 DEF and +1 CR. The user cannot gain another Trick Coin from this effect if they have one already.
+Captain's Order | EX2 | E3T | 4.0 | 4d6+2 | Physical | Standard | 1.0 | Foe | Melee | The target chooses Plank or Marooning. If Plank is chosen, the target is pushed 2 tiles and they take 4 damage for each of the user's ongoing Cutlass effects they have. If Marooning is chosen, the target's next Standard attack has 25% recoil.
+Fangs (HSquid) |  |  |  |  |  |  |  |  |  | 
+60 HP | 13 ATK | 10 MAG | 5 PD | 3 MD | 0.5 EVA | 1 MP |  |  |  |  |  | "How deep are you ready to give into the thirst?" |  |  |  | 
+Bloodthirst | 1.0 | Passive | - | - | - | - | - | - | - | The user can have up to 10 Blood. At the end of their turn, they gain 2 Blood, and gain 1 whenever they are hit by an attack. When they reach 10 Blood, the next attack on them automatically hits, causes the user to lose all Blood, and if it would already hit, it also deals double damage.
+The user's Thirst N effects are active as long as the user has N or more Blood when they select the move (those effects are mandatory).
+Twin Fangs | 1.0 | Every Turn | 3.0 | 2d6+4 | Physical | Standard | 1.0 | Foe | Melee | Every time this move hits, the user loses 2 Blood.
+Thirst 5 : This move gains 3 MR and becomes Double Hit.
+Otherworldly Attraction | 2.0 | EoT | 4.0 | 3d6+7 | Magical | Standard | 2.0 | Foe | Range 4 | Roll accuracy separately for each target. Statuses inflicted by this move are ignored when moving towards the user.
+This move inflicts Slow/1.
+Thirst 4 : Also inflict Cripple 4/1.
+The Urge | 3.0 | Passive | - | - | - | - | - | - | - | The user gets all the following :
+Thirst 3: The user gets +1 MP. (Active as long as the user has 3 or more Blood).
+Thirst 4: The user cannot be Slowed, Rooted, Sealed or Stunned, and takes half damage from Confusion and Cripple.
+Thirst 6: The user's attacks have +1 base dice.
+Draw Blood | 4.0 | Twice/E3T | - | 1d6 | Physical | Swift | 1.0 | Self | - | This move does not add ATK / DEF and automatically hits (it still rolls accuracy).
+The user gets +1 MP this turn. If this move deals 5 or more damage, the user gains 1 additional Blood and their next attack this turn also gains +1 base dice.
+Uninvited Guest | 5.0 | Twice | 3.0 | 3d10+0 | Physical | Standard | 1.0 | Foe | Melee | If this user's first attack on the target, gain 2 Blood.
+If one of the user or the target has attacked the other during their previous turn but not the other way around, this move gains +8 CR.
+Blood Wave | 6.0 | Twice/EoT | 4.0 | 3d6+5 | Physical | Standard | AoE | Foes | Pierce 5 | If the user was attacked multiple times during their previous turn, they may gain 1 Blood when using this move, before Thirst effects.
+Thirst 3: Also inflict each target with -X DEF/2, where X is the user's Blood.
+Thirst 5: The user may have this move become AoE / Foes / Beam 5.
+Indulge | 7.0 | Once | 4.0 | 1d4+2 | Magical | Standard | 1.0 | Foe | Melee | This move ignores the target's DEF.
+Thirst 7: If this move hits, lose half your current Blood (rounded up), and heal equal to 30% of the damage dealt, then the user cannot gain Blood until the start of their next turn.
+Thirst 10: This move has no effects instead.
+Blood Whirl | 8.0 | Twice/E3T | 5.0 | 2d10+7 | Physical | Standard | AoE | Foes | Burst 1 | Roll accuracy separately for each target. Lose X Blood, where X is the number of targets hit.
+Thirst 4: This move becomes Star 2. 
+Thirst 7: Before accuracy, teleport up to 2 tiles.
+Night Visitor | 9.0 | Once | 4.0 | 4d10+5 | Physical | Full | 1.0 | Foe | Global | This move can only be used on a foe that the user has damaged this game that is not in melee range. Before accuracy, teleport to any tile within melee range of its target.
+Thirst 5: This move attacks to foes in Star 1 of the user (after the teleport) and inflicts Slow/1 on all targets hit.
+Thirst 9: This move can be used even in melee and hits foes in Star 2 instead of Star 1 and if this move hits, lose 1 Blood +1 per target hit.
+Sky Turns Red | 10.0 | Once | - | - | - | Swift | - | - | - | The user's next 2 Fangs attacks on foes cannot cause the user to lose Blood and gain "Thirst X: This move ignores X DEF, and heals equal to 5 * X% of the damage dealt to one target." (X is equal to the user's Blood).
+This effect ends if the user reaches 10 Blood, if they use Indulge (before accuracy), or if they use a Free action to end it early.
+Nocturnal Predator | EX1 | Passive | - | - | - | - | - | - | - | The user does not get an extra Standard nor take their action normally during their turn, but instead takes an extra turn after every foe's turn. Effects with a turn duration and frequencies count down only when the user would normally take their turn. During those extra turns, the user's MP is halved.
+Sanguine Explosion | EX2 | Once | 5.0 | 3d4+2 | Magical | Reaction | AoE | Foes | Star 4
+(Push 2) | This move can be used when the user reaches 10 Blood. It inflicts Slow/1 on all targets hit. It can also be used without consuming a use whenever a foe dies, in which case the move originates from the foe and becomes Burst 2 instead and loses Push.
+Scissors (Mulligante) |  |  |  |  |  |  |  |  |  | 
+70 HP | 7 ATK | 15 MAG | 4 PD | 5 MD | 0.9 EVA | 2 MP |  |  |  |  |  | A jack of all trades that combines offense, defense and disruption through scaling AoE and displacement. |  |  |  | 
+Ramping Magic | 1.0 | Passive | - | - | - | - | - | - | - | When the user targets 2+ foes with a Scissors attack, all of the user's Weapon attack and effects have their AoE range increased by +1 and Push/Pull effects increased by +1. This Passive only triggers once between the start of the user's turns.
+Lasting Cuts | 1.0 | Every Turn | 2.0 | 4d6+2 | Magical | Standard | AoE | Foes | Cone 1 | Targets are inflicted with 3 Cripple/1. If a target is already inflicted with Cripple, their Cripple is increased by 2, and its' duration is set to one round if it is less than that.
+Savage Spin-out | 2.0 | EoT | 3.0 | 2d8+7 | Magical | Standard | 1.0 | Foe | Range 4
+(Splash) | This attack's Splash is a Beam 1 behind the target. The original target is Pulled 3 tiles, while the splashed targets are Pushed 1 tile.
+Silk Cocoon | 3.0 | E3T | - | - | - | Free | 1.0 | Tile | Homing 4 | Create a Silk Cocoon [Star tile] on an unoccupied tile in range. If the user already has a Silk Cocoon, the previous one is destroyed. It acts like an Ice tile with 25 HP, but the user's attacks deal only a maximum of 15 damage to it, and the user's Scissors effects ignore its Ice Clause. Tiles in the Silk Cocoon's Burst 1 take an additional 1 MP to enter. This effect does not stack and its range cannot be increased.
+Debilitate | 4.0 | E3T | 4.0 | 3d10+5 | Magical | Standard | 1.0 | Foe | Melee | This attack ignores 4 DEF, increased by another 4 per Ramping Magic proc. If this attack ignores all of the target's MDEF, it triggers Ramping Magic.
+Piercing Jab | 5.0 | E3T | 4.0 | 1d12+5 | Magical | Standard | AoE | Foes | Pierce 3 | For every 30 damage the user has taken since the start of their last turn, this attack gains +1 dice and has its' range upgraded (Pierce -> Beam -> Cone).
+Enchanted Blade | 6.0 | Twice/E3T | 3.0 | 3d8+3 | Magical | Standard | AoE | Foes | Beam 2 | Targets are inflicted with 4 Curse/1 or 4 Bleed/1. If there are multiple targets, inflict both, but their damage does not stack.
+Handle Bash | 7.0 | Thrice/EoT | 4.0 | 2d10+7 | Magical | Standard | AoE | Foes | Cone 1 | This attack has Pull 1 or Push 1, chosen by the user. The user teleports to a tile in Beam 2 in the direction of this attack (Push) or in the opposite direction (Pull). On their next turn, all of the target's actions, including Basic Movement, cost 1 MP to use.
+Weaver's Whirl | 8.0 | E3T | - | - | - | Swift | AoE | Allies and Self | Burst 1 | Targets gain 2d8 Shield/1. When this Shield is broken, foes in their Star 1 are inflicted with -2 MP/1. This can stack to a maximum of -4.
+Thirteenfold Cut | 9.0 | Twice/E3T | 4.0 | 2d6+12 | Magical | Standard | AoE | Foes | Cone 1 | Pick up to 3 players in range to inflict with -5 DEF/1. Those players may choose to negate this debuff on themselves. For each one that does, the user gains +4 DEF/1.
+Guillotine | 10.0 | Every Turn | 4.0 | 3d10+7 | Magical | Standard | AoE | Foes | Cone 1 | This attack starts at zero uses and gains a use whenever Ramping Magic activates. This attack has +1 dice for each time Ramping Magic has activated, and -1 dice per target.
+Jammed Blades | EX1 | Passive | - | - | - | - | - | - | - | The user's Silk Cocoon's Frequency is Every Turn and it is immune to damage, but disappears at the start of their next turn. Piercing Jab cannot gain more than 3 dice.
+Silken Suit | EX2 | Passive | - | - | - | - | - | - | - | The first time the user damages or is damaged by a foe, they take 20% less damage from all attacks for one round.
+ |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Stats ===
+HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP
+Classes |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Bard |  |  |  |  |  |  | Blacksmith |  |  |  |  |  |  | Cleric |  |  |  |  |  |  | Dancer |  |  |  |  |  | 
+80.0 | 7.0 | 7.0 | 0.0 | 0.0 | 1.7 | 3.0 | 65.0 | 9.0 | 8.0 | 4.0 | 6.0 | 0.9 | 3.0 | 55.0 | 7.0 | 10.0 | 2.0 | 4.0 | 0.6 | 3.0 | 70.0 | 11.0 | 10.0 | 2.0 | 4.0 | 1.6 | 3.0
+Monk |  |  |  |  |  |  | Paladin |  |  |  |  |  |  | Rifter |  |  |  |  |  |  | Skirmisher |  |  |  |  |  | 
+70.0 | 12.0 | 11.0 | 1.0 | 1.0 | 1.1 | 2.0 | 85.0 | 6.0 | 6.0 | 6.0 | 6.0 | 1.0 | 2.0 | 60.0 | 12.0 | 13.0 | 2.0 | 2.0 | 0.5 | 3.0 | 65.0 | 13.0 | 13.0 | 1.0 | 2.0 | 1.9 | 4.0
+Archer |  |  |  |  |  |  | Clairvoyant |  |  |  |  |  |  | Dark |  |  |  |  |  |  | Dueler |  |  |  |  |  | 
+Crossbow |  |  |  |  |  |  | Cards |  |  |  |  |  |  | Athame |  |  |  |  |  |  | Gladius |  |  |  |  |  | 
+65.0 | 15.0 | 10.0 | 3.0 | 3.0 | 1.0 | 2.0 | 60.0 | 5.0 | 8.0 | 4.0 | 7.0 | 1.1 | 2.0 | 65.0 | 9.0 | 12.0 | 5.0 | 2.0 | 1.0 | 3.0 | 70.0 | 16.0 | 3.0 | 5.0 | 1.0 | 0.5 | 2.0
+Longbow |  |  |  |  |  |  | Lunar Rod |  |  |  |  |  |  | Scythe |  |  |  |  |  |  | Quarterstaff |  |  |  |  |  | 
+60.0 | 19.0 | 13.0 | 0.0 | 2.0 | 0.6 | 0.0 | 70.0 | 3.0 | 15.0 | 0.0 | 3.0 | 0.7 | 2.0 | 55.0 | 9.0 | 16.0 | 6.0 | 4.0 | 0.6 | 2.0 | 65.0 | 16.0 | 0.0 | 5.0 | 3.0 | 0.9 | 2.0
+Shortbow |  |  |  |  |  |  | Orb |  |  |  |  |  |  | Totems |  |  |  |  |  |  | Tonfa |  |  |  |  |  | 
+60.0 | 13.0 | 11.0 | 2.0 | 1.0 | 0.3 | 3.0 | 60.0 | 9.0 | 18.0 | 1.0 | 6.0 | 0.6 | 1.0 | 65.0 | 3.0 | 14.0 | 0.0 | 7.0 | 0.7 | 1.0 | 55.0 | 14.0 | 12.0 | 9.0 | 9.0 | 0.8 | 2.0
+Heavy |  |  |  |  |  |  | Noble |  |  |  |  |  |  | Sorcerer |  |  |  |  |  |  | Trophy |  |  |  |  |  | 
+Axe |  |  |  |  |  |  | Crown |  |  |  |  |  |  | Shillelagh |  |  |  |  |  |  | Cutlass |  |  |  |  |  | 
+70.0 | 24.0 | 0.0 | 2.0 | 0.0 | 0.2 | 1.0 | 65.0 | 12.0 | 9.0 | 3.0 | 3.0 | 0.5 | 2.0 | 65.0 | 17.0 | 17.0 | 3.0 | 3.0 | 0.5 | 1.0 | 65.0 | 12.0 | 5.0 | 6.0 | 4.0 | 0.6 | 2.0
+Hammer |  |  |  |  |  |  | Katana |  |  |  |  |  |  | Spellbook |  |  |  |  |  |  | Fangs |  |  |  |  |  | 
+70.0 | 18.0 | 7.0 | 4.0 | 5.0 | 0.8 | 1.0 | 65.0 | 16.0 | 14.0 | 2.0 | 1.0 | 0.6 | 3.0 | 55.0 | 0.0 | 15.0 | 4.0 | 6.0 | 1.2 | 2.0 | 60.0 | 13.0 | 10.0 | 5.0 | 3.0 | 0.5 | 1.0
+Tomahawk |  |  |  |  |  |  | Rapier |  |  |  |  |  |  | Talisman |  |  |  |  |  |  | Scissors |  |  |  |  |  | 
+70.0 | 15.0 | 5.0 | 5.0 | 3.0 | 0.4 | 2.0 | 60.0 | 14.0 | 12.0 | 5.0 | 5.0 | 1.0 | 3.0 | 60.0 | 4.0 | 9.0 | 3.0 | 7.0 | 1.3 | 2.0 | 70.0 | 7.0 | 15.0 | 4.0 | 5.0 | 0.9 | 2.0
+ |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Combos ===
+ | HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP | HP | A | M | PD | MD | EV | MP
+ | Bard |  |  |  |  |  |  | Blacksmith |  |  |  |  |  |  | Cleric |  |  |  |  |  |  | Dancer |  |  |  |  |  |  | Monk |  |  |  |  |  |  | Paladin |  |  |  |  |  |  | Rifter |  |  |  |  |  |  | Skirmisher |  |  |  |  |  | 
+Crossbow | =Stats!A4+Stats!A9 | =Stats!B4+Stats!B9 | =Stats!C4+Stats!C9 | =Stats!D4+Stats!D9 | =Stats!E4+Stats!E9 | =ROUNDDOWN(Stats!F4+Stats!F9,0) | =Stats!G4+Stats!G9 | =Stats!H4+Stats!A9 | =Stats!I4+Stats!B9 | =Stats!J4+Stats!C9 | =Stats!K4+Stats!D9 | =Stats!L4+Stats!E9 | =ROUNDDOWN(Stats!M4+Stats!F9,0) | =Stats!N4+Stats!G9 | =Stats!O4+Stats!A9 | =Stats!P4+Stats!B9 | =Stats!Q4+Stats!C9 | =Stats!R4+Stats!D9 | =Stats!S4+Stats!E9 | =ROUNDDOWN(Stats!T4+Stats!F9,0) | =Stats!U4+Stats!G9 | =Stats!V4+Stats!A9 | =Stats!W4+Stats!B9 | =Stats!X4+Stats!C9 | =Stats!Y4+Stats!D9 | =+Stats!Z4+Stats!E9 | =ROUNDDOWN(Stats!AA4+Stats!F9,0) | =Stats!AB4+Stats!G9 | =Stats!A6+Stats!A9 | =Stats!B6+Stats!B9 | =Stats!C6+Stats!C9 | =Stats!D6+Stats!D9 | =Stats!E6+Stats!E9 | =ROUNDDOWN(Stats!F6+Stats!F9,0) | =Stats!G6+Stats!G9 | =Stats!H6+Stats!A9 | =Stats!I6+Stats!B9 | =Stats!J6+Stats!C9 | =Stats!K6+Stats!D9 | =Stats!L6+Stats!E9 | =ROUNDDOWN(Stats!M6+Stats!F9,0) | =Stats!N6+Stats!G9 | =Stats!O6+Stats!A9 | =Stats!P6+Stats!B9 | =Stats!Q6+Stats!C9 | =Stats!R6+Stats!D9 | =Stats!S6+Stats!E9 | =ROUNDDOWN(Stats!T6+Stats!F9,0) | =Stats!U6+Stats!G9 | =Stats!V6+Stats!A9 | =Stats!W6+Stats!B9 | =Stats!X6+Stats!C9 | =Stats!Y6+Stats!D9 | =Stats!Z6+Stats!E9 | =ROUNDDOWN(Stats!AA6+Stats!F9,0) | =Stats!AB6+Stats!G9
+Longbow | =Stats!A4+Stats!A11 | =Stats!B4+Stats!B11 | =Stats!C4+Stats!C11 | =Stats!D4+Stats!D11 | =Stats!E4+Stats!E11 | =ROUNDDOWN(Stats!F4+Stats!F11,0) | =Stats!G4+Stats!G11 | =Stats!H4+Stats!A11 | =Stats!I4+Stats!B11 | =Stats!J4+Stats!C11 | =Stats!K4+Stats!D11 | =Stats!L4+Stats!E11 | =ROUNDDOWN(Stats!M4+Stats!F11,0) | =Stats!N4+Stats!G11 | =Stats!O4+Stats!A11 | =Stats!P4+Stats!B11 | =Stats!Q4+Stats!C11 | =Stats!R4+Stats!D11 | =Stats!S4+Stats!E11 | =ROUNDDOWN(Stats!T4+Stats!F11,0) | =Stats!U4+Stats!G11 | =Stats!V4+Stats!A11 | =Stats!W4+Stats!B11 | =Stats!X4+Stats!C11 | =Stats!Y4+Stats!D11 | =Stats!Z4+Stats!E11 | =ROUNDDOWN(Stats!AA4+Stats!F11,0) | =Stats!AB4+Stats!G11 | =Stats!A6+Stats!A11 | =Stats!B6+Stats!B11 | =Stats!C6+Stats!C11 | =Stats!D6+Stats!D11 | =Stats!E6+Stats!E11 | =ROUNDDOWN(Stats!F6+Stats!F11,0) | =Stats!G6+Stats!G11 | =Stats!H6+Stats!A11 | =Stats!I6+Stats!B11 | =Stats!J6+Stats!C11 | =Stats!K6+Stats!D11 | =Stats!L6+Stats!E11 | =ROUNDDOWN(Stats!M6+Stats!F11,0) | =Stats!N6+Stats!G11 | =Stats!O6+Stats!A11 | =Stats!P6+Stats!B11 | =Stats!Q6+Stats!C11 | =Stats!R6+Stats!D11 | =Stats!S6+Stats!E11 | =ROUNDDOWN(Stats!T6+Stats!F11,0) | =Stats!U6+Stats!G11 | =Stats!V6+Stats!A11 | =Stats!W6+Stats!B11 | =Stats!X6+Stats!C11 | =Stats!Y6+Stats!D11 | =Stats!Z6+Stats!E11 | =ROUNDDOWN(Stats!AA6+Stats!F11,0) | =Stats!AB6+Stats!G11
+Shortbow | =Stats!A4+Stats!A13 | =Stats!B4+Stats!B13 | =Stats!C4+Stats!C13 | =Stats!D4+Stats!D13 | =Stats!E4+Stats!E13 | =ROUNDDOWN(Stats!F4+Stats!F13,0) | =Stats!G4+Stats!G13 | =Stats!H4+Stats!A13 | =Stats!I4+Stats!B13 | =Stats!J4+Stats!C13 | =Stats!K4+Stats!D13 | =Stats!L4+Stats!E13 | =ROUNDDOWN(Stats!M4+Stats!F13,0) | =Stats!N4+Stats!G13 | =Stats!O4+Stats!A13 | =Stats!P4+Stats!B13 | =Stats!Q4+Stats!C13 | =Stats!R4+Stats!D13 | =Stats!S4+Stats!E13 | =ROUNDDOWN(Stats!T4+Stats!F13,0) | =Stats!U4+Stats!G13 | =Stats!V4+Stats!A13 | =Stats!W4+Stats!B13 | =Stats!X4+Stats!C13 | =Stats!Y4+Stats!D13 | =Stats!Z4+Stats!E13 | =ROUNDDOWN(Stats!AA4+Stats!F13,0) | =Stats!AB4+Stats!G13 | =Stats!A6+Stats!A13 | =Stats!B6+Stats!B13 | =Stats!C6+Stats!C13 | =Stats!D6+Stats!D13 | =Stats!E6+Stats!E13 | =ROUNDDOWN(Stats!F6+Stats!F13,0) | =Stats!G6+Stats!G13 | =Stats!H6+Stats!A13 | =Stats!I6+Stats!B13 | =Stats!J6+Stats!C13 | =Stats!K6+Stats!D13 | =Stats!L6+Stats!E13 | =ROUNDDOWN(Stats!M6+Stats!F13,0) | =Stats!N6+Stats!G13 | =Stats!O6+Stats!A13 | =Stats!P6+Stats!B13 | =Stats!Q6+Stats!C13 | =Stats!R6+Stats!D13 | =Stats!S6+Stats!E13 | =ROUNDDOWN(Stats!T6+Stats!F13,0) | =Stats!U6+Stats!G13 | =Stats!V6+Stats!A13 | =Stats!W6+Stats!B13 | =Stats!X6+Stats!C13 | =Stats!Y6+Stats!D13 | =Stats!Z6+Stats!E13 | =ROUNDDOWN(Stats!AA6+Stats!F13,0) | =Stats!AB6+Stats!G13
+Cards | =Stats!A4+Stats!H9 | =Stats!B4+Stats!I9 | =Stats!C4+Stats!J9 | =Stats!D4+Stats!K9 | =Stats!E4+Stats!L9 | =ROUNDDOWN(Stats!F4+Stats!M9,0) | =Stats!G4+Stats!N9 | =Stats!H4+Stats!H9 | =Stats!I4+Stats!I9 | =Stats!J4+Stats!J9 | =Stats!K4+Stats!K9 | =Stats!L4+Stats!L9 | =ROUNDDOWN(Stats!M4+Stats!M9,0) | =Stats!N4+Stats!N9 | =Stats!O4+Stats!H9 | =Stats!P4+Stats!I9 | =Stats!Q4+Stats!J9 | =Stats!R4+Stats!K9 | =Stats!S4+Stats!L9 | =ROUNDDOWN(Stats!T4+Stats!M9,0) | =Stats!U4+Stats!N9 | =Stats!V4+Stats!H9 | =Stats!W4+Stats!I9 | =Stats!X4+Stats!J9 | =Stats!Y4+Stats!K9 | =Stats!Z4+Stats!L9 | =ROUNDDOWN(Stats!AA4+Stats!M9,0) | =Stats!AB4+Stats!N9 | =Stats!A6+Stats!H9 | =Stats!B6+Stats!I9 | =Stats!C6+Stats!J9 | =Stats!D6+Stats!K9 | =Stats!E6+Stats!L9 | =ROUNDDOWN(Stats!F6+Stats!M9,0) | =Stats!G6+Stats!N9 | =Stats!H6+Stats!H9 | =Stats!I6+Stats!I9 | =Stats!J6+Stats!J9 | =Stats!K6+Stats!K9 | =Stats!L6+Stats!L9 | =ROUNDDOWN(Stats!M6+Stats!M9,0) | =Stats!N6+Stats!N9 | =Stats!O6+Stats!H9 | =Stats!P6+Stats!I9 | =Stats!Q6+Stats!J9 | =Stats!R6+Stats!K9 | =Stats!S6+Stats!L9 | =ROUNDDOWN(Stats!T6+Stats!M9,0) | =Stats!U6+Stats!N9 | =Stats!V6+Stats!H9 | =Stats!W6+Stats!I9 | =Stats!X6+Stats!J9 | =Stats!Y6+Stats!K9 | =Stats!Z6+Stats!L9 | =ROUNDDOWN(Stats!AA6+Stats!M9,0) | =Stats!AB6+Stats!N9
+Lunar Rod | =Stats!A4+Stats!H11 | =Stats!B4+Stats!I11 | =Stats!C4+Stats!J11 | =Stats!D4+Stats!K11 | =Stats!E4+Stats!L11 | =ROUNDDOWN(Stats!F4+Stats!M11,0) | =Stats!G4+Stats!N11 | =Stats!H4+Stats!H11 | =Stats!I4+Stats!I11 | =Stats!J4+Stats!J11 | =Stats!K4+Stats!K11 | =Stats!L4+Stats!L11 | =ROUNDDOWN(Stats!M4+Stats!M11,0) | =Stats!N4+Stats!N11 | =Stats!O4+Stats!H11 | =Stats!P4+Stats!I11 | =Stats!Q4+Stats!J11 | =Stats!R4+Stats!K11 | =Stats!S4 | =ROUNDDOWN(Stats!T4+Stats!M11,0) | =Stats!U4+Stats!N11 | =Stats!V4+Stats!H11 | =Stats!W4+Stats!I11 | =Stats!X4+Stats!J11 | =Stats!Y4+Stats!K11 | =Stats!Z4+Stats!L11 | =ROUNDDOWN(Stats!AA4+Stats!M11,0) | =Stats!AB4+Stats!N11 | =Stats!A6+Stats!H11 | =Stats!B6+Stats!I11 | =Stats!C6+Stats!J11 | =Stats!D6+Stats!K11 | =Stats!E6+Stats!L11 | =ROUNDDOWN(Stats!F6+Stats!M11,0) | =Stats!G6+Stats!N11 | =Stats!H6+Stats!H11 | =Stats!I6+Stats!I11 | =Stats!J6+Stats!J11 | =Stats!K6+Stats!K11 | =Stats!L6+Stats!L11 | =ROUNDDOWN(Stats!M6+Stats!M11,0) | =Stats!N6+Stats!N11 | =Stats!O6+Stats!H11 | =Stats!P6+Stats!I11 | =Stats!Q6+Stats!J11 | =Stats!R6+Stats!K11 | =Stats!S6+Stats!L11 | =ROUNDDOWN(Stats!T6+Stats!M11,0) | =Stats!U6+Stats!N11 | =Stats!V6+Stats!H11 | =Stats!W6+Stats!I11 | =Stats!X6+Stats!J11 | =Stats!Y6+Stats!K11 | =Stats!Z6+Stats!L11 | =ROUNDDOWN(Stats!AA6+Stats!M11,0) | =Stats!AB6+Stats!N11
+Orb | =Stats!A4+Stats!H13 | =Stats!B4+Stats!I13 | =Stats!C4+Stats!J13 | =Stats!D4+Stats!K13 | =Stats!E4+Stats!L13 | =ROUNDDOWN(Stats!F4+Stats!M13,0) | =Stats!G4+Stats!N13 | =Stats!H4+Stats!H13 | =Stats!I4+Stats!I13 | =Stats!J4+Stats!J13 | =Stats!K4+Stats!K13 | =Stats!L4+Stats!L13 | =ROUNDDOWN(Stats!M4+Stats!M13,0) | =Stats!N4+Stats!N13 | =Stats!O4+Stats!H13 | =Stats!P4+Stats!I13 | =Stats!Q4+Stats!J13 | =Stats!R4+Stats!K13 | =Stats!S4+Stats!L13 | =ROUNDDOWN(Stats!T4+Stats!M13,0) | =Stats!U4+Stats!N13 | =Stats!V4+Stats!H13 | =Stats!W4+Stats!I13 | =Stats!X4+Stats!J13 | =Stats!Y4+Stats!K13 | =Stats!Z4+Stats!L13 | =ROUNDDOWN(Stats!AA4+Stats!M13,0) | =Stats!AB4+Stats!N13 | =Stats!A6+Stats!H13 | =Stats!B6+Stats!I13 | =Stats!C6+Stats!J13 | =Stats!D6+Stats!K13 | =Stats!E6+Stats!L13 | =ROUNDDOWN(Stats!F6+Stats!M13,0) | =Stats!G6+Stats!N13 | =Stats!H6+Stats!H13 | =Stats!I6+Stats!I13 | =Stats!J6+Stats!J13 | =Stats!K6+Stats!K13 | =Stats!L6+Stats!L13 | =ROUNDDOWN(Stats!M6+Stats!M13,0) | =Stats!N6+Stats!N13 | =Stats!O6+Stats!H13 | =Stats!P6+Stats!I13 | =Stats!Q6+Stats!J13 | =Stats!R6+Stats!K13 | =Stats!S6+Stats!L13 | =ROUNDDOWN(Stats!T6+Stats!M13,0) | =Stats!U6+Stats!N13 | =Stats!V6+Stats!H13 | =Stats!W6+Stats!I13 | =Stats!X6+Stats!J13 | =Stats!Y6+Stats!K13 | =Stats!Z6+Stats!L13 | =ROUNDDOWN(Stats!AA6+Stats!M13,0) | =Stats!AB6+Stats!N13
+Athame | =Stats!A4+Stats!O9 | =Stats!B4+Stats!P9 | =Stats!C4+Stats!Q9 | =Stats!D4+Stats!R9 | =Stats!E4+Stats!S9 | =ROUNDDOWN(Stats!F4+Stats!T9,0) | =Stats!G4+Stats!U9 | =Stats!H4+Stats!O9 | =Stats!I4+Stats!P9 | =Stats!J4+Stats!Q9 | =Stats!K4+Stats!R9 | =Stats!L4+Stats!S9 | =ROUNDDOWN(Stats!M4+Stats!T9,0) | =Stats!N4+Stats!U9 | =Stats!O4+Stats!O9 | =Stats!P4+Stats!P9 | =Stats!Q4+Stats!Q9 | =Stats!R4+Stats!R9 | =Stats!S4+Stats!S9 | =ROUNDDOWN(Stats!T4+Stats!T9,0) | =Stats!U4+Stats!U9 | =Stats!V4+Stats!O9 | =Stats!W4+Stats!P9 | =Stats!X4+Stats!Q9 | =Stats!Y4+Stats!R9 | =Stats!Z4+Stats!S9 | =ROUNDDOWN(Stats!AA4+Stats!T9,0) | =Stats!AB4+Stats!U9 | =Stats!A6+Stats!O9 | =Stats!B6+Stats!P9 | =Stats!C6+Stats!Q9 | =Stats!D6+Stats!R9 | =Stats!E6+Stats!S9 | =ROUNDDOWN(Stats!F6+Stats!T9,0) | =Stats!G6+Stats!U9 | =Stats!H6+Stats!O9 | =Stats!I6+Stats!P9 | =Stats!J6+Stats!Q9 | =Stats!K6+Stats!R9 | =Stats!L6+Stats!S9 | =ROUNDDOWN(Stats!M6+Stats!T9,0) | =Stats!N6+Stats!U9 | =Stats!O6+Stats!O9 | =Stats!P6+Stats!P9 | =Stats!Q6+Stats!Q9 | =Stats!R6+Stats!R9 | =Stats!S6+Stats!S9 | =ROUNDDOWN(Stats!T6+Stats!T9,0) | =Stats!U6+Stats!U9 | =Stats!V6+Stats!O9 | =Stats!W6+Stats!P9 | =Stats!X6+Stats!Q9 | =Stats!Y6+Stats!R9 | =Stats!Z6+Stats!S9 | =ROUNDDOWN(Stats!AA6+Stats!T9,0) | =Stats!AB6+Stats!U9
+Scythe | =Stats!A4+Stats!O11 | =Stats!B4+Stats!P11 | =Stats!C4+Stats!Q11 | =Stats!D4+Stats!R11 | =Stats!E4+Stats!S11 | =ROUNDDOWN(Stats!F4+Stats!T11,0) | =Stats!G4+Stats!U11 | =Stats!H4+Stats!O11 | =Stats!I4+Stats!P11 | =Stats!J4++Stats!Q11 | =Stats!K4+Stats!R11 | =Stats!L4+Stats!S11 | =ROUNDDOWN(Stats!M4+Stats!T11,0) | =Stats!N4+Stats!U11 | =Stats!O4+Stats!O11 | =Stats!P4+Stats!P11 | =Stats!Q4+Stats!Q11 | =Stats!R4+Stats!R11 | =Stats!S4+Stats!S11 | =ROUNDDOWN(Stats!T4+Stats!T11,0) | =Stats!U4+Stats!U11 | =Stats!V4+Stats!O11 | =Stats!W4+Stats!P11 | =Stats!X4+Stats!Q11 | =Stats!Y4+Stats!R11 | =Stats!Z4+Stats!S11 | =ROUNDDOWN(Stats!AA4+Stats!T11,0) | =Stats!AB4+Stats!U11 | =Stats!A6+Stats!O11 | =Stats!B6+Stats!P11 | =Stats!C6+Stats!Q11 | =Stats!D6+Stats!R11 | =Stats!E6+Stats!S11 | =ROUNDDOWN(Stats!F6+Stats!T11,0) | =Stats!G6+Stats!U11 | =Stats!H6+Stats!O11 | =Stats!I6+Stats!P11 | =Stats!J6+Stats!Q11 | =Stats!K6+Stats!R11 | =Stats!L6+Stats!S11 | =ROUNDDOWN(Stats!M6+Stats!T11,0) | =Stats!N6+Stats!U11 | =Stats!O6+Stats!O11 | =Stats!P6+Stats!P11 | =Stats!Q6+Stats!Q11 | =Stats!R6+Stats!R11 | =Stats!S6+Stats!S11 | =ROUNDDOWN(Stats!T6+Stats!T11,0) | =Stats!U6+Stats!U11 | =Stats!V6+Stats!O11 | =Stats!W6+Stats!P11 | =Stats!X6+Stats!Q11 | =Stats!Y6+Stats!R11 | =Stats!Z6+Stats!S11 | =ROUNDDOWN(Stats!AA6+Stats!T11,0) | =Stats!AB6+Stats!U11
+Totems | =Stats!A4+Stats!O13 | =Stats!B4+Stats!P13 | =Stats!C4+Stats!Q13 | =Stats!D4+Stats!R13 | =Stats!E4+Stats!S13 | =ROUNDDOWN(Stats!F4+Stats!T13,0) | =Stats!G4+Stats!U13 | =Stats!H4+Stats!O13 | =Stats!I4+Stats!P13 | =Stats!J4+Stats!Q13 | =Stats!K4+Stats!R13 | =Stats!L4+Stats!S13 | =ROUNDDOWN(Stats!M4+Stats!T13,0) | =Stats!N4+Stats!U13 | =Stats!O4+Stats!O13 | =Stats!P4+Stats!P13 | =Stats!Q4+Stats!Q13 | =Stats!R4+Stats!R13 | =Stats!S4+Stats!S13 | =ROUNDDOWN(Stats!T4+Stats!T13,0) | =Stats!U4+Stats!U13 | =Stats!V4+Stats!O13 | =Stats!W4+Stats!P13 | =Stats!X4+Stats!Q13 | =Stats!Y4+Stats!R13 | =Stats!Z4+Stats!S13 | =ROUNDDOWN(Stats!AA4+Stats!T13,0) | =Stats!AB4+Stats!U13 | =Stats!A6+Stats!O13 | =Stats!B6+Stats!P13 | =Stats!C6+Stats!Q13 | =Stats!D6+Stats!R13 | =Stats!E6+Stats!S13 | =ROUNDDOWN(Stats!F6+Stats!T13,0) | =Stats!G6+Stats!U13 | =Stats!H6+Stats!O13 | =Stats!I6+Stats!P13 | =Stats!J6+Stats!Q13 | =Stats!K6+Stats!R13 | =Stats!L6+Stats!S13 | =ROUNDDOWN(Stats!M6+Stats!T13,0) | =Stats!N6+Stats!U13 | =Stats!O6+Stats!O13 | =Stats!P6+Stats!P13 | =Stats!Q6+Stats!Q13 | =Stats!R6+Stats!R13 | =Stats!S6+Stats!S13 | =ROUNDDOWN(Stats!T6+Stats!T13,0) | =Stats!U6+Stats!U13 | =Stats!V6+Stats!O13 | =Stats!W6+Stats!P13 | =Stats!X6+Stats!Q13 | =Stats!Y6+Stats!R13 | =Stats!Z6+Stats!S13 | =ROUNDDOWN(Stats!AA6+Stats!T13,0) | =Stats!AB6+Stats!U13
+Gladius | =Stats!A4+Stats!V9 | =Stats!B4+Stats!W9 | =Stats!C4+Stats!X9 | =Stats!D4+Stats!Y9 | =Stats!E4+Stats!Z9 | =ROUNDDOWN(Stats!F4+Stats!AA9,0) | =Stats!G4+Stats!AB9 | =Stats!H4+Stats!V9 | =Stats!I4+Stats!W9 | =Stats!J4+Stats!X9 | =Stats!K4+Stats!Y9 | =Stats!L4+Stats!Z9 | =ROUNDDOWN(Stats!M4+Stats!AA9,0) | =Stats!N4+Stats!AB9 | =Stats!O4+Stats!V9 | =Stats!P4+Stats!W9 | =Stats!Q4+Stats!X9 | =Stats!R4+Stats!Y9 | =Stats!S4+Stats!Z9 | =ROUNDDOWN(Stats!T4+Stats!AA9,0) | =Stats!U4+Stats!AB9 | =Stats!V4+Stats!V9 | =Stats!W4+Stats!W9 | =Stats!X4+Stats!X9 | =Stats!Y4+Stats!Y9 | =Stats!Z4+Stats!Z9 | =ROUNDDOWN(Stats!AA4+Stats!AA9,0) | =Stats!AB4+Stats!AB9 | =Stats!A6+Stats!V9 | =Stats!B6+Stats!W9 | =Stats!C6+Stats!X9 | =Stats!D6+Stats!Y9 | =Stats!E6+Stats!Z9 | =ROUNDDOWN(Stats!F6+Stats!AA9,0) | =Stats!G6+Stats!AB9 | =Stats!H6+Stats!V9 | =Stats!I6+Stats!W9 | =Stats!J6+Stats!X9 | =Stats!K6+Stats!Y9 | =Stats!L6+Stats!Z9 | =ROUNDDOWN(Stats!M6+Stats!AA9,0) | =Stats!N6+Stats!AB9 | =Stats!O6+Stats!V9 | =Stats!P6+Stats!W9 | =Stats!Q6+Stats!X9 | =Stats!R6+Stats!Y9 | =Stats!S6+Stats!Z9 | =ROUNDDOWN(Stats!T6+Stats!AA9,0) | =Stats!U6+Stats!AB9 | =Stats!V6+Stats!V9 | =Stats!W6+Stats!W9 | =Stats!X6+Stats!X9 | =Stats!Y6+Stats!Y9 | =Stats!Z6+Stats!Z9 | =ROUNDDOWN(Stats!AA6+Stats!AA9,0) | =Stats!AB6+Stats!AB9
+Quarterstaff | =Stats!A4+Stats!V11 | =Stats!B4+Stats!W11 | =Stats!C4+Stats!X11 | =Stats!D4+Stats!Y11 | =Stats!E4+Stats!Z11 | =ROUNDDOWN(Stats!F4+Stats!AA11,0) | =Stats!G4+Stats!AB11 | =Stats!H4+Stats!V11 | =Stats!I4+Stats!W11 | =Stats!J4+Stats!X11 | =Stats!K4+Stats!Y11 | =Stats!L4+Stats!Z11 | =ROUNDDOWN(Stats!M4+Stats!AA11,0) | =Stats!N4+Stats!AB11 | =Stats!O4+Stats!V11 | =Stats!P4+Stats!W11 | =Stats!Q4+Stats!X11 | =Stats!R4+Stats!Y11 | =Stats!S4+Stats!Z11 | =ROUNDDOWN(Stats!T4+Stats!AA11,0) | =Stats!U4+Stats!AB11 | =Stats!V4+Stats!V11 | =Stats!W4+Stats!W11 | =Stats!X4+Stats!X11 | =Stats!Y4+Stats!Y11 | =Stats!Z4+Stats!Z11 | =Stats!AA4+Stats!AA11 | =Stats!AB4+Stats!AB11 | =Stats!A6+Stats!V11 | =Stats!B6+Stats!W11 | =Stats!C6+Stats!X11 | =Stats!D6+Stats!Y11 | =Stats!E6+Stats!Z11 | =ROUNDDOWN(Stats!F6+Stats!AA11,0) | =Stats!G6+Stats!AB11 | =Stats!H6+Stats!V11 | =Stats!I6+Stats!W11 | =Stats!J6+Stats!X11 | =Stats!K6+Stats!Y11 | =Stats!L6+Stats!Z11 | =ROUNDDOWN(Stats!M6+Stats!AA11,0) | =Stats!N6+Stats!AB11 | =Stats!O6+Stats!V11 | =Stats!P6+Stats!W11 | =Stats!Q6+Stats!X11 | =Stats!R6+Stats!Y11 | =Stats!S6+Stats!Z11 | =ROUNDDOWN(Stats!T6+Stats!AA11,0) | =Stats!U6+Stats!AB11 | =Stats!V6+Stats!V11 | =Stats!W6+Stats!W11 | =Stats!X6+Stats!X11 | =Stats!Y6+Stats!Y11 | =Stats!Z6+Stats!Z11 | =ROUNDDOWN(Stats!AA6+Stats!AA11,0) | =Stats!AB6+Stats!AB11
+Tonfa | =Stats!A4+Stats!V13 | =Stats!B4+Stats!W13 | =Stats!C4+Stats!X13 | =Stats!D4+Stats!Y13 | =Stats!E4+Stats!Z13 | =ROUNDDOWN(Stats!F4+Stats!AA13,0) | =Stats!G4+Stats!AB13 | =Stats!H4+Stats!V13 | =Stats!I4+Stats!W13 | =Stats!J4+Stats!X13 | =Stats!K4+Stats!Y13 | =Stats!L4+Stats!Z13 | =ROUNDDOWN(Stats!M4+Stats!AA13,0) | =Stats!N4+Stats!AB13 | =Stats!O4+Stats!V13 | =Stats!P4+Stats!W13 | =Stats!Q4+Stats!X13 | =Stats!R4+Stats!Y13 | =Stats!S4+Stats!Z13 | =ROUNDDOWN(Stats!T4+Stats!AA13,0) | =Stats!U4+Stats!AB13 | =Stats!V4+Stats!V13 | =Stats!W4+Stats!W13 | =Stats!X4+Stats!X13 | =Stats!Y4+Stats!Y13 | =Stats!Z4+Stats!Z13 | =ROUNDDOWN(Stats!AA4+Stats!AA13,0) | =Stats!AB4+Stats!AB13 | =Stats!A6+Stats!V13 | =Stats!B6+Stats!W13 | =Stats!C6+Stats!X13 | =Stats!D6+Stats!Y13 | =Stats!E6+Stats!Z13 | =ROUNDDOWN(Stats!F6+Stats!AA13,0) | =Stats!G6+Stats!AB13 | =Stats!H6+Stats!V13 | =Stats!I6+Stats!W13 | =Stats!J6+Stats!X13 | =Stats!K6+Stats!Y13 | =Stats!L6+Stats!Z13 | =ROUNDDOWN(Stats!M6+Stats!AA13,0) | =Stats!N6+Stats!AB13 | =Stats!O6+Stats!V13 | =Stats!P6+Stats!W13 | =Stats!Q6+Stats!X13 | =Stats!R6+Stats!Y13 | =Stats!S6+Stats!Z13 | =ROUNDDOWN(Stats!T6+Stats!AA13,0) | =Stats!U6+Stats!AB13 | =Stats!V6+Stats!V13 | =Stats!W6+Stats!W13 | =Stats!X6+Stats!X13 | =Stats!Y6+Stats!Y13 | =Stats!Z6+Stats!Z13 | =ROUNDDOWN(Stats!AA6+Stats!AA13,0) | =Stats!AB6+Stats!AB13
+Axe | =Stats!A4+Stats!A16 | =Stats!B4+Stats!B16 | =Stats!C4+Stats!C16 | =Stats!D4+Stats!D16 | =Stats!E4+Stats!E16 | =ROUNDDOWN(Stats!F4+Stats!F16,0) | =Stats!G4+Stats!G16 | =Stats!H4+Stats!A16 | =Stats!I4+Stats!B16 | =Stats!J4+Stats!C16 | =Stats!K4+Stats!D16 | =Stats!L4+Stats!E16 | =ROUNDDOWN(Stats!M4+Stats!F16,0) | =Stats!N4+Stats!G16 | =Stats!O4+Stats!A16 | =Stats!P4+Stats!B16 | =Stats!Q4+Stats!C16 | =Stats!R4+Stats!D16 | =Stats!S4+Stats!E16 | =ROUNDDOWN(Stats!T4+Stats!F16,0) | =Stats!U4+Stats!G16 | =Stats!V4+Stats!A16 | =Stats!W4+Stats!B16 | =Stats!X4+Stats!C16 | =Stats!Y4+Stats!D16 | =Stats!Z4+Stats!E16 | =ROUNDDOWN(Stats!AA4+Stats!F16,0) | =Stats!AB4+Stats!G16 | =Stats!A6+Stats!A16 | =Stats!B6+Stats!B16 | =Stats!C6+Stats!C16 | =Stats!D6+Stats!D16 | =Stats!E6+Stats!E16 | =ROUNDDOWN(Stats!F6+Stats!F16,0) | =Stats!G6+Stats!G16 | =Stats!H6+Stats!A16 | =Stats!I6+Stats!B16 | =Stats!J6+Stats!C16 | =Stats!K6+Stats!D16 | =Stats!L6+Stats!E16 | =ROUNDDOWN(Stats!M6+Stats!F16,0) | =Stats!N6+Stats!G16 | =Stats!O6+Stats!A16 | =Stats!P6+Stats!B16 | =Stats!Q6+Stats!C16 | =Stats!R6+Stats!D16 | =Stats!S6+Stats!E16 | =ROUNDDOWN(Stats!T6+Stats!F16,0) | =Stats!U6+Stats!G16 | =Stats!V6+Stats!A16 | =Stats!W6+Stats!B16 | =Stats!X6+Stats!C16 | =Stats!Y6+Stats!D16 | =Stats!Z6+Stats!E16 | =ROUNDDOWN(Stats!AA6+Stats!F16,0) | =Stats!AB6+Stats!G16
+Hammer | =Stats!A4+Stats!A18 | =Stats!B4+Stats!B18 | =Stats!C4+Stats!C18 | =Stats!D4+Stats!D18 | =Stats!E4+Stats!E18 | =ROUNDDOWN(Stats!F4+Stats!F18,0) | =Stats!G4+Stats!G18 | =Stats!H4+Stats!A18 | =Stats!I4+Stats!B18 | =Stats!J4+Stats!C18 | =Stats!K4+Stats!D18 | =Stats!L4+Stats!E18 | =ROUNDDOWN(Stats!M4+Stats!F18,0) | =Stats!N4+Stats!G18 | =Stats!O4+Stats!A18 | =Stats!P4+Stats!B18 | =Stats!Q4+Stats!C18 | =Stats!R4+Stats!D18 | =Stats!S4+Stats!E18 | =ROUNDDOWN(Stats!T4+Stats!F18,0) | =Stats!U4+Stats!G18 | =Stats!V4+Stats!A18 | =Stats!W4+Stats!B18 | =Stats!X4+Stats!C18 | =Stats!Y4+Stats!D18 | =Stats!Z4+Stats!E18 | =ROUNDDOWN(Stats!AA4+Stats!F18,0) | =Stats!AB4+Stats!G18 | =Stats!A6+Stats!A18 | =Stats!B6+Stats!B18 | =Stats!C6+Stats!C18 | =Stats!D6+Stats!D18 | =Stats!E6+Stats!E18 | =ROUNDDOWN(Stats!F6+Stats!F18,0) | =Stats!G6+Stats!G18 | =Stats!H6+Stats!A18 | =Stats!I6+Stats!B18 | =Stats!J6+Stats!C18 | =Stats!K6+Stats!D18 | =Stats!L6+Stats!E18 | =ROUNDDOWN(Stats!M6+Stats!F18,0) | =Stats!N6+Stats!G18 | =Stats!O6+Stats!A18 | =Stats!P6+Stats!B18 | =Stats!Q6+Stats!C18 | =Stats!R6+Stats!D18 | =Stats!S6+Stats!E18 | =ROUNDDOWN(Stats!T6+Stats!F18,0) | =Stats!U6+Stats!G18 | =Stats!V6+Stats!A18 | =Stats!W6+Stats!B18 | =Stats!X6+Stats!C18 | =Stats!Y6+Stats!D18 | =Stats!Z6+Stats!E18 | =ROUNDDOWN(Stats!AA6+Stats!F18,0) | =Stats!AB6+Stats!G18
+Tomahawk | =Stats!A4+Stats!A20 | =Stats!B4+Stats!B20 | =Stats!C4+Stats!C20 | =Stats!D4+Stats!D20 | =Stats!E4+Stats!E20 | =ROUNDDOWN(Stats!F4+Stats!F20,0) | =Stats!G4+Stats!G20 | =Stats!H4+Stats!A20 | =Stats!I4+Stats!B20 | =Stats!J4+Stats!C20 | =Stats!K4+Stats!D20 | =Stats!L4+Stats!E20 | =ROUNDDOWN(Stats!M4+Stats!F20,0) | =Stats!N4+Stats!G20 | =Stats!O4+Stats!A20 | =Stats!P4+Stats!B20 | =Stats!Q4+Stats!C20 | =Stats!R4+Stats!D20 | =Stats!S4+Stats!E20 | =ROUNDDOWN(Stats!T4+Stats!F20,0) | =Stats!U4+Stats!G20 | =Stats!V4+Stats!A20 | =Stats!W4+Stats!B20 | =Stats!X4+Stats!C20 | =Stats!Y4+Stats!D20 | =Stats!Z4+Stats!E20 | =ROUNDDOWN(Stats!AA4+Stats!F20,0) | =Stats!AB4+Stats!G20 | =Stats!A6+Stats!A20 | =Stats!B6+Stats!B20 | =Stats!C6+Stats!C20 | =Stats!D6+Stats!D20 | =Stats!E6+Stats!E20 | =ROUNDDOWN(Stats!F6+Stats!F20,0) | =Stats!G6+Stats!G20 | =Stats!H6+Stats!A20 | =Stats!I6+Stats!B20 | =Stats!J6+Stats!C20 | =Stats!K6+Stats!D20 | =Stats!L6+Stats!E20 | =ROUNDDOWN(Stats!M6+Stats!F20,0) | =Stats!N6+Stats!G20 | =Stats!O6+Stats!A20 | =Stats!P6+Stats!B20 | =Stats!Q6+Stats!C20 | =Stats!R6+Stats!D20 | =Stats!S6+Stats!E20 | =ROUNDDOWN(Stats!T6+Stats!F20,0) | =Stats!U6+Stats!G20 | =Stats!V6+Stats!A20 | =Stats!W6+Stats!B20 | =Stats!X6+Stats!C20 | =Stats!Y6+Stats!D20 | =Stats!Z6+Stats!E20 | =ROUNDDOWN(Stats!AA6+Stats!F20,0) | =Stats!AB6+Stats!G20
+Crown | =Stats!A4+Stats!H16 | =Stats!B4+Stats!I16 | =Stats!C4+Stats!J16 | =Stats!D4+Stats!K16 | =Stats!E4+Stats!L16 | =ROUNDDOWN(Stats!F4+Stats!M16,0) | =Stats!G4+Stats!N16 | =Stats!H4+Stats!H16 | =Stats!I4+Stats!I16 | =Stats!J4+Stats!J16 | =Stats!K4+Stats!K16 | =Stats!L4+Stats!L16 | =ROUNDDOWN(Stats!M4+Stats!M16,0) | =Stats!N4+Stats!N16 | =Stats!O4+Stats!H16 | =Stats!P4+Stats!I16 | =Stats!Q4+Stats!J16 | =Stats!R4+Stats!K16 | =Stats!S4+Stats!L16 | =ROUNDDOWN(Stats!T4+Stats!M16,0) | =Stats!U4+Stats!N16 | =Stats!V4+Stats!H16 | =Stats!W4+Stats!I16 | =Stats!X4+Stats!J16 | =Stats!Y4+Stats!K16 | =Stats!Z4+Stats!L16 | =ROUNDDOWN(Stats!AA4+Stats!M16,0) | =Stats!AB4+Stats!N16 | =Stats!A6+Stats!H16 | =Stats!B6+Stats!I16 | =Stats!C6+Stats!J16 | =Stats!D6+Stats!K16 | =Stats!E6+Stats!L16 | =ROUNDDOWN(Stats!F6+Stats!M16,0) | =Stats!G6+Stats!N16 | =Stats!H6+Stats!H16 | =Stats!I6+Stats!I16 | =Stats!J6+Stats!J16 | =Stats!K6+Stats!K16 | =Stats!L6+Stats!L16 | =ROUNDDOWN(Stats!M6+Stats!M16,0) | =Stats!N6+Stats!N16 | =Stats!O6+Stats!H16 | =Stats!P6+Stats!I16 | =Stats!Q6+Stats!J16 | =Stats!R6+Stats!K16 | =Stats!S6+Stats!L16 | =ROUNDDOWN(Stats!T6+Stats!M16,0) | =Stats!U6+Stats!N16 | =Stats!V6+Stats!H16 | =Stats!W6+Stats!I16 | =Stats!X6+Stats!J16 | =Stats!Y6+Stats!K16 | =Stats!Z6+Stats!L16 | =ROUNDDOWN(Stats!AA6+Stats!M16,0) | =Stats!AB6+Stats!N16
+Katana | =Stats!A4+Stats!H18 | =Stats!B4+Stats!I18 | =Stats!C4+Stats!J18 | =Stats!D4+Stats!K18 | =Stats!E4+Stats!L18 | =ROUNDDOWN(Stats!F4+Stats!M18,0) | =Stats!G4+Stats!N18 | =Stats!H4+Stats!H18 | =Stats!I4+Stats!I18 | =Stats!J4+Stats!J18 | =Stats!K4+Stats!K18 | =Stats!L4+Stats!L18 | =ROUNDDOWN(Stats!M4+Stats!M18,0) | =Stats!N4+Stats!N18 | =Stats!O4+Stats!H18 | =Stats!P4+Stats!I18 | =Stats!Q4+Stats!J18 | =Stats!R4+Stats!K18 | =Stats!S4+Stats!L18 | =ROUNDDOWN(Stats!T4+Stats!M18,0) | =Stats!U4+Stats!N18 | =Stats!V4+Stats!H18 | =Stats!W4+Stats!I18 | =Stats!X4+Stats!J18 | =Stats!Y4+Stats!K18 | =Stats!Z4+Stats!L18 | =ROUNDDOWN(Stats!AA4+Stats!M18,0) | =Stats!AB4+Stats!N18 | =Stats!A6+Stats!H18 | =Stats!B6+Stats!I18 | =Stats!C6+Stats!J18 | =Stats!D6+Stats!K18 | =Stats!E6+Stats!L18 | =ROUNDDOWN(Stats!F6+Stats!M18,0) | =Stats!G6+Stats!N18 | =Stats!H6+Stats!H18 | =Stats!I6+Stats!I18 | =Stats!J6+Stats!J18 | =Stats!K6+Stats!K18 | =Stats!L6+Stats!L18 | =ROUNDDOWN(Stats!M6+Stats!M18,0) | =Stats!N6+Stats!N18 | =Stats!O6+Stats!H18 | =Stats!P6+Stats!I18 | =Stats!Q6+Stats!J18 | =Stats!R6+Stats!K18 | =Stats!S6+Stats!L18 | =ROUNDDOWN(Stats!T6+Stats!M18,0) | =Stats!U6+Stats!N18 | =Stats!V6+Stats!H18 | =Stats!W6+Stats!I18 | =Stats!X6+Stats!J18 | =Stats!Y6+Stats!K18 | =Stats!Z6+Stats!L18 | =ROUNDDOWN(Stats!AA6+Stats!M18,0) | =Stats!AB6+Stats!N18
+Rapier | =Stats!A4+Stats!H20 | =Stats!B4+Stats!I20 | =Stats!C4+Stats!J20 | =Stats!D4+Stats!K20 | =Stats!E4+Stats!L20 | =ROUNDDOWN(Stats!F4+Stats!M20,0) | =Stats!G4+Stats!N20 | =Stats!H4+Stats!H20 | =Stats!I4+Stats!I20 | =Stats!J4+Stats!J20 | =Stats!K4+Stats!K20 | =Stats!L4+Stats!L20 | =ROUNDDOWN(Stats!M4+Stats!M20,0) | =Stats!N4+Stats!N20 | =Stats!O4+Stats!H20 | =Stats!P4+Stats!I20 | =Stats!Q4+Stats!J20 | =Stats!R4+Stats!K20 | =Stats!S4+Stats!L20 | =ROUNDDOWN(Stats!T4+Stats!M20,0) | =Stats!U4+Stats!N20 | =Stats!V4+Stats!H20 | =Stats!W4+Stats!I20 | =Stats!X4+Stats!J20 | =Stats!Y4+Stats!K20 | =Stats!Z4+Stats!L20 | =ROUNDDOWN(Stats!AA4+Stats!M20,0) | =Stats!AB4+Stats!N20 | =Stats!A6+Stats!H20 | =Stats!B6+Stats!I20 | =Stats!C6+Stats!J20 | =Stats!D6+Stats!K20 | =Stats!E6+Stats!L20 | =ROUNDDOWN(Stats!F6+Stats!M20,0) | =Stats!G6+Stats!N20 | =Stats!H6+Stats!H20 | =Stats!I6+Stats!I20 | =Stats!J6+Stats!J20 | =Stats!K6+Stats!K20 | =Stats!L6+Stats!L20 | =ROUNDDOWN(Stats!M6+Stats!M20,0) | =Stats!N6+Stats!N20 | =Stats!O6+Stats!H20 | =Stats!P6+Stats!I20 | =Stats!Q6+Stats!J20 | =Stats!R6+Stats!K20 | =Stats!S6+Stats!L20 | =ROUNDDOWN(Stats!T6+Stats!M20,0) | =Stats!U6+Stats!N20 | =Stats!V6+Stats!H20 | =Stats!W6+Stats!I20 | =Stats!X6+Stats!J20 | =Stats!Y6+Stats!K20 | =Stats!Z6+Stats!L20 | =ROUNDDOWN(Stats!AA6+Stats!M20,0) | =Stats!AB6+Stats!N20
+Shillelagh | =Stats!A4+Stats!O16 | =Stats!B4+Stats!P16 | =Stats!C4+Stats!Q16 | =Stats!D4+Stats!R16 | =Stats!E4+Stats!S16 | =ROUNDDOWN(Stats!F4+Stats!T16,0) | =Stats!G4+Stats!U16 | =Stats!H4+Stats!O16 | =Stats!I4+Stats!P16 | =Stats!J4+Stats!Q16 | =Stats!K4+Stats!R16 | =Stats!L4+Stats!S16 | =ROUNDDOWN(Stats!M4+Stats!T16,0) | =Stats!N4+Stats!U16 | =Stats!O4+Stats!O16 | =Stats!P4+Stats!P16 | =Stats!Q4+Stats!Q16 | =Stats!R4+Stats!R16 | =Stats!S4+Stats!S16 | =ROUNDDOWN(Stats!T4+Stats!T16,0) | =Stats!U4+Stats!U16 | =Stats!V4+Stats!O16 | =Stats!W4+Stats!P16 | =Stats!X4+Stats!Q16 | =Stats!Y4+Stats!R16 | =Stats!Z4+Stats!S16 | =ROUNDDOWN(Stats!AA4+Stats!T16,0) | =Stats!AB4+Stats!U16 | =Stats!A6+Stats!O16 | =Stats!B6+Stats!P16 | =Stats!C6+Stats!Q16 | =Stats!D6+Stats!R16 | =Stats!E6+Stats!S16 | =ROUNDDOWN(Stats!F6+Stats!T16,0) | =Stats!G6+Stats!U16 | =Stats!H6+Stats!O16 | =Stats!I6+Stats!P16 | =Stats!J6+Stats!Q16 | =Stats!K6+Stats!R16 | =Stats!L6+Stats!S16 | =ROUNDDOWN(Stats!M6+Stats!T16,0) | =Stats!N6+Stats!U16 | =Stats!O6+Stats!O16 | =Stats!P6+Stats!P16 | =Stats!Q6+Stats!Q16 | =Stats!R6+Stats!R16 | =Stats!S6+Stats!S16 | =ROUNDDOWN(Stats!T6+Stats!T16,0) | =Stats!U6+Stats!U16 | =Stats!V6+Stats!O16 | =Stats!W6+Stats!P16 | =Stats!X6+Stats!Q16 | =Stats!Y6+Stats!R16 | =Stats!Z6+Stats!S16 | =ROUNDDOWN(Stats!AA6+Stats!T16,0) | =Stats!AB6+Stats!U16
+Spellbook | =Stats!A4+Stats!O18 | =Stats!B4+Stats!P18 | =Stats!C4+Stats!Q18 | =Stats!D4+Stats!R18 | =Stats!E4+Stats!S18 | =ROUNDDOWN(Stats!F4+Stats!T18,0) | =Stats!G4+Stats!U18 | =Stats!H4+Stats!O18 | =Stats!I4+Stats!P18 | =Stats!J4+Stats!Q18 | =Stats!K4+Stats!R18 | =Stats!L4+Stats!S18 | =ROUNDDOWN(Stats!M4+Stats!T18,0) | =Stats!N4+Stats!U18 | =Stats!O4+Stats!O18 | =Stats!P4+Stats!P18 | =Stats!Q4+Stats!Q18 | =Stats!R4+Stats!R18 | =Stats!S4+Stats!S18 | =ROUNDDOWN(Stats!T4+Stats!T18,0) | =Stats!U4+Stats!U18 | =Stats!V4+Stats!O18 | =Stats!W4+Stats!P18 | =Stats!X4+Stats!Q18 | =Stats!Y4+Stats!R18 | =Stats!Z4+Stats!S18 | =ROUNDDOWN(Stats!AA4+Stats!T18,0) | =Stats!AB4+Stats!U18 | =Stats!A6+Stats!O18 | =Stats!B6+Stats!P18 | =Stats!C6+Stats!Q18 | =Stats!D6+Stats!R18 | =Stats!E6+Stats!S18 | =ROUNDDOWN(Stats!F6+Stats!T18,0) | =Stats!G6+Stats!U18 | =Stats!H6+Stats!O18 | =Stats!I6+Stats!P18 | =Stats!J6+Stats!Q18 | =Stats!K6+Stats!R18 | =Stats!L6+Stats!S18 | =ROUNDDOWN(Stats!M6+Stats!T18,0) | =Stats!N6+Stats!U18 | =Stats!O6+Stats!O18 | =Stats!P6+Stats!P18 | =Stats!Q6+Stats!Q18 | =Stats!R6+Stats!R18 | =Stats!S6+Stats!S18 | =ROUNDDOWN(Stats!T6+Stats!T18,0) | =Stats!U6+Stats!U18 | =Stats!V6+Stats!O18 | =Stats!W6+Stats!P18 | =Stats!X6+Stats!Q18 | =Stats!Y6+Stats!R18 | =Stats!Z6+Stats!S18 | =ROUNDDOWN(Stats!AA6+Stats!T18,0) | =Stats!AB6+Stats!U18
+Talisman | =Stats!A4+Stats!O20 | =Stats!B4+Stats!P20 | =Stats!C4+Stats!Q20 | =Stats!D4+Stats!R20 | =Stats!E4+Stats!S20 | =ROUNDDOWN(Stats!F4+Stats!T20,0) | =Stats!G4+Stats!U20 | =Stats!H4+Stats!O20 | =Stats!I4+Stats!P20 | =Stats!J4+Stats!Q20 | =Stats!K4+Stats!R20 | =Stats!L4+Stats!S20 | =ROUNDDOWN(Stats!M4+Stats!T20,0) | =Stats!N4+Stats!U20 | =Stats!O4+Stats!O20 | =Stats!P4+Stats!P20 | =Stats!Q4+Stats!Q20 | =Stats!R4+Stats!R20 | =Stats!S4+Stats!S20 | =ROUNDDOWN(Stats!T4+Stats!T20,0) | =Stats!U4+Stats!U20 | =Stats!V4+Stats!O20 | =Stats!W4+Stats!P20 | =Stats!X4+Stats!Q20 | =Stats!Y4+Stats!R20 | =Stats!Z4+Stats!S20 | =ROUNDDOWN(Stats!AA4+Stats!T20,0) | =Stats!AB4+Stats!U20 | =Stats!A6+Stats!O20 | =Stats!B6+Stats!P20 | =Stats!C6+Stats!Q20 | =Stats!D6+Stats!R20 | =Stats!E6+Stats!S20 | =ROUNDDOWN(Stats!F6+Stats!T20,0) | =Stats!G6+Stats!U20 | =Stats!H6+Stats!O20 | =Stats!I6+Stats!P20 | =Stats!J6+Stats!Q20 | =Stats!K6+Stats!R20 | =Stats!L6+Stats!S20 | =ROUNDDOWN(Stats!M6+Stats!T20,0) | =Stats!N6+Stats!U20 | =Stats!O6+Stats!O20 | =Stats!P6+Stats!P20 | =Stats!Q6+Stats!Q20 | =Stats!R6+Stats!R20 | =Stats!S6+Stats!S20 | =ROUNDDOWN(Stats!T6+Stats!T20,0) | =Stats!U6+Stats!U20 | =Stats!V6+Stats!O20 | =Stats!W6+Stats!P20 | =Stats!X6+Stats!Q20 | =Stats!Y6+Stats!R20 | =Stats!Z6+Stats!S20 | =ROUNDDOWN(Stats!AA6+Stats!T20,0) | =Stats!AB6+Stats!U20
+Cutlass | =Stats!A$4+Stats!V$16 | =Stats!B$4+Stats!W$16 | =Stats!C$4+Stats!X$16 | =Stats!D$4+Stats!Y$16 | =Stats!E$4+Stats!Z$16 | =ROUNDDOWN(Stats!F$4+Stats!AA$16,0) | =Stats!G$4+Stats!AB$16 | =Stats!H$4+Stats!V$16 | =Stats!I$4+Stats!W$16 | =Stats!J$4+Stats!X$16 | =Stats!K$4+Stats!Y$16 | =Stats!L$4+Stats!Z$16 | =ROUNDDOWN(Stats!M$4+Stats!AA$16,0) | =Stats!N$4+Stats!AB$16 | =Stats!O$4+Stats!V$16 | =Stats!P$4+Stats!W$16 | =Stats!Q$4+Stats!X$16 | =Stats!R$4+Stats!Y$16 | =Stats!S$4+Stats!Z$16 | =ROUNDDOWN(Stats!T$4+Stats!AA$16,0) | =Stats!U$4+Stats!AB$16 | =Stats!V$4+Stats!V$16 | =Stats!W$4+Stats!W$16 | =Stats!X$4+Stats!X$16 | =Stats!Y$4+Stats!Y$16 | =Stats!Z$4+Stats!Z$16 | =ROUNDDOWN(Stats!AA$4+Stats!AA$16,0) | =Stats!AB$4+Stats!AB$16 | =Stats!A$6+Stats!V$16 | =Stats!B$6+Stats!W$16 | =Stats!C$6+Stats!X$16 | =Stats!D$6+Stats!Y$16 | =Stats!E$6+Stats!Z$16 | =ROUNDDOWN(Stats!F$6+Stats!AA$16,0) | =Stats!G$6+Stats!AB$16 | =Stats!H$6+Stats!V$16 | =Stats!I$6+Stats!W$16 | =Stats!J$6+Stats!X$16 | =Stats!K$6+Stats!Y$16 | =Stats!L$6+Stats!Z$16 | =ROUNDDOWN(Stats!M$6+Stats!AA$16,0) | =Stats!N$6+Stats!AB$16 | =Stats!O$6+Stats!V$16 | =Stats!P$6+Stats!W$16 | =Stats!Q$6+Stats!X$16 | =Stats!R$6+Stats!Y$16 | =Stats!S$6+Stats!Z$16 | =ROUNDDOWN(Stats!T$6+Stats!AA$16,0) | =Stats!U$6+Stats!AB$16 | =Stats!V$6+Stats!V$16 | =Stats!W$6+Stats!W$16 | =Stats!X$6+Stats!X$16 | =Stats!Y$6+Stats!Y$16 | =Stats!Z$6+Stats!Z$16 | =ROUNDDOWN(Stats!AA$6+Stats!AA$16,0) | =Stats!AB$6+Stats!AB$16
+Fangs | =Stats!A$4+Stats!V$18 | =Stats!B$4+Stats!W$18 | =Stats!C$4+Stats!X$18 | =Stats!D$4+Stats!Y$18 | =Stats!E$4+Stats!Z$18 | =ROUNDDOWN(Stats!F$4+Stats!AA$18,0) | =Stats!G$4+Stats!AB$18 | =Stats!H$4+Stats!V$18 | =Stats!I$4+Stats!W$18 | =Stats!J$4+Stats!X$18 | =Stats!K$4+Stats!Y$18 | =Stats!L$4+Stats!Z$18 | =ROUNDDOWN(Stats!M$4+Stats!AA$18,0) | =Stats!N$4+Stats!AB$18 | =Stats!O$4+Stats!V$18 | =Stats!P$4+Stats!W$18 | =Stats!Q$4+Stats!X$18 | =Stats!R$4+Stats!Y$18 | =Stats!S$4+Stats!Z$18 | =ROUNDDOWN(Stats!T$4+Stats!AA$18,0) | =Stats!U$4+Stats!AB$18 | =Stats!V$4+Stats!V$18 | =Stats!W$4+Stats!W$18 | =Stats!X$4+Stats!X$18 | =Stats!Y$4+Stats!Y$18 | =Stats!Z$4+Stats!Z$18 | =ROUNDDOWN(Stats!AA$4+Stats!AA$18,0) | =Stats!AB$4+Stats!AB$18 | =Stats!A$6+Stats!V$18 | =Stats!B$6+Stats!W$18 | =Stats!C$6+Stats!X$18 | =Stats!D$6+Stats!Y$18 | =Stats!E$6+Stats!Z$18 | =ROUNDDOWN(Stats!F$6+Stats!AA$18,0) | =Stats!G$6+Stats!AB$18 | =Stats!H$6+Stats!V$18 | =Stats!I$6+Stats!W$18 | =Stats!J$6+Stats!X$18 | =Stats!K$6+Stats!Y$18 | =Stats!L$6+Stats!Z$18 | =ROUNDDOWN(Stats!M$6+Stats!AA$18,0) | =Stats!N$6+Stats!AB$18 | =Stats!O$6+Stats!V$18 | =Stats!P$6+Stats!W$18 | =Stats!Q$6+Stats!X$18 | =Stats!R$6+Stats!Y$18 | =Stats!S$6+Stats!Z$18 | =ROUNDDOWN(Stats!T$6+Stats!AA$18,0) | =Stats!U$6+Stats!AB$18 | =Stats!V$6+Stats!V$18 | =Stats!W$6+Stats!W$18 | =Stats!X$6+Stats!X$18 | =Stats!Y$6+Stats!Y$18 | =Stats!Z$6+Stats!Z$18 | =ROUNDDOWN(Stats!AA$6+Stats!AA$18,0) | =Stats!AB$6+Stats!AB$18
+Scissors | =Stats!A$4+Stats!V$20 | =Stats!B$4+Stats!W$20 | =Stats!C$4+Stats!X$20 | =Stats!D$4+Stats!Y$20 | =Stats!E$4+Stats!Z$20 | =ROUNDDOWN(Stats!F$4+Stats!AA$20,0) | =Stats!G$4+Stats!AB$20 | =Stats!H$4+Stats!V$20 | =Stats!I$4+Stats!W$20 | =Stats!J$4+Stats!X$20 | =Stats!K$4+Stats!Y$20 | =Stats!L$4+Stats!Z$20 | =ROUNDDOWN(Stats!M$4+Stats!AA$20,0) | =Stats!N$4+Stats!AB$20 | =Stats!O$4+Stats!V$20 | =Stats!P$4+Stats!W$20 | =Stats!Q$4+Stats!X$20 | =Stats!R$4+Stats!Y$20 | =Stats!S$4+Stats!Z$20 | =ROUNDDOWN(Stats!T$4+Stats!AA$20,0) | =Stats!U$4+Stats!AB$20 | =Stats!V$4+Stats!V$20 | =Stats!W$4+Stats!W$20 | =Stats!X$4+Stats!X$20 | =Stats!Y$4+Stats!Y$20 | =Stats!Z$4+Stats!Z$20 | =ROUNDDOWN(Stats!AA$4+Stats!AA$20,0) | =Stats!AB$4+Stats!AB$20 | =Stats!A$6+Stats!V$20 | =Stats!B$6+Stats!W$20 | =Stats!C$6+Stats!X$20 | =Stats!D$6+Stats!Y$20 | =Stats!E$6+Stats!Z$20 | =ROUNDDOWN(Stats!F$6+Stats!AA$20,0) | =Stats!G$6+Stats!AB$20 | =Stats!H$6+Stats!V$20 | =Stats!I$6+Stats!W$20 | =Stats!J$6+Stats!X$20 | =Stats!K$6+Stats!Y$20 | =Stats!L$6+Stats!Z$20 | =ROUNDDOWN(Stats!M$6+Stats!AA$20,0) | =Stats!N$6+Stats!AB$20 | =Stats!O$6+Stats!V$20 | =Stats!P$6+Stats!W$20 | =Stats!Q$6+Stats!X$20 | =Stats!R$6+Stats!Y$20 | =Stats!S$6+Stats!Z$20 | =ROUNDDOWN(Stats!T$6+Stats!AA$20,0) | =Stats!U$6+Stats!AB$20 | =Stats!V$6+Stats!V$20 | =Stats!W$6+Stats!W$20 | =Stats!X$6+Stats!X$20 | =Stats!Y$6+Stats!Y$20 | =Stats!Z$6+Stats!Z$20 | =ROUNDDOWN(Stats!AA$6+Stats!AA$20,0) | =Stats!AB$6+Stats!AB$20
+ |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+
+=== Sheet: Loot Table ===
+Free for All (FFA) |  | Teams (PvP) |  | Nowhere To Run (NTR) |  | Juggernaut |  | PvP NTR | 
+Format | Base | Format | Base | Format | Base | Format | Base | Format | Base
+3p | 5.0 | 1v1 | 2.0 | 3p | 2.0 | 2vJ | 5.0 | 2v2 | 3.0
+4p | 6.0 | 2v2 | 7.0 | 4p | 2.0 | 3vJ | 6.0 | 3v3 | 5.0
+5p | 7.0 | 3v3 | 9.0 | 5p | 3.0 | 4vJ | 7.0 | 2v2v2 | 6.0
+6p | 8.0 | 2v2v2 | 10.0 | 6p | 3.0 | PvP + Juggernaut (PvPJ) |  | 4v4 | 7.0
+7p | 9.0 | 4v4 | 11.0 | 7p | 4.0 | 2v3 | 9.0 | 2v2v2v2 | 8.0
+8p | 10.0 | 2v2v2v2 | 12.0 | 8p | 4.0 | 3v4 | 11.0 |  | 
+Levels and Exp Cost |  |  |  |  |  |  |  |  | 
+Level  | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
+Class | 20 | 70 | 145 | 300 | - | - | - | - | -
+Weapon | 2 | 12 | 25 | 55 | 85 | 120 | 170 | 230 | 300
+Total | 22 | 82 | 170 | 355 | 85 | 120 | 170 | 230 | 300
+Extra Loot Rules |  |  |  |  |  |  |  |  | 
+Hosts |  |  | Players |  |  |  | Game Mode/Mods |  | 
+Hosts get base loot, including gems, if they host but don't play. |  |  | Players gain +1 loot/kill. In teams, this loot applies for the whole team. |  |  |  | Juggernaut - If Juggernaut is defeated, party gets +PL/2 + 1 XP. |  | 
+Hosts get 
++1 Loot for hosting 3-4p games 
++2 Loot for hosting 5-6p games,
++3 Loot for hosting 7-8p games. |  |  | Players get
+1 Gem in 3-4p games,
+2 Gems in 5-6p games,
+3 Gems in 7-8p games. |  |  |  | In FFA and PvP, the remaining player/team has their kill loot multiplied by 1.5. (PvP bonus applies only to two teams.) |  | 
+Hosts gain an extra gem for hosting 7-8p games. |  |  | If a player dies via terrain, recoil, or ND or is modkilled, the last player to deal damage to them gets the kill. |  |  |  | NTR - each player earns +1 XP per turn lived in addition to kill loot.
+(This does not apply to PvPNTR.) |  | 
+ |  |  |  |  |  |  | PvE - everyone earns 1 gem in 3vE and 2 gems in 4/5vE. The host always earns a bonus gem. |  | 
+
