@@ -1,0 +1,52 @@
+name: Map proposal → PR
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: map-proposals
+  cancel-in-progress: false
+
+jobs:
+  map-pr:
+    if: startsWith(github.event.issue.title, 'Map: ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create PR from issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          N=${{ github.event.issue.number }}
+          TITLE=$(gh api repos/${{ github.repository }}/issues/$N --jq .title)
+          BODY=$(gh api repos/${{ github.repository }}/issues/$N --jq .body)
+          NAME=$(printf '%s' "$TITLE" | sed 's/^Map: //' | sed 's/[[:space:]]*$//' | tr -d '\r')
+          CONTENT=$(printf '%s' "$BODY" | awk '/^```txt/{f=1;next} f&&/^```/{f=0} f{print}')
+          if [ -z "$CONTENT" ]; then
+            gh issue comment $N --body "Couldn't find the map text (a \`\`\`txt\`\`\` code block) in the issue body."
+            exit 1
+          fi
+          if git cat-file -e "HEAD:maps/$NAME.txt" 2>/dev/null; then
+            gh issue comment $N --body "A map named **$NAME** already exists in \`maps/\` — closing this proposal."
+            gh issue close $N
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BRANCH="map/$(printf '%s' "$NAME" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')"
+          git checkout -b "$BRANCH"
+          printf '%s\n' "$CONTENT" > "maps/$NAME.txt"
+          git add "maps/$NAME.txt"
+          git commit -m "Add map $NAME (from issue #$N)"
+          git push -u origin "$BRANCH"
+          PR_URL=$(gh pr create --title "Add map $NAME" --body "Auto-created from issue #$N.")
+          gh issue comment $N --body "Opened **$PR_URL** — the map was committed to \`maps/$NAME.txt\` and a pull request was created."
+          gh issue close $N
