@@ -2,17 +2,21 @@
 
 A Pokémon Showdown–based Battle Dome autohost bot (TypeScript + Bun).
 
-## Map Editor (GitHub Pages)
+## Map Editor & Browser (GitHub Pages)
 
-View and edit the maps in this repo right in the browser:
+**Editor** — [https://4-mat.github.io/bd-autohost-bot-new/mapeditor/](https://4-mat.github.io/bd-autohost-bot-new/mapeditor/)
+**Browser** — [https://4-mat.github.io/bd-autohost-bot-new/mapeditor/gallery/](https://4-mat.github.io/bd-autohost-bot-new/mapeditor/gallery/)
 
-**[https://4-mat.github.io/bd-autohost-bot-new/mapeditor/](https://4-mat.github.io/bd-autohost-bot-new/mapeditor/)**
+**Editor**
+- Pokémon Showdown light theme, game-style grid (square cells, 5×5–60×60, 5×5 minimum for NTR maps).
+- Zoom 50–400% (default 150%) — footer buttons, Ctrl+wheel, Ctrl+= / Ctrl+− / Ctrl+0; remembers your zoom.
+- Paint 13 terrains (incl. purple Boost), place players P1–P8, flood fill, eyedropper, erase, undo/redo, select & move boxes.
+- **I/O:** Export → Volunteer .txt / game HTML / JSON; import .txt, HTML, or .json; Save downloads a .txt.
+- "🗺 Maps" button jumps to the browser.
 
-- Browse all **210 curated maps** (`src/data/maps.ts`) and the **volunteer maps** (`maps/*.txt`) as colored grids.
-- Paint terrain (13 types: Normal, Stop, Water, Forest, Ice, Air, Sticky, Lava, Broken, Bone, Stone, Hearth, Boost), place players P1–P8, flood fill, eyedropper, undo/redo, resize.
-- **I/O new maps:** design a map → **Export → Volunteer .txt** (or hit the Save button, which downloads a `.txt`) → drop the file into `maps/` → commit → run `bun run maps`. Your map is now available with `%setmap <name>`.
-- Import: paste volunteer `.txt`, game HTML, or a `.json` map.
-- Maps smaller than 5×5 or with names using `gen`/uppercase/spaces are rejected — the editor enforces the same rules as `scripts/import-volunteer-maps.ts`.
+**Browser**
+- Index grouped by gamemode (FFA/NTR/JUGG/PvP/1v1) with per-map links and sizes.
+- **View all maps** wall — every map as a thumbnail; **search**, **mode filter**, grouped sections, click to open full size (prev/next nav).
 
 ### Local mode (optional, extra features)
 
