@@ -1,0 +1,607 @@
+{
+  "meta": {
+    "sheet": "Clairvoyant",
+    "version": "1.0",
+    "lang": "BD Lang"
+  },
+  "Basic Attack": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "mr": 2,
+    "damage": {
+      "roll": "1d10+2",
+      "type": "Physical or Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+  },
+  "Basic Movement": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "action": "Movement",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends MP to move an equal amount of tiles.\n(For all purposes, Basic Movement is not an ability, but is still an action.)"
+  },
+  "Dash": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "action": "Full",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user spends MP to move up to x1.5 that amount of tiles (rounded down)."
+  },
+  "Backstep": {
+    "level": "B",
+    "frequency": "Passive",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+  },
+  "Attack of Opportunity": {
+    "level": "B",
+    "frequency": "Every Turn",
+    "mr": 2,
+    "damage": {
+      "roll": "1d10+2",
+      "type": "Physical or Magical"
+    },
+    "action": "Reaction",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)"
+  },
+  "Card Flip": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "3d8+5",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "Roll a d3 after rolling damage. If a 1 is rolled, this move deals 0.8x damage. If a 3 is rolled, this move deals 1.3x damage. Outside factors to damage are also affected by these multipliers."
+  },
+  "Discard": {
+    "level": "2",
+    "frequency": "EoT",
+    "mr": 2,
+    "damage": {
+      "roll": "3d10+2",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 5",
+    "effect": "Roll a d20, on 15+ store a reroll that can be used to reroll any cards effect as a Once/Trigger action."
+  },
+  "Roulette": {
+    "level": "3",
+    "frequency": "EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "3d8+5",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "Roll a 1d8 to inflict a random status on the opponent, then roll a d3. If the d3 roll is 1, status the user instead. Statuses: 1 = 10 Bleed/1, 2 = 10 Poison/1, 3 = 10 Burn/1, 4 = 6 Cripple/1, 5 = Root/1, 6 = Seal/1, 7 = Stun/1, 8 = Confusion/1."
+  },
+  "Gamble": {
+    "level": "4",
+    "frequency": "Twice/EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "3d8+3",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 3",
+    "effect": "Roll d7. 1 = subtract the target's ATK and MAG. 2 = subtract the higher of the target's offensive stats. 3 = subtract the user's ATK. 4 = add the user's ATK. 5 = add the target's higher offense stat. 6 = add the user's MAG again. 7 = add the user's ATK and the target's ATK and MAG. This attack still adds the user's MAG and ignores 10 DEF."
+  },
+  "Double or Nothing": {
+    "level": "4",
+    "frequency": "Twice/EoT",
+    "action": "Trigger",
+    "target": {
+      "count": 1,
+      "group": "Any"
+    },
+    "range": "Range 4",
+    "effect": "The user rolls a d2. On a 1, the target can't use Swift/Free actions until the end of the user's next turn. On a 2, the target gains an extra Swift action (or multiple Free actions) until the start of the user's next turn. If used on Self, this must be used at the start of the user's turn."
+  },
+  "Blackjack": {
+    "level": "5",
+    "frequency": "Twice/EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "3d8+5",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 3",
+    "effect": "On a successful hit, roll 2d10, treating 1s as either 1 or 11 (user’s choice). The user may choose to roll additional 1d10s to add to the roll. If the total is 17-20, this attack gains 1 base dice. On a total of 21, this attack instead gains 3 base dice and activates Jackpot. On a total of 22 or higher, the attack instead loses 2 base dice."
+  },
+  "Craps": {
+    "level": "6",
+    "frequency": "Twice/E3T",
+    "mr": 5,
+    "damage": {
+      "roll": "5d10-10",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 3",
+    "effect": "This attack has Bomb dice. For every Bomb dice that triggers, the user may pick another foe within the target's Splash 1 to target (the same foe cannot be picked more than once). If 5+ bomb dice is triggered, this attack activates Jackpot. This attack is immune to (non-Cards) positive damage factors. On a critical hit, the extra dice from the critical hit do NOT have Bomb dice."
+  },
+  "Jackpot": {
+    "level": "7",
+    "frequency": "Passive",
+    "effect": "When the user rolls the maximum roll on all dice in an accuracy, damage, or effect roll, for a total of at least 8, they gain +7 ATK/MAG, +7 DEF, +1 EVA, +1 ACC, and +2 MP for one round. This does not activate on Hi-Lo rolls, but instead activates when Hi-Lo reaches maximum dice. Repeated activation does not stack, but instead refreshes the duration."
+  },
+  "Slots Spin": {
+    "level": "8",
+    "frequency": "Once",
+    "mr": 4,
+    "damage": {
+      "roll": "5d8+0",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "Roll 3d4. For every 4 rolled, this attack gains +1 dice. If no 4s are rolled, this attack gains -1 dice. if all dice are 4s, this attack gains an additional +1 dice."
+  },
+  "Hi-Lo": {
+    "level": "9",
+    "frequency": "Twice/EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "Xd10+5",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 3",
+    "effect": "Roll a d10. The user predicts whether the next d10 result will be higher or lower than the previous result, then rolls again. On a correct guess, this attack gains +2 base dice and the user may continue predicting and rolling (max 5 guesses) or choose to stop. On a failed guess, the user stops and the attack loses half of its total base dice. If the roll is the same as the previous, reroll that dice."
+  },
+  "Stacked Deck": {
+    "level": "10",
+    "frequency": "Once",
+    "damage": {
+      "roll": "6d8+0",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "In place of an accuracy roll, roll a 1d14 for an effect. \n1. The opponent is healed by the roll, \n2. The user takes 2x damage from all sources for one round,\n3. The attack misses, \n4. After damage, the user and target swap their current HP (can overheal, foes with over 200 HP are considered to have 200 HP for this effect), \n5. For one round, attacks automatically hit the user,\n6. The user and target gain a random position change,\n7. The user and target are both Stunned/1,\n8. 50% of this attack's damage is dealt to a random foe instead,\n9. For one round, the user's attacks automatically hit,\n10. The user gains a 1/Any/Global Once/Reaction: \"Reroll one accuracy roll.\",\n11. Cleanse all statuses and numerical debuffs from the user & reset their other moves' frequencies,\n12. Target is Sealed/1, \n13. Next turn, the user may choose numbers for their cards effects, rather than rolling dice for them,\n14. This attack has unremovable thrice base dice."
+  },
+  "Card Counter": {
+    "level": "EX1",
+    "frequency": "Every Turn",
+    "action": "Reaction",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "Once per turn, the user may choose to reroll their Cards dice effect (for Craps, reroll the damage dice)."
+  },
+  "High Roller": {
+    "level": "EX2",
+    "frequency": "Every Turn",
+    "action": "Trigger",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user may choose to roll a 1d5 for each standard action the user has remaining this turn. The standard actions targeting amount becomes equal to the roll-1 (If a one is rolled, the standard is lost)."
+  },
+  "Lunar Phase": {
+    "level": "1",
+    "frequency": "Passive",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "At the start of their first turn, the user picks a Phase. At the start of each following turn, the user shifts Phases in the following order. This Passive cannot be disabled.\nNew Moon (+1 range) -->\nWaxing (+2 dice faces on accuracy and attacks) -->\nFull Moon (-1 dice on attacks targeting the user) -->\nWaning (+1 dice on attacks) --> New Moon, etc."
+  },
+  "Moonblast": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "2d8+5",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 3",
+    "effect": "The user's next Phase effect's value is increased by 1."
+  },
+  "Dark Reflection": {
+    "level": "2",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "2d8+9",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "For one round, the target is inflicted with the inverse effect of the user's Phase."
+  },
+  "Holy Light": {
+    "level": "3",
+    "frequency": "EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "1d8+7",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 6",
+    "effect": "If the user has Moonblast's or Celestial Blessing's effect, the target's status effects (except Seal and Stun) are extended by +1 round."
+  },
+  "Lunar Shift": {
+    "level": "4",
+    "frequency": "E3T",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Self"
+    },
+    "effect": "The user shifts to their next Lunar Phase. If Moonblast's effect is active, it is transferred to the new Phase."
+  },
+  "Harvest Moon": {
+    "level": "5",
+    "frequency": "Twice/EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "2d10+6",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "If the user is in New Moon or Full Moon, they heal 1d10+2 HP. Otherwise, they do not shift Phases on their next turn. This may be used as a non-attack Standard."
+  },
+  "Tidal Wave": {
+    "level": "6",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "3d8+7",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Burst 1",
+    "effect": "Targets are inflicted with Confusion/1. New Moon grants +AoE range on this attack."
+  },
+  "Double Tide": {
+    "level": "7",
+    "frequency": "Twice",
+    "mr": 4,
+    "damage": {
+      "roll": "2d6+2\n(Double Hit)",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 4",
+    "effect": "This attack Critical Hits on 16+. If this attack Critical Hits at least once, the user gains Moonblast's effect."
+  },
+  "Blood Moon": {
+    "level": "8",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "2d8+6",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 2,
+      "group": "Foes"
+    },
+    "range": "Range 3",
+    "effect": "If the user is in Waxing or Waning, targets are inflicted with 2d6 Poison/1. Otherwise, targets are inflicted with 3d4 Bleed/1."
+  },
+  "Celestial Blessing": {
+    "level": "9",
+    "frequency": "Twice/EoT",
+    "action": "Free",
+    "target": {
+      "count": "AoE",
+      "group": "Self and Allies"
+    },
+    "range": "Burst 1",
+    "effect": "Until the start of the user's next turn, targets gain the user's next Phase effect. Next turn, the user's Phase effect is disabled."
+  },
+  "Gravity Crash": {
+    "level": "10",
+    "frequency": "Once",
+    "mr": 5,
+    "damage": {
+      "roll": "2d10+9",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Melee",
+    "effect": "This attack has a different effect based on the user's Phase.\nNew Moon: Homing 4. For one round, the target cannot use moves with Usage Limits.\nWaxing: Push 1d6. The target is inflicted with 4 Cripple/2.\nFull Moon: For one round, foes' abilities only deal 75% damage to allies in Range 5.\nWaning: This attack has Bomb dice."
+  },
+  "Far Side of the Moon": {
+    "level": "EX1",
+    "frequency": "Passive",
+    "target": {
+      "group": "Self"
+    },
+    "effect": "The user picks another Lunar Phase effect that doesn't shift in any way. This effect is active when their original Phase is not affected by Moonblast or Celestial Blessing. Lunar Rod attacks may use this Phase for effects instead of the original Phase."
+  },
+  "Fatal Moonlight": {
+    "level": "EX2",
+    "frequency": "Once",
+    "mr": 5,
+    "damage": {
+      "roll": "2d10+10",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 2,
+      "group": "Foes"
+    },
+    "range": "Range 3",
+    "effect": "This attack has two effects if the user has two different Phases.\nNew Moon: One target at max range is inflicted with Seal/1.\nWaxing: The user permanently gains +2d6 DEF.\nFull Moon: This attack may target +2 foes.\nWaning: This attack ignores negative damage factors."
+  },
+  "Future Sight": {
+    "level": "1",
+    "frequency": "Passive",
+    "effect": "The user's Delay attacks always land if they hit, even if the user is dead.\nDelay: Delay moves have their damage and effects delayed for a specified number of rounds, landing at the start of the user's turn. Damage is rolled when the move is used, with damage altering effects applied on use."
+  },
+  "Augur": {
+    "level": "1",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "3d8+0",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 5",
+    "effect": "The user may give this move Delay-1 for +5 DMG or +3 CR on this move, or Delay-2 for both."
+  },
+  "Eventide": {
+    "level": "2",
+    "frequency": "EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "3d6+4",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 7",
+    "effect": "This ability has Delay-1. The target gains 3 Curse before damage until Eventide lands. The user may choose Delay-2 to increase the -DEF of Eventide's Curse by 2."
+  },
+  "Echo Burst": {
+    "level": "3",
+    "frequency": "Every Turn",
+    "mr": 3,
+    "damage": {
+      "roll": "2d8+6",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Homing 5\n(Splash 1)",
+    "effect": "The user may give this move Delay-1. If so, it loses Splash, but the user gains +5 DEF until the move lands. This move cannot stack with itself."
+  },
+  "Omen": {
+    "level": "4",
+    "frequency": "Twice/E3T",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Self"
+    },
+    "effect": "The user's next attack has an extra turn of delay with a doubled delay bonus (does not stack)."
+  },
+  "Corruption": {
+    "level": "5",
+    "frequency": "Twice/EoT",
+    "mr": 4,
+    "damage": {
+      "roll": "3d8+3",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Homing 5",
+    "effect": "On hit, the target takes damage equal to 5% of their max HP (before multipliers) over 100. This ability may be up to Delay-2, increasing the previous percentage by 5*Delay. Until Corruption lands, damaging statuses on the target deal bonus damage equal to half of the on-hit damage."
+  },
+  "Astral Touch": {
+    "level": "6",
+    "frequency": "Twice",
+    "action": "Free",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 7",
+    "effect": "If the target kills the user within one round, then decrease the user's delays on them by 1. If the target dies within one round, then the user may transfer one delay on them to a new target in the original's Range 7."
+  },
+  "Foresight": {
+    "level": "6",
+    "frequency": "Once",
+    "action": "Reaction",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "effect": "This may be used when the user is attacked, after damage is rolled. 10% of the attack's damage on each target is removed and, after damage, added to either 1) their delayed attacks, or 2) the user's HP, multiplied by the number of the user's delayed attacks."
+  },
+  "Dawn Break": {
+    "level": "7",
+    "frequency": "EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "1d8+9",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Range 7",
+    "effect": "This ability has Delay-2. Until this ability lands, all of the user's attacks on the target have -1 MR. The user may increase the Delay by 1 for an additional -1 MR on the target."
+  },
+  "Oracle": {
+    "level": "8",
+    "frequency": "Twice/E3T",
+    "mr": 4,
+    "damage": {
+      "roll": "2d6+8",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Homing 6",
+    "effect": "The user may choose to add or remove a turn of delay from any number of the users currently delayed attacks. The user may instead use this ability as a self-targetting non-damaging Movement+Swift ability."
+  },
+  "Scry": {
+    "level": "9",
+    "frequency": "EoT",
+    "mr": 3,
+    "damage": {
+      "roll": "2d8+3",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": "AoE",
+      "group": "Foes"
+    },
+    "range": "Cone 2",
+    "effect": "The user may give this Delay-1 to extend its Cone by 1. Select one target. Add 10*X% of the user's total delay on that target to this attack, where X = number of targets."
+  },
+  "Prophecy": {
+    "level": "10",
+    "frequency": "Twice/E3T",
+    "mr": 5,
+    "damage": {
+      "roll": "1d8+4",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 1,
+      "group": "Foe"
+    },
+    "range": "Homing 5",
+    "effect": "This attack gains +2.5 ACC and +2 DMG per delayed move that landed at the start of the user's current turn. The user may give this ability Delay-1 or 2. If so, lose the prior bonuses and gain +8 DMG per delayed move that will land at the same time as Prophecy. This bonus damage updates when delays are used."
+  },
+  "Fateweave": {
+    "level": "EX1",
+    "frequency": "Once",
+    "damage": {
+      "roll": "3d6+5",
+      "type": "Magical"
+    },
+    "action": "Standard",
+    "target": {
+      "count": 4,
+      "group": "Foes"
+    },
+    "range": "Global",
+    "effect": "Select a Delay between 1 and 5. For every foe who dies on the turn this lands, permenantly gain +2 ACC and +4 CR. After this ability lands, delays with 2 or less immediately land when the user dies. This ability is disabled after it hits, ignores ATK/MAG and outside damage factors and gains another use if it misses."
+  },
+  "Psychic Overlord": {
+    "level": "EX2",
+    "frequency": "Passive",
+    "effect": "When a foe dies to Delay damage (including through Oracle's effect), the user heals half of the overkill and gains +4 MAG. The user then selects a foe who has unlanded Delay damage, who is inflicted with -2 EVA/1 and -25% damage/1."
+  }
+}
