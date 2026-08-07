@@ -443,6 +443,21 @@ kbd {
 	aside { width: 190px; padding: 10px; }
 	.gcell { width: 22px; height: 22px; }
 }
+	.draft-banner {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+		padding: 8px 14px;
+		margin: 10px 0 0;
+		background: #fdf3d7;
+		border: 1px solid #c9a94e;
+		border-radius: 4px;
+		color: #5a4a1a;
+		font-size: 12px;
+	}
+	.draft-banner .btn { margin-left: 4px; }
+	.draft-banner button { margin-left: 2px; }
 </style>
 </head>
 <body>
@@ -458,6 +473,7 @@ kbd {
 	<a class="btn" href="gallery/index.html?view=all" title="View every map as a thumbnail wall">🗺 Maps</a>
 	<div class="spacer"></div>
 </header>
+	<div id="draftBanner" class="draft-banner" hidden></div>
 
 <main>
 	<aside>
@@ -835,6 +851,7 @@ function render() {
 	$('sizeCols').value = map.cols;
 	if (document.activeElement !== $('mapName')) $('mapName').value = map.name;
 	renderCounts();
+	scheduleDraft();
 }
 
 function renderCounts() {
@@ -1505,6 +1522,9 @@ $('mapSearch').addEventListener('keydown', (e) => {
 });
 $('btnPropose').addEventListener('click', proposeMap);
 $('btnProposeGo').addEventListener('click', proposeGo);
+$('mapName').addEventListener('input', scheduleDraft);
+document.addEventListener('pointerdown', () => { draftUserEdit = true; }, { once: true });
+document.addEventListener('keydown', () => { draftUserEdit = true; }, { once: true });
 $('mapName').addEventListener('change', () => { map.name = MC.sanitizeName($('mapName').value); });
 document.querySelectorAll('.tool').forEach((t) => t.addEventListener('click', () => setTool(t.dataset.tool)));
 $('btnZoomIn').addEventListener('click', () => zoomBy(0.25));
@@ -1582,6 +1602,88 @@ function updateModeUI() {
 /* ------------------------------------------------------------------ */
 /* boot                                                                 */
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* autosave drafts (localStorage)                                        */
+/* ------------------------------------------------------------------ */
+let draftTimer = null;
+let draftUserEdit = false;
+function isBlankMap(m) {
+	for (let r = 0; r < m.rows; r++) {
+		for (let c = 0; c < m.cols; c++) {
+			if ((m.tiles[r][c] || 'normal') !== 'normal') return false;
+		}
+	}
+	return !(m.tokens && m.tokens.length);
+}
+function scheduleDraft() {
+	clearTimeout(draftTimer);
+	draftTimer = setTimeout(saveDraft, 700);
+}
+function saveDraft() {
+	if (isBlankMap(map)) return;
+	try {
+		const name = $('mapName').value || map.name || 'untitled';
+		const out = MC.toJSON(map);
+		out.name = name;
+		localStorage.setItem('bd-editor-draft', JSON.stringify({ name, map: out, savedAt: Date.now() }));
+		if (draftUserEdit) hideDraftBanner();
+	} catch (e) { /* private mode or storage full */ }
+}
+function timeAgo(ts) {
+	const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
+	if (s < 60) return 'just now';
+	const m = Math.round(s / 60);
+	if (m < 60) return m + 'm ago';
+	const h = Math.round(m / 60);
+	if (h < 24) return h + 'h ago';
+	return Math.round(h / 24) + 'd ago';
+}
+function hideDraftBanner() {
+	const b = $('draftBanner');
+	if (b) b.hidden = true;
+}
+function showDraftBanner() {
+	let raw = null;
+	try { raw = localStorage.getItem('bd-editor-draft'); } catch (e) { return; }
+	if (!raw) return;
+	let draft = null;
+	try { draft = JSON.parse(raw); } catch (e) { return; }
+	const banner = $('draftBanner');
+	if (!banner) return;
+	banner.innerHTML = '';
+	const msg = document.createElement('span');
+	msg.appendChild(document.createTextNode('Draft of '));
+	const nameEl = document.createElement('b');
+	nameEl.textContent = draft.name || 'untitled';
+	msg.appendChild(nameEl);
+	msg.appendChild(document.createTextNode(' saved ' + (draft.savedAt ? timeAgo(draft.savedAt) : '')));
+	const restore = document.createElement('button');
+	restore.type = 'button';
+	restore.className = 'btn small';
+	restore.textContent = 'Restore';
+	restore.addEventListener('click', () => restoreDraft(draft));
+	const discard = document.createElement('button');
+	discard.type = 'button';
+	discard.className = 'btn small';
+	discard.textContent = 'Discard';
+	discard.addEventListener('click', discardDraft);
+	banner.appendChild(msg);
+	banner.appendChild(restore);
+	banner.appendChild(discard);
+	banner.hidden = false;
+}
+function restoreDraft(draft) {
+	setMap(MC.normalizeMap(draft.map), { silent: true });
+	if (draft.name) $('mapName').value = draft.name;
+	hideDraftBanner();
+	toast('Restored draft "' + (draft.name || 'untitled') + '"', 'ok');
+}
+function discardDraft() {
+	try { localStorage.removeItem('bd-editor-draft'); } catch (e) { /* ignore */ }
+	hideDraftBanner();
+	toast('Draft discarded', 'ok');
+}
+
 function init() {
 	try { const saved = parseFloat(localStorage.getItem('bd-editor-zoom')); if (saved && saved >= 0.5 && saved <= 4) zoom = saved; } catch (e) { /* ignore */ }
 	renderTerrainPalette();
@@ -1612,6 +1714,7 @@ function init() {
 		else setMap(MC.emptyMap(11, 11, 'untitled'), { silent: true });
 		if (want) { try { window.history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ } }
 		updateModeUI();
+		showDraftBanner();
 	})();
 }
 
