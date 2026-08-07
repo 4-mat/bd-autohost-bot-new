@@ -1,7 +1,7 @@
 import { rollDice, posToStr, toId } from "../utils.js";
 import { send, sendPm } from "../utils.js";
 import { rooms } from "../rooms.js";
-import type { GameVersion } from "../data/version43.js";
+import type { GameVersion } from "../data/index.js";
 import type {
   AttackPrompt,
   ResolutionResult,

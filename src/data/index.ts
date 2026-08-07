@@ -1,3 +1,5 @@
+export type GameVersion = "4.3" | "4.4";
+
 export interface AbilityCost {
   type: "HP" | "MP" | "Resource";
   amount: number;
