@@ -1,0 +1,27 @@
+Term,Description
+Definitions,
+Critical Hit,"An accuracy roll of 20+ is a Critical Hit, which doubles the amount of base dice on the damage roll. This is not affected by ±ACC effects, but instead ±CR. (Accuracy rolls with different dice size still crits on 20+.)"
+Critical Miss,"An accuracy roll of 1 is always a miss, unless specified otherwise. This is not affected by positive or negative accuracy modifiers."
+Critical Range (CR),"For each point of Critical Range, the accuracy roll required to land a critical hit is reduced by 1. Negative CR instead increases the accuracy roll needed for a Critical Miss."
+Entity,Anything that is targettable under normal circumstances (e.g players and monsters).
+Round,"Cooldowns and some effects last X number of rounds. Their ""rounds"" are based on which entity's turn the effects were applied during. At the end of that entity's future turns, X decreases by 1; the Cooldown/effect ends when X reaches 0."
+Outside Factors,Effects that aren't written in the move itself are considered outside factors. This does not include stat changes.
+Teleport,The user’s position changes from their current tile to the target tile. The user ignores intermediate tiles and players and is not considered to have moved over them. (Teleport movement ignores AoO.)
+Unremovable,"Unremovable effects cannot be suppressed in any way (including having an existing normal status; the new status will override the previous.) In addition to being unsuppressible, unremovable effects cannot be changed in any way (unless specified otherwise), excluding status damage. This includes moves immune to outside factors."
+Clarifications,
+Accuracy,"Effects based on accuracy rolls are affected by accuracy modifiers. The only exception of this are critical hits, which cannot be gained or lost through accuracy modifiers."
+Dice Modifiers,Changes to base dice through Crits or Jugg are NOT considered dice modifiers.
+Corners,"Sometimes, players or ranges go through the corner of four tiles: Push/Pull, Line X, etc. If the two tiles (that the path doesn't cross) share a tile property, then the corner also has that property. 2+ obstructions also obstruct the corner (unless an AoE targets one/both of them)."
+Damage Order,"When both % based effects (such as Radiance) and flat damage modifiers (such as bleed, TM, etc.) affect the same move, the addition/subtraction damage modifiers occur BEFORE the multiplication % effect."
+End of Game,"A 1v1 game ends when 1 player dies (post-death effects are not resolved). This does not apply to other modes, where effects still take place after a game over condition is met, until that turn ends. (The game continues if the effects cause game over conditions to fail.)"
+Effect Order,"Unless specified otherwise, the damage and effects of attacks/reactions occur in the following order:
+1. Attack Accuracy -> 2. Attack Damage Roll -> 3. Reaction Accuracy -> 4. Reaction Damage Roll ->
+5. Reaction Effects -> 6. Attack Damage Dealt -> 7. Reaction Damage Dealt -> 8. Attack Effects."
+Ice Clause,"Effects do not interact with nor apply to Ice tiles. (Effects outside of the ""Effects"" column still apply, such as ""X"", Multihit, and Splash.)"
+Pending Effects,"Pending effects, i. e. effects that rely on their target interacting with the user in some way on their turn (e. g. Provoke), are negated if the user or the target (whichever is applicable) is dead at the start of the target's turn."
+Secondary Effects,"Secondary effects happen after damage is rolled, unless specified."
+Recoil / Reaction,"Recoil and Reaction damage comes AFTER the original move's damage is dealt. This means that in 1v1s, if a user dies from one of these but kills another player, they win."
+Sacrifice,"All sacrifice and spending based effects resolve before accuracy is rolled, unless specified otherwise."
+Removal of Modifiers,The removal of positive modifiers (e. g. Shock and Awe) is not a negative outside factor.
+Rewinding Time,"If an event of any kind (e.g. Passive, Item) was forgotten or not taken into account due to a mistake, but it doesn't impact other parts of the game significantly, it can retroactively take place. Otherwise, the host may choose to either rewind time back to when the event would've happened (if not too many moves have been used since then) and continue from there or to continue the game with the event never happening. In case of a dispute, auths can make a final decision."
+,
