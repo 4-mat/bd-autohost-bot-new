@@ -254,7 +254,7 @@ export function parseEffects(text: string): Effect[] {
   // The regex tolerates either ", " or ". " before "Otherwise", and an
   // optional trailing period at the end of the else-branch.
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?),\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
   if (fullIfMatch) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
@@ -270,6 +270,7 @@ export function parseEffects(text: string): Effect[] {
     return [conditional];
   }
 
+
   const clauses = splitClauses(normalized);
   const effects: Effect[] = [];
 
@@ -283,11 +284,16 @@ export function parseEffects(text: string): Effect[] {
 
 /** Whether position `i` ends a clause: a period/comma/" and " at depth 0,
  * excluding periods and commas inside dice notation like 2d6+1 or 1d8,2. */
-function isClauseBoundary(text: string, i: number): boolean {
+function isClauseBoundary(text: string, i: number, current: string): boolean {
   if (isInsideDice(text, i)) return false;
   const ch = text[i];
   if (ch === ".") return true;
-  if (ch === "," && !text.slice(i).match(/^,\s*(?:and|or)\s/i)) return true;
+  if (
+    ch === "," &&
+    !text.slice(i).match(/^,\s*(?:and|or)\s/i) &&
+    !/^(thirst\s+\d+:|apex:)/i.test(current.trim())
+  )
+    return true;
   if (ch === " " && text.slice(i).match(/^ and /i)) return true;
   return false;
 }
@@ -302,7 +308,7 @@ function splitClauses(text: string): string[] {
 
     if (ch === "(" || ch === "[") depth++;
     else if (ch === ")" || ch === "]") depth--;
-    else if (depth === 0 && isClauseBoundary(text, i)) {
+    else if (depth === 0 && isClauseBoundary(text, i, current)) {
       if (current.trim()) clauses.push(current.trim());
       current = "";
       // " and " is 5 chars: skip past it so it isn't re-scanned.
@@ -375,9 +381,9 @@ function parseClause(clause: string): Effect[] {
 
 /** Structured clauses with a fixed keyword prefix (If/Thirst/Apex/...). */
 function parseClauseStructured(lower: string): Effect[] | null {
-  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
+  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]" (comma or colon)
   const ifMatch = lower.match(
-    /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
   );
   if (ifMatch) {
     return [{
@@ -433,6 +439,18 @@ function parseClauseStructured(lower: string): Effect[] | null {
   );
   if (phaseMatch) {
     return [{ type: "phase", phase: phaseMatch[1] }];
+  }
+
+  // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
+  const phaseCondMatch = lower.match(
+    /^(new moon|waxing|full moon|waning):\s*(.+)$/,
+  );
+  if (phaseCondMatch) {
+    return [{
+      type: "conditional",
+      condition: `phase is ${phaseCondMatch[1]}`,
+      thenEffects: parseEffects(phaseCondMatch[2]),
+    }];
   }
 
   // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
@@ -661,7 +679,7 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+(\d+(?:-\d+)?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+(\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
