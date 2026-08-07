@@ -57,14 +57,26 @@ export const TERRAIN_NAMES: Record<number, string> = {
   [Terrain.Boost]: "Boost",
 };
 
+// Per the BD 4.4 glossary (Map -> Obstructions): "Stop/Bone, Ice, Stone, and
+// Hearth tiles, as well as foes, are considered obstructions." Obstructions
+// block movement, targeting (Range Rule), and cannot be ended turns on.
+// NOTE: Broken is NOT an obstruction — it is merely impassable to movement
+// ("cannot be moved through, and turns cannot be ended on them").
 export function isObstruction(t: Terrain): boolean {
   return (
     t === Terrain.Stop ||
     t === Terrain.Bone ||
     t === Terrain.Ice ||
     t === Terrain.Stone ||
-    t === Terrain.Broken
+    t === Terrain.Hearth
   );
+}
+
+// Tiles that cannot be moved through or stood on: obstructions (glossary) plus
+// Broken (impassable per the glossary, though not itself an obstruction) and
+// Lava (damages on entry — never a valid destination).
+export function isStandable(t: Terrain): boolean {
+  return !isObstruction(t) && t !== Terrain.Broken && t !== Terrain.Lava;
 }
 
 export function moveCost(t: Terrain, base = 1): number {
@@ -180,6 +192,7 @@ export interface Entity {
   triggered?: boolean;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
+  pendingPrompt?: AttackPrompt;
 }
 
 export interface PendingAction {
@@ -188,6 +201,44 @@ export interface PendingAction {
   target?: string; // entity num
   targetPos?: [number, number];
   position?: [number, number];
+  direction?: string; // cardinal direction for cone/line/beam/pierce
+}
+
+export const DIRECTION_LABELS: Record<string, string> = {
+  up: "\u2191 Up",
+  down: "\u2193 Down",
+  left: "\u2190 Left",
+  right: "\u2192 Right",
+};
+
+export function needsDirection(ability: AbilityData): boolean {
+  const r = ability.range.toLowerCase().trim();
+  return false;
+  // return /^(cone|line|beam|pierce)\b/.test(r);
+}
+
+export function getDirectionCandidates(): string[] {
+  return ["up", "down", "left", "right"];
+}
+
+export function placeTerrain(
+  map: number[][],
+  pos: [number, number],
+  terrain: number,
+): void {
+  const [r, c] = pos;
+  if (r >= 0 && r < map.length && c >= 0 && c < map[0].length) {
+    map[r][c] = terrain;
+  }
+}
+
+export function entityOnTile(
+  entities: Entity[],
+  pos: [number, number],
+): Entity | undefined {
+  return entities.find(
+    (e) => e.pos[0] === pos[0] && e.pos[1] === pos[1] && e.curhp > 0,
+  );
 }
 
 export interface ActionLogEntry {
@@ -200,6 +251,17 @@ export interface ActionLogEntry {
 export interface ChatEntry {
   user: string;
   message: string;
+  /** Epoch ms when the message was received. Optional for snapshot compat. */
+  time?: number;
+}
+
+/** Format an epoch-ms timestamp as "[HH:MM]" (empty string when missing). */
+export function formatChatTime(ts?: number): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `[${hh}:${mm}]`;
 }
 
 export interface Game {
@@ -216,6 +278,8 @@ export interface Game {
   log: ActionLogEntry[];
   snapshots: string[];
   mode: string;
+  /** Whether the gamemode was explicitly chosen (%setgame, the vote, or %genpos). */
+  modeChosen?: boolean;
   phase: "setup" | "playing" | "ended";
   started: boolean;
   kills: Record<string, number>; // entity num -> kill count
@@ -223,6 +287,17 @@ export interface Game {
   chatLog: ChatEntry[];
   toasts: ChatEntry[];
   signupsOpen: boolean;
+  /** Gamemode votes: entity num -> voted mode id. Active between %close and %endvote. */
+  votes: Record<string, string>;
+  /** Whether gamemode voting is open (opened by %close, closed by %endvote). */
+  voteOpen: boolean;
+  /**
+   * Modes allowed in a runoff after a tied %endvote (empty/null when no
+   * runoff is active). Only these can be voted on while set.
+   */
+  voteRunoff: string[] | null;
+  /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
+  timer?: { entity: string | null; endAt: number } | null;
 }
 
 export const games = new Map<string, Game>();
@@ -235,6 +310,7 @@ function serializeState(game: Game): string {
       curhp: e.curhp,
       maxhp: e.maxhp,
       pos: e.pos,
+      team: e.team,
       statuses: e.statuses,
       buffs: e.buffs,
       cooldowns: e.cooldowns,
@@ -266,6 +342,7 @@ export function popSnapshot(game: Game): boolean {
       ent.curhp = e.curhp;
       ent.maxhp = e.maxhp;
       ent.pos = e.pos;
+      ent.team = e.team;
       ent.statuses = e.statuses;
       ent.buffs = e.buffs;
       ent.cooldowns = e.cooldowns;
@@ -340,8 +417,8 @@ export function getReachableTiles(
         continue;
 
       const terrain = game.map[nr][nc];
-      if (isObstruction(terrain)) continue;
-      if (terrain === Terrain.Lava) continue; // don't pathfind through lava
+      // Obstructions + Broken (impassable) + Lava (damages on entry).
+      if (!isStandable(terrain)) continue;
 
       const tileCost = moveCost(terrain);
       const newCost = cost + tileCost;
@@ -868,8 +945,7 @@ function moveEntityInLine(
 function isPassable(game: Game, r: number, c: number): boolean {
   if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length)
     return false;
-  const t = game.map[r][c];
-  return !isObstruction(t) && t !== Terrain.Lava;
+  return isStandable(game.map[r][c]);
 }
 
 // Roll accuracy check
@@ -1039,6 +1115,8 @@ export function removeEntity(game: Game, entity: Entity) {
   if (game.turnIndex >= game.turnOrder.length) {
     game.turnIndex = 0;
   }
+  // Drop any gamemode vote the removed entity had cast.
+  delete game.votes[entity.id];
 }
 
 /** Check if the game is over. Returns the winner entity or null. */

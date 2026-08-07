@@ -13,6 +13,7 @@ import {
   type Entity,
   type Game,
 } from "./src/game/state.js";
+import { broadcastPages } from "./src/commands/game.js";
 
 loadGameData();
 loadGameData43();
@@ -179,6 +180,7 @@ function sendSpectatorGui(username: string) {
   %addp Player1, Bard, Crossbow<br>
   %addp Player2, Cleric, Longbow<br>
   %setlevel P1, 3<br>
+  %setmap arena<br>
   %start
 </div>
 `) + spectatorWidget(findSession(username)?.team ?? 0);
@@ -228,8 +230,17 @@ function buildSigninPage(game: Game): string {
     ? `<button name="join" style="${BTN_STYLE}">Join</button>`
     : `<button name="join" disabled style="${BTN_STYLE}">Join (signups closed)</button>`;
 
+  const signedIn = game.entities
+    .filter((e) => !e.isMonster)
+    .map(
+      (e) =>
+        `${escHtml(e.num)} ${escHtml(e.name)} (${escHtml(e.className)}/${escHtml(e.weaponName)})`,
+    )
+    .join(", ");
+
   return `<div style="padding:12px;background:#16213e;border:1px solid #333;border-radius:4px">
-<b style="color:#00aaff">Battle Sign-up (BD ${escHtml(game.version)})</b> <span style="color:#888">(signups: ${status})</span><br><br>
+<b style="color:#00aaff">Battle Sign-up (BD ${escHtml(game.version)})</b> <span style="color:#888">(signups: ${status})</span><br>
+<span style="color:#888">Signed in:</span> ${signedIn || `<span style="color:#888">none yet</span>`}<br><br>
 Class:<br>
 <select id="signin-class" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${classOpts}</select><br><br>
 Weapon:<br>
@@ -291,10 +302,8 @@ setWs({
 
       const hostId = toId(hostName);
 
-      const saved = userGui.get(hostId) ?? {};
-      saved.host = html;
-      userGui.set(hostId, saved);
-
+      // The host page is NOT cached: %host and host logins regenerate it fresh
+      // (see handleHost + the login path) so a previous game can never surface.
       sendToUser(hostName, {
         type: "gui",
         role: "host",
@@ -351,7 +360,7 @@ function escHtml(s: string): string {
 function stripControls(html: string): string {
   return html
     .replace(/<button[^>]*>[\s\S]*?<\/button>/gi, "")
-    .replace(/<[^>]*>\s*Controls\s*<\/[^>]*>/gi, "");
+    .replace(/<details[^>]*>[\s\S]*?Controls[\s\S]*?<\/details>/gi, "");
 }
 
 function findPlayerSlot(name: string): string | null {
@@ -428,6 +437,7 @@ function refreshAllTabs() {
         JSON.stringify({
           type: "tabs",
           tabs,
+          signupsOpen: !![...games.values()][0]?.signupsOpen,
         }),
       );
 
@@ -466,6 +476,52 @@ function broadcastTurn() {
     }
   }
 }
+
+// -- Shot clock / timer ---------------------------------------------------------
+
+// Broadcasts the active game timer state to all clients whenever it changes
+// (start, cancel, or expiry). With force=true (used on login) the state is
+// always sent so freshly-connected clients can't miss an active timer.
+let lastTimerState = "";
+function syncTimerState(force = false) {
+  const game = [...games.values()][0];
+  const t = game?.timer ?? null;
+  const state = JSON.stringify({
+    type: "timer",
+    entity: t?.entity ?? null,
+    endAt: t?.endAt ?? null,
+  });
+  if (force || state !== lastTimerState) {
+    lastTimerState = state;
+    broadcast(state);
+  }
+}
+
+// Tick the shot clock every second: announce expiry in the room, clear the
+// timer, and push the (now-empty) state to clients so the banner hides.
+setInterval(() => {
+  for (const game of games.values()) {
+    if (!game.timer) continue;
+    if (Date.now() >= game.timer.endAt) {
+      const entity = game.timer.entity
+        ? game.entities.find((e) => e.num === game.timer.entity)
+        : null;
+      game.timer = null;
+      broadcast(
+        JSON.stringify({
+          type: "chat",
+          text: `⏰ **Timer expired!**${entity ? ` (${entity.name})` : ""}`,
+        }),
+      );
+      try {
+        broadcastPages(game);
+      } catch (e) {
+        console.error("timer expiry page refresh failed:", e);
+      }
+    }
+  }
+  syncTimerState();
+}, 1000);
 
 function ensureUser(name: string) {
   const uid = toId(name);
@@ -581,6 +637,7 @@ wss.on("connection", (ws) => {
           JSON.stringify({
             type: "tabs",
             tabs: session.tabs,
+            signupsOpen: !![...games.values()][0]?.signupsOpen,
           }),
         );
 
@@ -596,6 +653,7 @@ wss.on("connection", (ws) => {
   %addp Player1, Bard, Crossbow<br>
   %addp Player2, Cleric, Longbow<br>
   %setlevel P1, 3<br>
+  %setmap arena<br>
   %start
 </div>
 `;
@@ -610,14 +668,14 @@ wss.on("connection", (ws) => {
 
         const savedGui = userGui.get(toId(username));
 
-        if (savedGui?.host && session.tabs.includes("host")) {
-          ws.send(
-            JSON.stringify({
-              type: "gui",
-              role: "host",
-              html: savedGui.host,
-            }),
+        // Regenerate the host page fresh — never replay a cached page, which
+        // may belong to a previous game (the cache is only updated by
+        // /addhtmlbox broadcasts and is not invalidated on %dehost).
+        if (session.tabs.includes("host")) {
+          const hostGame = [...games.values()].find(
+            (g) => toId(g.host) === toId(username),
           );
+          if (hostGame) broadcastPages(hostGame);
         }
 
         if (savedGui?.player && session.tabs.includes("player")) {
@@ -649,6 +707,7 @@ wss.on("connection", (ws) => {
         );
         refreshPlayerList();
         broadcastTurn();
+        syncTimerState(true);
         return;
       }
 
@@ -787,6 +846,7 @@ wss.on("connection", (ws) => {
             JSON.stringify({
               type: "tabs",
               tabs: session.tabs,
+              signupsOpen: !![...games.values()][0]?.signupsOpen,
             }),
           );
 
@@ -962,7 +1022,12 @@ const HTML_PAGE = `<!DOCTYPE html>
   .msg-react { color: #cc66ff; }
   #turn-indicator { display:none; color:#00aaff; font-size:11px; font-weight:bold; background:#0f3460; border:1px solid #333; border-radius:3px; padding:2px 8px; }
   #turn-indicator.yours { color:#ffcc00; border-color:#ffcc00; animation:tp 1s ease infinite; }
+  #timer-indicator { display:none; color:#ffaa33; font-size:11px; font-weight:bold; background:#16213e; border:1px solid #666; border-radius:3px; padding:2px 8px; }
+  #timer-indicator.warn { color:#ff0000; border-color:#ff0000; animation:tp 1s ease infinite; }
   @keyframes tp { 0%,100% { opacity:1 } 50% { opacity:.4 } }
+  #quick-actions { display:none; gap:6px; padding:6px 8px 0; flex-wrap:wrap; }
+  .qbtn { background:#0f3460; border:1px solid #333; color:#00aaff; padding:8px 16px; font-size:14px; border-radius:6px; font-family:inherit; cursor:pointer; }
+  .qbtn:active { background:#00aaff; color:#fff; }
   #header-tabs { display:none; align-items:center; gap:6px; }
   #mobile-tabs { display:none; gap:4px; }
   .mtab { display:none; padding:6px 18px; background:#0f3460; border:1px solid #333; border-radius:4px; cursor:pointer; font-size:12px; color:#8888aa; font-family:inherit; }
@@ -1002,10 +1067,13 @@ const HTML_PAGE = `<!DOCTYPE html>
     #chat-input-area { padding-bottom:calc(env(safe-area-inset-bottom,0px) + 8px); }
     #chat-input { font-size:18px !important; padding:12px !important; }
     #send-btn { font-size:18px !important; padding:12px 28px !important; }
+    .qbtn { font-size:16px; padding:10px 18px; }
+    #quick-actions { display:flex; }
     .gui-tab { font-size:16px !important; padding:8px 20px !important; }
     #gui-content { padding:4px; }
     #status { font-size:12px !important; }
     #turn-indicator { font-size:14px; padding:4px 10px; }
+    #timer-indicator { font-size:14px; padding:4px 10px; }
   }
 </style>
 </head>
@@ -1024,15 +1092,39 @@ const HTML_PAGE = `<!DOCTYPE html>
   </div>
   <span style="flex:1"></span>
   <span id="turn-indicator"></span>
+  <span id="timer-indicator"></span>
   <span style="color:#8888aa;font-size:10px" id="status">connecting...</span>
 </div>
 <div id="container">
   <div id="chat-panel">
     <div id="chat-messages"></div>
+    <div id="quick-actions">
+      <button class="qbtn" data-cmd="%host">Host</button>
+      <button class="qbtn" data-cmd="%addp ">AddP…</button>
+      <button class="qbtn" data-cmd="%start">Start</button>
+      <button class="qbtn" data-cmd="%undo">Undo</button>
+      <button class="qbtn" data-cmd="%help">Help</button>
+    </div>
     <div id="chat-input-area">
-      <input id="chat-input" type="text" placeholder="Type %command or /nick name..." autocomplete="off" spellcheck="false" />
+      <input id="chat-input" type="text" placeholder="Type %command or /nick name..." autocomplete="on" list="cmd-list" spellcheck="false" />
       <button id="send-btn">Send</button>
     </div>
+    <datalist id="cmd-list">
+      <option value="%host"></option>
+      <option value="%addp "></option>
+      <option value="%remp "></option>
+      <option value="%setlevel "></option>
+      <option value="%setmap "></option>
+      <option value="%start"></option>
+      <option value="%undo"></option>
+      <option value="%move "></option>
+      <option value="%dash "></option>
+      <option value="%use "></option>
+      <option value="%confirm"></option>
+      <option value="%cancel"></option>
+      <option value="%help"></option>
+      <option value="%spectate"></option>
+    </datalist>
   </div>
   <div id="resize-handle"></div>
   <div id="gui-panel">
@@ -1050,6 +1142,7 @@ const HTML_PAGE = `<!DOCTYPE html>
         %addp Player1, Bard, Crossbow<br>
         %addp Player2, Cleric, Longbow<br>
         %setlevel P1, 3<br>
+        %setmap arena<br>
         %start
       </div>
     </div>
@@ -1083,6 +1176,9 @@ let connectedPlayers = [];
 let teamChatLines = [];
 let unread = 0;
 let lastTurn = '';
+let timerEndAt = null;
+let timerEntity = null;
+const timerEl = document.getElementById('timer-indicator');
 const container = document.getElementById('container');
 
 function renderPlayerList() {
@@ -1164,7 +1260,24 @@ function handleTurn(msg) {
     showToast('Your turn: ' + label, true);
     if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
   }
+  if (msg.yours) {
+    addLine('action', tabLink('player', 'Open your tab'), 'Your turn');
+  }
 }
+
+function renderTimer() {
+  if (!timerEl) return;
+  if (!timerEndAt || timerEndAt <= Date.now()) {
+    timerEl.style.display = 'none';
+    timerEl.classList.remove('warn');
+    return;
+  }
+  const s = Math.ceil((timerEndAt - Date.now()) / 1000);
+  timerEl.textContent = '⏱ ' + s + 's' + (timerEntity ? ' · ' + timerEntity : '');
+  timerEl.style.display = 'inline-block';
+  timerEl.classList.toggle('warn', s <= 10);
+}
+setInterval(renderTimer, 500);
 
 window.addEventListener('resize', () => {
   if (isMobile()) setView(mobileView);
@@ -1201,6 +1314,14 @@ function addLine(type, raw, name) {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+let switchToTab = null;
+let lastSignupsOpen = false;
+// Clickable chat link that jumps to a GUI tab (see the chatMessages listener).
+const tabLink = (tab, label) => '<a href="#" data-tab="' + tab + '" style="color:#00aaff;text-decoration:underline;cursor:pointer">' + label + '</a>';
+// The [[SIGNUP]] token is only produced by the %open room message (a chat/quote
+// line); other message types render via textContent and would show it raw.
+const withSignupLink = (s) => String(s).split('[[SIGNUP]]').join(tabLink('signin', 'Sign Up Here'));
+
 guiContent.addEventListener('click', (e) => {
   const join = e.target.closest('button[name="join"]');
   if (join) {
@@ -1212,6 +1333,17 @@ guiContent.addEventListener('click', (e) => {
     }
     return;
   }
+  const loadout = e.target.closest('button[name="loadout"]');
+  if (loadout) {
+    e.preventDefault();
+    // %sco is self-service: the player's own entity is resolved server-side.
+    const cls = document.getElementById('loadout-class');
+    const wpn = document.getElementById('loadout-weapon');
+    if (cls && wpn) {
+      ws.send(JSON.stringify({ type: 'chat', text: '%sco ' + cls.value + ', ' + wpn.value }));
+    }
+    return;
+  }
   const btn = e.target.closest('button[name="send"]');
   if (!btn) return;
   e.preventDefault();
@@ -1219,6 +1351,15 @@ guiContent.addEventListener('click', (e) => {
   if (!cmd) return;
   ws.send(JSON.stringify({ type: 'chat', text: cmd }));
 });
+
+// Clicking a chat link like "Sign Up Here" jumps to the matching GUI tab.
+chatMessages.addEventListener('click', (e) => {
+  const link = e.target.closest('a[data-tab]');
+  if (!link) return;
+  e.preventDefault();
+  if (switchToTab) switchToTab(link.dataset.tab, true);
+});
+
 function createTabs(tabs) {
   const previousTab = activeTab;
 
@@ -1229,6 +1370,7 @@ function createTabs(tabs) {
     guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
     if (isMobile() && mobileView === 'chat' && fromUser) setView('game');
   }
+    switchToTab = activateTab;
 
   function makeButton(tab) {
     guiPages[tab] ??= "";
@@ -1325,7 +1467,7 @@ function connect() {
   if (msg.type === 'history') {
     if (msg.lines.length > 0) {
       msg.lines.forEach((line) => {
-        if (line.type === 'chat' || line.type === 'quote') addLine(line.type, line.text);
+        if (line.type === 'chat' || line.type === 'quote') addLine(line.type, withSignupLink(line.text));
         else if (line.type === 'action') addLine('action', line.text, line.name);
         else if (line.type === 'react') addLine('react', line.user + ' ' + line.emote);
         else if (line.type === 'join') addLine('system', line.user + ' joined.');
@@ -1336,7 +1478,13 @@ function connect() {
     return;
   }
   if (msg.type === 'tabs') {
+    const justOpened = !!msg.signupsOpen && !lastSignupsOpen;
+    lastSignupsOpen = !!msg.signupsOpen;
     createTabs(msg.tabs);
+    // When signups open, pull non-hosts who aren't joined into the Sign In tab.
+    if (justOpened && msg.tabs.includes('signin') && !msg.tabs.includes('host') && switchToTab) {
+      switchToTab('signin', true);
+    }
     return;
   }
   if (msg.type === 'gui') {
@@ -1353,12 +1501,17 @@ function connect() {
     } else if (msg.type === 'leave') {
       addLine('system', msg.user + ' left.');
     } else if (msg.type === 'chat' || msg.type === 'quote') {
-      addLine(msg.type, msg.text);
+      const text = withSignupLink(msg.text);
+      addLine(msg.type, text);
       if (isMobile() && mobileView === 'game') {
-        showToast(msg.text);
+        showToast(text);
         unread++;
         updateBadge();
       }
+    } else if (msg.type === 'timer') {
+      timerEndAt = msg.endAt;
+      timerEntity = msg.entity;
+      renderTimer();
     } else if (msg.type === 'turn') {
       handleTurn(msg);
     } else if (msg.type === 'action') {
@@ -1393,6 +1546,20 @@ function sendChat() {
 
 sendBtn.addEventListener('click', sendChat);
 chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+document.querySelectorAll('.qbtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const cmd = btn.dataset.cmd;
+    if (!cmd) return;
+    if (cmd.endsWith(' ')) {
+      chatInput.value = cmd;
+      chatInput.focus();
+    } else {
+      ws.send(JSON.stringify({ type: 'chat', text: cmd }));
+      addLine('chat', '<span class="name">' + currentNick + '</span>: ' + cmd);
+    }
+  });
+});
 
 let dragging = false;
 document.getElementById('resize-handle').addEventListener('mousedown', (e) => {

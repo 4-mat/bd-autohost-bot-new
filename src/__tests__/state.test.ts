@@ -2,12 +2,14 @@ import { describe, it, expect } from "bun:test";
 import {
   Terrain,
   isObstruction,
+  isStandable,
   moveCost,
   chebyshev,
   manhattan,
   dist,
   hasLineOfSight,
   inRange,
+  formatChatTime,
   getReachableTiles,
   getBurstTiles,
   getStarTiles,
@@ -114,6 +116,9 @@ function makeGame(
     chatLog: [],
     toasts: [],
     signupsOpen: false,
+    votes: {},
+    voteOpen: false,
+    voteRunoff: null,
   };
 }
 
@@ -122,20 +127,40 @@ function makeGame(
 // ---------------------------------------------------------------------------
 
 describe("Terrain", () => {
-  it("isObstruction returns true for Stop, Bone, Ice, Stone, Broken", () => {
+  it("isObstruction returns true for Stop, Bone, Ice, Stone, Hearth (glossary)", () => {
     expect(isObstruction(Terrain.Stop)).toBe(true);
     expect(isObstruction(Terrain.Bone)).toBe(true);
     expect(isObstruction(Terrain.Ice)).toBe(true);
     expect(isObstruction(Terrain.Stone)).toBe(true);
-    expect(isObstruction(Terrain.Broken)).toBe(true);
+    expect(isObstruction(Terrain.Hearth)).toBe(true);
   });
 
-  it("isObstruction returns false for Normal, Water, Forest, etc.", () => {
+  it("isObstruction returns false for Broken and passable tiles", () => {
+    // Broken is impassable to movement but is NOT an obstruction per the
+    // glossary ("Broken tiles cannot be moved through...").
+    expect(isObstruction(Terrain.Broken)).toBe(false);
     expect(isObstruction(Terrain.Normal)).toBe(false);
     expect(isObstruction(Terrain.Water)).toBe(false);
     expect(isObstruction(Terrain.Forest)).toBe(false);
     expect(isObstruction(Terrain.Lava)).toBe(false);
     expect(isObstruction(Terrain.Air)).toBe(false);
+    expect(isObstruction(Terrain.Sticky)).toBe(false);
+    expect(isObstruction(Terrain.Boost)).toBe(false);
+  });
+
+  it("isStandable excludes obstructions, Broken, and Lava", () => {
+    expect(isStandable(Terrain.Stop)).toBe(false);
+    expect(isStandable(Terrain.Bone)).toBe(false);
+    expect(isStandable(Terrain.Ice)).toBe(false);
+    expect(isStandable(Terrain.Stone)).toBe(false);
+    expect(isStandable(Terrain.Hearth)).toBe(false);
+    expect(isStandable(Terrain.Broken)).toBe(false);
+    expect(isStandable(Terrain.Lava)).toBe(false);
+    expect(isStandable(Terrain.Normal)).toBe(true);
+    expect(isStandable(Terrain.Water)).toBe(true);
+    expect(isStandable(Terrain.Forest)).toBe(true);
+    expect(isStandable(Terrain.Sticky)).toBe(true);
+    expect(isStandable(Terrain.Boost)).toBe(true);
   });
 
   it("moveCost returns base+1 for Sticky", () => {
@@ -1042,5 +1067,28 @@ describe("removeEntity", () => {
     expect(game.entities.length).toBe(1);
     expect(game.entities[0].num).toBe("P2");
     expect(game.turnOrder).toEqual(["P2"]);
+  });
+
+  it("drops the removed entity's gamemode vote", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [p1, p2] });
+    game.votes = { p1: "FFA", p2: "2v2" };
+    removeEntity(game, p1);
+    expect(game.votes).toEqual({ p2: "2v2" });
+  });
+});
+
+describe("formatChatTime", () => {
+  it("formats an epoch timestamp as [HH:MM]", () => {
+    // 09:05 local time (any timezone)
+    const ts = new Date();
+    ts.setHours(9, 5, 0, 0);
+    expect(formatChatTime(ts.getTime())).toBe("[09:05]");
+  });
+
+  it("returns an empty string when no timestamp is present (old snapshots)", () => {
+    expect(formatChatTime(undefined)).toBe("");
+    expect(formatChatTime(0)).toBe("");
   });
 });
