@@ -1,0 +1,26 @@
+Free for All (FFA),,Teams (PvP),,Nowhere To Run (NTR),,Juggernaut,,PvP NTR,
+Format,Base,Format,Base,Format,Base,Format,Base,Format,Base
+3p,5,1v1,2,3p,2,2vJ,5,2v2,3
+4p,6,2v2,7,4p,2,3vJ,6,3v3,5
+5p,7,3v3,9,5p,3,4vJ,7,2v2v2,6
+6p,8,2v2v2,10,6p,3,PvP + Juggernaut (PvPJ),,4v4,7
+7p,9,4v4,11,7p,4,2v3,9,2v2v2v2,8
+8p,10,2v2v2v2,12,8p,4,3v4,11,,
+Levels and Exp Cost,,,,,,,,,
+Level ,2,3,4,5,6,7,8,9,10
+Class,20,70,145,300,-,-,-,-,-
+Weapon,2,12,25,55,85,120,170,230,300
+Total,22,82,170,355,85,120,170,230,300
+Extra Loot Rules,,,,,,,,,
+Hosts,,,Players,,,,Game Mode/Mods,,
+"Hosts get base loot, including gems, if they host but don't play.",,,"Players gain +1 loot/kill. In teams, this loot applies for the whole team.",,,,"Juggernaut - If Juggernaut is defeated, party gets +PL/2 + 1 XP.",,
+"Hosts get 
++1 Loot for hosting 3-4p games 
++2 Loot for hosting 5-6p games,
++3 Loot for hosting 7-8p games.",,,"Players get
+1 Gem in 3-4p games,
+2 Gems in 5-6p games,
+3 Gems in 7-8p games.",,,,"In FFA and PvP, the remaining player/team has their kill loot multiplied by 1.5. (PvP bonus applies only to two teams.)",,
+Hosts gain an extra gem for hosting 7-8p games.,,,"If a player dies via terrain, recoil, or ND or is modkilled, the last player to deal damage to them gets the kill.",,,,"NTR - each player earns +1 XP per turn lived in addition to kill loot.
+(This does not apply to PvPNTR.)",,
+,,,,,,,PvE - everyone earns 1 gem in 3vE and 2 gems in 4/5vE. The host always earns a bonus gem.,,

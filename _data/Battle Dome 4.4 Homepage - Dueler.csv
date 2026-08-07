@@ -1,0 +1,84 @@
+Name,Lv.,Frequency,MR,Damage,,,Target,,,Effect
+,,,,Roll,Type,Action,Amount,Group,Range,
+Basic Abilities,,,,,,,,,,
+Basic Attack,B,Every Turn,2,1d10+2,Physical or Magical,Standard,1,Foe,Melee,"This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+Basic Movement,B,Every Turn,-,-,-,Movement,-,Self,-,"The user spends MP to move an equal amount of tiles.
+(For all purposes, Basic Movement is not an ability, but is still an action.)"
+Dash,B,Every Turn,-,-,-,Full,-,Self,-,The user spends MP to move up to x1.5 that amount of tiles (rounded down).
+Backstep,B,Passive,-,-,-,-,-,Self,-,"During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+Attack of Opportunity,B,Every Turn,2,1d10+2,Physical or Magical,Reaction,1,Foe,Melee,This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)
+Dueler Abilities,,,,,,,,,,
+,,,,,,,,,,
+Gladius (bro torterra),,,,,,,,,,
+70 HP | 16 ATK | 3 MAG | 5 PDEF | 1 MDEF | 0.5 EVA | 2 MP ,,,,,,"""Swap between three different weapons to respond to any situation!""",,,,
+Triumvirate,1,Passive,-,-,-,-,-,Self,-,"The user may swap between the following subweapons, each with respective effects:
+ - Gladius: +1 dice on the user's attacks,
+ - Scutum: attacks from range against the user lose 5 damage,
+ - Pilum: Melee attacks gain +3 range.
+As a Standard action, the user may swap to any subweapon. Swapping due to a move effect occurs regardless of hit or miss. The user starts the game in Gladius."
+Exercitus,1,Every Turn,3,3d6+6,Physical,Standard,1,Foe,Melee,"If in Gladius, swap to Scutum. If in Scutum, this has Push 3 and swap to Pilum. If in Pilum, this inflicts 4 Cripple/1 and swap to Gladius. "
+Disengage,2,EoT,4,2d10+7,Physical,Standard,1,Foe,Melee,"If used in Gladius, this attack inflicts -2d6 DEF/1 and has Push 1. If used in Scutum, the user takes half damage from AoE attacks for one round and is pushed back one tile. The user switches to Pilum."
+Forward Jab,3,EoT,3,1d12+10,Physical,Standard,1,Foe,"Line 6
+(Pull 3)",The user must be in Pilum to use this move. This attack has +1 base dice and Pull 4 against targets over 4 tiles away. The user switches to either Gladius or Scutum.
+Breach,4,EoT,4,2d8+8,Physical,Standard,1,Foe,Range 4,"The user switches to either Gladius or Scutum. If Gladius, for one round, foes who enter the user's melee take 3d8 damage. If Scutum, for one round, the user and allies in Burst 2 cannot have their DEF ignored. The user must switch subweapons."
+Phalanx,5,Twice/EoT,3,3d4+1,Physical,Reaction,1,Foe,Range 4,"If in Scutum, this may be used on a foe hitting the user or an ally in the user's melee. If the target is in melee, this has +1 dice and the user swaps to Gladius. Else, swap to Pilum. This ignores outside factors, does not add ATK/MAG, and ignores half DEF."
+Shield Wall,6,Twice/EoT,4,2d10+4,Physical,Standard,AoE,Foes,Cone 1,"The user must be in either Gladius or Pilum to use this move. The user switches to Scutum and for one round, the flat modifier in base rolls on attacks targeting the user become negative. This may be used as a non-damaging Standard."
+Iberian Steel,7,EoT,-,-,-,Free,-,Self,-,"Subweapons are ""used"" when the user uses a weapon attack or weapon standard in it. 
+The user's next attack this turn in a subweapon with fewer uses than both others gains +1 dice. If it has 2+ fewer uses than both others, it also gains +2 ACC."
+Deus Vult,8,Once,4,2d12+2,Physical,Standard,1,Foe,Melee,"If used in Scutum, before accuracy, for one round, the user cannot be affected by any status or debuff and has any such effect removed."
+Invigorate ,9,EoT,-,-,-,Swift,AoE,Self and Allies,Burst 2,"This move grants a different bonus based on the user's subweapon.
+Gladius: +5 DMG/1. Scutum: 7 Shield/1. Pilum: +1 ACC and CR/1."
+Dual Wield,9,E3T,-,-,-,Swift,-,Self,-,This must be used before the user moves. The user's MP is halved and they choose an additional subweapon to wield until the start of their next turn. Only the user's original subweapon is considered for subweapon swapping.
+Weapon Crash,10,Once,5,2d10+3,Physical,Standard,Varies,Foe(s),Varies,"This move has a different range and effect depending on the user's subweapon(s).
+Gladius: 1/Foe/Melee, and this attack has +3 dice faces.
+Scutum: AoE/Foes/Cone 2, and for one round, attacks targeting the user are immune to positive outside factors to accuracy and damage.
+Pilum: AoE/Foes/Pierce 5, and has -3 MR.
+If Dual Wield is active, the user picks one range and one effect from the subweapons."
+Impede,EX1,EoT,4,4d8+0,Physical,Standard,AoE,Foes,Pierce 4,"If in Pilum, steal targets' buffs and set their duration to one round. Switch to Scutum.
+If in Scutum, this becomes AoE/Foes/Beam 4. Switch to Gladius. 
+If in Gladius, gain +1 MP/1 and lower other cooldowns by one round. Switch to Pilum. "
+Hastiliarius,EX2,Passive,-,-,-,-,-,-,-,"Each subweapon gains additional passive bonuses:
+Gladius: +0.5X dice, Scutum: +X DEF, Pilum: +0.5X ACC
+X is equal to the amount of times the user has used their least used subweapon."
+Quarterstaff (Taistelu),,,,,,,,,,
+65 HP | 16 ATK | 0 MAG | 5 PDEF | 3 MDEF | 0.9 EVA | 2 MP ,,,,,,"""A weapon focused on counterplay and anti-bullshit.""",,,,
+Thwack,1,Every Turn,2,2d6+6,Physical,Standard,1,Foe,Melee,"No status or effect, except Stun, can prevent this move's use. This ability has +1 dice for every 5 ATK or MAG (whichever is higher) the target has above 20."
+Grave of Titans,2,E3T,4,3d8+0,Physical,Standard,1,Foe,Range 3,"This attack ignores DEF. For every 10 max HP (before multipliers) the target has above 120, this attack gains +3 DMG and -1 MR. If this attack's damage is reduced by foes, the user's next Standard/Full attack has +1 ACC/CR and damage dice."
+Inertial Shift,3,EoT,3,2d10+6,Physical,Standard,1,Foe,"Melee
+(Push 3)","If, in the last round, a foe's ability moved or attempted to move the user, this ability has +2 dice and becomes Homing 8 (Pull 7)."
+Pole Vault,4,Twice/EoT,6,3d10+5,Physical,Standard,1,Tile,"Range 3
+(Splash 1)","Select an unoccupied tile in range, ignoring range reduction. The user teleports to this tile (even on miss) and targets foes (including Ice/Stone) in its Splash. If no foes are targetted, this is not an attack."
+Adaptive,5,Passive,-,-,-,-,-,-,-,"When the user misses a Standard/Full attack, any buffs that attack would benefit from are applied to the user's next Standard/Full attack, which also gains +2 ACC, 10% of the damage the missed attack would have dealt, and ignores 5 DEF."
+Fair Fight,5,Twice/E3T,-,-,-,Free,1,Self,-,"The target of the user's next single-target attack is the Duel Partner for two rounds or until the user or target dies or the user damages another foe. The user deals and takes 30 less damage from all foes except their DP. If the DP has allies or is a monster, this value is reduced to 5."
+Hardwood Slam,6,Twice/EoT,3,2d8+4,Physical,Standard,1,Foe,Melee,"The user chooses the status inflicted if its conditions are met. This attack also gains -2 MR (if Poison), +2 dice (if Confusion), or heals the user 5 HP (if Bleed).
+5 Poison/2: If the user's accuracy modifier is negative or the target has increased EVA.
+Confusion/2: If the target's accuracy modifiers caused them to hit an attack or trigger an effect they otherwise would not have on the user or their allies.
+6 Bleed/2: If the target has critical hit or had +dice on an attack on the user and allies."
+Exploit Feign,7,Twice/EoT,4,"1d10+3
+(Double Hit)",Physical,Standard,1,Foe,Melee,"Targets are inflicted with -4 DEF/1 or -4 DMG/1. If the user is debuffed by foes, they are cleansed before accuracy, this attack gains a hit, and the debuff inflicted is doubled."
+Stance Breaker,8,E3T,4,4d8-2,Physical,Standard,1,Foe,Range 4,"If, in the last round, the target gained more than 5 DEF, HP or Shield, this attack has advantage damage dice. The user gains 75% of the DEF, HP or Shield (whichever is highest) that the target recieved in this time as Shield/1."
+Defiance,9,EoT,2,2d4+5,-,Reaction,1,Foe,Global,This may be used on a foe that statuses the user or targets them outside Range 4. The user teleports to an unoccupied tile in their Melee (even on miss) and gains +2 ACC and +5 DMG to their next Standard/Full attack. This attack ignores outside damage factors.
+Calamitous Trance,10,Once,5,4d6+3,Physical,Standard,1,Foe,Melee,"If the target dealt 50+ damage to the user in the last round, this attack gains +3 dice. If 75+, this attack also gains +4 dice faces. This attack has -1 MR per attack that hit the user since their last turn, inflicting Confusion/2 when MR<4."
+Paragon,EX1,Passive,-,-,-,-,-,-,-,"Adaptive's numerical bonuses are tripled. On the user's turns, they gain 5X Shield and their attacks gain +5X% damage, where X = the number of times they were targetted by foes' abilities since their last turn."
+Martial Mastery,EX2,Twice/EoT,-,-,-,Movement,-,-,-,"The user moves up to their MP+1, treating all tiles except the final as Normal. For the rest of the turn, the user's attacks ignore obstructions and DEF and invert foe's negative numerical outside damage factors."
+Tonfa (bro torterra),,,,,,,,,,
+55 HP | 14 ATK | 12 MAG | 9 PDEF | 9 MDEF | 0.8 EVA | 2 MP ,,,,,,"""A defensive control weapon that manipulates and then punishes foes.""",,,,
+Disarm,1,Every Turn,2,2d8+5,Physical,Standard,2,Foes,Melee,Each target's next Standard/Full attack on the user has -1 dice and halved DEF ignore.
+Spurn,2,EoT,3,3d6+5,Magical,Standard,1,Foe,Range 5,"On their next turn, if the target can attack the user from Melee but does not, the user may use Attack of Opportunity against them at the end of the turn."
+Figure 8,3,Every Turn,2,2d8+10,Physical,Reaction,1,Foe,Global,This may be used against a Foe who willingly moves out of the user's Range 2 from Melee or when the user is able to use an Attack of Opportunity. This ignores half DEF.
+Reversal,4,Twice/EoT,4,4d6+2,Physical,Standard,1,Foe,Range 3,"On their next turn, if the target can end their turn on a different tile type, but does not, the user gains +2 ACC/1 and their next attack ignores half of the target's DEF."
+Wear Down,5,EoT,-,-,-,Free,1,Foe,Range 4,"For each MP the target uses on their next turn, the user gains +3 DEF until the start of their next turn. "
+Guard,5,Thrice,-,-,-,Trigger,1,Ally,Range 3,"The user's next Tonfa move replaces instances of ""the user"" with the target of this move."
+Yin Yang,6,E3T,4,3d8+7,Varies,Standard,1,Foe,Varies,"Choose Yin or Yang.
+Yin: Physical/Melee. If the target does not damage the user with an attack on their next turn, they take 1d8+5 damage.
+Yang: Magical/Homing 4. For one round, foes take 1d8+5 damage each time they damage the user with attacks."
+Standoff,7,Twice/EoT,4,2d10+8,Physical,Standard,1,Foe,Melee,"If the target ends their next turn in the user's Melee, the user may AoO them without adding ATK/MAG."
+Dazing Hook,8,E3T,4,2d12+3,Magical,Full,1,Foe,"Line 4
+(Pull 3)","This move's range cannot be reduced. If the target attacked the user outside of Melee in the last round, they are inflicted with Confusion and Inverse Bomb dice/1."
+Hold Over,9,Twice/EoT,-,-,-,Free,-,Self,-,"Declare a range type. For one round, if foes target the user with attacks of that range type outside of the user's Melee, the user may AoO them after the attack."
+Gale Force,10,Once,4,3d10+6,Magical,Standard or Movement,AoE,"Self, Foes, Allies",Burst 2,"Regardless of accuracy, the user may teleport any targets to any unoccupied tiles in range. This is not an attack against Allies or when used as Movement."
+Aikido,EX1,Passive,-,-,-,-,-,-,-,"When the user uses two attacks of the same damage type in one turn, they gain +2 DEF and ATK/MAG of the opposite damage type. These reset if this effect does not occur."
+Tempest Sweep,EX2,EoT,3,3d8+3,Varies,Standard ,1,Foe,Homing 3,"Choose Honte or Gyakute.
+Honte: Physical. On their next turn, the user's Tonfa attack effects that last one round/turn last an additional round/turn, respectively.
+Gyakute: Magical. The user's next Tonfa attack gains a Star 2 Splash range."
+,,,,,,,,,,
