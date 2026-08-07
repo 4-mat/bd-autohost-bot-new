@@ -16,7 +16,7 @@ import {
 } from "../game/state.js";
 import { classes, weapons, loadGameData } from "../data/index.js";
 import { getVersionData } from "../data/version43.js";
-import type { GameVersion } from "../data/version43.js";
+import type { GameVersion } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
 import {
   GAMEMODE_MAPS,
