@@ -1,0 +1,12 @@
+# Example NTR map. NTR maps may be as small as 5x5.
+# Symmetric ring with a heart at the centre.
+
+name: example-ntr
+display: Example NTR
+modes: ntr
+
+nsssn
+snnns
+snhns
+snnns
+nsssn
