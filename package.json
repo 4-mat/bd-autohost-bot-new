@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "check-updates": "tsx src/sheets/check-updates.ts",
-    "maps": "bun scripts/import-volunteer-maps.ts"
+    "maps": "bun scripts/import-volunteer-maps.ts",
+    "maps:seed": "node mapeditor/seed.cjs",
+    "maps:editor": "node mapeditor/server.cjs"
   },
   "dependencies": {
     "ws": "^8.18.0",
