@@ -141,6 +141,18 @@ export interface OnMissEffect {
   effects: Effect[];
 }
 
+export interface PerEffect {
+  type: "per";
+  trigger: string;
+  effects: Effect[];
+}
+
+export interface TriggerEffect {
+  type: "trigger";
+  event: string;
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -162,6 +174,8 @@ export type Effect =
   | MultiHitMod
   | TileEffect
   | OnMissEffect
+  | PerEffect
+  | TriggerEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -486,6 +500,32 @@ function parseClauseStructured(lower: string): Effect[] | null {
   const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
   if (multiHitMatch) {
     return [{ type: "multiHit", hits: parseInt(multiHitMatch[1]) }];
+  }
+
+  // Per: "Per hit: EFFECT" / "Per 5 CP: EFFECT" / "Per X: EFFECT"
+  // Used by triggers that scale with a quantity (hits, CP spent, AP spent).
+  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
+  if (perMatch) {
+    return [
+      {
+        type: "per",
+        trigger: perMatch[1].trim(),
+        effects: parseEffects(perMatch[2]),
+      },
+    ];
+  }
+
+  // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
+  // Generic reactive trigger; the resolver dispatches on the event string.
+  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
+  if (whenMatch) {
+    return [
+      {
+        type: "trigger",
+        event: whenMatch[1].trim(),
+        effects: parseEffects(whenMatch[2]),
+      },
+    ];
   }
 
   return null;
@@ -1646,6 +1686,19 @@ function* handleChoose(
   messages.push(...chosenMsgs.map((m) => `    ${m}`));
 }
 
+function* handlePer({ messages }: EffectCtx, effect: PerEffect) {
+  messages.push(`  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`);
+}
+
+function* handleTrigger(
+  { messages }: EffectCtx,
+  effect: TriggerEffect,
+) {
+  messages.push(
+    `  [When ${effect.event}]: ${summariseEffects(effect.effects)}`,
+  );
+}
+
 /** Dispatch an effect of any type to its handler. */
 const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   status: handleStatus,
@@ -1671,6 +1724,8 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   multiHit: handleSimple,
   recoil: handleSimple,
   tile: handleSimple,
+  per: handlePer,
+  trigger: handleTrigger,
   unknown: handleSimple,
 };
 
@@ -1699,7 +1754,7 @@ export function* applyEffectStream(
     } else {
       // No registered handler: surface the raw clause text.
       messages.push(`  ${(effect as { text?: string }).text ?? ""}`);
-    }
+        }
   }
 
   return messages;
@@ -1712,6 +1767,11 @@ export function* applyEffectStream(
  * -- this matches the legacy "fan out" log and lets unit tests assert on the
  * output without driving interaction.
  */
+/** Join sub-effect summaries into a single string. */
+function summariseEffects(effects: Effect[]): string {
+  return effects.map(summariseEffect).join(", ");
+}
+
 function drainApplyStream(
   gen: Generator<EffectChoosePrompt, string[], string>,
 ): string[] {
@@ -1740,8 +1800,7 @@ function drainApplyStream(
 
 function summariseEffect(eff: Effect): string {
   const fn = SUMMARISE[eff.type];
-  return fn ? fn(eff as any) : "";
-}
+  return fn ? fn(eff as any) : "";}
 
 /** Per-effect-type one-line summary, used in choose-prompt option labels. */
 const SUMMARISE: Record<string, (eff: any) => string> = {
@@ -1770,6 +1829,8 @@ const SUMMARISE: Record<string, (eff: any) => string> = {
   choose: () => "choose (...)",
   conditional: (e) => `if [${e.condition}]`,
   delayLand: () => "delay attacks always land",
+  per: (e) => `per ${e.trigger} (...)`,
+  trigger: (e) => `when ${e.event} (...)`,
   unknown: (e) => e.text.slice(0, 40),
 };
 
