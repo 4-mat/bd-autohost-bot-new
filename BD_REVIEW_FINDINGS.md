@@ -4,8 +4,8 @@ Synthetic Greptile review of the entire `bd-autohost-bot-new` repository.
 Because a whole-repo diff exceeds Greptile's limits, the codebase was split into 13 chunks, each reviewed against an empty tree base (`empty-base`) so the diff is exactly the chunk's files. Greptile's graph index still provides full-repo context.
 
 - Method: Greptile CLI `greptile review -b empty-base` per chunk + Greptile GitHub app reviews on chunk PRs (with flowcharts).
-- 20 real findings (19 P1, 1 P2), 6 chunk-artifact false positives, 2 `.xlsx` binaries not reviewed.
-- 13 chunk reviews (PRs #74–#86) plus a deep adversarial pass over the game engine (PR #88) and a combat-flow conformance check (PR #89).
+- 28 real findings (23 P1, 5 P2), 6 chunk-artifact false positives, 2 `.xlsx` binaries not reviewed.
+- 13 chunk reviews (PRs #74–#86) plus a deep adversarial pass over the game engine (PR #88), a combat-flow conformance check (PR #89), an attack-builder review (PR #91), and a BD-lang design review (PR #92).
 
 ## Real findings
 
@@ -71,6 +71,36 @@ Because a whole-repo diff exceeds Greptile's limits, the codebase was split into
 19. **P2 — Unavailable working-copy paths** (`_original_source/README-ORIGINAL.txt:9`)
     Preservation guidance points to `../_data/` and `../src/`, which don't exist in this checkout; contributors can't follow the documented update process.
 
+## Attack builder (PR #91, review-attackbuilder)
+
+Deep review of the attack builder and its resolver (review ID `814833e3-cd97-4665-9dbd-a957e92954e4`): `handleAttack` in `src/commands/game.ts` builds `pendingAction`; `resolveAction` in `src/game/resolve.ts` consumes it. Confidence 1/5 — not safe to merge until prompted costs are enforced and pending-action cancellation/replacement restore action state.
+
+20. **P1 — Pending actions overwrite reserved slots** (`src/commands/game.ts:474-486`)
+    Selecting another ability while one awaits a prompt replaces the pending action without restoring the first declaration's reserved slot (e.g. replacing a pending Swift with a Standard leaves `swiftUsed` set; cancellation can restore only the Standard slot).
+21. **P1 — Cancellation retains Trigger authorization** (`src/commands/game.ts:777-782`)
+    Cancelling a Trigger leaves the declaration's triggered flag set, so the entity can use a Reaction even though the Trigger that authorized it never resolved.
+22. **P1 Security — Prompted costs accept unpaid choices** (`src/game/resolve.ts:493-496`)
+    Submitting any `%choose` value other than `pay_cost` makes `applySelection` return success without calling `autoDeductCost`, so the ability resolves for free.
+23. **P1 — Invalid targets still consume costs** (`src/game/resolve.ts:1673-1697`)
+    A cost-bearing ability with an invalid/dead/out-of-range target deducts its cost before target validation and completes without refund, losing HP/MP/resources for an action with no effect.
+
+## BD lang design (PR #92, review-bdlang)
+
+Design consultation on the spec docs (BD_LANG_SPEC, BD_LANG_REWORDING_GUIDE, EFFECT_LANGUAGE_SPEC, EFFECT_SORT), move_sort_csv grids, `_group_effects.mjs`, and the `src/game/effects.ts` parser (review ID `0c853c3a-ab3a-44b3-9d0e-3304f73efcb8`). Confidence 4/5 — safe to iterate; unify the dialects before presenting as executable/contributor-ready.
+
+**Recommended direction:** keep the labeled envelope, explicit action-resolution stages, bounded vocab, and grid coverage; replace the slash dialect + `plain_english_text` fallback with **one canonical prose syntax** (`[Timing,] Subject Verb Arguments [for Duration] [if Condition]`); bounded case-insensitive keywords; JSON-style escaping; CSV rows as grammar-coverage fixtures (category, canonical template, subject, timing, parameters, example, parser/executor support, representative moves). Full prose examples (Bloodrush ability, Ember Spear weapon) are in the review.
+
+24. **P2 — Grouping inputs not reproducible** (`_group_effects.mjs:2-15`)
+    The script reads fixed `_data/*.json` files that aren't in the checked-in artifacts (only CSV grids are), so `ABILITY_GROUPS.json` can't be regenerated from the design artifacts; needs checked-in inputs or direct CSV ingestion.
+25. **P2 — Canonical syntaxes conflict** (`BD_LANG_SPEC.md:154-182`)
+    Grammar, examples, and the effect standard define different canonical forms for the same mechanics; the parser mainly recognizes slash notation and treats unmatched clauses as unknown, leaving documented prose only partially executable.
+26. **P2 — Tile token has two meanings** (`BD_LANG_SPEC.md:548-552`)
+    The map vocabulary assigns `K` to both Broken and Sticky terrain; a deterministic language needs one meaning per token.
+27. **P2 — Resource qualifiers are discarded** (`src/game/effects.ts:706-717`)
+    `Spend 3 Mana (only on hit)` loses its timing qualifier in the regex, so integrated resolution would spend resources under different conditions than the author specified.
+28. **P2 — Unknown conditions execute as true** (`src/game/effects.ts:1523`)
+    Unhandled conditions (e.g. `at maximum range`) fall through `evaluateCondition` to the positive branch, applying gated effects instead of erroring or remaining unapplied.
+
 ## Combat-flow conformance (PR #89, flowcheck-combat)
 
 The attack-resolution pipeline was checked against the intended 10-step combat flowchart (review ID `a198d421-8df3-4bfc-a14b-56904b61d5bb`). Overall verdict: the order is roughly right (costs → target → acc → damage → cleanup), but the code is **not conformant**.
@@ -111,24 +141,26 @@ No findings (5/5 confidence): `review-bigdata` (data/abilities.json + .sheets-st
 
 ## Appendix — chunk → PR → review ID
 
-| Chunk branch      | PR  | CLI review ID                        |
-| ----------------- | --- | ------------------------------------ |
-| review-scripts    | #74 | 768ba424-7ec8-40bb-b7b2-a34c2a6980f6 |
-| review-game       | #75 | 49d2fd30-6d2b-405a-9e5f-00dccb05d677 |
-| review-commands   | #76 | b1b24629-663d-45a7-9522-7c26c5afd7de |
-| review-core       | #77 | cb761751-43ad-40dd-8642-c3795069fe83 |
-| review-htmlsheets | #78 | 5c35e558-2950-49af-84cb-b2db42ac7839 |
-| review-data       | #79 | 0abe4d26-19a7-4b38-8a86-d78dc1745556 |
-| review-config     | #80 | bf3c38fb-96bd-48fb-8f0e-862cbfaa5592 |
-| review-bigdata    | #81 | 60fea8c9-a139-4d19-a27a-fd136f30ec5a |
-| review-datatext   | #82 | a220028a-43f9-4151-b959-e671469e27f6 |
-| review-datacsv    | #83 | b53eee58-7746-49d7-92c4-554412cf57d3 |
-| review-databin    | #84 | 26d8ccec-433a-4ed9-a49b-bcdabcad842b |
-| review-origsource | #85 | 03c02809-f816-40bb-a776-9fb3d5baf67e |
-| review-tests      | #86 | 82c4596f-57fb-4210-8063-85287d915160 |
-| deep-game         | #88 | 002354cf-ce2c-4a80-a9c7-d5ce2e3a5a40 |
-| flowcheck-combat  | #89 | a198d421-8df3-4bfc-a14b-56904b61d5bb |
+| Chunk branch         | PR  | CLI review ID                        |
+| -------------------- | --- | ------------------------------------ |
+| review-scripts       | #74 | 768ba424-7ec8-40bb-b7b2-a34c2a6980f6 |
+| review-game          | #75 | 49d2fd30-6d2b-405a-9e5f-00dccb05d677 |
+| review-commands      | #76 | b1b24629-663d-45a7-9522-7c26c5afd7de |
+| review-core          | #77 | cb761751-43ad-40dd-8642-c3795069fe83 |
+| review-htmlsheets    | #78 | 5c35e558-2950-49af-84cb-b2db42ac7839 |
+| review-data          | #79 | 0abe4d26-19a7-4b38-8a86-d78dc1745556 |
+| review-config        | #80 | bf3c38fb-96bd-48fb-8f0e-862cbfaa5592 |
+| review-bigdata       | #81 | 60fea8c9-a139-4d19-a27a-fd136f30ec5a |
+| review-datatext      | #82 | a220028a-43f9-4151-b959-e671469e27f6 |
+| review-datacsv       | #83 | b53eee58-7746-49d7-92c4-554412cf57d3 |
+| review-databin       | #84 | 26d8ccec-433a-4ed9-a49b-bcdabcad842b |
+| review-origsource    | #85 | 03c02809-f816-40bb-a776-9fb3d5baf67e |
+| review-tests         | #86 | 82c4596f-57fb-4210-8063-85287d915160 |
+| deep-game            | #88 | 002354cf-ce2c-4a80-a9c7-d5ce2e3a5a40 |
+| flowcheck-combat     | #89 | a198d421-8df3-4bfc-a14b-56904b61d5bb |
+| review-attackbuilder | #91 | 814833e3-cd97-4665-9dbd-a957e92954e4 |
+| review-bdlang        | #92 | 0c853c3a-ab3a-44b3-9d0e-3304f73efcb8 |
 
 Re-open a CLI review anytime with `greptile review show <ID>` (run from the `bd-autohost-fullreview` worktree).
 
-The PRs (#74–#86, #88, #89, base `empty-base`) are synthetic review-only PRs — **do not merge**; safe to close.
+The PRs (#74–#86, #88, #89, #91, #92, base `empty-base`) are synthetic review-only PRs — **do not merge**; safe to close.
