@@ -254,7 +254,7 @@ export function parseEffects(text: string): Effect[] {
   // The regex tolerates either ", " or ". " before "Otherwise", and an
   // optional trailing period at the end of the else-branch.
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?),\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
   if (fullIfMatch) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
@@ -269,6 +269,7 @@ export function parseEffects(text: string): Effect[] {
     };
     return [conditional];
   }
+
 
   const clauses = splitClauses(normalized);
   const effects: Effect[] = [];
@@ -661,7 +662,7 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+(\d+(?:-\d+)?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+(\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
