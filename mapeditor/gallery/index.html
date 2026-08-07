@@ -83,7 +83,13 @@
 	.muted { color: #888; font-size: 11px; }
 
 	/* all-maps wall */
-	#wall { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+	#wall { display: block; }
+	.wall-controls { margin: 0 0 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+	.wall-controls input[type=search] { padding: 4px 9px; border: 1px solid #8a8a8a; border-radius: 3px; font-family: inherit; font-size: 12px; background: #fff; color: #222; min-width: 210px; }
+	.wall-controls select { padding: 4px 6px; border: 1px solid #8a8a8a; border-radius: 3px; background: linear-gradient(#fdfdfd, #e2e2e2); font-family: inherit; font-size: 12px; color: #222; }
+	.wall-section { margin: 0 0 26px; }
+	.wall-section .section-title { font-size: 14px; color: #333; border-bottom: 1px solid #ccc; padding-bottom: 3px; margin: 0 0 12px; }
+	.wall-row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
 	.map-card { max-width: 520px; }
 	.map-card h3 { margin: 0 0 4px; font-size: 13px; }
 	.map-card h3 a { text-decoration: none; }
@@ -125,6 +131,12 @@ let modes = {};      // modeId -> [map names]
 let modeLabels = {}; // modeId -> display label
 
 const $ = (id) => document.getElementById(id);
+
+function wireWallControls() {
+	const s = $('search'), f = $('modeFilter');
+	if (s) s.addEventListener('input', applyFilter);
+	if (f) f.addEventListener('change', applyFilter);
+}
 
 async function getJSON(url) {
 	const res = await fetch(url);
@@ -262,7 +274,15 @@ async function renderMap(name, mode) {
 async function renderAll() {
 	$('app').classList.add('wide');
 	$('topbar').innerHTML = '<a class="button" href="./index.html">← Return to index</a> <span class="muted">Battle Dome map browser — all maps</span>';
-	$('content').innerHTML = '<h1>All maps</h1><p class="map-info" id="wallStatus">Loading ' + manifest.length + ' maps…</p><div id="wall"></div>';
+	$('content').innerHTML = '<h1>All maps</h1>' +
+		'<div class="wall-controls"><input type="search" id="search" placeholder="Search maps…" autocomplete="off"><select id="modeFilter"></select><span class="muted" id="wallCount"></span></div>' +
+		'<p class="map-info" id="wallStatus">Loading ' + manifest.length + ' maps…</p><div id="wall"></div>';
+	const modeSel = $('modeFilter');
+	let mopts = '<option value="all">All modes</option>';
+	for (const k in modes) mopts += '<option value="' + esc(k) + '">' + esc(modeLabels[k] || k) + '</option>';
+	mopts += '<option value="__other">Other</option>';
+	modeSel.innerHTML = mopts;
+	wireWallControls();
 
 	const wall = $('wall');
 	const entries = manifest.slice().sort((a, b) => (a.display || a.name).localeCompare(b.display || b.name));
@@ -274,24 +294,82 @@ async function renderAll() {
 			return MC.normalizeMap(await getJSON('../../maps/' + m.file));
 		} catch (e) { return null; }
 	}
-	// Chunked parallel loading (12 at a time) — cards append in sorted order.
+	// Chunked parallel loading (12 at a time) — collected, then grouped into sections.
 	for (let i = 0; i < total; i += 12) {
 		const chunk = entries.slice(i, i + 12);
 		const maps = await Promise.all(chunk.map(loadMap));
 		chunk.forEach((m, j) => {
 			const map = maps[j];
+			const ok = map && map.tiles && map.tiles.length;
 			const card = document.createElement('div');
 			card.className = 'map-card';
-			const ok = map && map.tiles && map.tiles.length;
 			card.innerHTML = '<h3><a href="./index.html?map=' + encodeURIComponent(m.name) + '">' + esc(m.display || m.name) + '</a></h3>' +
 				'<p class="meta">' + (ok ? map.rows + '×' + map.cols : m.rows + '×' + m.cols + ' · failed to load') + '</p>' +
 				(ok ? '<a class="thumb" href="./index.html?map=' + encodeURIComponent(m.name) + '" title="Open ' + esc(m.display || m.name) + '">' + thumbHTML(map) + '</a>' : '');
-			wall.appendChild(card);
+			wallCards.push({ name: m.name, display: m.display || m.name, mode: modeOf(m.name), card: card, search: ((m.display || m.name) + ' ' + m.name).toLowerCase() });
 		});
 		const done = Math.min(i + 12, total);
 		$('wallStatus').textContent = 'Loading ' + done + '/' + total + '…';
 	}
-	$('wallStatus').textContent = total + ' maps';
+	$('wallStatus').textContent = '';
+	renderWall();
+}
+
+let wallCards = [];
+let wallSections = [];
+
+function modeOf(name) {
+	for (const k in modes) if (modes[k].indexOf(name) >= 0) return k;
+	return null;
+}
+
+function renderWall() {
+	const wall = $('wall');
+	wall.innerHTML = '';
+	wallSections = [];
+	const groups = {};
+	for (const c of wallCards) {
+		const key = c.mode || '__other';
+		(groups[key] = groups[key] || []).push(c);
+	}
+	const order = Object.keys(modes);
+	if (groups['__other']) order.push('__other');
+	for (const key of order) {
+		const list = groups[key];
+		if (!list || !list.length) continue;
+		const sec = document.createElement('section');
+		sec.className = 'wall-section';
+		const ttl = document.createElement('h2');
+		ttl.className = 'section-title';
+		ttl.textContent = (key === '__other' ? 'Other maps' : (modeLabels[key] || key)) + ' (' + list.length + ')';
+		sec.appendChild(ttl);
+		const row = document.createElement('div');
+		row.className = 'wall-row';
+		for (const c of list) row.appendChild(c.card);
+		sec.appendChild(row);
+		wall.appendChild(sec);
+		wallSections.push({ key: key, el: sec, cards: list });
+	}
+	applyFilter();
+}
+
+function applyFilter() {
+	const q = ($('search').value || '').trim().toLowerCase();
+	const mode = $('modeFilter').value;
+	let shown = 0;
+	for (const s of wallSections) {
+		let secShown = 0;
+		for (const c of s.cards) {
+			const okQ = !q || c.search.indexOf(q) >= 0;
+			const okM = mode === 'all' || mode === s.key;
+			const show = okQ && okM;
+			c.card.style.display = show ? '' : 'none';
+			if (show) secShown++;
+		}
+		s.el.style.display = secShown ? '' : 'none';
+		shown += secShown;
+	}
+	$('wallCount').textContent = shown + ' maps';
 }
 
 function thumbHTML(map) {
