@@ -6,7 +6,10 @@ on:
 
 jobs:
   notify:
-    if: endsWith(github.event.release.tag_name, '.0.0')
+    if: >
+      endsWith(github.event.release.tag_name, '.0.0') ||
+      github.event.release.tag_name == '0.1.0' ||
+      github.event.release.tag_name == 'v0.1.0'
     runs-on: ubuntu-latest
     steps:
       - name: Send Discord webhook
