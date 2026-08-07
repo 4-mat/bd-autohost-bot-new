@@ -1462,9 +1462,12 @@ function init() {
 		}
 
 		await refreshMapList();
+		const want = new URLSearchParams(location.search).get('map');
 		const sel = $('mapSelect');
-		if (sel.value) await loadMap(sel.value);
+		if (want) await loadMap(want);
+		else if (sel.value) await loadMap(sel.value);
 		else setMap(MC.emptyMap(11, 11, 'untitled'), { silent: true });
+		if (want) { try { window.history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ } }
 		updateModeUI();
 	})();
 }
