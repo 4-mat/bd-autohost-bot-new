@@ -1,0 +1,1684 @@
+{
+  "maps": [
+    {
+      "name": "example",
+      "display": "Example",
+      "format": "txt",
+      "file": "example.txt",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "diodes",
+      "display": "Diodes",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 7
+    },
+    {
+      "name": "abstraction",
+      "display": "Abstraction",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 7
+    },
+    {
+      "name": "quad",
+      "display": "Quad",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 7
+    },
+    {
+      "name": "minifountain",
+      "display": "Minifountain",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 7
+    },
+    {
+      "name": "compressedair",
+      "display": "Compressedair",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 7
+    },
+    {
+      "name": "tileemporium",
+      "display": "Tileemporium",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 7
+    },
+    {
+      "name": "blitz",
+      "display": "Blitz",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "demonsheart",
+      "display": "Demonsheart",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "funsized",
+      "display": "Funsized",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "donut",
+      "display": "Donut",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "gradient",
+      "display": "Gradient",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "portal",
+      "display": "Portal",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "hiddenpond",
+      "display": "Hiddenpond",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "playhouse",
+      "display": "Playhouse",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "amazeing",
+      "display": "Amazeing",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "horizon",
+      "display": "Horizon",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "sunder",
+      "display": "Sunder",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "grate",
+      "display": "Grate",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "isometry",
+      "display": "Isometry",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "moth",
+      "display": "Moth",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "pocketdimension",
+      "display": "Pocketdimension",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 8
+    },
+    {
+      "name": "icemistvalley",
+      "display": "Icemistvalley",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "corners",
+      "display": "Corners",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "iceberg",
+      "display": "Iceberg",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "miniring",
+      "display": "Miniring",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "morningstar",
+      "display": "Morningstar",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "streamline",
+      "display": "Streamline",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "moonplaid",
+      "display": "Moonplaid",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "farm",
+      "display": "Farm",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "chasm",
+      "display": "Chasm",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "canyon",
+      "display": "Canyon",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "hazard",
+      "display": "Hazard",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "glaciate",
+      "display": "Glaciate",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "sacredpond",
+      "display": "Sacredpond",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "morningcorners",
+      "display": "Morningcorners",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "crossout",
+      "display": "Crossout",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 9
+    },
+    {
+      "name": "arena",
+      "display": "Arena",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "breakdown",
+      "display": "Breakdown",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "moshpit",
+      "display": "Moshpit",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "skytemple",
+      "display": "Skytemple",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "yggdrasil",
+      "display": "Yggdrasil",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "atlantis",
+      "display": "Atlantis",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "sheol",
+      "display": "Sheol",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "fireplace",
+      "display": "Fireplace",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "hidenseek",
+      "display": "Hidenseek",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "noturtling",
+      "display": "Noturtling",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "ruins",
+      "display": "Ruins",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "battledome",
+      "display": "Battledome",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "corridor",
+      "display": "Corridor",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "craterlake",
+      "display": "Craterlake",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "flowerlake",
+      "display": "Flowerlake",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "northpole",
+      "display": "Northpole",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "s",
+      "display": "S",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "stadium",
+      "display": "Stadium",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "bonecrusher",
+      "display": "Bonecrusher",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "collapsedtemple",
+      "display": "Collapsedtemple",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "frozenfate",
+      "display": "Frozenfate",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "polarregion",
+      "display": "Polarregion",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "shrine",
+      "display": "Shrine",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "summit",
+      "display": "Summit",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "tundra",
+      "display": "Tundra",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "doubleuturn",
+      "display": "Doubleuturn",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "mistforest",
+      "display": "Mistforest",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "quadrants",
+      "display": "Quadrants",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "watchtower",
+      "display": "Watchtower",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "cityscale",
+      "display": "Cityscale",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "everywheretorun",
+      "display": "Everywheretorun",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "volcano",
+      "display": "Volcano",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "icepass",
+      "display": "Icepass",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "weepingvine",
+      "display": "Weepingvine",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "geargrind",
+      "display": "Geargrind",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "interceptor",
+      "display": "Interceptor",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "gelidchamber",
+      "display": "Gelidchamber",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "twinpeaks",
+      "display": "Twinpeaks",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "flowingforest",
+      "display": "Flowingforest",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "twinglaciers",
+      "display": "Twinglaciers",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "sunandmoon",
+      "display": "Sunandmoon",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "frown",
+      "display": "Frown",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "swamp",
+      "display": "Swamp",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "squiggle",
+      "display": "Squiggle",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "duel",
+      "display": "Duel",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "trenches",
+      "display": "Trenches",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "lol",
+      "display": "Lol",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "zoom",
+      "display": "Zoom",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 10
+    },
+    {
+      "name": "hiddenlake",
+      "display": "Hiddenlake",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "pullars",
+      "display": "Pullars",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "bridge",
+      "display": "Bridge",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "icestorm",
+      "display": "Icestorm",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "raincloud",
+      "display": "Raincloud",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "colosseum",
+      "display": "Colosseum",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "islands",
+      "display": "Islands",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "fusioncore",
+      "display": "Fusioncore",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "junction",
+      "display": "Junction",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "marsh",
+      "display": "Marsh",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "hallways",
+      "display": "Hallways",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "madhouse",
+      "display": "Madhouse",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "snowyvillage",
+      "display": "Snowyvillage",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "fortress",
+      "display": "Fortress",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "lavaflows",
+      "display": "Lavaflows",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "frigidflowers",
+      "display": "Frigidflowers",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "highlands",
+      "display": "Highlands",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "petals",
+      "display": "Petals",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "electriccircuit",
+      "display": "Electriccircuit",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "sunsets",
+      "display": "Sunsets",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "rose",
+      "display": "Rose",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "cave",
+      "display": "Cave",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "royalgarden",
+      "display": "Royalgarden",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "rainstorm",
+      "display": "Rainstorm",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "junglemaelstrom",
+      "display": "Junglemaelstrom",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "clover",
+      "display": "Clover",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "zonestelu",
+      "display": "Zonestelu",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "tictactoe",
+      "display": "Tictactoe",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "datdoiboimap",
+      "display": "Datdoiboimap",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "datjoiboimap",
+      "display": "Datjoiboimap",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 11
+    },
+    {
+      "name": "celticcross",
+      "display": "Celticcross",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "windcastle",
+      "display": "Windcastle",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "moat",
+      "display": "Moat",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "steamchamber",
+      "display": "Steamchamber",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "shatteredwind",
+      "display": "Shatteredwind",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "bracelet",
+      "display": "Bracelet",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "beams",
+      "display": "Beams",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "hecticgon",
+      "display": "Hecticgon",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "krisis",
+      "display": "Krisis",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "batons",
+      "display": "Batons",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "market",
+      "display": "Market",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "pathfinder",
+      "display": "Pathfinder",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "strips",
+      "display": "Strips",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "frostbite",
+      "display": "Frostbite",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "valleyofthecross",
+      "display": "Valleyofthecross",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "forgottenmoldybaconbaguette",
+      "display": "Forgottenmoldybaconbaguette",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "infernus",
+      "display": "Infernus",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 12,
+      "cols": 12
+    },
+    {
+      "name": "airlock",
+      "display": "Airlock",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "brimstone",
+      "display": "Brimstone",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "stonehenge",
+      "display": "Stonehenge",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "ringoffire",
+      "display": "Ringoffire",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "valley",
+      "display": "Valley",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "voltaic",
+      "display": "Voltaic",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "waterfall",
+      "display": "Waterfall",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "mystishaven",
+      "display": "Mystishaven",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "foresttemple",
+      "display": "Foresttemple",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "enthalpy",
+      "display": "Enthalpy",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "wreath",
+      "display": "Wreath",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "boarding",
+      "display": "Boarding",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "cavern",
+      "display": "Cavern",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "tunnel",
+      "display": "Tunnel",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "crackedtop",
+      "display": "Crackedtop",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "dugout",
+      "display": "Dugout",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "canal",
+      "display": "Canal",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "corona",
+      "display": "Corona",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "warpzone",
+      "display": "Warpzone",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "icefortress",
+      "display": "Icefortress",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "arcana",
+      "display": "Arcana",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "finaldestination",
+      "display": "Finaldestination",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 13,
+      "cols": 13
+    },
+    {
+      "name": "interlink",
+      "display": "Interlink",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 10
+    },
+    {
+      "name": "duplicity",
+      "display": "Duplicity",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 8,
+      "cols": 12
+    },
+    {
+      "name": "blankcanvas",
+      "display": "Blankcanvas",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 13
+    },
+    {
+      "name": "lagoon",
+      "display": "Lagoon",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 13
+    },
+    {
+      "name": "fencedout",
+      "display": "Fencedout",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 13
+    },
+    {
+      "name": "hockey",
+      "display": "Hockey",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 13
+    },
+    {
+      "name": "speedbank",
+      "display": "Speedbank",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 13
+    },
+    {
+      "name": "fogbound",
+      "display": "Fogbound",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 13
+    },
+    {
+      "name": "trench",
+      "display": "Trench",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 13
+    },
+    {
+      "name": "somethingsoff",
+      "display": "Somethingsoff",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 10
+    },
+    {
+      "name": "p",
+      "display": "P",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 10
+    },
+    {
+      "name": "bands",
+      "display": "Bands",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 12
+    },
+    {
+      "name": "lighter",
+      "display": "Lighter",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 12
+    },
+    {
+      "name": "koi",
+      "display": "Koi",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 10,
+      "cols": 12
+    },
+    {
+      "name": "boilerhouse",
+      "display": "Boilerhouse",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 9,
+      "cols": 13
+    },
+    {
+      "name": "humangendome",
+      "display": "Humangendome",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 11,
+      "cols": 13
+    },
+    {
+      "name": "bifurcation",
+      "display": "Bifurcation",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "nyoom",
+      "display": "Nyoom",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "pond",
+      "display": "Pond",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "duelingground",
+      "display": "Duelingground",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "slushrush",
+      "display": "Slushrush",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "garden",
+      "display": "Garden",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "sprint",
+      "display": "Sprint",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "steamvent",
+      "display": "Steamvent",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 2,
+      "cols": 6
+    },
+    {
+      "name": "miniarena",
+      "display": "Miniarena",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 3,
+      "cols": 6
+    },
+    {
+      "name": "w",
+      "display": "W",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 1,
+      "cols": 2
+    },
+    {
+      "name": "b",
+      "display": "B",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 1,
+      "cols": 6
+    },
+    {
+      "name": "unabletorun",
+      "display": "Unabletorun",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "minicrossroads",
+      "display": "Minicrossroads",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "vortex",
+      "display": "Vortex",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "ntr",
+      "display": "Ntr",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "plus",
+      "display": "Plus",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "convergence",
+      "display": "Convergence",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "weave",
+      "display": "Weave",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 6
+    },
+    {
+      "name": "blade",
+      "display": "Blade",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 1,
+      "cols": 6
+    },
+    {
+      "name": "tinyring",
+      "display": "Tinyring",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "bt",
+      "display": "Bt",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 14
+    },
+    {
+      "name": "a",
+      "display": "A",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 14
+    },
+    {
+      "name": "i",
+      "display": "I",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 3,
+      "cols": 4
+    },
+    {
+      "name": "st",
+      "display": "St",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 3,
+      "cols": 4
+    },
+    {
+      "name": "realntr",
+      "display": "Realntr",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 2,
+      "cols": 6
+    },
+    {
+      "name": "glint",
+      "display": "Glint",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "funnel",
+      "display": "Funnel",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "prism",
+      "display": "Prism",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "combatring",
+      "display": "Combatring",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "ouch",
+      "display": "Ouch",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "slowdown",
+      "display": "Slowdown",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 6
+    },
+    {
+      "name": "f",
+      "display": "F",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 3,
+      "cols": 19
+    },
+    {
+      "name": "gluetrap",
+      "display": "Gluetrap",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 2,
+      "cols": 7
+    },
+    {
+      "name": "twinsnakes",
+      "display": "Twinsnakes",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 2,
+      "cols": 7
+    },
+    {
+      "name": "puddles",
+      "display": "Puddles",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 7,
+      "cols": 7
+    },
+    {
+      "name": "adder",
+      "display": "Adder",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 7
+    },
+    {
+      "name": "pinering",
+      "display": "Pinering",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 7
+    },
+    {
+      "name": "passage",
+      "display": "Passage",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 7
+    },
+    {
+      "name": "fracture",
+      "display": "Fracture",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 1,
+      "cols": 7
+    },
+    {
+      "name": "l",
+      "display": "L",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 4,
+      "cols": 44
+    }
+  ]
+}
