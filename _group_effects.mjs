@@ -1,4 +1,44 @@
 import fs from "fs";
+
+const GRIDS = [
+  "move_sort_csv/Effects-Grid view.csv",
+  "move_sort_csv/Moves-Grid view.csv",
+];
+
+function parseCSV(file) {
+  const s = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+  const rows = [];
+  let cur = "";
+  let quote = false;
+  for (const ch of s) {
+    if (ch === '"') quote = !quote;
+    else if (ch === "\n" && !quote) {
+      rows.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  rows.push(cur);
+  return rows
+    .map((r) => r.split(",").map((x) => x.trim()))
+    .filter((r) => r.length && r[0]);
+}
+
+const gridMoves = new Set();
+for (const file of GRIDS) {
+  const rows = parseCSV(file).slice(1);
+  if (file.includes("Effects-Grid")) {
+    const cats = new Set(rows.map((r) => r[0]).filter(Boolean));
+    for (const r of rows) {
+      for (const m of (r[3] || "").split(",")) {
+        const s = m.trim();
+        if (s && !cats.has(s)) gridMoves.add(s);
+      }
+    }
+  } else {
+    for (const r of rows) if (r[0]) gridMoves.add(r[0]);
+  }
+}
+
 const files = [
   "Classes",
   "Archer",
@@ -19,6 +59,9 @@ for (const f of files) {
     all[n] = a;
   }
 }
+const missing = [...gridMoves].filter((m) => !all[m]);
+if (missing.length)
+  console.warn("Grid moves not in ability data:", missing.join(", "));
 function cat(name, a) {
   const e = (a.effect || "") + " " + (a.range || "");
   const c = new Set();
