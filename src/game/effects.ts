@@ -153,6 +153,14 @@ export interface TriggerEffect {
   effects: Effect[];
 }
 
+export type PhaseTiming = "before-acc" | "before-damage" | "on-miss" | "regardless";
+
+export interface PhaseGateEffect {
+  type: "phaseEffect";
+  phase: PhaseTiming;
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -176,6 +184,7 @@ export type Effect =
   | OnMissEffect
   | PerEffect
   | TriggerEffect
+  | PhaseGateEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
