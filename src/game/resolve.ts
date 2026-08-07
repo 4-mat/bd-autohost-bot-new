@@ -28,6 +28,8 @@ import {
   extractCombatMetadata,
   type CombatMetadata,
   type EffectChoosePrompt,
+  type Effect,
+  type PhaseTiming,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
@@ -657,6 +659,16 @@ export function isValidTarget(user: Entity, target: Entity, group: string): bool
   return true;
 }
 
+/** Filter effects array to those matching a specific phase. */
+function filterByPhase(effects: Effect[], phase: PhaseTiming): Effect[] {
+  return effects.filter((e) => e.type === "phaseEffect" && e.phase === phase);
+}
+
+/** Returns effects that fire on hit (all non-PhaseEffect effects). PhaseEffect wrappers are applied at their specific timing points. */
+function filterNonPhase(effects: Effect[]): Effect[] {
+  return effects.filter((e) => e.type !== "phaseEffect");
+}
+
 function* resolveSingleTarget(
   game: Game,
   user: Entity,
@@ -667,6 +679,18 @@ function* resolveSingleTarget(
   confusionAlreadyApplied = false,
 ): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
+
+  // Parse effects once, before any phase hooks.
+  const allEffects = parseEffects(ability.effect);
+
+  // --- Before Accuracy ---
+  const beforeAccEffects = filterByPhase(allEffects, "before-acc");
+  if (beforeAccEffects.length > 0) {
+    const accMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, beforeAccEffects, ability),
+    );
+    result.messages.push(...accMsgs);
+  }
 
   const userAccBonus = getStatBonus(user, "acc");
   const targetEva = getEffectiveStat(target, "eva");
@@ -690,6 +714,15 @@ function* resolveSingleTarget(
       defensiveStat(target, ability.damageType),
       combat.ignore,
     );
+
+    // --- Before Damage ---
+    const beforeDmgEffects = filterByPhase(allEffects, "before-damage");
+    if (beforeDmgEffects.length > 0) {
+      const dmgMsgs = yield* runEffectStream(
+        applyEffectStream(game, user, target, beforeDmgEffects, ability),
+      );
+      result.messages.push(...dmgMsgs);
+    }
 
     let baseDamage = damageRoll.total + userOff - targetDef;
 
@@ -724,9 +757,10 @@ function* resolveSingleTarget(
       );
     }
 
-    const effects = parseEffects(ability.effect);
+    // --- On Hit effects (non-phase-tagged effects fire here) ---
+    const onHitEffects = filterNonPhase(allEffects);
     const effectMsgs = yield* runEffectStream(
-      applyEffectStream(game, user, target, effects, ability),
+      applyEffectStream(game, user, target, onHitEffects, ability),
     );
     result.messages.push(...effectMsgs);
 
@@ -734,7 +768,7 @@ function* resolveSingleTarget(
     // array rather than re-running the regex-based clause splitter).
     // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
     // Recoil 25%" combo reflects the boosted total.
-    for (const e of effects) {
+    for (const e of allEffects) {
       if (e.type === "recoil") {
         const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
         dealDamage(user, recoilDmg);
@@ -761,6 +795,24 @@ function* resolveSingleTarget(
       result.deaths.push(user);
       return result;
     }
+  } else {
+    // --- On Miss ---
+    const onMissEffects = filterByPhase(allEffects, "on-miss");
+    if (onMissEffects.length > 0) {
+      const missMsgs = yield* runEffectStream(
+        applyEffectStream(game, user, target, onMissEffects, ability),
+      );
+      result.messages.push(...missMsgs);
+    }
+  }
+
+  // --- Regard of Hit ---
+  const regardlessEffects = filterByPhase(allEffects, "regardless");
+  if (regardlessEffects.length > 0) {
+    const regMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, regardlessEffects, ability),
+    );
+    result.messages.push(...regMsgs);
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
