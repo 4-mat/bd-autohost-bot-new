@@ -15,6 +15,9 @@ enum Terrain {
   Boost = 12,
 }
 
+// Symmetric varied terrain filler for maps that have no terrain data in the CSV.
+import { generateSymmetricGrid } from "../src/data/mapgen.js";
+
 const csv = await Bun.file("_data/maps-raw.csv").text();
 const lines = csv.split("\n").map((l: string) => l.split(","));
 
@@ -232,9 +235,91 @@ const filtered = maps.filter((m) => {
   return true;
 });
 
+// Maps without terrain data in the CSV parse as all-Normal. Fix up the parsed
+// grids so every curated map has a real, usable layout:
+//   1. Broken / artifact maps (terrain-code names, near-empty grids, content
+//      confined to a thin strip) are reconstructed with deterministic,
+//      symmetric, varied terrain seeded by the map name.
+//   2. Maps whose content is visibly off-centre are shifted so the content
+//      sits centred in the grid.
+// Real full-span maps are left untouched.
+function isBrokenMap(m: MapDef): boolean {
+  if (terrainCodeNames.has(m.name) || m.name.length <= 2) return true;
+  let nonNormal = 0;
+  let minR = m.rows;
+  let maxR = -1;
+  let minC = m.cols;
+  let maxC = -1;
+  for (let r = 0; r < m.rows; r++) {
+    for (let c = 0; c < m.cols; c++) {
+      if (m.grid[r][c] === Terrain.Normal) continue;
+      nonNormal++;
+      if (r < minR) minR = r;
+      if (r > maxR) maxR = r;
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+    }
+  }
+  if (nonNormal === 0) return true; // blank
+  if (nonNormal / (m.rows * m.cols) < 0.08) return true; // near-empty
+  if (maxC - minC + 1 <= 2 || maxR - minR + 1 <= 2) return true; // thin strip
+  return false;
+}
+
+function centerMap(m: MapDef): void {
+  let minR = m.rows;
+  let maxR = -1;
+  let minC = m.cols;
+  let maxC = -1;
+  for (let r = 0; r < m.rows; r++) {
+    for (let c = 0; c < m.cols; c++) {
+      if (m.grid[r][c] === Terrain.Normal) continue;
+      if (r < minR) minR = r;
+      if (r > maxR) maxR = r;
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+    }
+  }
+  if (maxR === -1) return;
+  const bw = maxC - minC + 1;
+  const bh = maxR - minR + 1;
+  const hasMargin = bw < m.cols || bh < m.rows;
+  const idealR = Math.floor((m.rows - bh) / 2);
+  const idealC = Math.floor((m.cols - bw) / 2);
+  const offR = minR - idealR;
+  const offC = minC - idealC;
+  if (!hasMargin || (Math.abs(offR) <= 1 && Math.abs(offC) <= 1)) return;
+
+  const grid: number[][] = Array.from({ length: m.rows }, () =>
+    Array(m.cols).fill(Terrain.Normal),
+  );
+  for (let r = 0; r < m.rows; r++) {
+    for (let c = 0; c < m.cols; c++) {
+      if (m.grid[r][c] === Terrain.Normal) continue;
+      const nr = r - offR;
+      const nc = c - offC;
+      if (nr < 0 || nr >= m.rows || nc < 0 || nc >= m.cols) continue;
+      grid[nr][nc] = m.grid[r][c];
+    }
+  }
+  m.grid = grid;
+}
+
+for (const m of maps) {
+  // The Arena map is intentionally an empty, flat grid (no terrain features).
+  // It's the only curated map shipped blank.
+  if (m.name === "arena") continue;
+  if (isBrokenMap(m)) {
+    m.grid = generateSymmetricGrid(m.rows, m.cols, m.name);
+  } else {
+    centerMap(m);
+  }
+}
+
 // Generate TypeScript
 const out: string[] = [];
 out.push(`import { Terrain } from "../game/state.js";`);
+out.push(`import { volunteerMaps } from "./volunteer-maps.js";`);
 out.push(``);
 out.push(`export interface MapDef {`);
 out.push(`  name: string;`);
@@ -261,6 +346,10 @@ for (const m of maps) {
   out.push(``);
 }
 
+out.push(`for (const m of volunteerMaps) {`);
+out.push(`  MAPS.set(m.name, m);`);
+out.push(`}`);
+out.push(``);
 out.push(`export function getMapByName(name: string): MapDef | undefined {`);
 out.push(`  const id = name.toLowerCase().replace(/\\s+/g, "");`);
 out.push(`  return MAPS.get(id);`);
