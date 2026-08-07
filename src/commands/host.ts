@@ -12,6 +12,7 @@ import {
   type Game,
   type Entity,
   Terrain,
+  isStandable,
 } from "../game/state.js";
 import { classes, weapons, loadGameData } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
@@ -19,15 +20,87 @@ import {
   GAMEMODE_MAPS,
   mapsForMode,
   modeIdFor,
+  pendingVoterIds,
   randomMapForMode,
   recommendedMaps,
+  normalizeVoteMode,
+  tallyVotes,
+  tieModes,
+  voteOptionsFor,
 } from "../data/gamemodes.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
 import type { AbilityData } from "../data/index.js";
 
+// Modes in which someone must be designated the Juggernaut (%setjugg).
+const JUGG_MODES = new Set(["JUGG", "2vJ", "3vJ", "4vJ", "PvPJ"]);
+
+// Extra setup hint for Juggernaut modes: someone must be designated with
+// %setjugg; PvPJ also needs teams split first (one side gets the juggernaut).
+function juggSetupHint(mode: string): string {
+  if (!JUGG_MODES.has(mode)) return "";
+  return mode === "PvPJ"
+    ? " Split teams with %setteam, then designate the Juggernaut with %setjugg [entity]."
+    : " Designate the Juggernaut with %setjugg [entity].";
+}
+
 function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
   return a.level === "EX1" || a.level === "EX2" ? exOk : a.level <= lvl;
+}
+
+// Whether a user may change this entity's class/weapon: hosts any time,
+// players only their own entity until the game starts.
+function mayChangeLoadout(user: User, game: Game, entity: Entity): boolean {
+  if (toId(user.name) === toId(game.host)) return true;
+  return !game.started && toId(entity.name) === toId(user.name);
+}
+
+// Recalculate an entity's maxhp/curhp, stats, and abilities from its current
+// class + weapon. Returns the new max HP.
+function recalcEntityStats(entity: Entity): number {
+  const classData = classes.get(toId(entity.className));
+  const weaponData = weapons.get(toId(entity.weaponName));
+  const sv = (s: string) => parseFloat(s) || 0;
+  const newMaxhp =
+    (classData ? parseInt(classData.stats.hp) : 0) +
+    (weaponData ? parseInt(weaponData.stats.hp) : 0);
+  entity.maxhp = newMaxhp;
+  entity.curhp = Math.min(entity.curhp, newMaxhp);
+  entity.atk =
+    (classData ? sv(classData.stats.atk) : 0) +
+    (weaponData ? sv(weaponData.stats.atk) : 0);
+  entity.mag =
+    (classData ? sv(classData.stats.mag) : 0) +
+    (weaponData ? sv(weaponData.stats.mag) : 0);
+  entity.pd =
+    (classData ? sv(classData.stats.pd) : 0) +
+    (weaponData ? sv(weaponData.stats.pd) : 0);
+  entity.md =
+    (classData ? sv(classData.stats.md) : 0) +
+    (weaponData ? sv(weaponData.stats.md) : 0);
+  entity.eva = Math.floor(
+    (classData ? sv(classData.stats.eva) : 0) +
+      (weaponData ? sv(weaponData.stats.eva) : 0),
+  );
+  entity.mp =
+    (classData ? sv(classData.stats.mp) : 0) +
+    (weaponData ? sv(weaponData.stats.mp) : 0);
+  // classLevel and weaponLevel are always set together (createPlayerEntity,
+  // %setlevel), so using classLevel here is equivalent to weaponLevel.
+  const lvl = entity.classLevel;
+  entity.abilities = [
+    ...(classData
+      ? classData.abilities.filter((a) =>
+          hasAbility(a, lvl, !!entity.isJuggernaut),
+        )
+      : []),
+    ...(weaponData
+      ? weaponData.abilities.filter((a) =>
+          hasAbility(a, lvl, !!entity.isJuggernaut),
+        )
+      : []),
+  ] as any[];
+  return newMaxhp;
 }
 
 function findGameForHost(username: string): Game | null {
@@ -98,6 +171,18 @@ export function hostCommand(
     case "sw":
       handleSwitchWeapon(room, user, full);
       break;
+    case "sco":
+      handleSelfLoadout(room, user, full);
+      break;
+    case "setclass":
+      handleSetClass(room, user, full);
+      break;
+    case "setweapon":
+      handleSetWeapon(room, user, full);
+      break;
+    case "setloadout":
+      handleSetEntityLoadout(room, user, full);
+      break;
     case "setjugg":
       handleSetJugg(room, user, full);
       break;
@@ -110,6 +195,12 @@ export function hostCommand(
       break;
     case "close":
       handleClose(room, user);
+      break;
+    case "endvote":
+      handleEndVote(room, user);
+      break;
+    case "nudge":
+      handleNudge(room, user);
       break;
     case "join":
       handleJoin(room, user, full);
@@ -156,6 +247,7 @@ function handleHost(room: Room, user: User) {
     log: [],
     snapshots: [],
     mode: "FFA",
+    modeChosen: false,
     phase: "setup",
     started: false,
     kills: {},
@@ -163,6 +255,10 @@ function handleHost(room: Room, user: User) {
     chatLog: [],
     toasts: [],
     signupsOpen: false,
+    votes: {},
+    voteOpen: false,
+    voteRunoff: null,
+    timer: null,
   };
 
   games.set(id, game);
@@ -171,6 +267,8 @@ function handleHost(room: Room, user: User) {
     user.name,
     "Use %setgame, %addp, %setmap to configure, then %start. Pick a map with %setmap <name> (see %listmaps) or %setmap gen.",
   );
+  // Push a fresh (empty) host page so the GUI never shows a previous game.
+  broadcastPages(game);
 }
 
 // -- .dehost - Remove the game -------------------------------------------------
@@ -200,12 +298,106 @@ function handleSetGame(room: Room, user: User, args: string) {
   if (!mode)
     return sendPm(user.name, "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.)");
 
+  const players = game.entities.filter((e) => !e.isMonster);
+  if (players.length === 0) {
+    return sendPm(
+      user.name,
+      "Add players first (%addp, or %open + %join), then %setgame <mode> to finish the setup.",
+    );
+  }
+
+  // Validate team-count requirements BEFORE mutating anything.
+  const teamMatch = mode.toUpperCase().match(/^(\d+)V(\d+)$/);
+  if (teamMatch) {
+    const a = parseInt(teamMatch[1]);
+    const b = parseInt(teamMatch[2]);
+    if (a < 1 || b < 1) {
+      return sendPm(
+        user.name,
+        "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.) — team modes need at least 1 player per team.",
+      );
+    }
+    if (players.length !== a + b) {
+      return sendPm(
+        user.name,
+        `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
+      );
+    }
+  }
+
   game.mode = mode.toUpperCase();
-  const rec = recommendedMaps(game.mode);
+  game.modeChosen = true;
+
+  // Manually setting a mode supersedes any ongoing vote / runoff.
+  const voteCancelled = game.voteOpen;
+  game.voteOpen = false;
+  game.votes = {};
+  game.voteRunoff = null;
+
+  // Pick a map only when none is chosen yet: random from the mode's
+  // recommended pool, falling back to a procedural map.
+  const mapMsg: string[] = [];
+  if (game.map.length === 0) {
+    const poolPick = randomMapForMode(mode);
+    const poolDef = poolPick ? getMapByName(poolPick) : undefined;
+    if (poolDef) {
+      applyMap(game, poolDef, "", true);
+      mapMsg.push(
+        `Map: ${poolDef.displayName} (random ${modeIdFor(mode)!.toUpperCase()} pick)`,
+      );
+    } else {
+      applyMap(game, {
+        grid: generateDefaultMap(),
+        displayName: "Procedural (12x12)",
+        rows: 12,
+        cols: 12,
+      }, "", true);
+      mapMsg.push("Map: Procedural (12x12)");
+    }
+  }
+
+  pushSnapshot(game);
+
+  // Team modes: split the players into two teams and place mirrored halves.
+  let placedPairs: [Entity, [number, number]][] = [];
+  if (teamMatch) {
+    const a = parseInt(teamMatch[1]);
+    const b = parseInt(teamMatch[2]);
+    const teamA = players.slice(0, a);
+    const teamB = players.slice(a, a + b);
+    teamA.forEach((e) => (e.team = 1));
+    teamB.forEach((e) => (e.team = 2));
+    const placed = placeTeamPlayers(game, teamA, teamB);
+    if (!placed) {
+      broadcastPages(game); // keep the GUI in sync after the mode change
+      return sendPm(user.name, "Could not find open spawn tiles.");
+    }
+    placedPairs = [...placed[0], ...placed[1]];
+  } else {
+    // FFA and other modes: clear leftover teams, spread everyone.
+    players.forEach((e) => (e.team = 0));
+    const placed = placePlayers(game, players);
+    if (!placed) {
+      broadcastPages(game); // keep the GUI in sync after the mode change
+      return sendPm(user.name, "Could not find open spawn tiles.");
+    }
+    placedPairs = placed;
+  }
+
+  // Generate the turn order so only %start remains. This RENUMBERS entities
+  // by roll (highest roller becomes P1), so the position list is built after
+  // it to keep the announced numbers consistent with the turn order.
+  handleGenTurnOrder(room, user);
+  const spots = placedPairs.map(([e]) => {
+    const teamTag = e.team > 0 ? ` (T${e.team})` : "";
+    return `${e.num}${teamTag} at ${posToStr(e.pos[0], e.pos[1])}`;
+  });
+  const hint = juggSetupHint(game.mode);
   send(
     room.id,
-    `Game mode set to **${game.mode}**.${rec ? " Use %listmaps for recommended maps." : ""}`,
+    `**Game set up for ${game.mode}!${voteCancelled ? " (voting cancelled)" : ""}**${mapMsg.length ? ` ${mapMsg.join("; ")}.` : ""}\nPositions: ${spots.join(" | ")}\nRun %start to begin.${hint}`,
   );
+  broadcastPages(game);
 }
 
 // -- .open / .openbsu / .close - Open/close signups ---------------------------
@@ -220,7 +412,10 @@ function handleOpen(room: Room, user: User, highlight = false) {
 
   game.signupsOpen = true;
   const hl = highlight ? " (highlighted)" : "";
-  send(room.id, `**Signups are now open!**${hl} Use %join to join.`);
+  send(
+    room.id,
+    `**Signups are now open!**${hl} Use %join to join, or click [[SIGNUP]] to open the sign-up page.`,
+  );
   broadcastPages(game);
 }
 
@@ -230,11 +425,130 @@ function handleClose(room: Room, user: User) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %close.");
   }
+  if (game.started) return sendPm(user.name, "Game already started.");
 
   game.signupsOpen = false;
-  send(room.id, "**Signups are now closed.**");
+
+  // Closing signups opens gamemode voting (unless there's nobody to vote).
+  const players = game.entities.filter((e) => !e.isMonster);
+  if (players.length >= 2) {
+    game.voteOpen = true;
+    game.votes = {};
+    game.voteRunoff = null;
+    const options = voteOptionsFor(players.length)
+      .map((o) => o.id)
+      .join(", ");
+    send(
+      room.id,
+      `**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote [mode] (available: ${options || "no modes fit this lobby size (max 8p)"}). Use %wt modes to learn what each mode is.`, 
+    );
+  } else {
+    send(room.id, "**Signups are now closed.**");
+  }
   broadcastPages(game);
 }
+
+// -- .endvote - Close gamemode voting and apply the winner --------------------
+
+function handleEndVote(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %endvote.");
+  }
+  if (game.started) return sendPm(user.name, "Game already started.");
+  if (!game.voteOpen) {
+    return sendPm(user.name, "No gamemode vote is open. Close signups with %close to start one.");
+  }
+
+  const wasRunoff = game.voteRunoff !== null;
+  const tally = tallyVotes(game.votes);
+  game.votes = {};
+
+  if (tally.length === 0) {
+    game.voteOpen = false;
+    game.voteRunoff = null;
+    send(
+      room.id,
+      wasRunoff
+        ? "**Voting closed.** No runoff votes were cast — pick a mode with %setgame."
+        : "**Voting closed.** No votes were cast — pick a mode with %setgame.",
+    );
+    broadcastPages(game);
+    return;
+  }
+
+  const summary = tally.map((t) => `${t.mode}: ${t.count}`).join(" | ");
+
+  // Tied top: keep voting open as a runoff restricted to the tied modes.
+  const tied = tieModes(tally);
+  if (tied) {
+    game.voteRunoff = tied;
+    send(
+      room.id,
+      `**TIE — runoff!** ${summary}\nVote again, only between **${tied.join(" / ")}** (%vote [mode] or GUI). The winner is played.`,
+    );
+    broadcastPages(game);
+    return;
+  }
+
+  const [top] = tally;
+  game.voteOpen = false;
+  game.voteRunoff = null;
+  game.mode = top.mode.toUpperCase();
+  game.modeChosen = true;
+  const hint = juggSetupHint(top.mode);
+  send(
+    room.id,
+    `**Voting closed.** ${summary}\nMode set to **${game.mode}** (won by ${wasRunoff ? "runoff" : "vote"}).${hint}`,
+  );
+  broadcastPages(game);
+}
+
+/**
+ * %nudge — host-only: pings the players who haven't voted yet so the lobby
+ * can finish the vote. Mentions them by name so the chat client highlights
+ * them (@Name).
+ */
+function handleNudge(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %nudge.");
+  }
+  if (!game.voteOpen) {
+    return sendPm(
+      user.name,
+      "No gamemode vote is open. Close signups with %close to start one.",
+    );
+  }
+
+  const players = game.entities.filter((e) => !e.isMonster);
+  const pending = pendingVoterIds(
+    game.votes,
+    players.map((p) => p.id),
+  );
+
+  if (pending.length === 0) {
+    send(room.id, "Everyone has already voted! Run %endvote to apply the winning mode.");
+    return;
+  }
+
+  const names = pending
+    .map((id) => {
+      const p = players.find((e) => e.id === id);
+      return p ? `@${p.name}` : "";
+    })
+    .filter(Boolean)
+    .join(" ");
+  const msg = `${names} — you haven't voted yet! Vote in the GUI or with %vote [mode].`;
+  send(room.id, msg);
+  game.toasts.push({ user: game.host, message: msg });
+  broadcastPages(game);
+}
+
+
+// -- .vote <mode> - Cast/change a gamemode vote (in game.ts via gameCommand) --
 
 // -- .join <class>, <weapon> - Join an open game -------------------------------
 
@@ -279,6 +593,7 @@ function handleGenPos(room: Room, user: User, args: string) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %genpos.");
   }
+  if (game.started) return sendPm(user.name, "Game already started.");
   if (game.map.length === 0) {
     return sendPm(
       user.name,
@@ -286,25 +601,87 @@ function handleGenPos(room: Room, user: User, args: string) {
     );
   }
 
-  const match = args
-    .trim()
-    .toLowerCase()
-    .match(/^(\d+)\s*p?\s*([a-z0-9]+)$/);
+  const arg = args.trim().toLowerCase();
+
+  if (game.map.length === 0) {
+    return sendPm(
+      user.name,
+      "Set a map first (%setmap <name> or %setmap gen), then %genpos.",
+    );
+  }
+
+  // Team mode: %genpos <N>v<M> (e.g. %genpos 2v2, %genpos 3v3)
+  const teamMatch = arg.match(/^(\d+)\s*v\s*(\d+)$/);
+  if (teamMatch) {
+    const a = parseInt(teamMatch[1]);
+    const b = parseInt(teamMatch[2]);
+    if (a < 1 || b < 1 || a > 5 || b > 5) {
+      return sendPm(
+        user.name,
+        "Usage: %genpos <N>v<M> with 1-5 per team (e.g. %genpos 2v2).",
+      );
+    }
+    const players = game.entities.filter((e) => !e.isMonster);
+    if (a + b !== players.length) {
+      return sendPm(
+        user.name,
+        `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
+      );
+    }
+
+    const teamA = players.slice(0, a);
+    const teamB = players.slice(a, a + b);
+
+    pushSnapshot(game);
+    const placed = placeTeamPlayers(game, teamA, teamB);
+    if (!placed) {
+      return sendPm(user.name, "Could not find open spawn tiles.");
+    }
+    teamA.forEach((e) => (e.team = 1));
+    teamB.forEach((e) => (e.team = 2));
+    game.mode = `${a}V${b}`;
+    game.modeChosen = true;
+    // Setting a mode directly supersedes any ongoing vote / runoff.
+    game.voteOpen = false;
+    game.votes = {};
+    game.voteRunoff = null;
+    const spots = [...placed[0], ...placed[1]]
+      .map(([e, p]) => `${e.num} (T${e.team}) at ${posToStr(p[0], p[1])}`)
+      .join(" | ");
+    send(room.id, `**Positions set (${a}v${b}):** ${spots}`);
+    broadcastPages(game);
+    return;
+  }
+
+  // Free-for-all: %genpos <N>p<mode> (e.g. %genpos 4pffa)
+  const match = arg.match(/^(\d+)\s*p?\s*([a-z0-9]+)$/);
   if (!match) {
-    return sendPm(user.name, "Usage: %genpos <N><mode> (e.g. %genpos 4pffa).");
+    return sendPm(
+      user.name,
+      "Usage: %genpos <N><mode> (e.g. %genpos 4pffa) or %genpos <N>v<M> (e.g. %genpos 2v2).",
+    );
   }
 
   const n = parseInt(match[1]);
   const mode = match[2];
 
   if (mode.includes("v")) {
-    return sendPm(user.name, "%genpos does not support team modes.");
+    return sendPm(
+      user.name,
+      "Team modes use %genpos <N>v<M> (e.g. %genpos 2v2).",
+    );
   }
   if (mode.includes("pve")) {
     return sendPm(user.name, "%genpos does not support PvE.");
   }
 
   const players = game.entities.filter((e) => !e.isMonster);
+  if (n < 1) {
+    return sendPm(
+      user.name,
+      "Usage: %genpos <N><mode> (e.g. %genpos 4pffa) or %genpos <N>v<M> (e.g. %genpos 2v2).",
+    );
+  }
   if (n > players.length) {
     return sendPm(
       user.name,
@@ -315,12 +692,18 @@ function handleGenPos(room: Room, user: User, args: string) {
     return sendPm(user.name, "%genpos supports up to 9 players.");
   }
 
+  // Record the mode choice (FFA-style) so the header reflects it.
+  game.mode = mode.toUpperCase();
+  game.modeChosen = true;
+
+  // Snapshot BEFORE clearing teams so %undo restores a prior team setup.
+  pushSnapshot(game);
+  players.forEach((e) => (e.team = 0));
   const placed = placePlayers(game, players.slice(0, n));
   if (!placed) {
     return sendPm(user.name, "Could not find open spawn tiles.");
   }
 
-  pushSnapshot(game);
   const spots = placed
     .map(([e, p]) => `${e.num} at ${posToStr(p[0], p[1])}`)
     .join(" | ");
@@ -340,10 +723,13 @@ export function placePlayers(
   const slots = genPosSlots(rows, cols, players.length);
   const used = new Set<string>();
   const out: [Entity, [number, number]][] = [];
+  // Ignore the being-placed players' PREVIOUS positions when finding open
+  // tiles, so re-running %genpos doesn't let their old spots block the anchors.
+  const placing = new Set(players.map((p) => p.id));
 
   for (let i = 0; i < players.length; i++) {
     const anchor = slots[i];
-    const pos = findNearestOpenTile(game, anchor[0], anchor[1], used);
+    const pos = findNearestOpenTile(game, anchor[0], anchor[1], used, placing);
     if (!pos) return null;
     players[i].pos = pos;
     used.add(`${pos[0]},${pos[1]}`);
@@ -352,38 +738,132 @@ export function placePlayers(
   return out;
 }
 
+// Build the perimeter ring of a map as an ordered list of [row, col] anchors,
+// starting at the top-left corner and walking clockwise. Corner cells appear
+// once; degenerate 1-row/1-col maps are deduped so no cell repeats. Used to
+// place FFA players equidistantly around the map edge.
+function perimeterRing(rows: number, cols: number): [number, number][] {
+  const bottom = Math.max(0, rows - 1);
+  const right = Math.max(0, cols - 1);
+  const ring: [number, number][] = [];
+  const seen = new Set<string>();
+  const push = (r: number, c: number) => {
+    const key = `${r},${c}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    ring.push([r, c]);
+  };
+  for (let c = 0; c <= right; c++) push(0, c); // top edge
+  for (let r = 1; r <= bottom; r++) push(r, right); // right edge
+  for (let c = right - 1; c >= 0; c--) push(bottom, c); // bottom edge (skip corner)
+  for (let r = bottom - 1; r > 0; r--) push(r, 0); // left edge (skip corners)
+  return ring;
+}
+
 export function genPosSlots(
   rows: number,
   cols: number,
   n: number,
 ): [number, number][] {
-  const top = 0;
-  const bottom = Math.max(0, rows - 1);
-  const left = 0;
-  const right = Math.max(0, cols - 1);
   const midR = Math.floor(rows / 2);
   const midC = Math.floor(cols / 2);
-  const corners: [number, number][] = [
-    [top, left],
-    [bottom, right],
-    [top, right],
-    [bottom, left],
-  ];
-  const edges: [number, number][] = [
-    [top, midC],
-    [bottom, midC],
-    [midR, left],
-    [midR, right],
-  ];
-  const center: [number, number] = [midR, midC];
+  if (n === 1) return [[midR, midC]];
 
-  if (n === 1) return [center];
-  if (n <= 4) return corners.slice(0, n);
-  if (n === 5) return [...corners, center];
-  if (n === 6) return [...corners, edges[0], edges[1]];
-  if (n === 7) return [...corners, edges[0], edges[1], center];
-  if (n === 8) return [...corners, ...edges];
-  return [...corners, ...edges, center];
+  // FFA: everyone starts ON the perimeter, spaced as evenly as the ring
+  // allows — adjacent players are always ~perimeter/n apart, so all players
+  // are equidistant from their neighbors around the map edge.
+  const ring = perimeterRing(rows, cols);
+  const total = ring.length;
+  const out: [number, number][] = [];
+  const used = new Set<string>();
+  // Never claim more slots than the ring has cells (degenerate maps).
+  const count = Math.min(n, total);
+  for (let i = 0; i < count; i++) {
+    let idx = Math.round((i * total) / count);
+    // Avoid double-claiming a corner when rounding collides.
+    while (idx >= total || used.has(`${ring[idx][0]},${ring[idx][1]}`)) {
+      idx = (idx + 1) % total;
+    }
+    used.add(`${ring[idx][0]},${ring[idx][1]}`);
+    out.push(ring[idx]);
+  }
+  return out;
+}
+
+/**
+ * A tight corner cluster of `k` anchors: fills the smallest square block at
+ * the corner (row-major), so 3 teammates sit at a1/b1/a2, 4 at a 2x2 block,
+ * and larger teams spill along the edges — all staying adjacent in the corner.
+ */
+function cornerCluster(k: number): [number, number][] {
+  const out: [number, number][] = [];
+  const dim = Math.ceil(Math.sqrt(Math.max(1, k)));
+  for (let r = 0; r < dim && out.length < k; r++) {
+    for (let c = 0; c < dim && out.length < k; c++) {
+      out.push([r, c]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Symmetric team spawn anchors: team A clumps together in the top-left corner
+ * (a1/b1/a2...), team B clumps mirrored in the bottom-right corner. 1v1 meets
+ * at opposite corners; larger teams sit shoulder-to-shoulder facing each other
+ * across the map, which is how BD team games are played.
+ */
+export function genTeamSlots(
+  rows: number,
+  cols: number,
+  a: number,
+  b: number,
+): [top: [number, number][], bottom: [number, number][]] {
+  const bottomRow = Math.max(0, rows - 1);
+  const rightCol = Math.max(0, cols - 1);
+  const top = cornerCluster(a);
+  const bottom = cornerCluster(b).map(
+    ([r, c]): [number, number] => [bottomRow - r, rightCol - c],
+  );
+  return [top, bottom];
+}
+
+/**
+ * Place two teams on mirrored map halves. Returns a pair of placed lists
+ * (entity + position) or null when no open tiles are found.
+ */
+export function placeTeamPlayers(
+  game: Game,
+  teamA: Entity[],
+  teamB: Entity[],
+): [
+  placedA: [Entity, [number, number]][],
+  placedB: [Entity, [number, number]][],
+] | null {
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  const [top, bottom] = genTeamSlots(rows, cols, teamA.length, teamB.length);
+  const used = new Set<string>();
+  const outA: [Entity, [number, number]][] = [];
+  const outB: [Entity, [number, number]][] = [];
+  // See placePlayers: ignore the placed players' old positions so repeated
+  // %genpos calls still hit the exact anchors.
+  const placing = new Set([...teamA, ...teamB].map((e) => e.id));
+
+  for (let i = 0; i < teamA.length; i++) {
+    const pos = findNearestOpenTile(game, top[i][0], top[i][1], used, placing);
+    if (!pos) return null;
+    teamA[i].pos = pos;
+    used.add(`${pos[0]},${pos[1]}`);
+    outA.push([teamA[i], pos]);
+  }
+  for (let i = 0; i < teamB.length; i++) {
+    const pos = findNearestOpenTile(game, bottom[i][0], bottom[i][1], used, placing);
+    if (!pos) return null;
+    teamB[i].pos = pos;
+    used.add(`${pos[0]},${pos[1]}`);
+    outB.push([teamB[i], pos]);
+  }
+  return [outA, outB];
 }
 
 export function findNearestOpenTile(
@@ -391,6 +871,7 @@ export function findNearestOpenTile(
   r: number,
   c: number,
   used: Set<string>,
+  placing?: Set<string>,
 ): [number, number] | null {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
@@ -401,9 +882,14 @@ export function findNearestOpenTile(
   while (q.length > 0) {
     const [cr, cc] = q.shift()!;
     if (
-      game.map[cr][cc] === Terrain.Normal &&
+      isStandable(game.map[cr][cc]) &&
       !used.has(`${cr},${cc}`) &&
-      !game.entities.some((e) => e.pos[0] === cr && e.pos[1] === cc)
+      !game.entities.some(
+        (e) =>
+          e.pos[0] === cr &&
+          e.pos[1] === cc &&
+          !(placing && placing.has(e.id)),
+      )
     ) {
       return [cr, cc];
     }
@@ -636,154 +1122,231 @@ function handleAddMonster(room: Room, user: User, args: string) {
   );
 }
 
-// -- .sc <entity>, <class> - Switch class --------------------------------------
+// Shared loadout-application helpers. Announce the change and refresh the GUI;
+// return false when the requested class/weapon name is unknown.
 
-function handleSwitchClass(room: Room, user: User, args: string) {
-  const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can use %sc.");
-  }
-
-  const parts = args.split(",").map((s) => s.trim());
-  if (parts.length < 2 || !parts[0] || !parts[1]) {
-    return sendPm(user.name, "Usage: %sc <entity>, <class>");
-  }
-
-  const entity = getEntity(game, parts[0]);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-
-  const newClass = parts[1];
+function applyClassChange(
+  game: Game,
+  room: Room,
+  entity: Entity,
+  newClass: string,
+): boolean {
   const classData = classes.get(toId(newClass));
-  if (!classData) {
-    return sendPm(user.name, `Unknown class: ${newClass}. Use %wt to look up.`);
-  }
-
+  if (!classData) return false;
   pushSnapshot(game);
-
-  // Recalculate HP: old weapon + new class
-  const weaponData = weapons.get(toId(entity.weaponName));
-  const newMaxhp =
-    parseInt(classData.stats.hp) +
-    (weaponData ? parseInt(weaponData.stats.hp) : 0);
-
   const oldClass = entity.className;
   entity.className = classData.name;
-  entity.maxhp = newMaxhp;
-  entity.curhp = Math.min(entity.curhp, newMaxhp);
-
-  // Recalculate stats
-  const sv = (s: string) => parseFloat(s) || 0;
-  entity.atk =
-    sv(classData.stats.atk) + (weaponData ? sv(weaponData.stats.atk) : 0);
-  entity.mag =
-    sv(classData.stats.mag) + (weaponData ? sv(weaponData.stats.mag) : 0);
-  entity.pd =
-    sv(classData.stats.pd) + (weaponData ? sv(weaponData.stats.pd) : 0);
-  entity.md =
-    sv(classData.stats.md) + (weaponData ? sv(weaponData.stats.md) : 0);
-  entity.eva = Math.floor(
-    sv(classData.stats.eva) + (weaponData ? sv(weaponData.stats.eva) : 0),
-  );
-  entity.mp =
-    sv(classData.stats.mp) + (weaponData ? sv(weaponData.stats.mp) : 0);
-
-  // Update abilities to new class + existing weapon, filtered by level
-  const lvl = entity.classLevel;
-  entity.abilities = [
-    ...classData.abilities.filter((a) =>
-      hasAbility(a, lvl, !!entity.isJuggernaut),
-    ),
-    ...(weaponData
-      ? weaponData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
-      : []),
-  ] as any[];
-
+  const newMaxhp = recalcEntityStats(entity);
   send(
     room.id,
     `${entity.num} (${entity.name}) class: ${oldClass} -> ${classData.name} (${newMaxhp} HP)`,
   );
   broadcastPages(game);
+  return true;
 }
 
-// -- .sw <entity>, <weapon> - Switch weapon ------------------------------------
-
-function handleSwitchWeapon(room: Room, user: User, args: string) {
-  const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can use %sw.");
-  }
-
-  const parts = args.split(",").map((s) => s.trim());
-  if (parts.length < 2 || !parts[0] || !parts[1]) {
-    return sendPm(user.name, "Usage: %sw <entity>, <weapon>");
-  }
-
-  const entity = getEntity(game, parts[0]);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-
-  const newWeapon = parts[1];
+function applyWeaponChange(
+  game: Game,
+  room: Room,
+  entity: Entity,
+  newWeapon: string,
+): boolean {
   const weaponData = weapons.get(toId(newWeapon));
-  if (!weaponData) {
-    return sendPm(
-      user.name,
-      `Unknown weapon: ${newWeapon}. Use %wt to look up.`,
-    );
-  }
-
+  if (!weaponData) return false;
   pushSnapshot(game);
-
-  // Recalculate HP: existing class + new weapon
-  const classData = classes.get(toId(entity.className));
-  const newMaxhp =
-    (classData ? parseInt(classData.stats.hp) : 0) +
-    parseInt(weaponData.stats.hp);
-
   const oldWeapon = entity.weaponName;
   entity.weaponName = weaponData.name;
-  entity.maxhp = newMaxhp;
-  entity.curhp = Math.min(entity.curhp, newMaxhp);
-
-  // Recalculate stats
-  const sv = (s: string) => parseFloat(s) || 0;
-  entity.atk =
-    (classData ? sv(classData.stats.atk) : 0) + sv(weaponData.stats.atk);
-  entity.mag =
-    (classData ? sv(classData.stats.mag) : 0) + sv(weaponData.stats.mag);
-  entity.pd =
-    (classData ? sv(classData.stats.pd) : 0) + sv(weaponData.stats.pd);
-  entity.md =
-    (classData ? sv(classData.stats.md) : 0) + sv(weaponData.stats.md);
-  entity.eva = Math.floor(
-    (classData ? sv(classData.stats.eva) : 0) + sv(weaponData.stats.eva),
-  );
-  entity.mp =
-    (classData ? sv(classData.stats.mp) : 0) + sv(weaponData.stats.mp);
-
-  // Update abilities to existing class + new weapon, filtered by level
-  const lvl = entity.weaponLevel;
-  entity.abilities = [
-    ...(classData
-      ? classData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
-      : []),
-    ...weaponData.abilities.filter((a) =>
-      hasAbility(a, lvl, !!entity.isJuggernaut),
-    ),
-  ] as any[];
-
+  const newMaxhp = recalcEntityStats(entity);
   send(
     room.id,
     `${entity.num} (${entity.name}) weapon: ${oldWeapon} -> ${weaponData.name} (${newMaxhp} HP)`,
   );
   broadcastPages(game);
+  return true;
+}
+
+function applyLoadoutChange(
+  game: Game,
+  room: Room,
+  entity: Entity,
+  newClass: string,
+  newWeapon: string,
+): boolean {
+  const classData = classes.get(toId(newClass));
+  const weaponData = weapons.get(toId(newWeapon));
+  if (!classData || !weaponData) return false;
+  pushSnapshot(game);
+  const oldClass = entity.className;
+  const oldWeapon = entity.weaponName;
+  entity.className = classData.name;
+  entity.weaponName = weaponData.name;
+  const newMaxhp = recalcEntityStats(entity);
+  send(
+    room.id,
+    `${entity.num} (${entity.name}) loadout: ${oldClass}/${oldWeapon} -> ${classData.name}/${weaponData.name} (${newMaxhp} HP)`,
+  );
+  broadcastPages(game);
+  return true;
+}
+
+// -- .sc <class> - Switch your class (self-service) ---------------------------
+
+function handleSwitchClass(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  const parts = args.split(",").map((s) => s.trim());
+  if (!parts[0]) {
+    return sendPm(user.name, "Usage: %sc <class>");
+  }
+  const entity = getEntity(game, user.name);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
+  if (!mayChangeLoadout(user, game, entity)) {
+    return sendPm(user.name, "The game has already started.");
+  }
+  if (!applyClassChange(game, room, entity, parts[0])) {
+    return sendPm(user.name, `Unknown class: ${parts[0]}. Use %wt to look up.`);
+  }
+}
+
+// -- .sw <weapon> - Switch your weapon (self-service) -------------------------
+
+function handleSwitchWeapon(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  const parts = args.split(",").map((s) => s.trim());
+  if (!parts[0]) {
+    return sendPm(user.name, "Usage: %sw <weapon>");
+  }
+  const entity = getEntity(game, user.name);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
+  if (!mayChangeLoadout(user, game, entity)) {
+    return sendPm(user.name, "The game has already started.");
+  }
+  if (!applyWeaponChange(game, room, entity, parts[0])) {
+    return sendPm(
+      user.name,
+      `Unknown weapon: ${parts[0]}. Use %wt to look up.`,
+    );
+  }
+}
+
+/**
+ * %sco <class>, <weapon> — set your own class AND weapon in one go.
+ * Same permissions as %sc/%sw: players may change their own until the
+ * game starts.
+ */
+function handleSelfLoadout(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %sco <class>, <weapon>");
+  }
+  const entity = getEntity(game, user.name);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
+  if (!mayChangeLoadout(user, game, entity)) {
+    return sendPm(user.name, "The game has already started.");
+  }
+  if (!applyLoadoutChange(game, room, entity, parts[0], parts[1])) {
+    return sendPm(
+      user.name,
+      `Unknown class or weapon: ${parts[0]}/${parts[1]}. Use %wt to look up.`,
+    );
+  }
+}
+
+// -- .setclass <entity>, <class> - Host-only: set any entity's class ----------
+
+function handleSetClass(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %setclass.");
+  }
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %setclass <entity>, <class>");
+  }
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+  if (!applyClassChange(game, room, entity, parts[1])) {
+    return sendPm(user.name, `Unknown class: ${parts[1]}. Use %wt to look up.`);
+  }
+}
+
+// -- .setweapon <entity>, <weapon> - Host-only: set any entity's weapon --------
+
+function handleSetWeapon(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %setweapon.");
+  }
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %setweapon <entity>, <weapon>");
+  }
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+  if (!applyWeaponChange(game, room, entity, parts[1])) {
+    return sendPm(
+      user.name,
+      `Unknown weapon: ${parts[1]}. Use %wt to look up.`,
+    );
+  }
+}
+
+// -- .setloadout <entity>, <class>, <weapon> - Host-only ----------------------
+
+function handleSetEntityLoadout(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %setloadout.");
+  }
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) {
+    return sendPm(user.name, "Usage: %setloadout <entity>, <class>, <weapon>");
+  }
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+  if (!applyLoadoutChange(game, room, entity, parts[1], parts[2])) {
+    return sendPm(
+      user.name,
+      `Unknown class or weapon: ${parts[1]}/${parts[2]}. Use %wt to look up.`,
+    );
+  }
 }
 
 // -- .setlevel <entity>, <level> - Set entity level ----------------------------
+
+// Set an entity's class/weapon level, recomputing HP and abilities. Returns
+// the previous level.
+function applyEntityLevel(entity: Entity, level: number): number {
+  const classData = classes.get(toId(entity.className));
+  const weaponData = weapons.get(toId(entity.weaponName));
+  const maxhp =
+    (classData ? parseInt(classData.stats.hp) : 0) +
+    (weaponData ? parseInt(weaponData.stats.hp) : 0);
+  const oldLvl = entity.classLevel;
+  entity.classLevel = level;
+  entity.weaponLevel = level;
+  entity.curhp = Math.min(entity.curhp, maxhp);
+  entity.maxhp = maxhp;
+  entity.abilities = [
+    ...(classData
+      ? classData.abilities.filter((a) =>
+          hasAbility(a, level, !!entity.isJuggernaut),
+        )
+      : []),
+    ...(weaponData
+      ? weaponData.abilities.filter((a) =>
+          hasAbility(a, level, !!entity.isJuggernaut),
+        )
+      : []),
+  ] as any[];
+  return oldLvl;
+}
 
 function handleSetLevel(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
@@ -795,44 +1358,41 @@ function handleSetLevel(room: Room, user: User, args: string) {
 
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 2 || !parts[0] || !parts[1]) {
-    return sendPm(user.name, "Usage: %setlevel <entity>, <level>");
+    return sendPm(user.name, "Usage: %setlevel <entity|all>, <level>");
   }
-
-  const entity = getEntity(game, parts[0]);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
   const level = parseInt(parts[1]);
   if (isNaN(level) || level < 1 || level > 10) {
     return sendPm(user.name, "Level must be 1-10.");
   }
 
-  // Recalculate HP from class + weapon base
-  const classData = classes.get(toId(entity.className));
-  const weaponData = weapons.get(toId(entity.weaponName));
-  if (!classData || !weaponData) {
-    return sendPm(user.name, "Could not look up class/weapon data.");
+  // %setlevel all, <level> — level every player in one go.
+  if (toId(parts[0]) === "all") {
+    const players = game.entities.filter((e) => !e.isMonster);
+    if (players.length === 0) {
+      return sendPm(user.name, "No players in the game.");
+    }
+    pushSnapshot(game);
+    const rows = players.map((e) => {
+      const oldLvl = applyEntityLevel(e, level);
+      return `${e.num} (${e.name}) ${oldLvl} -> ${level}`;
+    });
+    send(
+      room.id,
+      `**All ${players.length} player(s) set to level ${level}.** ${rows.join(" | ")}`,
+    );
+    broadcastPages(game);
+    return;
   }
 
-  const maxhp = parseInt(classData.stats.hp) + parseInt(weaponData.stats.hp);
-  const oldLvl = entity.classLevel;
-  entity.classLevel = level;
-  entity.weaponLevel = level;
-  entity.curhp = Math.min(entity.curhp, maxhp);
-  entity.maxhp = maxhp;
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
-  // Update abilities to match new level
-  entity.abilities = [
-    ...classData.abilities.filter((a) =>
-      hasAbility(a, level, !!entity.isJuggernaut),
-    ),
-    ...weaponData.abilities.filter((a) =>
-      hasAbility(a, level, !!entity.isJuggernaut),
-    ),
-  ] as any[];
-
+  pushSnapshot(game);
+  const oldLvl = applyEntityLevel(entity, level);
   send(
     room.id,
-    `${entity.num} (${entity.name}) level: ${oldLvl} -> ${level} (${maxhp} HP)`,
+    `${entity.num} (${entity.name}) level: ${oldLvl} -> ${level} (${entity.maxhp} HP)`,
   );
   broadcastPages(game);
 }
@@ -918,6 +1478,7 @@ function handleRemPlayer(room: Room, user: User, args: string) {
 
   removeEntity(game, entity);
   send(room.id, `**${entity.num} (${entity.name})** has been removed.`);
+  broadcastPages(game);
 }
 
 // -- .setmap <name> - Set the map ----------------------------------------------
@@ -1264,10 +1825,12 @@ function applyMap(
   game: Game,
   def: { grid: Terrain[][]; displayName: string; rows: number; cols: number },
   note = "",
+  quiet = false,
 ): void {
   game.map = def.grid.map((row) => [...row]);
   game.mapName = def.displayName;
   repositionEntities(game);
+  if (quiet) return;
   broadcastPages(game);
   send(
     game.room,
@@ -1275,7 +1838,7 @@ function applyMap(
   );
 }
 
-function findSpawnPosition(game: Game): [number, number] {
+export function findSpawnPosition(game: Game): [number, number] {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
 
@@ -1290,7 +1853,7 @@ function findSpawnPosition(game: Game): [number, number] {
         const r = centerR + dr;
         const c = centerC + dc;
         if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
-        if (game.map[r][c] !== Terrain.Normal) continue;
+        if (!isStandable(game.map[r][c])) continue;
         if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c))
           continue;
         return [r, c];
@@ -1298,6 +1861,14 @@ function findSpawnPosition(game: Game): [number, number] {
     }
   }
 
-  // Fallback
+  // Fallback: scan the whole map for ANY standable, unoccupied tile — never
+  // dump a spawn onto Broken/Lava/obstruction blindly.
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!isStandable(game.map[r][c])) continue;
+      if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c)) continue;
+      return [r, c];
+    }
+  }
   return [1, 1];
 }

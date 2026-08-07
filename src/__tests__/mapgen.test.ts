@@ -6,8 +6,10 @@ import { MAPS } from "../data/maps.js";
 const Normal = 0;
 const Lava = 7;
 
-// Passability mirrors isObstruction() + lava rule from game/state.ts
-const OBSTRUCTIONS = new Set([1, 4, 7, 8, 9, 10]); // Stop, Ice, Lava, Broken, Bone, Stone
+// Passability mirrors isObstruction() + lava rule from game/state.ts.
+// Obstructions: Stop(1), Ice(4), Stone(10), Bone(9), Hearth(11); Broken(8) is
+// impassable though not an obstruction; Lava(7) damages on entry.
+const OBSTRUCTIONS = new Set([1, 4, 7, 8, 9, 10, 11]);
 
 function isPassable(t: number): boolean {
   return !OBSTRUCTIONS.has(t);

@@ -86,6 +86,10 @@ function makeGame(opts: {
     winner: null,
     chatLog: [],
     toasts: [],
+    signupsOpen: false,
+    votes: {},
+    voteOpen: false,
+    voteRunoff: null,
   };
 }
 

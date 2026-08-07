@@ -8,11 +8,14 @@ import {
   dist,
   DIRECTION_LABELS,
   parseFrequency,
+  formatChatTime,
   type Game,
   type Entity,
   type AbilityData,
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
+import { classes, weapons } from "../data/index.js";
+import { runoffOptions, tallyVotes, voteOptionsFor } from "../data/gamemodes.js";
 
 // -- Premove Mode Tracking -----------------------------------------------------
 
@@ -59,25 +62,102 @@ const TABLE_BORDER = `style="${TABLE_STYLE}"`;
 const PLAYER_LABEL =
   "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
 
+// -- Gamemode Vote Panel ------------------------------------------------------
+// Shown while game.voteOpen is true (between %close and %endvote). Players get
+// one button per valid option plus a live tally; the host gets the full tally
+// and an "End Vote" button that applies the winner.
+
+function buildVotePanel(game: Game, entity: Entity | null): string {
+  if (!game.voteOpen) return "";
+
+  const players = game.entities.filter((e) => !e.isMonster);
+  // During a runoff only the tied modes are shown/votable.
+  const runoff = game.voteRunoff;
+  const options = runoff ? runoffOptions(runoff) : voteOptionsFor(players.length);
+  const tally = new Map(tallyVotes(game.votes).map((t) => [t.mode, t.count]));
+  const voted = Object.keys(game.votes).length;
+
+  let html =
+    '<div style="margin:6px 0;padding:6px 10px;border:1px solid #a0c;border-left:3px solid #a0c;background:rgba(160,0,204,0.08)">';
+  const heading = runoff
+    ? `<b style="color:#c33">GAMEMODE VOTE — RUNOFF</b> <span style="color:#888">tie! only ${runoff.join(" / ")} count</span>`
+    : `<b style="color:#a0c">GAMEMODE VOTE</b>`;
+  html += `${heading} <span style="color:#888">(${voted}/${players.length} voted)</span><br>`;
+  html += `<span style="color:#888;font-size:10px">New to a mode? Hover the buttons, or use %wt modes to learn them all.</span><br>`;
+
+  if (options.length === 0) {
+    html += '<span style="color:#888"><i>No valid modes for this lobby size (modes are defined for up to 8 players).</i></span>';
+  }
+
+  if (entity !== null) {
+    // Player view: clickable vote button (tooltip explains the mode).
+    for (const opt of options) {
+      const count = tally.get(opt.id) ?? 0;
+      const mine = game.votes[entity.id] === opt.id;
+      const suffix = count > 0 ? ` (${count})` : "";
+      const style = mine
+        ? "background:#a0c;color:#fff;border-color:#a0c;font-weight:bold;"
+        : "";
+      html += btn(
+        `%vote ${opt.id}`,
+        `${opt.label}${suffix}`,
+        style,
+        opt.description,
+      );
+    }
+
+    // Player view: show their current vote and let them retract it.
+    const myVote = game.votes[entity.id];
+    if (myVote) {
+      html += `<div style="margin-top:4px;color:#a0c"><b>Your vote:</b> ${esc(myVote)} ${btn("%unvote", "Unvote")}</div>`;
+    }
+  } else {
+    // Host view: per-mode tally summary.
+    const tallySummary =
+      tally.size > 0
+        ? [...tally.entries()].map(([m, c]) => `${esc(m)}: ${c}`).join(" &nbsp;|")
+        : "no votes yet";
+    html += `<div style="margin:4px 0"><b>Tally:</b> ${tallySummary}</div>`;
+
+    // Host view: a table of every player and their vote status.
+    html += `<table style="border-collapse:collapse;margin:4px 0"><tr style="height:20px"><th style="padding:0px 8px;text-align:left">Player</th><th style="padding:0px 8px;text-align:left">Vote</th></tr>`;
+    for (const p of players) {
+      const v = game.votes[p.id];
+      const voteCell = v
+        ? `<span style="color:#0c0">&#10003; ${esc(v)}</span>`
+        : `<span style="color:#c33">&#10007; not voted</span>`;
+      html += `<tr style="height:20px"><td style="padding:0px 8px"><b>${esc(p.num)}</b> ${esc(p.name)}</td><td style="padding:0px 8px">${voteCell}</td></tr>`;
+    }
+    html += `</table>`;
+
+    html += `<div style="margin-top:6px">${btn("%endvote", "End Vote & Apply Winner")} ${btn("%nudge", "Nudge Unvoted")}</div>`;
+  }
+  html += "</div>";
+  return html;
+}
+
 // -- Toast helpers ------------------------------------------------------------
 
 function buildToasts(game: Game): string {
   if (game.toasts.length === 0) return "";
   const items = game.toasts
-    .map(
-      (e) =>
-        `<div class="toast"><b>${esc(e.user)}:</b> ${esc(e.message)}</div>`,
-    )
+    .map((e) => {
+      const timeTag = formatChatTime(e.time)
+        ? `<span style="color:#999">${formatChatTime(e.time)}</span> `
+        : "";
+      return `<div class="toast">${timeTag}<b>${esc(e.user)}:</b> ${esc(e.message)}</div>`;
+    })
     .join("");
   return `<div class="toast-wrap">${items}</div>`;
 }
 
 // -- Helpers ------------------------------------------------------------------
 
-function btn(value: string, label: string, extra = ""): string {
+function btn(value: string, label: string, extra = "", title = ""): string {
+  const titleAttr = title ? ` title="${esc(title)}"` : "";
   return `<button 
 name="send" 
-value="${esc(value)}"
+value="${esc(value)}"${titleAttr}
 style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif;${extra}">
 ${esc(label)}
 </button>`;
@@ -97,11 +177,16 @@ export function buildHostPage(game: Game): string {
   const map = buildMap(game);
   const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game);
-  const controls = buildControls(game);
+  // Controls (Next Turn / Undo / d20) only matter once the battle is running.
+  const controls = game.started ? buildControls(game) : "";
+  // "FFA" is just the placeholder until a mode is actually chosen (%setgame, the
+  // vote, or %genpos) — don't claim a mode in the header before then.
+  const modeSeg =
+    game.modeChosen || game.started ? ` -- ${esc(game.mode)} --` : "";
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
-  <b>Game: ${esc(game.id)}</b> -- ${esc(game.mode)} -- Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
-  <hr>${map}<hr>${pl}<hr>${log}<hr>${controls}
+  <b>Game: ${esc(game.id)}</b>${modeSeg} Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
+  <hr>${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}${controls ? `<hr>${controls}` : ""}
   ${buildToasts(game)}
 </div>`;
 }
@@ -180,9 +265,34 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
 
+  // Until the game starts, players can change their own class/weapon
+  // (e.g. after the gamemode vote decides the mode, before the map is set).
+  let loadout = "";
+  if (!game.started) {
+    const classOpts = [...classes.values()]
+      .map(
+        (c) =>
+          `<option value="${esc(c.name)}"${c.name === entity.className ? " selected" : ""}>${esc(c.name)}</option>`,
+      )
+      .join("");
+    const weaponOpts = [...weapons.values()]
+      .map(
+        (w) =>
+          `<option value="${esc(w.name)}"${w.name === entity.weaponName ? " selected" : ""}>${esc(w.name)}</option>`,
+      )
+      .join("");
+    loadout = `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #57a;border-radius:4px"><b style="color:#8af">Change Loadout</b> <span style="color:#888">(until the game starts)</span><br>
+<select id="loadout-class" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${classOpts}</select>
+<select id="loadout-weapon" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${weaponOpts}</select>
+<button name="loadout" style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif">Apply</button>
+</div>`;
+  }
+
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   ${map}${pl}
   <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
+  ${buildVotePanel(game, entity)}
+  ${loadout}
   <hr>${phase}${prompt}${actions}
   ${log}
   ${buildToasts(game)}
@@ -441,16 +551,14 @@ function buildActionLog(game: Game, collapsed = false): string {
 // -- Controls (Host) ----------------------------------------------------------
 
 function buildControls(game: Game): string {
-  return `<b>Controls</b><br>
+  return `<details style="margin-top:4px"><summary style="cursor:pointer;user-select:none"><b>Controls</b></summary>
 <div style="margin-top:4px">
   ${btn("%next", "Next Turn")}
   ${btn("%back", "Undo")}
   <span style="color:#888;margin:0 4px">|</span>
-  ${btn("%r 1d20", "1d20")}
-  ${btn("%r 2d8+5", "2d8+5")}
-  ${btn("%r 1d10+2", "1d10+2")}
-  ${btn("%r 2d6+0", "2d6")}
-</div>`;
+  ${btn("%r 1d20", "d20")}
+</div>
+</details>`;
 }
 
 // -- Entity Stats (Player) ----------------------------------------------------
