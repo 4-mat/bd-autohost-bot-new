@@ -1,0 +1,66 @@
+name: Pool proposal → PR
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+concurrency:
+  group: pool-proposals
+  cancel-in-progress: false
+jobs:
+  pool-pr:
+    if: startsWith(github.event.issue.title, 'Pools: ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create PR from issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          N=${{ github.event.issue.number }}
+          BODY=$(gh api repos/${{ github.repository }}/issues/$N --jq .body | tr -d '\r')
+          CHANGES=$(printf '%s' "$BODY" | grep -E '^(ffa|ntr|jugg|pvp|1v1)\|[+-]\|[A-Za-z0-9_-]+$' || true)
+          if [ -z "$CHANGES" ]; then
+            gh issue comment $N --body "Couldn't find any valid pool changes in the issue body (expected lines like `ffa|+|arena`). Closing."
+            gh issue close $N
+            exit 0
+          fi
+          export CHANGES
+          sed 's/\r$//' <<'EOF' | node
+          const fs = require('fs');
+          const changes = (process.env.CHANGES || '').split('\n').filter(Boolean);
+          const file = 'maps/modes.json';
+          const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const summary = [];
+          for (const line of changes) {
+            const m = line.match(/^(ffa|ntr|jugg|pvp|1v1)\|([+-])\|([A-Za-z0-9_-]+)$/);
+            if (!m) continue;
+            const mode = m[1], op = m[2], name = m[3];
+            const list = data.modes[mode] || (data.modes[mode] = []);
+            if (op === '+' && !list.includes(name)) { list.push(name); summary.push('add ' + name + ' to ' + mode); }
+            else if (op === '-' && list.includes(name)) { list.splice(list.indexOf(name), 1); summary.push('remove ' + name + ' from ' + mode); }
+          }
+          fs.writeFileSync('/tmp/pool-result.json', JSON.stringify({ applied: summary.length > 0, summary }));
+          if (summary.length) fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
+          EOF
+          APPLIED=$(node -p "require('/tmp/pool-result.json').applied")
+          if [ "$APPLIED" != "true" ]; then
+            gh issue comment $N --body "No actual pool changes were needed — everything in the issue was already in that state. Closing."
+            gh issue close $N
+            exit 0
+          fi
+          SUMMARY=$(node -p "require('/tmp/pool-result.json').summary.join('; ')")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BRANCH="pool/update-$N"
+          git checkout -b "$BRANCH"
+          git add maps/modes.json
+          git commit -m "Update map pools (from issue #$N)"
+          git push -u origin "$BRANCH"
+          PR_URL=$(gh pr create --title "Update map pools" --body "Auto-created from issue #$N. Changes: $SUMMARY")
+          gh issue comment $N --body "Opened **$PR_URL** with the pool changes. ($SUMMARY)"
+          gh issue close $N

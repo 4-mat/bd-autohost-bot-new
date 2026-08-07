@@ -6,17 +6,21 @@ A Pokémon Showdown–based Battle Dome autohost bot (TypeScript + Bun).
 
 - **Editor** — [https://4-mat.github.io/bd-autohost-bot-new/mapeditor/](https://4-mat.github.io/bd-autohost-bot-new/mapeditor/)
 - **Browser** — [https://4-mat.github.io/bd-autohost-bot-new/mapeditor/gallery/](https://4-mat.github.io/bd-autohost-bot-new/mapeditor/gallery/)
+- **Pools** — [https://4-mat.github.io/bd-autohost-bot-new/mapeditor/pools/](https://4-mat.github.io/bd-autohost-bot-new/mapeditor/pools/)
 
 **Editor**
 - Pokémon Showdown light theme, game-style grid (square cells, 5×5–60×60, 5×5 minimum for NTR maps).
 - Zoom 50–400% (default 150%) — footer buttons, Ctrl+wheel, Ctrl+= / Ctrl+− / Ctrl+0; remembers your zoom.
 - Paint 13 terrains, place players P1–P8, flood fill, eyedropper, erase, undo/redo, select & move boxes.
+- Drafts auto-save to your browser — refresh-safe, with a Restore/Discard banner.
+- **Copy .txt** copies the volunteer format; **Share** copies a link that works even for unsaved maps.
 - **I/O:** Export → Volunteer .txt / game HTML / JSON; import .txt, HTML, or .json; Save downloads a .txt.
 - "🗺 Maps" button jumps to the browser.
 
 **Browser**
 - Index grouped by gamemode (FFA/NTR/JUGG/PvP/1v1) with per-map links and sizes.
 - **View all maps** wall — every map as a thumbnail; **search**, **mode filter**, grouped sections, click to open full size (prev/next nav).
+- **Map Pools** editor (link on the index) — toggle which gamemode each map belongs to; propose changes → a bot opens the PR.
 
 ### Local mode (optional, extra features)
 
