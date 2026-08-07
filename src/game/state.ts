@@ -212,7 +212,8 @@ export const DIRECTION_LABELS: Record<string, string> = {
 
 export function needsDirection(ability: AbilityData): boolean {
   const r = ability.range.toLowerCase().trim();
-  return /^(cone|line|beam|pierce)\b/.test(r);
+  return false;
+  // return /^(cone|line|beam|pierce)\b/.test(r);
 }
 
 export function getDirectionCandidates(): string[] {
