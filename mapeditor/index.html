@@ -427,6 +427,8 @@ kbd {
 	background: #fff;
 	color: var(--text);
 }
+.btn.propose { background: linear-gradient(to bottom, #e9f7ec, #cdeeda); border-color: #5d9b6e; color: #174a25; }
+.btn.propose:hover { background: linear-gradient(to bottom, #f1faf3, #cdeeda); }
 @media (max-width: 900px) {
 	aside { width: 190px; padding: 10px; }
 	.gcell { width: 22px; height: 22px; }
@@ -440,6 +442,7 @@ kbd {
 	<input type="text" id="mapName" placeholder="map name" spellcheck="false">
 	<button class="btn primary" id="btnSave" title="Save to maps/ in the repo (Ctrl+S)">💾 Save</button>
 	<button class="btn" id="btnExport" title="Export map">⬆️ Export</button>
+	<button class="btn propose" id="btnPropose" title="Save maps/<name>.txt, open a pre-filled issue, and a bot opens the PR">🚀 Save to maps/</button>
 	<button class="btn" id="btnImport" title="Import a map">⬇️ Import</button>
 	<button class="btn" id="btnNew" title="Create a new blank map">✨ New</button>
 	<a class="btn" href="gallery/index.html?view=all" title="View every map as a thumbnail wall">🗺 Maps</a>
@@ -1166,6 +1169,21 @@ async function saveMap() {
 		: 'Offline mode — downloaded maps/' + name + '.txt. Put it in maps/ and commit.', 'ok');
 }
 
+function proposeMap() {
+	let name = MC.sanitizeName($('mapName').value || map.name || 'untitled');
+	const out = MC.toJSON(map);
+	out.name = name;
+	let txt;
+	try { txt = MC.toTxt(out); }
+	catch (e) { toast(e.message, 'err'); return; }
+	download('maps/' + name + '.txt', txt);
+	const title = 'Map: ' + name;
+	const body = 'Map name: ' + name + '\n\n```txt\n' + txt + '\n```';
+	const url = 'https://github.com/4-mat/bd-autohost-bot-new/issues/new?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);
+	window.open(url, '_blank');
+	toast('Opened a pre-filled issue — submit it and the bot opens the PR (.txt also downloaded)', 'ok');
+}
+
 async function deleteMap() {
 	if (mode !== 'server') { toast('Deleting needs the local server (node mapeditor/server.js)', 'err'); return; }
 	const entry = repoMaps.find((m) => m.name === $('mapSelect').value);
@@ -1402,6 +1420,7 @@ $('mapSearch').addEventListener('keydown', (e) => {
 	const v = sel.value || (sel.options[0] && sel.options[0].value);
 	if (v) loadMap(v);
 });
+$('btnPropose').addEventListener('click', proposeMap);
 $('mapName').addEventListener('change', () => { map.name = MC.sanitizeName($('mapName').value); });
 document.querySelectorAll('.tool').forEach((t) => t.addEventListener('click', () => setTool(t.dataset.tool)));
 $('btnZoomIn').addEventListener('click', () => zoomBy(0.25));
