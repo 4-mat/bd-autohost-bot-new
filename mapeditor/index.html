@@ -220,13 +220,13 @@ aside {
 	padding: 24px;
 	display: flex;
 	align-items: flex-start;
-	justify-content: center;
 	background-image: radial-gradient(rgba(0,0,0,.05) 1px, transparent 1px);
 	background-size: 20px 20px;
 }
 #grid {
 	display: inline-block;
 	user-select: none;
+	margin: 0 auto;
 	border: 1px solid #888;
 	background: rgba(120,120,225,0.10);
 	box-shadow: 0 2px 10px rgba(0,0,0,.12);
@@ -303,6 +303,10 @@ footer .mode { margin-left: auto; display: flex; align-items: center; gap: 6px; 
 	color: var(--text-dim);
 }
 .tag.ok { color: var(--ok); border-color: rgba(26,127,55,.5); background: #e8f5ec; }
+
+/* zoom */
+.zoom { display: flex; align-items: center; gap: 4px; }
+.zoom #zoomPct { min-width: 44px; text-align: center; font-size: 11px; color: var(--text); font-weight: 600; }
 
 /* ---------- modal ---------- */
 .modal-back {
@@ -498,6 +502,11 @@ kbd {
 <footer>
 	<span class="picked" id="cellInfo">—</span>
 	<span class="counts" id="counts"></span>
+	<div class="zoom">
+		<button class="btn small" id="btnZoomOut" title="Zoom out (Ctrl+−)">−</button>
+		<span id="zoomPct">150%</span>
+		<button class="btn small" id="btnZoomIn" title="Zoom in (Ctrl++)">+</button>
+	</div>
 	<div class="mode">
 		<span class="tag" id="modeTag2" style="display:none"></span>
 	</div>
@@ -598,8 +607,23 @@ let drag = null;               // {startRow, startCol, snapshot}
 let selBox = null;             // selected box {r0,c0,r1,c1} inclusive (select tool)
 let selDrag = null;            // marquee being drawn {r, c}
 let translateDrag = null;      // box being moved {startR, startC, before, ghost}
+let zoom = 1.5;                    // grid scale (default 150% for comfy editing; 100% = exact game size)
 
 const $ = (id) => document.getElementById(id);
+
+/* ------------------------------------------------------------------ */
+/* zoom                                                                 */
+/* ------------------------------------------------------------------ */
+function applyZoom() {
+	$('grid').style.zoom = zoom;
+	$('zoomPct').textContent = Math.round(zoom * 100) + '%';
+}
+function zoomBy(d) {
+	zoom = Math.min(4, Math.max(0.5, Math.round((zoom + d) * 20) / 20));
+	try { localStorage.setItem('bd-editor-zoom', String(zoom)); } catch (e) { /* private mode */ }
+	applyZoom();
+}
+
 
 /* ------------------------------------------------------------------ */
 /* history                                                              */
@@ -1256,6 +1280,9 @@ window.addEventListener('keydown', (e) => {
 	if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 	if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
 	if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveMap(); return; }
+	if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomBy(0.25); return; }
+	if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoomBy(-0.25); return; }
+	if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); zoomBy(1 - zoom); return; }
 	switch (e.key.toLowerCase()) {
 		case 'f': setTool('fill'); break;
 		case 'e': setTool('eyedrop'); break;
@@ -1338,6 +1365,13 @@ $('mapSelect').addEventListener('change', () => {
 });
 $('mapName').addEventListener('change', () => { map.name = MC.sanitizeName($('mapName').value); });
 document.querySelectorAll('.tool').forEach((t) => t.addEventListener('click', () => setTool(t.dataset.tool)));
+$('btnZoomIn').addEventListener('click', () => zoomBy(0.25));
+$('btnZoomOut').addEventListener('click', () => zoomBy(-0.25));
+$('canvasWrap').addEventListener('wheel', (e) => {
+	if (!e.ctrlKey) return;
+	e.preventDefault();
+	zoomBy(e.deltaY < 0 ? 0.25 : -0.25);
+}, { passive: false });
 
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModals));
 document.querySelectorAll('.modal-back').forEach((m) => m.addEventListener('click', (e) => { if (e.target === m) closeModals(); }));
@@ -1413,10 +1447,12 @@ function updateModeUI() {
 /* boot                                                                 */
 /* ------------------------------------------------------------------ */
 function init() {
+	try { const saved = parseFloat(localStorage.getItem('bd-editor-zoom')); if (saved && saved >= 0.5 && saved <= 4) zoom = saved; } catch (e) { /* ignore */ }
 	renderTerrainPalette();
 	renderTokenPalette();
 	renderTools();
 	updateSelectionUI();
+	applyZoom();
 
 	(async () => {
 		mode = 'offline';
