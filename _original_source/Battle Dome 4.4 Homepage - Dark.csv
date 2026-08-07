@@ -1,0 +1,67 @@
+Name,Lv.,Frequency,MR,Damage,,,Target,,,Effect
+,,,,Roll,Type,Action,Amount,Group,Range,
+Basic Abilities,,,,,,,,,,
+Basic Attack,B,Every Turn,2,1d10+2,Physical or Magical,Standard,1,Foe,Melee,"This attack is either Physical or Magical. Add ATK/MAG to the damage roll and subtract the target's PD/MD. This move's use cannot be prevented by any means, including Seal."
+Basic Movement,B,Every Turn,-,-,-,Movement,-,Self,-,"The user spends MP to move an equal amount of tiles.
+(For all purposes, Basic Movement is not an ability, but is still an action.)"
+Dash,B,Every Turn,-,-,-,Full,-,Self,-,The user spends MP to move up to x1.5 that amount of tiles (rounded down).
+Backstep,B,Passive,-,-,-,-,-,Self,-,"During the user's Movement/Full action, the user has unremovable -2 MP for the rest of the turn after leaving a foe's Melee."
+Attack of Opportunity,B,Every Turn,2,1d10+2,Physical or Magical,Reaction,1,Foe,Melee,This may be used on a foe in the user's Melee that either: 1. uses a ranged attack that doesn't target the user (after damage is rolled) or 2. leaves the user's Melee using Dash. (AoO still adds ATK/MAG and DEF.)
+Dark Abilities,,,,,,,,,,
+,,,,,,,,,,
+Athame (Ocean),,,,,,,,,,
+65 HP | 9 ATK | 12 MAG | 5 PDEF | 2 MDEF | 1 EVA | 3 MP ,,,,,,"""Sacrifice your life force to boost your power without limit.""",,,,
+Crimson Pact,1,Passive,-,-,-,-,-,-,-,"Whenever the user damages a foe, they sacrifice HP equal to 10% of the total damage the foe took, if able. Then, they gain permanent bonus damage equal to the HP sacrificed. (Bonus damage is also gained through effect-derived CP.)"
+Bloodrush,1,Every Turn,2,2d8+4,Magical,Standard,1,Foe,Range 4,"If this move is used from maximum range, the user gains +5 DMG and +1 MP/1."
+Defile,2,EoT,4,1d10+5,Magical,Standard,AoE,Foes,Pierce 4,"Targets are inflicted with 3 Curse/1. Whenever a foe takes damage from this Curse, the user takes an equal amount in Crimson Pact."
+Purloin Youth,3,E3T,3,3d6+5,Magical,Standard,1,Foe,Melee,"For one round, attacks targeting the user have 10% recoil. The user sacrifices HP to Crimson Pact equal to half the recoil."
+Sanctified Blade,4,Once,-,-,-,Swift,1,Self,-,"Crimson Pact's sacrifice amount on the user's next single-target attack is increased by 10%. If the Foe has targeted the user since the beginning of their last turn, the amount is increased by an additional 5%."
+Pentagram,5,E3T,4,2d6+3,Magical,Standard,AoE,Foes,Burst 1,"At the start of the user's next turn, foes in the user's Burst 1 take 2d6+3 plus the user's Crimson Pact in damage."
+Black Magic,6,Passive,-,-,-,-,-,-,-," For every 5 CP the user has, they have +1 DEF. For every 7 CP, they have +1 ACC.  For every 10 CP, they have +1 damage dice."
+Massacre,7,Once,3,2d8+11,Magical,Standard,1,Foe,Melee,"If this kills the target, the user gains twice the amount of Crimson Pact from it and an additional use of Massacre. Otherwise, this move does not trigger Crimson Pact sacrifice."
+Covenant,7,Once,-,-,-,Free,1,Ally,Range 3,"For one round, the target shares the user's Black Magic buffs and gains the Crimson Pact passive. Crimson Pact gained by the target is applied to the user instead."
+Exsanguinate,8,Once,4,2d8+6,Magical,Standard,1,Foe,Melee,"If the user acquires a Black Magic bonus from the Crimson Pact gained from this move, the bonus gained is increased by 1."
+Siphon Soul,9,Twice/EoT,4,3d8+2,Magical,Standard,1,Foe,Range 3,"Before accuracy, the user heals HP equal to their Crimson Pact."
+Oblation,10,Once,-,-,-,Swift,-,Self,-,The user's next attack this turn gets double bonus damage from Crimson Pact.
+Total Depravity,EX1,Passive,-,-,-,-,-,-,-,"The user's Crimson Pact sacrifice is increased by 5%. At the start of each turn, if the user attacked on their last turn, they take damage equal to their Crimson Pact. This cannot kill the user."
+Bloodbind,EX2,Every Turn,-,-,-,Trigger,-,-,-,"This may be used up to twice per turn before the user attacks. The user sacrifices any amount of CP. For each point sacrificed, they gain +1 DMG this turn and heal 1 HP when using Standard/Full attacks, regardless of hit."
+Scythe (Ocean),,,,,,,,,,
+55 HP | 9 ATK | 16 MAG | 6 PDEF | 4 MDEF | 0.6 EVA | 2 MP ,,,,,,"""Steals the opponent's HP with every attack.""",,,,
+Reaper's Touch,1,Passive,-,-,-,-,-,-,-,"Whenever the user damages a foe, the user heals 1/8 of the damage dealt."
+Reap,1,Every Turn,2,2d8+3,Magical,Standard,1,Foe,Melee,Reaper's Touch heals 1/5 of the damage dealt on this attack instead of 1/8.
+Hades' Toll,2,EoT,3,2d10+1,Magical,Standard,1,Foe,Homing 4,"For two rounds, the user's Reaper's Touch heal is increased 50% on attacks against the target."
+Haunted Swing,3,EoT,4,3d6+4,Magical,Standard,AoE,Foes,Beam 2,Targets at full HP take an additional 5 damage. The user heals 5 HP for each target this triggers on.
+Wither Soul,4,EoT,3,2d8+6,Magical,Standard,AoE,Foes,Burst 1,"For each debuff or status that any target is under, the user heals an additional 3 HP from Reaper's Touch."
+Pestilent Strike,5,EoT,3,2d10+8,Magical,Standard,1,Foe,Range 3,"The target is inflicted with Poison/1 equal to the amount of Reaper's Touch healing calculated from this attack. If this amount is at least 6, the poison damage is halved and extended one round. "
+Coup de Grâce,6,E3T,3,2d8+5,Magical,Standard,1,Foe,Homing 5,"If this kills a target, the user heals 10 HP and gains +5 damage to their next attack."
+Spirit Break,7,Twice,4,5d6+5,Magical,Standard,1,Foe,Range 3,"The target is inflicted with -3 DEF/1, and the user gains +3 DMG/1."
+Memento Mori,8,Twice/EoT,4,4d8+5,Magical,Standard,1,Foe,Range 5,"This attack's damage is delayed for one turn. The user may choose to delay it for up to 2 additional turns. For each additional turn delayed, the user heals an additional 1/8 of the damage from Reaper's Touch."
+Phantasmal Shield,8,Once,-,-,-,Swift,1,Self or Ally,Melee,"For one round, the target heals 15% of the damage taken from all attacks. Each time the target is hit by a Standard/Full attack with this effect, it is decreased by 5% (minimum 0%)."
+Stroke of Midnight,9,Twice/E3T,4,2d6+12,Magical,Standard,1,Foe,Range 3,"Before damage, for one round, the user's Reaper Touch healing is instead converted into additional damage on that attack. Other Scythe-sourced healing is converted into +DMG/1."
+Phantom Blade,10,Once,4,6d6+6,Magical,Standard,1,Foe,Melee,The amount the user heals from Reaper's Touch on this attack is equal to amount of HP the user has healed from Scythe abilities (except Phantom Blade) in the last round.
+Immortal Coil,EX1,Passive,-,-,-,-,-,-,-,"When the user would die for the first time, they are instead set to 1 HP and immediately take their turn. The user cannot take damage during this bonus turn. Then, they take damage equal to the overkill amount of the attack that would have killed them. Turn order then resumes normally."
+Quietus,EX2,Passive,-,-,-,-,-,-,-,The user's attacks automatically hit and kill targets below 25% HP.
+"Totems (God evening, Methridium)",,,,,,,,,,
+65 HP | 3 ATK | 14 MAG | 0 PDEF | 7 MDEF | 0.7 EVA | 1 MP ,,,,,,"""Carve and control a Totem tile to support or punish nearby players.""",,,,
+Whittle,1,Every Turn,-,-,-,Free,1,Tile,Homing 2,"The user sacrifices 10 HP to create a Totem tile on the target, removing any existing Totem tile. Totems have a range of Burst 1 and can have one of three types: Blood, Bone, or Soul, starting in Blood when placed. Totem tiles cannot be overwritten. "
+Totem of Blood,1,EoT,-,-,-,Trigger,-,-,-,"The user's Totem becomes a Totem of Blood. Within Homing 6 of their Totem of Blood, the user may originate Totems moves from it, granting +5 DMG and -1 Range."
+Void's Call,1,Every Turn,2,1d12+6,Magical,Standard,2,Foes,"Homing 3
+(Pull 2)","Targets are pulled towards the user's Totem tile instead of the user, if one exists."
+Left-Hand Path,2,EoT,3,3d8+5,Magical,Standard,1,Foe,Line 6,"The user moves along the line, from it's origin, until they hit a non-entity obstruction. If the user has no active Totem, the target is inflicted with -2 EVA/1 and -3 DEF/1."
+Totem of Bone,3,EoT,-,-,-,Trigger,-,-,-,"The user's Totem becomes a Totem of Bone. Within a Totem of Bone's range, the user and their allies have +5 DEF, and cannot be targetted by AoE moves or Splash damage used by foes outside of its range."
+Heredity,4,Twice,3,2d8+8,Magical,Standard,1,Foe,Homing 5,"The user's Totem moves as close to the target as possible, and the user heals any HP they sacrificed to create it. If the user has no Totem, they place one on the target's tile."
+Totem of Soul,5,EoT,-,-,-,Trigger,-,-,-,The user's Totem becomes a Totem of Soul. The user and allies may sacrifice 8 HP while within a Totem of Soul's range as an Every Turn Free action to gain +1 MP that turn and +2 dice on their next attack that turn. Numerical values are halved for allies.
+Feral Spark,6,EoT,3,3d6+5,Magical,Standard,1,Foe,Range 4,For one round the target has 10% recoil on attacks and numerical effects of the user's current Totem type are doubled.
+Blasphemy,7,E3T,4,2d10+3,Magical,Standard,AoE,Foes,Beam 2,"Targets are inflicted with 6 Curse/1. While this Curse is active, targets who target an Ally have the Curse extended by one round."
+Effigial Pyre,8,Once,-,-,-,Swift,-,-,-,"The user destroys their Totem tile and inflicts 13 Burn/1 to foes within the tile's Burst 1. For the rest of the game, the user's current Totem type loses all of its effects, but the user's Totem range becomes Burst 2."
+Sacrificial Lamb,9,Twice/E3T,6,2d8+7,Magical,Full,0,Foes,Range 3,"Before accuracy, all players within the user's Totem's range sacrifice 5 HP. For each player that sacrificed, this move gains +1 target, +1 base dice, and -1 MR."
+Ancestral Wrath,10,Once,4,2d10+4,Magical,Full,AoE,Foes,Varies,"This ability may only be used if the user's Totem is within their Range 5 (ignoring players), and targets within the user's Totem range, with effects depending on its type:
+
+Blood: For one round, targets cannot leave the user's Totem's range willingly.
+Bone: The user and allies in range are cleansed of debuffs and statuses. Foes in range are cleansed of buffs.
+Soul: The user and allies in range are healed for 1/3 of the damage dealt by this attack."
+Animatus,EX1,Every Turn,-,-,-,Trigger,-,Self,-,"If the user has a non-Animated Totem on an unoccupied tile, it is Animated, and the user sacrifices any amount of HP to become its HP stat, and to be gained by the Totem as Shield/1. An Animated Totem is an entity allied with the user, sharing the user's DEF. When the user or Totem runs out of HP, it is removed.
+
+If the user has an Animated Totem they may, in any order, move it a number of tiles up to their MP, and deal 3d10 to foes in its Totem range."
+Egregore,EX2,Passive,-,-,-,-,-,-,-,"When the user kills a foe, their Animated Totem gains any overkill damage as HP. If their Totem is not Animated, it becomes so with HP equal to the overkill. The user may choose one active ability from the foe, which may be used (with its frequency) by Animated Totems for the rest of the game, in place of Animatus dealing damage."
+,,,,,,,,,,
