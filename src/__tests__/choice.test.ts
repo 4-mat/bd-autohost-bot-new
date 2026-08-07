@@ -78,6 +78,10 @@ function makeGame(opts: { entities?: Entity[]; mode?: string } = {}): Game {
     winner: null,
     chatLog: [],
     toasts: [],
+    signupsOpen: false,
+    votes: {},
+    voteOpen: false,
+    voteRunoff: null,
   };
 }
 
