@@ -41,7 +41,7 @@
 		bone:   { color: '#CCCCAA', label: 'Bone',   code: 'b', dark: false },
 		stone:  { color: '#888888', label: 'Stone',  code: 'o', dark: true },
 		hearth: { color: '#FF6633', label: 'Hearth', code: 'h', dark: true },
-		boost:  { color: '#AAFFAA', label: 'Boost',  code: '+', dark: false }
+		boost:  { color: '#A855F7', label: 'Boost',  code: '+', dark: true }
 	};
 
 	// Default token colors (P1 green / P2 blue are the classic ones).
