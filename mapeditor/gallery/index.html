@@ -81,6 +81,16 @@
 	}
 	.map-links a small { color: #999; font-size: 10.5px; margin-left: 3px; }
 	.muted { color: #888; font-size: 11px; }
+
+	/* all-maps wall */
+	#wall { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+	.map-card { max-width: 520px; }
+	.map-card h3 { margin: 0 0 4px; font-size: 13px; }
+	.map-card h3 a { text-decoration: none; }
+	.map-card .meta { color: #888; font-size: 11px; margin: 0 0 6px; }
+	.map-card .thumb { display: inline-block; border: 1px solid #888; background: rgba(120,120,225,0.10); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+	.map-card .thumb table.bdmap { border: 0; background: transparent; }
+	.map-card .thumb table.bdmap td { min-width: auto; height: auto; padding: 0; font-size: 0; }
 	#status { color: #a33; font-size: 12px; margin: 10px 0; }
 	@media (max-width: 700px) {
 		#app, #app.wide { padding: 16px 12px; }
@@ -142,6 +152,7 @@ function route() {
 	const p = params();
 	const mapName = p.get('map');
 	if (mapName) renderMap(mapName, p.get('mode'));
+	else if (p.get('view') === 'all') renderAll();
 	else renderIndex();
 }
 
@@ -165,7 +176,7 @@ function renderIndex() {
 			html += '<a class="button primary" href="#mode-' + encodeURIComponent(k) + '">' + esc(modeLabels[k] || k) + ' (' + modes[k].length + ')</a> ';
 		}
 	}
-	html += '<a class="button" href="#all">All maps</a></div>';
+	html += '<a class="button primary" href="./index.html?view=all">🗺 View all maps</a></div>';
 
 	if (volunteers.length) {
 		html += section('Volunteer', volunteers.map((m) => linkFor(m)));
@@ -232,7 +243,7 @@ async function renderMap(name, mode) {
 	const prev = idx > 0 ? ctx[idx - 1] : null;
 	const next = idx >= 0 && idx < ctx.length - 1 ? ctx[idx + 1] : null;
 
-	let top = '<a class="button" href="./index.html">← Return to index</a>';
+	let top = '<a class="button" href="./index.html">← Return to index</a> <a class="button" href="./index.html?view=all">🗺 All maps</a>';
 	if (mode && modeLabels[mode]) {
 		top += ' <a class="button" href="./index.html?mode=' + encodeURIComponent(mode) + '#mode-' + encodeURIComponent(mode) + '">Return to ' + esc(modeLabels[mode]) + '</a>';
 	}
@@ -245,6 +256,58 @@ async function renderMap(name, mode) {
 		'<div class="center"><h1>' + esc(display) + '</h1>' +
 		'<p class="map-info">' + map.rows + '×' + map.cols + (mode && modeLabels[mode] ? ' · ' + esc(modeLabels[mode]) + ' pool' : '') + '</p>' +
 		'<div class="map-stage"><div style="display:inline-block;overflow-x:auto">' + tableHTML(map) + '</div></div></div>';
+}
+
+/* ---------------- all maps (scrollable wall) ---------------- */
+async function renderAll() {
+	$('app').classList.add('wide');
+	$('topbar').innerHTML = '<a class="button" href="./index.html">← Return to index</a> <span class="muted">Battle Dome map browser — all maps</span>';
+	$('content').innerHTML = '<h1>All maps</h1><p class="map-info" id="wallStatus">Loading ' + manifest.length + ' maps…</p><div id="wall"></div>';
+
+	const wall = $('wall');
+	const entries = manifest.slice().sort((a, b) => (a.display || a.name).localeCompare(b.display || b.name));
+	const total = entries.length;
+	async function loadMap(m) {
+		try {
+			if (m.format === 'curated') return curated[m.name] || null;
+			if (m.format === 'txt') return MC.parseTxt(await (await fetch('../../maps/' + m.file)).text(), m.file);
+			return MC.normalizeMap(await getJSON('../../maps/' + m.file));
+		} catch (e) { return null; }
+	}
+	// Chunked parallel loading (12 at a time) — cards append in sorted order.
+	for (let i = 0; i < total; i += 12) {
+		const chunk = entries.slice(i, i + 12);
+		const maps = await Promise.all(chunk.map(loadMap));
+		chunk.forEach((m, j) => {
+			const map = maps[j];
+			const card = document.createElement('div');
+			card.className = 'map-card';
+			const ok = map && map.tiles && map.tiles.length;
+			card.innerHTML = '<h3><a href="./index.html?map=' + encodeURIComponent(m.name) + '">' + esc(m.display || m.name) + '</a></h3>' +
+				'<p class="meta">' + (ok ? map.rows + '×' + map.cols : m.rows + '×' + m.cols + ' · failed to load') + '</p>' +
+				(ok ? '<a class="thumb" href="./index.html?map=' + encodeURIComponent(m.name) + '" title="Open ' + esc(m.display || m.name) + '">' + thumbHTML(map) + '</a>' : '');
+			wall.appendChild(card);
+		});
+		const done = Math.min(i + 12, total);
+		$('wallStatus').textContent = 'Loading ' + done + '/' + total + '…';
+	}
+	$('wallStatus').textContent = total + ' maps';
+}
+
+function thumbHTML(map) {
+	const rows = map.tiles.length;
+	const cols = map.tiles[0].length;
+	const cell = Math.max(6, Math.min(16, Math.floor(460 / cols)));
+	let out = '<table class="bdmap"><tbody>';
+	for (let r = 0; r < rows; r++) {
+		out += '<tr>';
+		for (let c = 0; c < cols; c++) {
+			const t = map.tiles[r][c] || 'normal';
+			out += '<td class="tile" style="min-width:' + cell + 'px;width:' + cell + 'px;height:' + cell + 'px;background:' + (COLORS[t] || COLORS.normal) + '" title="' + esc(rowLabel(r)) + (c + 1) + ' · ' + esc(t) + '"></td>';
+		}
+		out += '</tr>';
+	}
+	return out + '</tbody></table>';
 }
 
 function displayOf(name) {
