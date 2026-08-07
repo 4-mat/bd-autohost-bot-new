@@ -22,7 +22,11 @@ function drain() {
   sending = true;
   const { room, msg } = sendQueue.shift()!;
   const prefix = room.startsWith("pm-") ? "" : `|`;
-  ws.send(`${prefix}${msg}`);
+  try {
+    ws.send(`${prefix}${msg}`);
+  } catch {
+    // WebSocket closed, drop message silently
+  }
   setTimeout(drain, 400);
 }
 
