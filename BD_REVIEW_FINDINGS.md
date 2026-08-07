@@ -5,7 +5,7 @@ Because a whole-repo diff exceeds Greptile's limits, the codebase was split into
 
 - Method: Greptile CLI `greptile review -b empty-base` per chunk + Greptile GitHub app reviews on chunk PRs (with flowcharts).
 - 20 real findings (19 P1, 1 P2), 6 chunk-artifact false positives, 2 `.xlsx` binaries not reviewed.
-- 13 chunk reviews (PRs #74–#86) plus a deep adversarial pass over the game engine (PR #88).
+- 13 chunk reviews (PRs #74–#86) plus a deep adversarial pass over the game engine (PR #88) and a combat-flow conformance check (PR #89).
 
 ## Real findings
 
@@ -71,6 +71,25 @@ Because a whole-repo diff exceeds Greptile's limits, the codebase was split into
 19. **P2 — Unavailable working-copy paths** (`_original_source/README-ORIGINAL.txt:9`)
     Preservation guidance points to `../_data/` and `../src/`, which don't exist in this checkout; contributors can't follow the documented update process.
 
+## Combat-flow conformance (PR #89, flowcheck-combat)
+
+The attack-resolution pipeline was checked against the intended 10-step combat flowchart (review ID `a198d421-8df3-4bfc-a14b-56904b61d5bb`). Overall verdict: the order is roughly right (costs → target → acc → damage → cleanup), but the code is **not conformant**.
+
+| Step                                           | Status                                                               | Code                                                                                                                         |
+| ---------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 1. Declare Attack                              | Partial                                                              | `handleAttack` builds `pendingAction` + announces (`commands/game.ts:475`); resolver declaration disabled (`resolve.ts:180`) |
+| 2. Selection / Choices / Sacrifice / Pay Costs | Runs, but forged `%choose` bypasses cost                             | `resolve.ts:183`, `resolve.ts:498`                                                                                           |
+| 3. Target                                      | Runs; invalid/no target stops **without rollback**                   | `resolve.ts:221`, `resolve.ts:184`                                                                                           |
+| 4. Before Acc                                  | **Skipped**                                                          | `resolve.ts:668`                                                                                                             |
+| 5. Acc                                         | Runs; misses skip the hit branch                                     | `resolve.ts:668`                                                                                                             |
+| 6. Before Damage                               | **Skipped**                                                          | `resolve.ts:681`                                                                                                             |
+| 7. Damage                                      | Runs                                                                 | `resolve.ts:682`                                                                                                             |
+| 8. On Hit / On Miss                            | **No distinct phase**; effects run post-damage on hits, none on miss | `resolve.ts:724`, `resolve.ts:763`                                                                                           |
+| 9. Regardless of Hit                           | **No general phase**; only a hard-coded Confusion check              | `resolve.ts:763`                                                                                                             |
+| 10. Cleanup / After Resolving                  | Runs                                                                 | `resolve.ts:328`, `game.ts:750`                                                                                              |
+
+Deviations (P1s): target failure retains paid cost/action slot (`resolve.ts:184-191`); prompted cost bypass via forged choice (`resolve.ts:503-506`); required combat hooks (Before Acc / Before Damage / On Miss / Regardless) skipped — the full effect stream is dumped into the hit branch (`resolve.ts:724-727`).
+
 ## Chunk-artifact false positives (not real)
 
 The partial-tree diffs made Greptile report missing imports/entrypoints. The full repo resolves all of these (typecheck/build pass).
@@ -108,7 +127,8 @@ No findings (5/5 confidence): `review-bigdata` (data/abilities.json + .sheets-st
 | review-origsource | #85 | 03c02809-f816-40bb-a776-9fb3d5baf67e |
 | review-tests      | #86 | 82c4596f-57fb-4210-8063-85287d915160 |
 | deep-game         | #88 | 002354cf-ce2c-4a80-a9c7-d5ce2e3a5a40 |
+| flowcheck-combat  | #89 | a198d421-8df3-4bfc-a14b-56904b61d5bb |
 
 Re-open a CLI review anytime with `greptile review show <ID>` (run from the `bd-autohost-fullreview` worktree).
 
-The PRs (#74–#86, #88, base `empty-base`) are synthetic review-only PRs — **do not merge**; safe to close.
+The PRs (#74–#86, #88, #89, base `empty-base`) are synthetic review-only PRs — **do not merge**; safe to close.
