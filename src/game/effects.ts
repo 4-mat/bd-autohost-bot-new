@@ -148,6 +148,14 @@ export interface TriggerEffect {
   effects: Effect[];
 }
 
+export type PhaseTiming = "before-acc" | "before-damage" | "on-miss" | "regardless";
+
+export interface PhaseEffect {
+  type: "phaseEffect";
+  phase: PhaseTiming;
+  effects: Effect[];
+}
+
 export interface OnMissEffect {
   type: "onMiss";
   effects: Effect[];
@@ -175,6 +183,7 @@ export type Effect =
   | TileEffect
   | PerEffect
   | TriggerEffect
+  | PhaseEffect
   | OnMissEffect
   | UnknownEffect;
 
@@ -465,6 +474,25 @@ function parseClauseStructured(lower: string): Effect[] | null {
       type: "conditional",
       condition: `phase is ${phaseCondMatch[1]}`,
       thenEffects: parseEffects(phaseCondMatch[2]),
+    }];
+  }
+
+  // Phase-prefixed: "Before accuracy: EFFECT" / "On Miss: EFFECT" / etc.
+  const phasePrefixMatch = lower.match(
+    /^(before accuracy|before damage|on miss|regard(?:less)?):\s*(.+)$/,
+  );
+  if (phasePrefixMatch) {
+    const phaseMap: Record<string, PhaseTiming> = {
+      "before accuracy": "before-acc",
+      "before damage": "before-damage",
+      "on miss": "on-miss",
+      "regardless": "regardless",
+      "regard": "regardless",
+    };
+    return [{
+      type: "phaseEffect",
+      phase: phaseMap[phasePrefixMatch[1]],
+      effects: parseEffects(phasePrefixMatch[2]),
     }];
   }
 
@@ -1551,6 +1579,8 @@ function* handleSimple(
         `  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`,
       );
       return;
+    case "phaseEffect":
+      return;
     case "trigger":
       // When-X triggers fire when their event condition is met.
       // Parsed but applied separately (e.g. "When user damages a foe: heal 1/8").
@@ -1666,6 +1696,7 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   tile: handleSimple,
   per: handleSimple,
   trigger: handleSimple,
+  phaseEffect: handleSimple,
   unknown: handleSimple,
 };
 
@@ -1763,6 +1794,7 @@ const SUMMARISE: Record<string, (eff: any) => string> = {
   delayLand: () => "delay attacks always land",
   per: (e) => `per ${e.trigger} (${summariseEffects(e.effects)})`,
   trigger: (e) => `when ${e.event} (${summariseEffects(e.effects)})`,
+  phaseEffect: (e) => `[${e.phase}] ${summariseEffects(e.effects)}`,
   unknown: (e) => e.text.slice(0, 40),
 };
 
