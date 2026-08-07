@@ -520,6 +520,19 @@ kbd {
 		</div>
 
 		<div class="section">
+			<h3>Transform</h3>
+			<div class="maprow">
+				<button class="btn small" id="btnRotCW" title="Rotate the whole map 90° clockwise">↻ 90°</button>
+				<button class="btn small" id="btnRotCCW" title="Rotate the whole map 90° counter-clockwise">↺ 90°</button>
+				<button class="btn small" id="btnRot180" title="Rotate the whole map 180°">⟳ 180°</button>
+			</div>
+			<div class="maprow">
+				<button class="btn small" id="btnFlipH" title="Mirror the map left-right">⇋ Flip H</button>
+				<button class="btn small" id="btnFlipV" title="Mirror the map top-bottom">⇋ Flip V</button>
+			</div>
+		</div>
+
+		<div class="section">
 			<h3>Grid size <span class="hint">5–60</span></h3>
 			<div class="size-row"><label>Rows</label><input type="number" id="sizeRows" min="5" max="60" value="11"></div>
 			<div class="size-row"><label>Cols</label><input type="number" id="sizeCols" min="5" max="60" value="11"></div>
@@ -1526,6 +1539,11 @@ $('btnPropose').addEventListener('click', proposeMap);
 $('btnProposeGo').addEventListener('click', proposeGo);
 $('btnCopyTxt').addEventListener('click', copyTxt);
 $('btnShare').addEventListener('click', shareMap);
+$('btnRotCW').addEventListener('click', () => transformMap('rotCW'));
+$('btnRotCCW').addEventListener('click', () => transformMap('rotCCW'));
+$('btnRot180').addEventListener('click', () => transformMap('rot180'));
+$('btnFlipH').addEventListener('click', () => transformMap('flipH'));
+$('btnFlipV').addEventListener('click', () => transformMap('flipV'));
 $('mapName').addEventListener('input', scheduleDraft);
 document.addEventListener('pointerdown', () => { draftUserEdit = true; }, { once: true });
 document.addEventListener('keydown', () => { draftUserEdit = true; }, { once: true });
@@ -1740,6 +1758,24 @@ async function shareMap() {
 	try { window.history.replaceState(null, '', link); } catch (e) { /* some browsers block it */ }
 	await copyText(link);
 	toast('Shareable link copied to clipboard', 'ok');
+}
+
+/* ------------------------------------------------------------------ */
+/* rotate & flip                                                       */
+/* ------------------------------------------------------------------ */
+const TRANSFORM_LABELS = { rotCW: 'rotated 90° clockwise', rotCCW: 'rotated 90° counter-clockwise', rot180: 'rotated 180°', flipH: 'flipped horizontally', flipV: 'flipped vertically' };
+function transformMap(op) {
+	const before = snapshot();
+	let out;
+	if (op === 'rotCW') out = MC.rotateMap(map, 1);
+	else if (op === 'rotCCW') out = MC.rotateMap(map, 3);
+	else if (op === 'rot180') out = MC.rotateMap(map, 2);
+	else if (op === 'flipH') out = MC.flipMap(map, 'h');
+	else out = MC.flipMap(map, 'v');
+	map = out;
+	if (before !== snapshot()) pushHistory();
+	render();
+	toast('Map ' + (TRANSFORM_LABELS[op] || op), 'ok');
 }
 
 function init() {

@@ -11,7 +11,7 @@ A Pokémon Showdown–based Battle Dome autohost bot (TypeScript + Bun).
 **Editor**
 - Pokémon Showdown light theme, game-style grid (square cells, 5×5–60×60, 5×5 minimum for NTR maps).
 - Zoom 50–400% (default 150%) — footer buttons, Ctrl+wheel, Ctrl+= / Ctrl+− / Ctrl+0; remembers your zoom.
-- Paint 13 terrains, place players P1–P8, flood fill, eyedropper, erase, undo/redo, select & move boxes.
+- Paint 13 terrains, place players P1–P8, flood fill, eyedropper, erase, undo/redo, select & move boxes, rotate & flip.
 - Drafts auto-save to your browser — refresh-safe, with a Restore/Discard banner.
 - **Copy .txt** copies the volunteer format; **Share** copies a link that works even for unsaved maps.
 - **I/O:** Export → Volunteer .txt / game HTML / JSON; import .txt, HTML, or .json; Save downloads a .txt.
