@@ -467,6 +467,8 @@ kbd {
 	<input type="text" id="mapName" placeholder="map name" spellcheck="false">
 	<button class="btn primary" id="btnSave" title="Save to maps/ in the repo (Ctrl+S)">💾 Save</button>
 	<button class="btn" id="btnExport" title="Export map">⬆️ Export</button>
+	<button class="btn" id="btnCopyTxt" title="Copy maps/<name>.txt to the clipboard">📋 Copy .txt</button>
+	<button class="btn" id="btnShare" title="Copy a shareable link to this map (works for unsaved drafts too)">🔗 Share</button>
 	<button class="btn propose" id="btnPropose" title="Save maps/<name>.txt, open a pre-filled issue, and a bot opens the PR">🚀 Save to maps/</button>
 	<button class="btn" id="btnImport" title="Import a map">⬇️ Import</button>
 	<button class="btn" id="btnNew" title="Create a new blank map">✨ New</button>
@@ -1522,6 +1524,8 @@ $('mapSearch').addEventListener('keydown', (e) => {
 });
 $('btnPropose').addEventListener('click', proposeMap);
 $('btnProposeGo').addEventListener('click', proposeGo);
+$('btnCopyTxt').addEventListener('click', copyTxt);
+$('btnShare').addEventListener('click', shareMap);
 $('mapName').addEventListener('input', scheduleDraft);
 document.addEventListener('pointerdown', () => { draftUserEdit = true; }, { once: true });
 document.addEventListener('keydown', () => { draftUserEdit = true; }, { once: true });
@@ -1684,6 +1688,60 @@ function discardDraft() {
 	toast('Draft discarded', 'ok');
 }
 
+/* ------------------------------------------------------------------ */
+/* copy-as-text & shareable links                                       */
+/* ------------------------------------------------------------------ */
+function b64EncodeUnicode(str) {
+	return btoa(unescape(encodeURIComponent(str)));
+}
+function b64DecodeUnicode(str) {
+	return decodeURIComponent(escape(atob(str)));
+}
+function decodeShareFragment(hash) {
+	if (!hash || hash.indexOf('#map=') !== 0) return null;
+	try {
+		const data = JSON.parse(b64DecodeUnicode(hash.slice(5)));
+		if (data && Array.isArray(data.tiles)) return { map: data };
+	} catch (e) { /* malformed fragment */ }
+	return null;
+}
+function copyText(str) {
+	if (navigator.clipboard && navigator.clipboard.writeText) {
+		return navigator.clipboard.writeText(str);
+	}
+	return new Promise((resolve) => {
+		const ta = document.createElement('textarea');
+		ta.value = str;
+		ta.style.position = 'fixed';
+		ta.style.opacity = '0';
+		document.body.appendChild(ta);
+		ta.select();
+		try { document.execCommand('copy'); } catch (e) { /* ignore */ }
+		document.body.removeChild(ta);
+		resolve();
+	});
+}
+async function copyTxt() {
+	const name = MC.sanitizeName($('mapName').value || map.name || 'untitled');
+	const out = MC.toJSON(map);
+	out.name = name;
+	let txt;
+	try { txt = MC.toTxt(out); }
+	catch (e) { toast(e.message, 'err'); return; }
+	await copyText(txt);
+	toast('Copied maps/' + name + '.txt to clipboard', 'ok');
+}
+async function shareMap() {
+	const name = MC.sanitizeName($('mapName').value || map.name || 'untitled');
+	const out = MC.toJSON(map);
+	out.name = name;
+	const enc = b64EncodeUnicode(JSON.stringify(out));
+	const link = location.origin + location.pathname + '#map=' + enc;
+	try { window.history.replaceState(null, '', link); } catch (e) { /* some browsers block it */ }
+	await copyText(link);
+	toast('Shareable link copied to clipboard', 'ok');
+}
+
 function init() {
 	try { const saved = parseFloat(localStorage.getItem('bd-editor-zoom')); if (saved && saved >= 0.5 && saved <= 4) zoom = saved; } catch (e) { /* ignore */ }
 	renderTerrainPalette();
@@ -1709,7 +1767,12 @@ function init() {
 		await refreshMapList();
 		const want = new URLSearchParams(location.search).get('map');
 		const sel = $('mapSelect');
-		if (want) await loadMap(want);
+		const frag = decodeShareFragment(location.hash);
+		if (frag) {
+			setMap(MC.normalizeMap(frag.map), { silent: true });
+			if (frag.map && frag.map.name) $('mapName').value = frag.map.name;
+		}
+		else if (want) await loadMap(want);
 		else if (sel.value) await loadMap(sel.value);
 		else setMap(MC.emptyMap(11, 11, 'untitled'), { silent: true });
 		if (want) { try { window.history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ } }
