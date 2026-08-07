@@ -431,7 +431,6 @@ kbd {
 	<button class="btn" id="btnImport" title="Import a map">⬇️ Import</button>
 	<button class="btn" id="btnNew" title="Create a new blank map">✨ New</button>
 	<div class="spacer"></div>
-	<span class="tag" id="modeTag">connecting…</span>
 </header>
 
 <main>
@@ -507,9 +506,7 @@ kbd {
 		<span id="zoomPct">150%</span>
 		<button class="btn small" id="btnZoomIn" title="Zoom in (Ctrl++)">+</button>
 	</div>
-	<div class="mode">
-		<span class="tag" id="modeTag2" style="display:none"></span>
-	</div>
+	<div class="mode"></div>
 </footer>
 
 <!-- export modal -->
@@ -809,7 +806,7 @@ function renderCounts() {
 		span.appendChild(sw);
 		const b = document.createElement('b');
 		b.textContent = counts[name];
-		span.appendChild(document.createTextNode(' ' + MC.TERRAINS[name].label.toLowerCase()));
+		span.appendChild(document.createTextNode(' ' + MC.TERRAINS[name].label.toLowerCase() + ' '));
 		span.appendChild(b);
 		el.appendChild(span);
 	}
@@ -1424,18 +1421,12 @@ $('importFile').addEventListener('change', (e) => {
 
 function updateModeUI() {
 	if (mode === 'server') {
-		$('modeTag').textContent = 'server connected · save writes to maps/';
-		$('modeTag').classList.add('ok');
 		$('btnSave').textContent = '💾 Save';
 		$('btnSave').title = 'Save to maps/ in the repo (Ctrl+S)';
 	} else if (mode === 'static') {
-		$('modeTag').textContent = 'github pages mode · save = download .txt';
-		$('modeTag').classList.remove('ok');
 		$('btnSave').textContent = '💾 Download .txt';
 		$('btnSave').title = 'No repo write access here — downloads a volunteer .txt to add to maps/ (Ctrl+S)';
 	} else {
-		$('modeTag').textContent = 'offline — use Import / Export';
-		$('modeTag').classList.remove('ok');
 		$('btnSave').textContent = '💾 Download .txt';
 		$('btnSave').title = 'Downloads a volunteer .txt (Ctrl+S)';
 	}
