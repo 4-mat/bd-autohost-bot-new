@@ -239,7 +239,7 @@ export function parseEffects(text: string): Effect[] {
   // optional trailing period at the end of the else-branch.
   const lowerFull = normalized.toLowerCase();
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?),\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
   if (fullIfMatch) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
@@ -254,6 +254,7 @@ export function parseEffects(text: string): Effect[] {
     };
     return [conditional];
   }
+
 
   const clauses = splitClauses(normalized);
   const effects: Effect[] = [];
@@ -285,7 +286,8 @@ function splitClauses(text: string): string[] {
       if (
         ch === "," &&
         !isInsideDice(text, i) &&
-        !text.slice(i).match(/^,\s*(?:and|or)\s/i)
+        !text.slice(i).match(/^,\s*(?:and|or)\s/i) &&
+        !/^(thirst\s+\d+:|apex:)/i.test(current.trim())
       ) {
         if (current.trim()) clauses.push(current.trim());
         current = "";
@@ -326,7 +328,7 @@ function parseClause(clause: string): Effect[] {
 
   // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
   const ifMatch = lower.match(
-    /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
   );
   if (ifMatch) {
     const thenEffects = parseEffects(ifMatch[2]);
@@ -394,6 +396,19 @@ function parseClause(clause: string): Effect[] {
   );
   if (phaseMatch) {
     effects.push({ type: "phase", phase: phaseMatch[1] });
+    return effects;
+  }
+
+  // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
+  const phaseCondMatch = lower.match(
+    /^(new moon|waxing|full moon|waning):\s*(.+)$/,
+  );
+  if (phaseCondMatch) {
+    effects.push({
+      type: "conditional",
+      condition: `phase is ${phaseCondMatch[1]}`,
+      thenEffects: parseEffects(phaseCondMatch[2]),
+    });
     return effects;
   }
 
@@ -703,7 +718,7 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+(\d+(?:-\d+)?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+(\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
