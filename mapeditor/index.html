@@ -2602,10 +2602,10 @@
       /* copy-as-text & shareable links                                       */
       /* ------------------------------------------------------------------ */
       function b64EncodeUnicode(str) {
-        return btoa(unescape(encodeURIComponent(str)));
+        return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
       }
       function b64DecodeUnicode(str) {
-        return decodeURIComponent(escape(atob(str)));
+        return new TextDecoder().decode(new Uint8Array([...atob(str)].map(c => c.charCodeAt(0))));
       }
       function decodeShareFragment(hash) {
         if (!hash || hash.indexOf("#map=") !== 0) return null;
@@ -2693,6 +2693,7 @@
         if (before !== snapshot()) pushHistory();
         render();
         toast("Map " + (TRANSFORM_LABELS[op] || op), "ok");
+        scheduleDraft();
       }
 
       function init() {
