@@ -227,50 +227,37 @@ export const VOTE_OPTIONS: VoteOption[] = [
   {
     id: "NTR",
     label: "NTR",
-    description: "Nowhere To Run — players must stay near the centre of the map.",
+    description:
+      "Nowhere To Run — players must stay near the centre of the map.",
     minPlayers: 2,
     maxPlayers: 8,
   },
   {
     id: "JUGG",
     label: "Juggernaut",
-    description: "One player is a super-powered Juggernaut; everyone else works together to take them down.",
+    description:
+      "One player is a super-powered Juggernaut; everyone else works together to take them down.",
     // Needs at least a Juggernaut + two fielders — 2 players would just be a 1v1.
     minPlayers: 3,
     maxPlayers: 8,
   },
-  {
-    id: "2vJ",
-    label: "2vJ",
-    description: "Two players vs a Juggernaut.",
-    minPlayers: 3,
-    exactPlayers: 3,
-  },
-  {
-    id: "3vJ",
-    label: "3vJ",
-    description: "Three players vs a Juggernaut.",
-    minPlayers: 4,
-    exactPlayers: 4,
-  },
-  {
-    id: "4vJ",
-    label: "4vJ",
-    description: "Four players vs a Juggernaut.",
-    minPlayers: 5,
-    exactPlayers: 5,
-  },
+  // The 2vJ/3vJ/4vJ exact-size variants are intentionally not offered: JUGG
+  // already scales its fielder count to the lobby (3-8 players), so at any
+  // given size they'd be a duplicate button. The aliases below still resolve
+  // "2vj"/"3vj"/"4vj" to the standard Juggernaut mode for chat votes.
   {
     id: "PvPJ",
     label: "PvPJ",
-    description: "PvP + Juggernaut — two teams fight and one team gets a Juggernaut character (2v3 or 3v4).",
+    description:
+      "PvP + Juggernaut — two teams fight and one team gets a Juggernaut character (2v3 or 3v4).",
     minPlayers: 5,
     exactPlayers: [5, 7],
   },
   {
     id: "PvPNTR",
     label: "PvP NTR",
-    description: "Team-based NTR — teams fight to hold the centre (2v2, 3v3, 2v2v2 or 4v4).",
+    description:
+      "Team-based NTR — teams fight to hold the centre (2v2, 3v3, 2v2v2 or 4v4).",
     minPlayers: 4,
     exactPlayers: [4, 6, 8],
   },
@@ -291,9 +278,9 @@ export function modeDescription(arg: string): string | undefined {
  * `%wt modes` so players can learn what they are voting on.
  */
 export function describeModes(): string {
-  return VOTE_OPTIONS.map((o) => `**${o.id}** (${o.label}) — ${o.description}`).join(
-    "\n",
-  );
+  return VOTE_OPTIONS.map(
+    (o) => `**${o.id}** (${o.label}) — ${o.description}`,
+  ).join("\n");
 }
 
 const VOTE_ALIASES: Record<string, string> = {
@@ -310,9 +297,9 @@ const VOTE_ALIASES: Record<string, string> = {
   jugg: "JUGG",
   juggernaut: "JUGG",
   jug: "JUGG",
-  "2vj": "2vJ",
-  "3vj": "3vJ",
-  "4vj": "4vJ",
+  "2vj": "JUGG",
+  "3vj": "JUGG",
+  "4vj": "JUGG",
   pvpj: "PvPJ",
   "pvp juggernaut": "PvPJ",
   pvpntr: "PvPNTR",
@@ -366,7 +353,9 @@ export function tallyVotes(votes: Record<string, string>): {
  * The modes tied for first place in a tally, or null when there is a unique
  * winner (or no votes at all). Used to start a runoff vote on a tie.
  */
-export function tieModes(tally: { mode: string; count: number }[]): string[] | null {
+export function tieModes(
+  tally: { mode: string; count: number }[],
+): string[] | null {
   if (tally.length < 2) return null;
   const [top, second] = tally;
   if (second.count !== top.count) return null;
