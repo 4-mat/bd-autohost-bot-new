@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="732" height="112" viewBox="0 0 732 112">
+<svg xmlns="http://www.w3.org/2000/svg" width="716" height="112" viewBox="0 0 716 112">
 <rect width="100%" height="100%" fill="#0d1117"/>
-<text x="14" y="18" fill="#8b97b3" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="11">l · 4×44</text>
+<text x="14" y="18" fill="#8b97b3" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="11">l · 4×43</text>
 <rect x="14" y="34" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="30" y="34" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="46" y="34" width="16" height="16" fill="#454FDF" stroke="#000" stroke-width="0.5"/>
@@ -44,7 +44,6 @@
 <rect x="654" y="34" width="16" height="16" fill="#454FDF" stroke="#000" stroke-width="0.5"/>
 <rect x="670" y="34" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="686" y="34" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
-<rect x="702" y="34" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="14" y="50" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="30" y="50" width="16" height="16" fill="#454FDF" stroke="#000" stroke-width="0.5"/>
 <rect x="46" y="50" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
@@ -88,7 +87,6 @@
 <rect x="654" y="50" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="670" y="50" width="16" height="16" fill="#454FDF" stroke="#000" stroke-width="0.5"/>
 <rect x="686" y="50" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
-<rect x="702" y="50" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="14" y="66" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="30" y="66" width="16" height="16" fill="#454FDF" stroke="#000" stroke-width="0.5"/>
 <rect x="46" y="66" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
@@ -132,7 +130,6 @@
 <rect x="654" y="66" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="670" y="66" width="16" height="16" fill="#454FDF" stroke="#000" stroke-width="0.5"/>
 <rect x="686" y="66" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
-<rect x="702" y="66" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="14" y="82" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="30" y="82" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="46" y="82" width="16" height="16" fill="#454FDF" stroke="#000" stroke-width="0.5"/>
@@ -176,5 +173,4 @@
 <rect x="654" y="82" width="16" height="16" fill="#454FDF" stroke="#000" stroke-width="0.5"/>
 <rect x="670" y="82" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 <rect x="686" y="82" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
-<rect x="702" y="82" width="16" height="16" fill="#A9F5A9" stroke="#000" stroke-width="0.5"/>
 </svg>
