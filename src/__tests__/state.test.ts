@@ -491,6 +491,60 @@ describe("getAoETargets", () => {
     const targets = getAoETargets(game, p1, "Burst 1", "Foe");
     expect(targets.length).toBe(0);
   });
+
+  it("matches normalized 'Self, Foes, Allies' as everyone in range", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 1 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    // "Self, Foes, Allies" singularizes to "self, foe, ally" and must hit
+    // everyone in range -- previously it fell through to false after
+    // singularization and matched nobody.
+    const targets = getAoETargets(game, p1, "Burst 2", "Self, Foes, Allies");
+    expect(targets.map((t) => t.num).sort()).toEqual(["P2", "P3"]);
+  });
+
+  it("'Self or Foe' excludes allies (no more tautology)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 2", "Self or Foe");
+    const nums = targets.map((t) => t.num);
+    expect(nums).toContain("P2"); // foe
+    expect(nums).not.toContain("P3"); // ally must NOT sneak in
+    expect(nums).not.toContain("P1"); // self never in AoE tiles
+  });
+
+  it("normalizes legacy 'Foe(s)' spelling", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 2", "Foe(s)");
+    const nums = targets.map((t) => t.num);
+    expect(nums).toContain("P2");
+    expect(nums).not.toContain("P3");
+  });
+
+  it("handles 'Tile or Foe' as foes", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const game = makeGame({ entities: [p1, p2] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Tile or Foe");
+    expect(targets.map((t) => t.num)).toContain("P2");
+  });
+
+  it("handles 'Allies and Self' as team members", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 1 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 2", "Allies and Self");
+    const nums = targets.map((t) => t.num);
+    expect(nums).toContain("P2");
+    expect(nums).not.toContain("P3");
+  });
 });
 
 describe("getSplashTargets", () => {

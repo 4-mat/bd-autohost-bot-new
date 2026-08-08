@@ -337,16 +337,24 @@ function* resolveAttackFlow(
   // Bug fix carried over: check win condition once after all deaths this
   // action, not once per death (was producing duplicate "Game over!" lines
   // on multi-kill splash/AoE).
-  if (result.deaths.length > 0 && checkGameOver(game)) {
-    result.gameOver = true;
-    const winner = game.winner
-      ? game.entities.find((e) => e.num === game.winner) ?? null
-      : game.entities[0] ?? null;
-    result.messages.push(
-      winner
-        ? `**Game over! ${winner.num} (${winner.name}) wins!**`
-        : "**Game over! No survivors!**",
-    );
+  //
+  // checkGameOver returns null BOTH when the game continues and when a
+  // mutual-lethal wipe leaves zero survivors (it still flips game.phase to
+  // "ended" in that case). Treat the ended phase as game over too, keeping
+  // a null winner for the draw.
+  if (result.deaths.length > 0) {
+    const winnerEntity = checkGameOver(game);
+    if (winnerEntity || game.phase === "ended") {
+      result.gameOver = true;
+      const winner = game.winner
+        ? game.entities.find((e) => e.num === game.winner) ?? null
+        : game.entities[0] ?? null;
+      result.messages.push(
+        winner
+          ? `**Game over! ${winner.num} (${winner.name}) wins!**`
+          : "**Game over! No survivors!**",
+      );
+    }
   }
 
   return result;
@@ -639,15 +647,23 @@ function findTargets(
 
 export function isValidTarget(user: Entity, target: Entity, group: string): boolean {
   if (target.curhp <= 0) return false;
-  const g = group.toLowerCase();
+  // Normalize plural/legacy spellings ("Foe(s)", "Self, Foes, Allies",
+  // "Allies and Self") so single-target and AoE targeting agree; see the
+  // equivalent normalization in state.ts isValidGroupTarget.
+  const g = group
+    .toLowerCase()
+    .replace(/foes/, "foe")
+    .replace(/allies/, "ally")
+    .replace(/foe\(s\)/, "foe")
+    .replace(/ally and self/, "self and ally");
 
-  if (g.includes("self and allies") || g.includes("self and ally"))
-    return target.team === user.team;
-  if (g.includes("self or ally") || g.includes("self or allies"))
-    return target.team === user.team;
-  if (g.includes("self or foe")) return true;
+  if (g.includes("self and ally")) return target.team === user.team;
+  if (g.includes("self or ally")) return target.team === user.team;
+  if (g.includes("self or foe"))
+    return target.num === user.num || target.team !== user.team;
   if (g.includes("foe or ally")) return target.num !== user.num;
-  if (g.includes("self, foes, allies") || g.includes("self, foes, and allies"))
+  if (g.includes("tile or foe")) return target.team !== user.team;
+  if (g.includes("self, foe, ally") || g.includes("self, foe, and ally"))
     return true;
 
   if (g === "self") return target.num === user.num;
@@ -656,7 +672,9 @@ export function isValidTarget(user: Entity, target: Entity, group: string): bool
   if (g === "any") return true;
   if (g === "tile") return false;
 
-  return true;
+  // Unrecognized group: fail closed (matches isValidGroupTarget in state.ts)
+  // rather than silently accepting any target.
+  return false;
 }
 
 /** Filter effects array to those matching a specific phase. */

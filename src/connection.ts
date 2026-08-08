@@ -2,7 +2,7 @@ import WebSocket from "ws";
 import { EventEmitter } from "events";
 import config from "./config.js";
 import { login } from "./login.js";
-import { setWs } from "./utils.js";
+import { setWs, resumeSending } from "./utils.js";
 
 export const bot = new EventEmitter();
 
@@ -13,6 +13,8 @@ export function connect() {
 
   ws.on("open", () => {
     console.log(`Connected to ${config.server}`);
+    // Flush anything queued while the previous socket was down.
+    resumeSending();
   });
 
   ws.on("message", (data) => {
