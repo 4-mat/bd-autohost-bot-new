@@ -79,7 +79,7 @@
 	};
 
 	function modeIdFor(mode) {
-		const key = String(mode).trim().toLowerCase();
+		const key = String(mode).trim().toLowerCase().replace(/\s+/g, ' ');
 		if (MODE_ALIASES[key]) return MODE_ALIASES[key];
 		if (/^\d+v\d+$/.test(key)) return 'pvp';
 		return undefined;
@@ -192,7 +192,8 @@
 			: [];
 		return {
 			name,
-			displayName: (map.displayName && String(map.displayName).trim()) || displayFromName(name),
+			// CR/LF are stripped like parseTxt does; cap at the same 60 chars.
+			displayName: (map.displayName && String(map.displayName).replace(/[\r\n]+/g, ' ').trim().slice(0, 60)) || displayFromName(name),
 			rows, cols, tiles, tokens,
 			modes
 		};
@@ -327,10 +328,19 @@
 					disp = val;
 					if (!disp || disp.length > 60) throw new Error(file + ':' + n + ': display name must be 1-60 chars');
 				} else {
-					for (const raw of val.split(/[\s,]+/).filter(Boolean)) {
-						const id = modeIdFor(raw);
-						if (!id) throw new Error(file + ':' + n + ': unknown game mode "' + raw + '" — use ffa, ntr, jugg, pvp or 1v1');
-						if (modes.indexOf(id) === -1) modes.push(id);
+					for (const part of val.split(',')) {
+						const entry = part.trim();
+						if (!entry) continue;
+						const whole = modeIdFor(entry);
+						if (whole) {
+							if (modes.indexOf(whole) === -1) modes.push(whole);
+						} else {
+							for (const word of entry.split(/\s+/)) {
+								const id = modeIdFor(word);
+								if (!id) throw new Error(file + ':' + n + ': unknown game mode "' + word + '" — use ffa, ntr, jugg, pvp or 1v1');
+								if (modes.indexOf(id) === -1) modes.push(id);
+							}
+						}
 					}
 					if (!modes.length) throw new Error(file + ':' + n + ': modes list is empty');
 				}
