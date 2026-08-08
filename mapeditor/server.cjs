@@ -37,22 +37,39 @@ const MIME = {
 };
 
 function send(res, code, body, type) {
-	if (!res.headersSent) res.writeHead(code, {
-		'Content-Type': type || 'application/json; charset=utf-8',
-		'Access-Control-Allow-Origin': '*',
-		'Cache-Control': 'no-store'
-	});
+	if (!res.headersSent) {
+		const h = {
+			'Content-Type': type || 'application/json; charset=utf-8',
+			'Cache-Control': 'no-store'
+		};
+		if (res.req && (res.req.method === 'GET' || res.req.method === 'HEAD')) h['Access-Control-Allow-Origin'] = '*';
+		res.writeHead(code, h);
+	}
 	if (Buffer.isBuffer(body)) res.end(body);
 	else res.end(typeof body === 'string' ? body : JSON.stringify(body));
 }
 
 function readBody(req) {
 	return new Promise((resolve, reject) => {
-		let data = '';
-		req.on('data', (chunk) => { data += chunk; if (data.length > 5e6) { reject(new Error('Body too large')); req.destroy(); } });
-		req.on('end', () => resolve(data));
+		const chunks = [];
+		let size = 0;
+		req.on('data', (chunk) => {
+			chunks.push(chunk);
+			size += chunk.length;
+			if (size > 5e6) { reject(new Error('Body too large')); req.destroy(); }
+		});
+		req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
 		req.on('error', reject);
 	});
+}
+// A browser mutation (Save/Delete) is only accepted when its Origin
+// matches this local server; requests without an Origin pass through.
+function localOrigin(origin) {
+	if (!origin) return true;
+	try {
+		const o = new URL(origin);
+		return (o.hostname === 'localhost' || o.hostname === '127.0.0.1') && (!o.port || o.port === String(PORT));
+	} catch (e) { return false; }
 }
 
 function sanitizeFile(name) {
@@ -117,6 +134,7 @@ async function handle(req, res) {
 				return map ? send(res, 200, map) : send(res, 404, { error: 'map not found' });
 			}
 			if (req.method === 'PUT') {
+				if (!localOrigin(req.headers.origin)) return send(res, 403, { error: 'forbidden origin' });
 				const body = await readBody(req);
 				let raw;
 				try { raw = JSON.parse(body); } catch (e) { return send(res, 400, { error: 'invalid JSON body' }); }
@@ -127,6 +145,7 @@ async function handle(req, res) {
 				return send(res, 200, { ok: true, name: map.name, file: sanitizeFile(map.name) });
 			}
 			if (req.method === 'DELETE') {
+				if (!localOrigin(req.headers.origin)) return send(res, 403, { error: 'forbidden origin' });
 				const file = path.join(MAPS_DIR, sanitizeFile(name));
 				if (fs.existsSync(file)) fs.unlinkSync(file);
 				return send(res, 200, { ok: true });
@@ -138,11 +157,12 @@ async function handle(req, res) {
 			return send(res, 200, { ok: true });
 		}
 
-		// ---- Static files (serve the whole repo so /mapeditor/ and
-		//      /maps/… work exactly like GitHub Pages does) ----
+		// ---- Static files (serve the editor UI and the maps/ folder exactly
+		//      like GitHub Pages does) ----
 		let rel;
 		if (p === '/' || p === '/mapeditor' || p === '/mapeditor/') rel = 'mapeditor/index.html';
-		else rel = p.replace(/^\/+/, '');
+		else if (p.startsWith('/mapeditor/') || p.startsWith('/maps/')) rel = p.replace(/^\/+/, '');
+		else return send(res, 403, { error: 'forbidden' });
 		let file = path.normalize(path.join(ROOT, rel));
 		const inside = file === ROOT || file.startsWith(ROOT + path.sep);
 		if (!inside) return send(res, 403, { error: 'forbidden' });
@@ -158,10 +178,12 @@ const server = http.createServer((req, res) => {
 	handle(req, res).catch((e) => send(res, 500, { error: e.message }));
 });
 
-server.listen(PORT, () => {
+const HOST = process.env.HOST || '127.0.0.1';
+
+server.listen(PORT, HOST, () => {
 	console.log('==============================================');
 	console.log('  Battle Dome Map Editor');
-	console.log('  ->  http://localhost:' + PORT + '/');
+	console.log('  ->  http://' + (HOST === '127.0.0.1' ? 'localhost' : HOST) + ':' + PORT + '/');
 	console.log('  maps dir: ' + MAPS_DIR);
 	console.log('==============================================');
 });

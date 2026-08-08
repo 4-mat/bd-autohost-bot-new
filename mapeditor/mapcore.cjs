@@ -63,7 +63,7 @@
 	const COLOR_TO_TERRAIN = {};
 	for (const t in TERRAINS) COLOR_TO_TERRAIN[TERRAINS[t].color.toLowerCase()] = t;
 
-	const MIN_DIM = 5;
+	const MIN_DIM = 7;
 	const MAX_DIM = 60;
 
 	function rowLabel(i) {
@@ -138,7 +138,7 @@
 		let cols = Math.max(1, Math.min(MAX_DIM, Math.floor(map.cols) || 11));
 		const tiles = [];
 		for (let r = 0; r < rows; r++) {
-			const srcRow = Array.isArray(map.tiles) ? map.tiles[r] : [];
+			const srcRow = Array.isArray(map.tiles) && Array.isArray(map.tiles[r]) ? map.tiles[r] : [];
 			const row = [];
 			for (let c = 0; c < cols; c++) {
 				const t = String(srcRow[c] || 'normal').toLowerCase();
@@ -355,9 +355,9 @@
 			r0: Math.min(sel.r0, sel.r1), c0: Math.min(sel.c0, sel.c1),
 			r1: Math.max(sel.r0, sel.r1), c1: Math.max(sel.c0, sel.c1)
 		};
-		const w = s.r1 - s.r0 + 1, h = s.c1 - s.c0 + 1;
+		const hgt = s.r1 - s.r0 + 1, wid = s.c1 - s.c0 + 1;
 		const nr0 = s.r0 + dr, nc0 = s.c0 + dc;
-		if (nr0 < 0 || nc0 < 0 || nr0 + w > map.rows || nc0 + h > map.cols) return null;
+		if (nr0 < 0 || nc0 < 0 || nr0 + hgt > map.rows || nc0 + wid > map.cols) return null;
 
 		// Snapshot the block (tiles + tokens inside it).
 		const block = [];
@@ -392,7 +392,7 @@
 			map.tokens[bt.name] = { row: tr, col: tc, color: bt.color || tokenColorFor(bt.name) };
 		}
 
-		return { r0: nr0, c0: nc0, r1: nr0 + w - 1, c1: nc0 + h - 1 };
+		return { r0: nr0, c0: nc0, r1: nr0 + hgt - 1, c1: nc0 + wid - 1 };
 	}
 
 	/**
@@ -426,7 +426,12 @@
 	 * <details><summary>Map</summary>…</details>). The bot's parser
 	 * (src/html/parse.ts) reads title="…" for terrain and <b>P#</b> for players.
 	 */
+function esc(s) {
+		return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+	}
+
 	function toHTML(map) {
+		map = normalizeMap(map);
 		const rows = map.rows, cols = map.cols, tiles = map.tiles;
 		let out = '<div class="infobox"><details open><summary>Map</summary><div style="overflow-x:auto">';
 		out += '<table align="center" style="border-spacing:0px;border-collapse:collapse;border:1px solid #888; background:rgba(120, 120, 225, 0.10)" border="1" bordercolor="#888">';
@@ -440,7 +445,7 @@
 				const color = TERRAINS[terrain].color;
 				const tok = tokenAt(map, r, c);
 				if (tok) {
-					out += '<td style="background:' + color + '" title="' + terrain + '" align="center"><b style="color:' + tok.color + '">' + tok.name + '</b></td>';
+					out += '<td style="background:' + color + '" title="' + terrain + '" align="center"><b style="color:' + tok.color + '">' + esc(tok.name) + '</b></td>';
 				} else {
 					out += '<td style="background:' + color + '" title="' + terrain + '"></td>';
 				}

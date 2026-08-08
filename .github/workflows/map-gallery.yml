@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - "src/data/maps.ts"
+      - "src/data/gamemodes.ts"
       - "maps/*.txt"
       - "mapeditor/seed.cjs"
       - "mapeditor/center-maps.cjs"
@@ -15,11 +16,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: map-gallery
+  cancel-in-progress: false
+
 jobs:
   gallery:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -36,5 +43,7 @@ jobs:
             echo "Gallery is up to date."
           else
             git commit -m "chore: regenerate map gallery [skip ci]"
-            git push
+            git fetch origin master
+            git rebase origin/master
+            git push "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:master
           fi
