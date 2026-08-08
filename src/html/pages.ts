@@ -21,7 +21,11 @@ import { posToStr } from "../utils.js";
 import { eva43 } from "../game/resolve.js";
 import { getVersionData } from "../data/version43.js";
 import { classes, weapons } from "../data/index.js";
-import { normalizeSubweapon, requiredSubweapons } from "../game/effects.js";
+import {
+  normalizeSubweapon,
+  requiredSubweapons,
+  getPassiveRangeBonus,
+} from "../game/effects.js";
 import {
   runoffOptions,
   tallyVotes,
@@ -252,7 +256,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   const isTurn = game.turnOrder[game.turnIndex] === entity.num;
 
   const map = buildMiniMap(game, entity);
-  const stats = buildEntityStats(entity);
+  const stats = buildEntityStats(entity, game);
   const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game, true);
 
@@ -500,6 +504,7 @@ function buildPlayerDataTable(game: Game): string {
 <col width="22">
 <col width="22">
 <col width="22">
+<col>
 </colgroup>
 <tbody>
 `;
@@ -512,6 +517,7 @@ function buildPlayerDataTable(game: Game): string {
     "#",
     "Name",
     "Class/Weapon",
+    "Phase",
     "HP",
     "A",
     "M",
@@ -551,6 +557,14 @@ title="${esc(e.className)}, ${esc(e.weaponName)}">
 ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})${subweaponBadge(e)}
 </th>
 `;
+
+    // 2nd Phase column: the active moon phase is global (shown in the page
+    // header); this cell shows each player's chosen 2nd Phase, if any.
+    html += `<th style="padding:0px 8px">${
+      e.phaseChoice
+        ? `\u{1F319}<span title="2nd Phase (Far Side of the Moon)">${formatPhase(e.phaseChoice)}</span>`
+        : ""
+    }</th>`;
 
     html += `<th style="padding:0px 8px">${buildHpCell(e)}</th>`;
     html += buildStatCell(e, "atk", e.atk);
@@ -684,7 +698,7 @@ function buildControls(game: Game): string {
 
 // -- Entity Stats (Player) ----------------------------------------------------
 
-function buildEntityStats(entity: Entity): string {
+function buildEntityStats(entity: Entity, game?: Game): string {
   const hpPct = Math.max(0, (entity.curhp / entity.maxhp) * 100);
   const hpColor = hpPct > 50 ? "#0c0" : hpPct > 25 ? "#cc0" : "#c00";
 
@@ -697,6 +711,12 @@ function buildEntityStats(entity: Entity): string {
   html += ` <b>EVA:</b> ${entity.eva}`;
   html += ` <b>MP:</b> <b style="color:#08c">${entity.mp}</b>`;
   if (entity.subweapon) html += ` <b>Sub:</b> ${cap(entity.subweapon)}`;
+  if (game?.moonPhase) {
+    html += ` <b>Phase:</b> \u{1F319}${formatPhase(game.moonPhase)}`;
+    if (entity.phaseChoice) {
+      html += ` + \u{1F319}${formatPhase(entity.phaseChoice)}`;
+    }
+  }
 
   if (entity.statuses.length > 0 || entity.buffs.length > 0) {
     html += `<br>`;
@@ -1018,7 +1038,16 @@ function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
     if (!matchesTargetGroup(ab, user, e)) return false;
 
     if (ab.range !== "Global" && ab.range !== "Self") {
-      if (!inRange(game, user.pos, e.pos, ab.range)) return false;
+      if (
+        !inRange(
+          game,
+          user.pos,
+          e.pos,
+          ab.range,
+          getPassiveRangeBonus(user, game.moonPhase),
+        )
+      )
+        return false;
     }
 
     return true;
@@ -1029,7 +1058,9 @@ function getValidTiles(game: Game, ab: AbilityData, user: Entity): string[] {
   const tiles: string[] = [];
   const rangeStr = ab.range.toLowerCase();
   const rangeMatch = rangeStr.match(/(?:homing|range)\s*(\d+)/);
-  const range = rangeMatch ? parseInt(rangeMatch[1]) : 3;
+  const range =
+    (rangeMatch ? parseInt(rangeMatch[1]) : 3) +
+    getPassiveRangeBonus(user, game.moonPhase);
   const needsLoS = rangeStr.startsWith("range");
   const cols = game.map[0]?.length ?? 0;
 

@@ -45,6 +45,8 @@ import {
   applyEffects,
   applyEffectStream,
   extractCombatMetadata,
+  getPassiveRangeBonus,
+  getDefenderDiceMods,
   normalizeSubweapon,
   requiredSubweapons,
   type CombatMetadata,
@@ -481,6 +483,20 @@ function* resolveTargetAction(
   result: ResolutionResult,
 ): Generator<AttackPrompt, boolean, PromptResponse> {
   if (isAttack) {
+    // Lunar Phase "Full Moon: -N dice on attacks targeting user": the
+    // defender's passive reduces the attacker's dice pool for THIS target
+    // only, so the shared `combat` gets a per-target clone.
+    const defenderDiceMod = getDefenderDiceMods(target, game.moonPhase);
+    const targetCombat: CombatMetadata =
+      defenderDiceMod !== 0
+        ? {
+            ...combat,
+            extraDice: combat.extraDice + defenderDiceMod,
+            // Clone the nested ignore object too so per-target adjustments
+            // can never leak back into the shared `combat`.
+            ignore: { ...combat.ignore },
+          }
+        : combat;
     let confusionApplied = false;
     for (let h = 0; h < effectiveHitCount; h++) {
       const label =
@@ -490,7 +506,7 @@ function* resolveTargetAction(
         user,
         active,
         target,
-        combat,
+        targetCombat,
         label,
         confusionApplied,
       );
@@ -732,7 +748,16 @@ function getTargetCandidates(
       return false;
     if (!isValidTarget(user, e, group)) return false;
     for (const rp of rangeParts) {
-      if (inRange(game, user.pos, e.pos, rp.trim())) return true;
+      if (
+        inRange(
+          game,
+          user.pos,
+          e.pos,
+          rp.trim(),
+          getPassiveRangeBonus(user, game.moonPhase),
+        )
+      )
+        return true;
     }
     return false;
   });
@@ -746,7 +771,9 @@ function getTileCandidates(
   const tiles: string[] = [];
   const rangeStr = ability.range.toLowerCase().trim();
   const rangeMatch = rangeStr.match(/(?:range|homing)\s*(\d+)/);
-  const range = rangeMatch ? parseInt(rangeMatch[1]) : 3;
+  const range =
+    (rangeMatch ? parseInt(rangeMatch[1]) : 3) +
+    getPassiveRangeBonus(user, game.moonPhase);
 
   for (let r = 0; r < game.map.length; r++) {
     for (let c = 0; c < game.map[0].length; c++) {
@@ -822,7 +849,15 @@ function findTargets(
     );
     if (target && isValidTarget(user, target, group)) {
       for (const rp of rangeParts) {
-        if (inRange(game, user.pos, target.pos, rp.trim())) {
+        if (
+          inRange(
+            game,
+            user.pos,
+            target.pos,
+            rp.trim(),
+            getPassiveRangeBonus(user, game.moonPhase),
+          )
+        ) {
           return [target];
         }
       }
@@ -835,7 +870,16 @@ function findTargets(
       return false;
     if (!isValidTarget(user, e, group)) return false;
     for (const rp of rangeParts) {
-      if (inRange(game, user.pos, e.pos, rp.trim())) return true;
+      if (
+        inRange(
+          game,
+          user.pos,
+          e.pos,
+          rp.trim(),
+          getPassiveRangeBonus(user, game.moonPhase),
+        )
+      )
+        return true;
     }
     return false;
   });
