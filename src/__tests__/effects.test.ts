@@ -1309,3 +1309,145 @@ describe("applyEffects: regressions for non-apex effects", () => {
     expect(bleed?.rounds).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Moon-phase conditions and phase effects
+// ---------------------------------------------------------------------------
+
+describe("evaluateCondition: moon phase", () => {
+  it("evaluates 'phase is X' against the active phase", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+
+    // Default phase is new moon when none is set.
+    expect(evaluateCondition("phase is new moon", user, target)).toBe("then");
+    expect(evaluateCondition("phase is full moon", user, target)).toBe("else");
+
+    // Explicit phase argument.
+    expect(evaluateCondition("phase is full moon", user, target, "full moon")).toBe("then");
+    expect(evaluateCondition("phase is waning", user, target, "full moon")).toBe("else");
+  });
+
+  it("parses 'New Moon: EFFECT' as a phase-conditional effect", () => {
+    const effects = parseEffects("New Moon: inflict 5 Bleed/3");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("conditional");
+    if (effects[0].type !== "conditional") return;
+    expect(effects[0].condition).toBe("phase is new moon");
+  });
+
+  it("applies a moon-phase conditional when the phase matches", () => {
+    const ability = makeAbility({ name: "Moonlit", range: "Melee", effect: "New Moon: inflict 5 Bleed/3" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed?.damage).toBe(5);
+  });
+
+  it("skips a moon-phase conditional when the phase mismatches", () => {
+    const ability = makeAbility({ name: "Moonlit", range: "Melee", effect: "Full Moon: inflict 5 Bleed/3" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed).toBeUndefined();
+  });
+
+  it("'Phase: X' effect updates the game's moon phase", () => {
+    const ability = makeAbility({ name: "Mooncall", range: "Melee", effect: "Phase: full moon" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    expect(game.moonPhase).toBe("full moon");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per / When triggers dispatch their sub-effects on hit
+// ---------------------------------------------------------------------------
+
+describe("per / when triggers", () => {
+  it("'Per hit: EFFECT' dispatches its sub-effects", () => {
+    const ability = makeAbility({ name: "Siphon", range: "Melee", effect: "Per hit: inflict 5 Bleed/3" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed?.damage).toBe(5);
+    expect(bleed?.rounds).toBe(3);
+  });
+
+  it("'When user damages a foe: EFFECT' dispatches its sub-effects", () => {
+    const ability = makeAbility({ name: "Brand", range: "Melee", effect: "When user damages a foe: inflict 3 Stun/1" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const stun = target.statuses.find((s) => s.name === "Stun");
+    expect(stun).toBeDefined();
+  });
+
+  it("'Per 5 CP: EFFECT' dispatches when the resource pool meets the count", () => {
+    const ability = makeAbility({ name: "Combo", range: "Melee", effect: "Per 5 CP: inflict 2 Bleed/2" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+    user.resources = { cp: 7 }; // meets the 5-count
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed).toBeDefined();
+  });
+
+  it("'Per 5 CP: EFFECT' stays summarized when the pool is below the count", () => {
+    const ability = makeAbility({ name: "Combo", range: "Melee", effect: "Per 5 CP: inflict 2 Bleed/2" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+    user.resources = { cp: 2 }; // below the 5-count
+
+    const effects = parseEffects(ability.effect);
+    const messages = applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed).toBeUndefined();
+    // The trigger stays as a summarized log line.
+    expect(messages.some((m) => m.includes("[Per 5 cp]"))).toBe(true);
+  });
+
+  it("'When user kills a foe: EFFECT' dispatches only when the target is dead", () => {
+    const ability = makeAbility({ name: "Execution", range: "Melee", effect: "When user kills a foe: inflict 5 Cripple/1" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const dead = makeEntity({ num: "P2", name: "B", curhp: 0 });
+    const game = makeGame({ entities: [user, dead] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, dead, effects, ability);
+
+    const cripple = dead.statuses.find((s) => s.name === "Cripple");
+    expect(cripple).toBeDefined();
+  });
+});
