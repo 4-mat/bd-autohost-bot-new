@@ -7,7 +7,7 @@ import {
   Terrain,
 } from "../game/state.js";
 import { parseEffects, extractCombatMetadata } from "../game/effects.js";
-import { startAttack, isValidTarget } from "../game/resolve.js";
+import { startAttack, isValidTarget, eva43 } from "../game/resolve.js";
 setWs({ send() {} });
 
 // ---------------------------------------------------------------------------
@@ -586,6 +586,7 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
   });
 });
 
+
 describe("FFA targeting (team 0 = no teams)", () => {
   it("treats every other player as a Foe and no one as an Ally", () => {
     const p1 = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
@@ -737,5 +738,39 @@ describe("On Miss hook (#139)", () => {
     const targetEva = target.buffs.filter((b) => b.stat === "eva").length;
     expect(userEva).toBe(1);
     expect(targetEva).toBe(0);
+
+
+describe("eva43", () => {
+  it("computes PE from PD and ME from MD", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 25, md: 30 });
+    expect(eva43(e, "Physical")).toBe(2);
+    expect(eva43(e, "Magical")).toBe(3);
+  });
+
+  it("clamps to [0, 9] and applies poison -2", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 150, md: 0 });
+    expect(eva43(e, "Physical")).toBe(9);
+    expect(eva43(e, "Magical")).toBe(0);
+    e.statuses.push({
+      name: "Poison",
+      damage: 0,
+      rounds: 2,
+      maxRounds: 2,
+      removable: true,
+    });
+    expect(eva43(e, "Physical")).toBe(7);
+  });
+
+  it("applies +EVA buffs to both PE and ME", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 25, md: 30 });
+    e.buffs.push({ stat: "eva", amount: 3, rounds: 1 });
+    expect(eva43(e, "Physical")).toBe(5);
+    expect(eva43(e, "Magical")).toBe(6);
+  });
+
+  it("applies DEF buffs to the underlying defense", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 25 });
+    e.buffs.push({ stat: "def", amount: 20, rounds: 1 });
+    expect(eva43(e, "Physical")).toBe(4);
   });
 });
