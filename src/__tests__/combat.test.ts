@@ -10,7 +10,7 @@ import {
   parseEffects,
   extractCombatMetadata,
 } from "../game/effects.js";
-import { startAttack } from "../game/resolve.js";
+import { startAttack, isValidTarget } from "../game/resolve.js";
 
 setWs({ send() {} });
 
@@ -511,5 +511,115 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
     // The mod trails reference just the damageValue; for each target we
     // confirm at least one line contains the +50% tag.
     expect(log).toMatch(/\+50% damage/);
+  });
+});
+
+// ===========================================================================
+// isValidTarget -- normalized target-group matching (single-target path)
+// ===========================================================================
+
+describe("isValidTarget", () => {
+  const user = () => makeEntity({ num: "P1", name: "Alice", team: 0 });
+  const ally = () => makeEntity({ num: "P2", name: "Bob", team: 0 });
+  const foe = () => makeEntity({ num: "P3", name: "Carol", team: 1 });
+
+  it("rejects dead entities", () => {
+    const dead = makeEntity({ num: "P3", name: "Carol", team: 1, curhp: 0 });
+    expect(isValidTarget(user(), dead, "Foe")).toBe(false);
+  });
+
+  it("normalizes legacy 'Foe(s)' spelling", () => {
+    expect(isValidTarget(user(), foe(), "Foe(s)")).toBe(true);
+    expect(isValidTarget(user(), ally(), "Foe(s)")).toBe(false);
+  });
+
+  it("'Self or Foe' allows self and foes but not allies", () => {
+    expect(isValidTarget(user(), foe(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), user(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), ally(), "Self or Foe")).toBe(false);
+  });
+
+  it("'Tile or Foe' targets foes", () => {
+    expect(isValidTarget(user(), foe(), "Tile or Foe")).toBe(true);
+    expect(isValidTarget(user(), ally(), "Tile or Foe")).toBe(false);
+    expect(isValidTarget(user(), user(), "Tile or Foe")).toBe(false);
+  });
+
+  it("'Self, Foes, Allies' matches everyone", () => {
+    expect(isValidTarget(user(), foe(), "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(user(), ally(), "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(user(), user(), "Self, Foes, Allies")).toBe(true);
+  });
+
+  it("'Allies and Self' matches team members only", () => {
+    expect(isValidTarget(user(), ally(), "Allies and Self")).toBe(true);
+    expect(isValidTarget(user(), user(), "Allies and Self")).toBe(true);
+    expect(isValidTarget(user(), foe(), "Allies and Self")).toBe(false);
+  });
+
+  it("fails closed on unrecognized groups (matches AoE behavior)", () => {
+    expect(isValidTarget(user(), foe(), "Whatever Group")).toBe(false);
+    expect(isValidTarget(user(), ally(), "Whatever Group")).toBe(false);
+  });
+});
+
+// ===========================================================================
+// Mutual-lethal wipe -- zero survivors still ends the game
+// ===========================================================================
+
+describe("zero-survivor game over", () => {
+  it("reports a mutual-lethal recoil wipe as 'No survivors'", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+      curhp: 1,
+      maxhp: 1,
+      eva: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      curhp: 1,
+      maxhp: 1,
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Kamikaze",
+      mr: 0,
+      roll: "1d6+0",
+      damageType: "Physical",
+      actionType: "Standard",
+      effect: "Recoil 100%",
+    });
+    const game = makeGame({ entities: [user, target] });
+    user.abilities = [ability];
+
+    const step = startAttack(game, user, ability, target.num);
+    let safety = 0;
+    const out: string[] = [];
+    if (step.done) out.push(...step.result.messages);
+    let lastStepDone = step.done;
+    while (user.pendingResolution && safety++ < 50) {
+      const flow = user.pendingResolution;
+      const step2 = flow.next("0");
+      if (step2.done) {
+        user.pendingResolution = undefined;
+        user.pendingPromptKind = undefined;
+        out.push(...step2.value.messages);
+        lastStepDone = true;
+        break;
+      }
+    }
+    expect(lastStepDone).toBe(true);
+
+    const log = out.join("\n");
+    // Both combatants died: the game ends with no winner declared.
+    expect(log).toContain("Game over! No survivors!");
+    expect(game.phase).toBe("ended");
+    expect(game.winner).toBeNull();
   });
 });
