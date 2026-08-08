@@ -33,6 +33,11 @@ import {
   getCurrentEntity,
   getEntity,
   removeEntity,
+  MOON_PHASE_CYCLE,
+  shiftMoonPhase,
+  normalizePhase,
+  formatPhase,
+  hasMoonPhaseHolder,
   type Game,
   type Entity,
   type AbilityData,
@@ -963,6 +968,125 @@ describe("Turn Management", () => {
 // ---------------------------------------------------------------------------
 // Start-of-Turn Processing
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Moon phases (Lunar Rod / Dark-class mechanic)
+// ---------------------------------------------------------------------------
+
+// Minimal stand-in for the Lunar Rod's signature passive ability.
+const lunarPhaseAbility: AbilityData = {
+  name: "Lunar Phase",
+  level: 1,
+  frequency: "",
+  mr: 0,
+  roll: "",
+  damageType: "",
+  actionType: "Passive",
+  targetAmount: 1,
+  targetGroup: "Self",
+  range: "Self",
+  effect: "",
+};
+
+describe("Moon phases", () => {
+  it("MOON_PHASE_CYCLE is in canonical shift order", () => {
+    expect(MOON_PHASE_CYCLE).toEqual([
+      "new moon",
+      "waxing",
+      "full moon",
+      "waning",
+    ]);
+  });
+
+  it("shiftMoonPhase advances and wraps Waning -> New Moon", () => {
+    expect(shiftMoonPhase("new moon")).toBe("waxing");
+    expect(shiftMoonPhase("waxing")).toBe("full moon");
+    expect(shiftMoonPhase("full moon")).toBe("waning");
+    expect(shiftMoonPhase("waning")).toBe("new moon");
+  });
+
+  it("shiftMoonPhase defaults an unknown/empty phase to new moon", () => {
+    expect(shiftMoonPhase(undefined)).toBe("new moon");
+    expect(shiftMoonPhase("garbage")).toBe("new moon");
+  });
+
+  it("normalizePhase is case/whitespace tolerant and rejects garbage", () => {
+    expect(normalizePhase("NEW MOON")).toBe("new moon");
+    expect(normalizePhase("Full Moon")).toBe("full moon");
+    expect(normalizePhase(undefined)).toBeUndefined();
+    expect(normalizePhase("crescent")).toBeUndefined();
+  });
+
+  it("formatPhase title-cases each word", () => {
+    expect(formatPhase("new moon")).toBe("New Moon");
+    expect(formatPhase(undefined)).toBe("");
+  });
+
+  it("hasMoonPhaseHolder is true only for a living Lunar Phase carrier", () => {
+    const holder = makeEntity({
+      num: "P1",
+      name: "A",
+      abilities: [lunarPhaseAbility],
+    });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [holder, p2] });
+    expect(hasMoonPhaseHolder(game)).toBe(true);
+    holder.curhp = 0;
+    expect(hasMoonPhaseHolder(game)).toBe(false);
+  });
+
+  it("nextTurn chooses then shifts the phase each turn with a Lunar Phase carrier", () => {
+    const holder = makeEntity({
+      num: "P1",
+      name: "A",
+      abilities: [lunarPhaseAbility],
+    });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [holder, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+
+    // No phase set yet: the first advance CHOOSES (defaults to New Moon).
+    const r1 = nextTurn(game);
+    expect(game.moonPhase).toBe("new moon");
+    expect(r1.messages.some((m) => m.includes("Moon phase chosen"))).toBe(true);
+
+    // Every subsequent turn start shifts through the cycle.
+    nextTurn(game);
+    expect(game.moonPhase).toBe("waxing");
+    nextTurn(game);
+    expect(game.moonPhase).toBe("full moon");
+    nextTurn(game);
+    expect(game.moonPhase).toBe("waning");
+    nextTurn(game);
+    expect(game.moonPhase).toBe("new moon");
+  });
+
+  it("nextTurn does not touch the phase without a Lunar Phase carrier", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    nextTurn(game);
+    expect(game.moonPhase).toBeUndefined();
+  });
+
+  it("snapshots preserve moonPhase", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const game = makeGame({ entities: [p1] });
+    game.moonPhase = "full moon";
+    pushSnapshot(game);
+    game.moonPhase = "waning";
+    expect(game.moonPhase).toBe("waning");
+    popSnapshot(game);
+    expect(game.moonPhase).toBe("full moon");
+  });
+});
 
 describe("processStartOfTurn", () => {
   it("applies status damage", () => {
