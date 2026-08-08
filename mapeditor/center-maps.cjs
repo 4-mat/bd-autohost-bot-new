@@ -96,7 +96,7 @@ while (i < lines.length) {
 						valid = false;
 						problems.push('map "' + name + '" has a row with ' + r.nums.length + ' cells (expected 10)');
 					}
-					for (const n of r.nums) if (!(n in numToTerrain)) problems.push('map "' + name + '" uses unknown terrain id ' + n);
+					for (const n of r.nums) if (!(n in numToTerrain)) { valid = false; problems.push('map "' + name + '" uses unknown terrain id ' + n); }
 				}
 			}
 			if (valid) {
