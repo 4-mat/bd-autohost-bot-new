@@ -151,6 +151,20 @@ describe("isValidTarget", () => {
     expect(isValidTarget(u, foe(), "Allies and Self")).toBe(false);
   });
 
+  it("'Tile or Foe' targets foes, not the user or allies", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Tile or Foe")).toBe(true);
+    expect(isValidTarget(u, u, "Tile or Foe")).toBe(false);
+    expect(isValidTarget(u, ally(), "Tile or Foe")).toBe(false);
+  });
+
+  it("'Self, Foes, Allies' accepts the user, foes, and allies", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(u, foe(), "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(u, ally(), "Self, Foes, Allies")).toBe(true);
+  });
+
   it("rejects dead targets", () => {
     expect(
       isValidTarget(user(), makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }), "Foe"),

@@ -41,6 +41,6 @@ export function connect() {
     console.error("WebSocket error:", err.message);
   });
 
-  setWs({ send: (msg: string) => ws.send(msg) });
+  setWs({ send: (msg: string, cb) => ws.send(msg, cb) });
   return ws;
 }
