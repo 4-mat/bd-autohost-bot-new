@@ -212,6 +212,14 @@ export interface Entity {
   // similar per-combat toggles -- is slated to be consolidated into a single
   // "Stance" structure owned by the entity. See STANCES.md for the design intent.
   subweapon?: string;
+  /**
+   * Second phase chosen via "Choose another Phase" (Far Side of the Moon).
+   * Read by "user has 2 Phases" conditions (Fatal Moonlight). Never shifts
+   * the active game.moonPhase.
+   */
+  // FUTURE (Stances): phaseChoice is part of the moon-phase block slated for
+  // the consolidated Stance structure. See STANCES.md for the design intent.
+  phaseChoice?: string;
   abilities: AbilityData[];
   statuses: StatusEffect[];
   buffs: { stat: string; amount: number; rounds: number }[];
@@ -400,6 +408,14 @@ export interface Game {
   // per-combat toggles -- is slated to be consolidated into a single "Stance"
   // structure owned by the entity. See STANCES.md for the design intent.
   moonPhase?: string;
+  /**
+   * Set by "no Phase shift next turn" effects (Harvest Moon / Celestial
+   * Blessing): the next turn boundary skips the moon-phase auto-advance.
+   * Consumed (reset to false) by nextTurn.
+   */
+  // FUTURE (Stances): part of the moon-phase block slated for the consolidated
+  // Stance structure. See STANCES.md for the design intent.
+  skipMoonPhaseShift?: boolean;
 }
 
 export const games = new Map<string, Game>();
@@ -418,6 +434,7 @@ function serializeState(game: Game): string {
       cooldowns: e.cooldowns,
       usesUsed: e.usesUsed,
       subweapon: e.subweapon,
+      phaseChoice: e.phaseChoice,
       dashUsed: e.dashUsed,
       standardUsed: e.standardUsed,
       movementUsed: e.movementUsed,
@@ -427,6 +444,7 @@ function serializeState(game: Game): string {
     turnIndex: game.turnIndex,
     round: game.round,
     moonPhase: game.moonPhase,
+    skipMoonPhaseShift: game.skipMoonPhaseShift,
     log: game.log,
   });
 }
@@ -452,6 +470,7 @@ export function popSnapshot(game: Game): boolean {
       ent.cooldowns = e.cooldowns;
       ent.usesUsed = e.usesUsed;
       ent.subweapon = e.subweapon;
+      ent.phaseChoice = e.phaseChoice;
       ent.dashUsed = e.dashUsed;
       ent.standardUsed = e.standardUsed;
       ent.movementUsed = e.movementUsed;
@@ -462,6 +481,7 @@ export function popSnapshot(game: Game): boolean {
   game.turnIndex = data.turnIndex;
   game.round = data.round;
   game.moonPhase = data.moonPhase;
+  game.skipMoonPhaseShift = data.skipMoonPhaseShift;
   if (data.log) game.log = data.log;
   return true;
 }
@@ -1469,9 +1489,15 @@ export function nextTurn(
   // Moon phase: the Lunar Phase passive advances the phase at the start of
   // every turn ("Start of each turn: shift Phase... Cycle repeats"). The
   // first turn's phase is chosen at %start (or defaults to New Moon), so the
-  // first shift here lands at the start of turn 2.
+  // first shift here lands at the start of turn 2. "no Phase shift next
+  // turn" effects (Harvest Moon / Celestial Blessing) skip one boundary and
+  // are then consumed.
   if (hasMoonPhaseHolder(game)) {
-    if (!game.moonPhase) {
+    if (game.skipMoonPhaseShift) {
+      messages.push(
+        `  \u{1F319} Phase shift skipped this turn (no Phase shift effect).`,
+      );
+    } else if (!game.moonPhase) {
       game.moonPhase = "new moon";
       messages.push(
         `  \u{1F319} Moon phase chosen: **${formatPhase(game.moonPhase)}**.`,
@@ -1482,6 +1508,7 @@ export function nextTurn(
         `  \u{1F319} Phase shifts to **${formatPhase(game.moonPhase)}**.`,
       );
     }
+    game.skipMoonPhaseShift = false;
   }
 
   return { entity, messages, died };

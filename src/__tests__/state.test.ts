@@ -1099,6 +1099,46 @@ describe("Moon phases", () => {
     popSnapshot(game);
     expect(game.moonPhase).toBe("full moon");
   });
+
+  it("skipMoonPhaseShift suppresses the next turn's shift, then resets", () => {
+    const holder = makeEntity({
+      num: "P1",
+      name: "A",
+      abilities: [lunarPhaseAbility],
+    });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [holder, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    game.moonPhase = "new moon";
+    game.skipMoonPhaseShift = true;
+
+    const r1 = nextTurn(game);
+    expect(game.moonPhase).toBe("new moon"); // no shift
+    expect(game.skipMoonPhaseShift).toBe(false); // flag consumed
+    expect(r1.messages.some((m) => m.includes("skipped"))).toBe(true);
+
+    nextTurn(game);
+    expect(game.moonPhase).toBe("waxing"); // shift resumes
+  });
+
+  it("snapshots preserve skipMoonPhaseShift and phaseChoice", () => {
+    const p1 = makeEntity({
+      num: "P1",
+      name: "A",
+      phaseChoice: "full moon",
+    });
+    const game = makeGame({ entities: [p1] });
+    game.skipMoonPhaseShift = true;
+    pushSnapshot(game);
+    p1.phaseChoice = undefined;
+    game.skipMoonPhaseShift = false;
+    popSnapshot(game);
+    expect(p1.phaseChoice).toBe("full moon");
+    expect(game.skipMoonPhaseShift).toBe(true);
+  });
 });
 
 describe("processStartOfTurn", () => {

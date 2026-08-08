@@ -1126,7 +1126,7 @@ function handleInfo(game: Game, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${ref}`);
 
   const lines = [
-    `${entity.num} (${entity.name}) -- ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}${entity.subweapon ? ` | Subweapon: ${entity.subweapon.charAt(0).toUpperCase()}${entity.subweapon.slice(1)}` : ""}`,
+    `${entity.num} (${entity.name}) -- ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}${entity.subweapon ? ` | Subweapon: ${entity.subweapon.charAt(0).toUpperCase()}${entity.subweapon.slice(1)}` : ""}${entity.phaseChoice ? ` | 2nd Phase: ${formatPhase(entity.phaseChoice)}` : ""}`,
     `HP: ${entity.curhp}/${entity.maxhp} | ATK: ${entity.atk} | MAG: ${entity.mag} | PD: ${entity.pd} | MD: ${entity.md} | EVA: ${entity.eva} | MP: ${entity.mp}`,
     `Pos: ${posToStr(entity.pos[0], entity.pos[1])} | Team: ${entity.team}`,
     `Abilities: ${entity.abilities.map((a) => a.name).join(", ") || "None"}`,
