@@ -65,7 +65,11 @@ import {
   isValidTarget,
   type AttackStep,
 } from "../game/resolve.js";
-import { normalizeSubweapon, requiredSubweapons } from "../game/effects.js";
+import {
+  normalizeSubweapon,
+  requiredSubweapons,
+  getPassiveRangeBonus,
+} from "../game/effects.js";
 import { DIRECTION_LABELS, formatPhase } from "../game/state.js";
 import {
   normalizeVoteMode,
@@ -1285,11 +1289,12 @@ function inRangeInParts(
   from: [number, number],
   to: [number, number],
   range: string,
+  bonus = 0,
 ): boolean {
   const parts = range.toLowerCase().includes(" or ")
     ? range.split(/\s+or\s+/i)
     : [range];
-  return parts.some((rp) => inRange(game, from, to, rp.trim()));
+  return parts.some((rp) => inRange(game, from, to, rp.trim(), bonus));
 }
 
 function formatRangeList(list: Entity[]): string {
@@ -1388,7 +1393,13 @@ function checkRangeToTarget(
   // Tile targets can't be group-filtered, so entity targets only.
   const hitAbilities = source.abilities.filter(
     (a) =>
-      inRangeInParts(game, source.pos, toPos, a.range) &&
+      inRangeInParts(
+        game,
+        source.pos,
+        toPos,
+        a.range,
+        getPassiveRangeBonus(source, game.moonPhase),
+      ) &&
       (!targetEntity || isValidTarget(source, targetEntity, a.targetGroup)),
   );
   sendPm(
@@ -1412,7 +1423,13 @@ function checkRangeByAbility(
     (e) =>
       e.num !== source.num &&
       isValidTarget(source, e, ability.targetGroup) &&
-      inRangeInParts(game, source.pos, e.pos, ability.range),
+      inRangeInParts(
+        game,
+        source.pos,
+        e.pos,
+        ability.range,
+        getPassiveRangeBonus(source, game.moonPhase),
+      ),
   );
   const groupLabel = ability.targetGroup || "any";
   sendPm(
@@ -1441,7 +1458,15 @@ function checkRangeByPattern(
     (e) =>
       e.num !== source.num &&
       e.curhp > 0 &&
-      rangeParts.some((rp) => inRange(game, source.pos, e.pos, rp)),
+      rangeParts.some((rp) =>
+        inRange(
+          game,
+          source.pos,
+          e.pos,
+          rp,
+          getPassiveRangeBonus(source, game.moonPhase),
+        ),
+      ),
   );
   sendPm(
     user.name,

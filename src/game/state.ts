@@ -632,24 +632,29 @@ const RANGE_CHECKERS: Record<string, RangeChecker> = {
   cone: (_g, f, t, n) => inCone(f, t, n),
 };
 
-// Check if target is in range of ability
+// Check if target is in range of ability. `bonus` extends the range by a
+// flat amount (e.g. Lunar Phase's "+1 Range" passive bonus); it is added to
+// the numeric range of every measured type and to melee (treated as range 1).
+// Global/Varies are unaffected.
 export function inRange(
   game: Game,
   from: [number, number],
   to: [number, number],
   range: string,
+  bonus = 0,
 ): boolean {
   const rangeStr = range.toLowerCase().trim();
 
   if (rangeStr === "" || rangeStr === "varies") return false;
-  if (rangeStr === "melee") return chebyshev(from, to) <= 1;
+  // Melee: 8 adjacent tiles (Chebyshev distance 1 + bonus)
+  if (rangeStr === "melee") return chebyshev(from, to) <= 1 + bonus;
   if (rangeStr === "global") return true;
 
   const n = parseInt(rangeStr.match(/(\d+)/)?.[1] ?? "");
   if (isNaN(n)) return false;
 
   const checker = RANGE_CHECKERS[rangeStr.split(/\s|\d/)[0]];
-  return checker ? checker(game, from, to, n) : false;
+  return checker ? checker(game, from, to, n + bonus) : false;
 }
 
 // Chebyshev distance (max of row diff, col diff) -- diagonal counts as 1

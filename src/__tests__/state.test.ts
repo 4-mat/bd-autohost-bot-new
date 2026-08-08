@@ -395,6 +395,18 @@ describe("inRange", () => {
     expect(inRange(game, [5, 5], [8, 8], "line 5")).toBe(true); // diagonal, diagDist 3 <= ceil(5/2)=3
     expect(inRange(game, [5, 5], [3, 7], "line 5")).toBe(true); // diagonal, diagDist 2 <= ceil(5/2)=3
   });
+
+  it("bonus extends melee and numbered ranges (Lunar Phase +1 Range)", () => {
+    expect(inRange(game, [5, 5], [5, 7], "melee", 1)).toBe(true); // 2 tiles with +1
+    expect(inRange(game, [5, 5], [5, 7], "melee")).toBe(false); // 2 tiles without bonus
+    expect(inRange(game, [5, 5], [5, 9], "range 3", 1)).toBe(true); // manhattan 4
+    expect(inRange(game, [5, 5], [5, 9], "range 3")).toBe(false);
+    expect(inRange(game, [5, 5], [5, 9], "homing 4", 1)).toBe(true); // manhattan 4
+    expect(inRange(game, [5, 5], [5, 8], "burst 2", 1)).toBe(true); // cheb 3
+    expect(inRange(game, [5, 5], [5, 8], "burst 2")).toBe(false);
+    expect(inRange(game, [5, 5], [5, 9], "line 4", 1)).toBe(true); // cardinal dist 4
+    expect(inRange(game, [5, 5], [5, 9], "global", 1)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
