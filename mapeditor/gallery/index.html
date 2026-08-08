@@ -1,279 +1,815 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Battle Dome — Map Browser</title>
-<style>
-	/* PokéArena-style light theme, like the in-game map browser */
-	body {
-		background: #f2f2f2;
-		color: #222;
-		font-family: Verdana, Tahoma, "Segoe UI", Arial, sans-serif;
-		font-size: 12px;
-		margin: 0;
-	}
-	#app { padding: 25px 80px; position: relative; }
-	#app.wide { padding: 25px 40px; }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Battle Dome — Map Browser</title>
+    <style>
+      /* Pokémon Showdown-style light theme, like the in-game map browser */
+      body {
+        background: #f2f2f2;
+        color: #222;
+        font-family: Verdana, Tahoma, "Segoe UI", Arial, sans-serif;
+        font-size: 12px;
+        margin: 0;
+      }
+      #app {
+        padding: 25px 80px;
+        position: relative;
+      }
+      #app.wide {
+        padding: 25px 40px;
+      }
 
-	a { color: #2b5e8c; }
-	a:hover { color: #1a4a73; }
+      a {
+        color: #2b5e8c;
+      }
+      a:hover {
+        color: #1a4a73;
+      }
 
-	.button {
-		display: inline-block;
-		padding: 4px 13px;
-		margin: 3px 4px 3px 0;
-		background: linear-gradient(#fdfdfd, #e2e2e2);
-		border: 1px solid #8a8a8a;
-		border-radius: 3px;
-		color: #222;
-		text-decoration: none;
-		font-size: 12px;
-		cursor: pointer;
-	}
-	.button:hover { background: linear-gradient(#ffffff, #d3d3d3); border-color: #555; }
-	.button:active { background: linear-gradient(#d3d3d3, #e8e8e8); }
-	.button.primary { background: linear-gradient(#eaf3fb, #cfe3f0); border-color: #6f93ad; }
+      .button {
+        display: inline-block;
+        padding: 4px 13px;
+        margin: 3px 4px 3px 0;
+        background: linear-gradient(#fdfdfd, #e2e2e2);
+        border: 1px solid #8a8a8a;
+        border-radius: 3px;
+        color: #222;
+        text-decoration: none;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .button:hover {
+        background: linear-gradient(#ffffff, #d3d3d3);
+        border-color: #555;
+      }
+      .button:active {
+        background: linear-gradient(#d3d3d3, #e8e8e8);
+      }
+      .button.primary {
+        background: linear-gradient(#eaf3fb, #cfe3f0);
+        border-color: #6f93ad;
+      }
 
-	.nav-abs { position: absolute; top: 0; }
-	.nav-left { left: 0; }
-	.nav-right { right: 0; }
+      .nav-abs {
+        position: absolute;
+        top: 0;
+      }
+      .nav-left {
+        left: 0;
+      }
+      .nav-right {
+        right: 0;
+      }
 
-	h1 { font-size: 26px; margin: 4px 0 2px; font-weight: bold; }
-	.map-info { color: #666; font-size: 12px; margin: 0 0 12px; }
-	.center { text-align: center; }
-	hr { border: 0; border-top: 1px solid #bbb; margin: 12px 0 16px; }
+      h1 {
+        font-size: 26px;
+        margin: 4px 0 2px;
+        font-weight: bold;
+      }
+      .map-info {
+        color: #666;
+        font-size: 12px;
+        margin: 0 0 12px;
+      }
+      .center {
+        text-align: center;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid #bbb;
+        margin: 12px 0 16px;
+      }
 
-	/* the game's map table */
-	table.bdmap {
-		border-spacing: 0px;
-		border-collapse: collapse;
-		border: 1px solid #888;
-		background: rgba(120, 120, 225, 0.10);
-	}
-	table.bdmap td {
-		min-width: 22px;
-		height: 24px;
-		border: 1px solid #888;
-		text-align: center;
-		font-weight: bold;
-		font-size: 11px;
-		color: #222;
-	}
-	table.bdmap td.tile { font-weight: normal; }
-	.map-stage { margin-top: 14px; }
+      /* the game's map table */
+      table.bdmap {
+        border-spacing: 0px;
+        border-collapse: collapse;
+        border: 1px solid #888;
+        background: rgba(120, 120, 225, 0.1);
+      }
+      table.bdmap td {
+        min-width: 22px;
+        height: 24px;
+        border: 1px solid #888;
+        text-align: center;
+        font-weight: bold;
+        font-size: 11px;
+        color: #222;
+      }
+      table.bdmap td.tile {
+        font-weight: normal;
+      }
+      .map-stage {
+        margin-top: 14px;
+        width: 100%;
+        overflow-x: auto;
+      }
+      table.bdmap {
+        margin: 0 auto;
+      }
 
-	/* index sections */
-	.mode-row { margin: 8px 0 14px; }
-	.section { margin: 18px 0; }
-	.section h2 {
-		font-size: 14px;
-		color: #333;
-		border-bottom: 1px solid #ccc;
-		padding-bottom: 3px;
-		margin: 0 0 8px;
-	}
-	.map-links { line-height: 2.1; }
-	.map-links a {
-		display: inline-block;
-		margin: 0 14px 0 0;
-		font-size: 12.5px;
-	}
-	.map-links a small { color: #999; font-size: 10.5px; margin-left: 3px; }
-	.muted { color: #888; font-size: 11px; }
-	#status { color: #a33; font-size: 12px; margin: 10px 0; }
-	@media (max-width: 700px) {
-		#app, #app.wide { padding: 16px 12px; }
-		.nav-abs { position: static; margin: 2px; }
-	}
-</style>
-</head>
-<body>
-<div id="app" class="wide">
-	<div id="topbar"></div>
-	<hr>
-	<div id="content"><p class="muted">Loading maps…</p></div>
-</div>
+      /* index sections */
+      .mode-row {
+        margin: 8px 0 14px;
+      }
+      .section {
+        margin: 18px 0;
+      }
+      .section h2 {
+        font-size: 14px;
+        color: #333;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 3px;
+        margin: 0 0 8px;
+      }
+      .map-links {
+        line-height: 2.1;
+      }
+      .map-links a {
+        display: inline-block;
+        margin: 0 14px 0 0;
+        font-size: 12.5px;
+      }
+      .map-links a small {
+        color: #999;
+        font-size: 10.5px;
+        margin-left: 3px;
+      }
+      .muted {
+        color: #888;
+        font-size: 11px;
+      }
 
-<script src="../../mapeditor/mapcore.cjs"></script>
-<script>
-'use strict';
-const MC = window.MapCore;
+      /* all-maps wall */
+      #wall {
+        display: block;
+      }
+      .wall-controls {
+        margin: 0 0 16px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .wall-controls input[type="search"] {
+        padding: 4px 9px;
+        border: 1px solid #8a8a8a;
+        border-radius: 3px;
+        font-family: inherit;
+        font-size: 12px;
+        background: #fff;
+        color: #222;
+        min-width: 210px;
+      }
+      .wall-controls select {
+        padding: 4px 6px;
+        border: 1px solid #8a8a8a;
+        border-radius: 3px;
+        background: linear-gradient(#fdfdfd, #e2e2e2);
+        font-family: inherit;
+        font-size: 12px;
+        color: #222;
+      }
+      .wall-section {
+        margin: 0 0 26px;
+      }
+      .wall-section .section-title {
+        font-size: 14px;
+        color: #333;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 3px;
+        margin: 0 0 12px;
+      }
+      .wall-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        align-items: flex-start;
+      }
+      .map-card {
+        max-width: 520px;
+      }
+      .map-card h3 {
+        margin: 0 0 4px;
+        font-size: 13px;
+      }
+      .map-card h3 a {
+        text-decoration: none;
+      }
+      .map-card .meta {
+        color: #888;
+        font-size: 11px;
+        margin: 0 0 6px;
+      }
+      .map-card .meta a.edit-link {
+        color: #4466aa;
+        text-decoration: none;
+      }
+      .map-card .meta a.edit-link:hover {
+        text-decoration: underline;
+      }
+      .badge {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 6px;
+        font-size: 9px;
+        font-weight: bold;
+        line-height: 1.5;
+        border-radius: 8px;
+        color: #111;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        vertical-align: 1px;
+      }
+      .center h1 .badge {
+        font-size: 11px;
+        vertical-align: 4px;
+        margin-left: 8px;
+      }
+      .map-card .thumb {
+        display: inline-block;
+        border: 1px solid #888;
+        background: rgba(120, 120, 225, 0.1);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+      }
+      .map-card .thumb table.bdmap {
+        border: 0;
+        background: transparent;
+      }
+      .map-card .thumb table.bdmap td {
+        min-width: auto;
+        height: auto;
+        padding: 0;
+        font-size: 0;
+      }
+      #status {
+        color: #a33;
+        font-size: 12px;
+        margin: 10px 0;
+      }
+      @media (max-width: 700px) {
+        #app,
+        #app.wide {
+          padding: 16px 12px;
+        }
+        .nav-abs {
+          position: static;
+          margin: 2px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" class="wide">
+      <div id="topbar"></div>
+      <hr />
+      <div id="content"><p class="muted">Loading maps…</p></div>
+    </div>
 
-/* The classic in-game palette (normal #99e599, boost lilac #c8a2c8). */
-const COLORS = {
-	normal: '#99e599', stop: '#a9a9a9', water: '#454fdf', forest: '#226622',
-	ice: '#33e9e9', air: '#b8d3de', sticky: '#cccc00', lava: '#8b0000',
-	broken: '#000000', bone: '#ccccaa', stone: '#888888', hearth: '#ff6633',
-	boost: '#c8a2c8'
-};
-const rowLabel = (i) => String.fromCharCode(65 + i);
+    <script src="../../mapeditor/mapcore.cjs"></script>
+    <script>
+      "use strict";
+      const MC = window.MapCore;
 
-let manifest = [];   // {name, display, format, file, rows, cols}
-let curated = {};    // name -> {rows, cols, tiles}
-let modes = {};      // modeId -> [map names]
-let modeLabels = {}; // modeId -> display label
+      /* The classic in-game palette (normal #99e599, boost lilac #c8a2c8). */
+      const COLORS = {
+        normal: "#99e599",
+        stop: "#a9a9a9",
+        water: "#454fdf",
+        forest: "#226622",
+        ice: "#33e9e9",
+        air: "#b8d3de",
+        sticky: "#cccc00",
+        lava: "#8b0000",
+        broken: "#000000",
+        bone: "#ccccaa",
+        stone: "#888888",
+        hearth: "#ff6633",
+        boost: "#c8a2c8",
+      };
+      const rowLabel = (i) => String.fromCharCode(65 + i);
 
-const $ = (id) => document.getElementById(id);
+      let manifest = []; // {name, display, format, file, rows, cols}
+      let curated = {}; // name -> {rows, cols, tiles}
+      let modes = {}; // modeId -> [map names]
+      let modeLabels = {}; // modeId -> display label
 
-async function getJSON(url) {
-	const res = await fetch(url);
-	if (!res.ok) throw new Error('HTTP ' + res.status);
-	return res.json();
-}
+      const $ = (id) => document.getElementById(id);
 
-async function boot() {
-	try { manifest = (await getJSON('../../maps/index.json')).maps || []; } catch (e) { manifest = []; }
-	try {
-		const data = await getJSON('../../maps/curated.json');
-		for (const c of (data.maps || [])) curated[c.name] = c;
-	} catch (e) { /* curated optional */ }
-	try {
-		const data = await getJSON('../../maps/modes.json');
-		modes = data.modes || {};
-		modeLabels = data.labels || {};
-	} catch (e) { /* no mode pools */ }
-	route();
-}
+      function wireWallControls() {
+        const s = $("search"),
+          f = $("modeFilter");
+        if (s) s.addEventListener("input", applyFilter);
+        if (f) f.addEventListener("change", applyFilter);
+      }
 
-function params() { return new URLSearchParams(location.search); }
+      async function getJSON(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      }
 
-function route() {
-	const p = params();
-	const mapName = p.get('map');
-	if (mapName) renderMap(mapName, p.get('mode'));
-	else renderIndex();
-}
+      async function boot() {
+        try {
+          manifest = (await getJSON("../../maps/index.json")).maps || [];
+        } catch (e) {
+          manifest = [];
+        }
+        try {
+          const data = await getJSON("../../maps/curated.json");
+          for (const c of data.maps || []) curated[c.name] = c;
+        } catch (e) {
+          /* curated optional */
+        }
+        try {
+          const data = await getJSON("../../maps/modes.json");
+          modes = data.modes || {};
+          modeLabels = data.labels || {};
+        } catch (e) {
+          /* no mode pools */
+        }
+        route();
+      }
 
-/* ---------------- index ---------------- */
-function renderIndex() {
-	$('app').classList.add('wide');
-	$('topbar').innerHTML = '<a class="button" href="./index.html">🏠 Index</a> <span class="muted">Battle Dome map browser</span>';
-	const byName = {};
-	for (const m of manifest) byName[m.name] = m;
+      function params() {
+        return new URLSearchParams(location.search);
+      }
 
-	const volunteers = manifest.filter((m) => m.format === 'txt');
-	const poolNames = new Set();
-	for (const k in modes) for (const n of modes[k]) poolNames.add(n);
-	const other = manifest.filter((m) => m.format === 'curated' && !poolNames.has(m.name));
+      function route() {
+        const p = params();
+        const mapName = p.get("map");
+        if (mapName) renderMap(mapName, p.get("mode"));
+        else if (p.get("view") === "all") renderAll();
+        else renderIndex();
+      }
 
-	let html = '<h1>Battle Dome — Map Browser</h1>';
-	html += '<p class="map-info">' + manifest.length + ' maps · <a href="./MAPS.md">SVG gallery</a> · <a href="../index.html">map editor</a></p>';
-	html += '<div class="mode-row">';
-	if (Object.keys(modes).length) {
-		for (const k in modes) {
-			html += '<a class="button primary" href="#mode-' + encodeURIComponent(k) + '">' + esc(modeLabels[k] || k) + ' (' + modes[k].length + ')</a> ';
-		}
-	}
-	html += '<a class="button" href="#all">All maps</a></div>';
+      /* ---------------- index ---------------- */
+      function renderIndex() {
+        $("app").classList.add("wide");
+        $("topbar").innerHTML =
+          '<a class="button" href="./index.html">🏠 Index</a> <span class="muted">Battle Dome map browser</span>';
+        const byName = {};
+        for (const m of manifest) byName[m.name] = m;
 
-	if (volunteers.length) {
-		html += section('Volunteer', volunteers.map((m) => linkFor(m)));
-	}
-	if (Object.keys(modes).length) {
-		for (const k in modes) {
-			const list = modes[k].map((n) => byName[n]).filter(Boolean);
-			if (!list.length) continue;
-			html += section(modeLabels[k] || k + ' pool', list.map((m) => linkFor(m)), 'mode-' + k);
-		}
-	}
-	if (other.length) {
-		html += section('Other curated', other.map((m) => linkFor(m)), 'all');
-	}
-	if (!manifest.length) {
-		html = '<p id="status">No maps found — the map data failed to load. Try a hard refresh (Ctrl+Shift+R).</p>';
-	}
-	$('content').innerHTML = html;
-}
+        const volunteers = manifest.filter((m) => m.format === "txt");
+        const poolNames = new Set();
+        for (const k in modes) for (const n of modes[k]) poolNames.add(n);
+        const other = manifest.filter(
+          (m) => m.format === "curated" && !poolNames.has(m.name),
+        );
 
-function section(title, links, id) {
-	return '<div class="section"' + (id ? ' id="' + id + '"' : '') + '><h2>' + esc(title) + '</h2><div class="map-links">' + links.join('') + '</div></div>';
-}
+        let html = "<h1>Battle Dome — Map Browser</h1>";
+        html +=
+          '<p class="map-info">' +
+          manifest.length +
+          ' maps · <a href="./MAPS.md">SVG gallery</a> · <a href="../pools/index.html">edit pools</a> · <a href="../index.html">map editor</a></p>';
+        html += '<div class="mode-row">';
+        if (Object.keys(modes).length) {
+          for (const k in modes) {
+            html +=
+              '<a class="button primary" href="#mode-' +
+              encodeURIComponent(k) +
+              '">' +
+              esc(modeLabels[k] || k) +
+              " (" +
+              modes[k].length +
+              ")</a> ";
+          }
+        }
+        html +=
+          '<a class="button primary" href="./index.html?view=all">🗺 View all maps</a></div>';
 
-function linkFor(m) {
-	return '<a href="./index.html?map=' + encodeURIComponent(m.name) + '" title="' + esc(m.display || m.name) + ' · ' + m.rows + '×' + m.cols + '">' + esc(m.display || m.name) + '<small>' + m.rows + '×' + m.cols + '</small></a>';
-}
+        if (volunteers.length) {
+          html += section(
+            "Volunteer",
+            volunteers.map((m) => linkFor(m)),
+          );
+        }
+        if (Object.keys(modes).length) {
+          for (const k in modes) {
+            const list = modes[k].map((n) => byName[n]).filter(Boolean);
+            if (!list.length) continue;
+            html += section(
+              modeLabels[k] || k + " pool",
+              list.map((m) => linkFor(m)),
+              "mode-" + k,
+            );
+          }
+        }
+        if (other.length) {
+          html += section(
+            "Other curated",
+            other.map((m) => linkFor(m)),
+            "all",
+          );
+        }
+        if (!manifest.length) {
+          html =
+            '<p id="status">No maps found — the map data failed to load. Try a hard refresh (Ctrl+Shift+R).</p>';
+        }
+        $("content").innerHTML = html;
+      }
 
-/* ---------------- single map ---------------- */
-async function renderMap(name, mode) {
-	$('app').classList.remove('wide');
-	const entry = manifest.find((m) => m.name === name);
-	if (!entry) {
-		$('content').innerHTML = '<p id="status">Map "' + esc(name) + '" not found.</p><a class="button" href="./index.html">← Back to index</a>';
-		return;
-	}
+      function section(title, links, id) {
+        return (
+          '<div class="section"' +
+          (id ? ' id="' + id + '"' : "") +
+          "><h2>" +
+          esc(title) +
+          '</h2><div class="map-links">' +
+          links.join("") +
+          "</div></div>"
+        );
+      }
 
-	let map = null;
-	try {
-		if (entry.format === 'curated') {
-			map = curated[name];
-			if (!map) throw new Error('curated data missing');
-		} else if (entry.format === 'txt') {
-			const res = await fetch('../../maps/' + entry.file);
-			map = MC.parseTxt(await res.text(), entry.file);
-		} else {
-			map = MC.normalizeMap(await getJSON('../../maps/' + entry.file));
-		}
-	} catch (e) {
-		$('content').innerHTML = '<p id="status">Could not load "' + esc(name) + '": ' + esc(e.message) + '</p><a class="button" href="./index.html">← Back to index</a>';
-		return;
-	}
-	if (!map || !map.tiles || !map.tiles.length) {
-		$('content').innerHTML = '<p id="status">Map "' + esc(name) + '" is empty.</p><a class="button" href="./index.html">← Back to index</a>';
-		return;
-	}
+      function linkFor(m) {
+        return (
+          '<a href="./index.html?map=' +
+          encodeURIComponent(m.name) +
+          '" title="' +
+          esc(m.display || m.name) +
+          " · " +
+          m.rows +
+          "×" +
+          m.cols +
+          '">' +
+          esc(m.display || m.name) +
+          "<small>" +
+          m.rows +
+          "×" +
+          m.cols +
+          "</small></a>"
+        );
+      }
 
-	// Navigation context: the mode pool, or every map.
-	let ctx = manifest.map((m) => m.name);
-	if (mode && modes[mode] && modes[mode].length) {
-		ctx = modes[mode].filter((n) => manifest.some((m) => m.name === n));
-	}
-	const idx = ctx.indexOf(name);
-	const prev = idx > 0 ? ctx[idx - 1] : null;
-	const next = idx >= 0 && idx < ctx.length - 1 ? ctx[idx + 1] : null;
+      /* ---------------- single map ---------------- */
+      async function renderMap(name, mode) {
+        $("app").classList.remove("wide");
+        const entry = manifest.find((m) => m.name === name);
+        if (!entry) {
+          $("content").innerHTML =
+            '<p id="status">Map "' +
+            esc(name) +
+            '" not found.</p><a class="button" href="./index.html">← Back to index</a>';
+          return;
+        }
 
-	let top = '<a class="button" href="./index.html">← Return to index</a>';
-	if (mode && modeLabels[mode]) {
-		top += ' <a class="button" href="./index.html?mode=' + encodeURIComponent(mode) + '#mode-' + encodeURIComponent(mode) + '">Return to ' + esc(modeLabels[mode]) + '</a>';
-	}
-	if (prev) top += '<a class="button nav-abs nav-left" href="./index.html?map=' + encodeURIComponent(prev) + (mode ? '&mode=' + encodeURIComponent(mode) : '') + '">&lt;&lt; ' + esc(displayOf(prev)) + '</a>';
-	if (next) top += '<a class="button nav-abs nav-right" href="./index.html?map=' + encodeURIComponent(next) + (mode ? '&mode=' + encodeURIComponent(mode) : '') + '">' + esc(displayOf(next)) + ' &gt;&gt;</a>';
-	$('topbar').innerHTML = top;
+        let map = null;
+        try {
+          if (entry.format === "curated") {
+            map = curated[name];
+            if (!map) throw new Error("curated data missing");
+          } else if (entry.format === "txt") {
+            const res = await fetch("../../maps/" + entry.file);
+            map = MC.parseTxt(await res.text(), entry.file);
+          } else {
+            map = MC.normalizeMap(await getJSON("../../maps/" + entry.file));
+          }
+        } catch (e) {
+          $("content").innerHTML =
+            '<p id="status">Could not load "' +
+            esc(name) +
+            '": ' +
+            esc(e.message) +
+            '</p><a class="button" href="./index.html">← Back to index</a>';
+          return;
+        }
+        if (!map || !map.tiles || !map.tiles.length) {
+          $("content").innerHTML =
+            '<p id="status">Map "' +
+            esc(name) +
+            '" is empty.</p><a class="button" href="./index.html">← Back to index</a>';
+          return;
+        }
 
-	const display = entry.display || entry.name;
-	$('content').innerHTML =
-		'<div class="center"><h1>' + esc(display) + '</h1>' +
-		'<p class="map-info">' + map.rows + '×' + map.cols + (mode && modeLabels[mode] ? ' · ' + esc(modeLabels[mode]) + ' pool' : '') + '</p>' +
-		'<div class="map-stage"><div style="display:inline-block;overflow-x:auto">' + tableHTML(map) + '</div></div></div>';
-}
+        // Navigation context: the mode pool, or every map.
+        let ctx = manifest.map((m) => m.name);
+        if (mode && modes[mode] && modes[mode].length) {
+          ctx = modes[mode].filter((n) => manifest.some((m) => m.name === n));
+        }
+        const idx = ctx.indexOf(name);
+        const prev = idx > 0 ? ctx[idx - 1] : null;
+        const next = idx >= 0 && idx < ctx.length - 1 ? ctx[idx + 1] : null;
 
-function displayOf(name) {
-	const m = manifest.find((x) => x.name === name);
-	return (m && m.display) || name;
-}
+        let top =
+          '<a class="button" href="./index.html">← Return to index</a> <a class="button" href="./index.html?view=all">🗺 All maps</a> <a class="button" href="../index.html?map=' +
+          encodeURIComponent(name) +
+          '" title="Edit ' +
+          esc(name) +
+          ' in the map editor">✏️ Edit in editor</a>';
+        if (mode && modeLabels[mode]) {
+          top +=
+            ' <a class="button" href="./index.html?mode=' +
+            encodeURIComponent(mode) +
+            "#mode-" +
+            encodeURIComponent(mode) +
+            '">Return to ' +
+            esc(modeLabels[mode]) +
+            "</a>";
+        }
+        if (prev)
+          top +=
+            '<a class="button nav-abs nav-left" href="./index.html?map=' +
+            encodeURIComponent(prev) +
+            (mode ? "&mode=" + encodeURIComponent(mode) : "") +
+            '">&lt;&lt; ' +
+            esc(displayOf(prev)) +
+            "</a>";
+        if (next)
+          top +=
+            '<a class="button nav-abs nav-right" href="./index.html?map=' +
+            encodeURIComponent(next) +
+            (mode ? "&mode=" + encodeURIComponent(mode) : "") +
+            '">' +
+            esc(displayOf(next)) +
+            " &gt;&gt;</a>";
+        $("topbar").innerHTML = top;
 
-function tableHTML(map) {
-	const rows = map.tiles.length;
-	const cols = map.tiles[0].length;
-	let h = '<table class="bdmap"><tr style="min-height:28px;height:24px"><td style="min-width:22px"></td>';
-	for (let c = 0; c < cols; c++) h += '<td style="min-width:22px"><b>' + (c + 1) + '</b></td>';
-	h += '</tr>';
-	for (let r = 0; r < rows; r++) {
-		h += '<tr style="min-height:24px;height:24px"><td><b>' + rowLabel(r) + '</b></td>';
-		for (let c = 0; c < cols; c++) {
-			const t = map.tiles[r][c] || 'normal';
-			h += '<td class="tile" style="background:' + (COLORS[t] || COLORS.normal) + '" title="' + esc(t) + '"></td>';
-		}
-		h += '</tr>';
-	}
-	return h + '</table>';
-}
+        const display = entry.display || entry.name;
+        $("content").innerHTML =
+          '<div class="center"><h1>' +
+          esc(display) +
+          badgeFor(modesOf(name)) +
+          "</h1>" +
+          '<p class="map-info">' +
+          map.rows +
+          "×" +
+          map.cols +
+          (mode && modeLabels[mode]
+            ? " · " + esc(modeLabels[mode]) + " pool"
+            : "") +
+          "</p>" +
+          '<div class="map-stage">' +
+          tableHTML(map) +
+          "</div></div>";
+      }
 
-function esc(s) {
-	return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+      const MODE_COLORS = {
+        ffa: "#d9534f",
+        ntr: "#5b8def",
+        jugg: "#5cb85c",
+        pvp: "#f0ad4e",
+        "1v1": "#7b68ee",
+        __other: "#888",
+      };
+      function badgeFor(modeKeys) {
+        if (!modeKeys || !modeKeys.length) return "";
+        return modeKeys
+          .map((modeKey) => {
+            const color = MODE_COLORS[modeKey] || "#888";
+            return (
+              '<span class="badge" style="background:' +
+              color +
+              '" title="' +
+              esc(modeLabels[modeKey] || modeKey) +
+              ' pool">' +
+              esc(modeLabels[modeKey] || modeKey) +
+              "</span>"
+            );
+          })
+          .join("");
+      }
 
-boot();
-</script>
-</body>
+      /* ---------------- all maps (scrollable wall) ---------------- */
+      async function renderAll() {
+        $("app").classList.add("wide");
+        $("topbar").innerHTML =
+          '<a class="button" href="./index.html">← Return to index</a> <span class="muted">Battle Dome map browser — all maps</span>';
+        $("content").innerHTML =
+          "<h1>All maps</h1>" +
+          '<div class="wall-controls"><input type="search" id="search" placeholder="Search maps…" autocomplete="off"><select id="modeFilter"></select><span class="muted" id="wallCount"></span></div>' +
+          '<p class="map-info" id="wallStatus">Loading ' +
+          manifest.length +
+          ' maps…</p><div id="wall"></div>';
+        const modeSel = $("modeFilter");
+        let mopts = '<option value="all">All modes</option>';
+        for (const k in modes)
+          mopts +=
+            '<option value="' +
+            esc(k) +
+            '">' +
+            esc(modeLabels[k] || k) +
+            "</option>";
+        mopts += '<option value="__other">Other</option>';
+        modeSel.innerHTML = mopts;
+        wireWallControls();
+
+        const wall = $("wall");
+        const entries = manifest
+          .slice()
+          .sort((a, b) =>
+            (a.display || a.name).localeCompare(b.display || b.name),
+          );
+        const total = entries.length;
+        async function loadMap(m) {
+          try {
+            if (m.format === "curated") return curated[m.name] || null;
+            if (m.format === "txt")
+              return MC.parseTxt(
+                await (await fetch("../../maps/" + m.file)).text(),
+                m.file,
+              );
+            return MC.normalizeMap(await getJSON("../../maps/" + m.file));
+          } catch (e) {
+            return null;
+          }
+        }
+        // Chunked parallel loading (12 at a time) — collected, then grouped into sections.
+        for (let i = 0; i < total; i += 12) {
+          const chunk = entries.slice(i, i + 12);
+          const maps = await Promise.all(chunk.map(loadMap));
+          chunk.forEach((m, j) => {
+            const map = maps[j];
+            const ok = map && map.tiles && map.tiles.length;
+            const card = document.createElement("div");
+            card.className = "map-card";
+            card.innerHTML =
+              '<h3><a href="./index.html?map=' +
+              encodeURIComponent(m.name) +
+              '">' +
+              esc(m.display || m.name) +
+              "</a>" +
+              badgeFor(modesOf(m.name)) +
+              "</h3>" +
+              '<p class="meta">' +
+              (ok
+                ? map.rows + "×" + map.cols
+                : m.rows + "×" + m.cols + " · failed to load") +
+              ' · <a class="edit-link" href="../index.html?map=' +
+              encodeURIComponent(m.name) +
+              '">edit in editor</a></p>' +
+              (ok
+                ? '<a class="thumb" href="./index.html?map=' +
+                  encodeURIComponent(m.name) +
+                  '" title="Open ' +
+                  esc(m.display || m.name) +
+                  '">' +
+                  thumbHTML(map) +
+                  "</a>"
+                : "");
+            wallCards.push({
+              name: m.name,
+              display: m.display || m.name,
+              mode: modeOf(m.name),
+              modes: modesOf(m.name),
+              card: card,
+              search: ((m.display || m.name) + " " + m.name).toLowerCase(),
+            });
+          });
+          const done = Math.min(i + 12, total);
+          $("wallStatus").textContent = "Loading " + done + "/" + total + "…";
+        }
+        $("wallStatus").textContent = "";
+        renderWall();
+      }
+
+      let wallCards = [];
+      let wallSections = [];
+
+      function modesOf(name) {
+        const out = [];
+        for (const k in modes) if (modes[k].indexOf(name) >= 0) out.push(k);
+        return out;
+      }
+      function modeOf(name) {
+        return modesOf(name)[0] || null;
+      }
+
+      function renderWall() {
+        const wall = $("wall");
+        wall.innerHTML = "";
+        wallSections = [];
+        const groups = {};
+        for (const c of wallCards) {
+          const keys =
+            c.modes && c.modes.length ? c.modes : [c.mode || "__other"];
+          for (const key of keys) {
+            const holder = {
+              name: c.name,
+              display: c.display,
+              search: c.search,
+              card: c.card.cloneNode(true),
+            };
+            (groups[key] = groups[key] || []).push(holder);
+          }
+        }
+        const order = Object.keys(modes);
+        if (groups["__other"]) order.push("__other");
+        for (const key of order) {
+          const list = groups[key];
+          if (!list || !list.length) continue;
+          const sec = document.createElement("section");
+          sec.className = "wall-section";
+          const ttl = document.createElement("h2");
+          ttl.className = "section-title";
+          ttl.textContent =
+            (key === "__other" ? "Other maps" : modeLabels[key] || key) +
+            " (" +
+            list.length +
+            ")";
+          sec.appendChild(ttl);
+          const row = document.createElement("div");
+          row.className = "wall-row";
+          for (const c of list) row.appendChild(c.card);
+          sec.appendChild(row);
+          wall.appendChild(sec);
+          wallSections.push({ key: key, el: sec, cards: list });
+        }
+        applyFilter();
+      }
+
+      function applyFilter() {
+        const q = ($("search").value || "").trim().toLowerCase();
+        const mode = $("modeFilter").value;
+        let shown = 0;
+        for (const s of wallSections) {
+          let secShown = 0;
+          for (const c of s.cards) {
+            const okQ = !q || c.search.indexOf(q) >= 0;
+            const okM = mode === "all" || mode === s.key;
+            const show = okQ && okM;
+            c.card.style.display = show ? "" : "none";
+            if (show) secShown++;
+          }
+          s.el.style.display = secShown ? "" : "none";
+          shown += secShown;
+        }
+        $("wallCount").textContent = shown + " maps";
+      }
+
+      function thumbHTML(map) {
+        const rows = map.tiles.length;
+        const cols = map.tiles[0].length;
+        const cell = Math.max(6, Math.min(16, Math.floor(460 / cols)));
+        let out = '<table class="bdmap"><tbody>';
+        for (let r = 0; r < rows; r++) {
+          out += "<tr>";
+          for (let c = 0; c < cols; c++) {
+            const t = map.tiles[r][c] || "normal";
+            out +=
+              '<td class="tile" style="min-width:' +
+              cell +
+              "px;width:" +
+              cell +
+              "px;height:" +
+              cell +
+              "px;background:" +
+              (COLORS[t] || COLORS.normal) +
+              '" title="' +
+              esc(rowLabel(r)) +
+              (c + 1) +
+              " · " +
+              esc(t) +
+              '"></td>';
+          }
+          out += "</tr>";
+        }
+        return out + "</tbody></table>";
+      }
+
+      function displayOf(name) {
+        const m = manifest.find((x) => x.name === name);
+        return (m && m.display) || name;
+      }
+
+      function tableHTML(map) {
+        const rows = map.tiles.length;
+        const cols = map.tiles[0].length;
+        let h =
+          '<table class="bdmap"><tr style="min-height:28px;height:24px"><td style="min-width:22px"></td>';
+        for (let c = 0; c < cols; c++)
+          h += '<td style="min-width:22px"><b>' + (c + 1) + "</b></td>";
+        h += "</tr>";
+        for (let r = 0; r < rows; r++) {
+          h +=
+            '<tr style="min-height:24px;height:24px"><td><b>' +
+            rowLabel(r) +
+            "</b></td>";
+          for (let c = 0; c < cols; c++) {
+            const t = map.tiles[r][c] || "normal";
+            h +=
+              '<td class="tile" style="background:' +
+              (COLORS[t] || COLORS.normal) +
+              '" title="' +
+              esc(t) +
+              '"></td>';
+          }
+          h += "</tr>";
+        }
+        return h + "</table>";
+      }
+
+      function esc(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      boot();
+    </script>
+  </body>
 </html>
