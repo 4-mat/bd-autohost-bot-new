@@ -287,14 +287,27 @@ function canonicalResource(name: string): string | null {
 const SUBWEAPONS = ["gladius", "scutum", "pilum"] as const;
 
 /**
+ * Canonicalize any subweapon value ("Gladius", " PILUM ", garbage, undefined)
+ * into the lowercase engine id ("gladius" | "scutum" | "pilum"), or undefined
+ * when it isn't a known subweapon. Every reader that compares an entity's
+ * equipped subweapon should route through this so the id forms always agree.
+ */
+export function normalizeSubweapon(
+  value: string | undefined | null,
+): string | undefined {
+  const id = toId(value ?? "");
+  return (SUBWEAPONS as readonly string[]).includes(id) ? id : undefined;
+}
+
+/**
  * Splits a subweapon list like "Gladius or Pilum" / "Scutum" into canonical
  * lowercase ids, ignoring anything that isn't a known subweapon.
  */
 function parseSubweaponList(text: string): string[] {
   return text
     .split(/\s+(?:or|and)\s+|\s*,\s*/)
-    .map((w) => toId(w))
-    .filter((w) => (SUBWEAPONS as readonly string[]).includes(w));
+    .map((w) => normalizeSubweapon(w))
+    .filter((w): w is string => !!w);
 }
 
 /**
@@ -1405,9 +1418,8 @@ export function evaluateCondition(
     /^subweapon is (gladius|scutum|pilum)$/,
   );
   if (subweaponMatch) {
-    return (user.subweapon ?? "").toLowerCase() === subweaponMatch[1]
-      ? "then"
-      : "else";
+    const current = normalizeSubweapon(user.subweapon) ?? "";
+    return current === subweaponMatch[1] ? "then" : "else";
   }
 
   const negate = evalNegation(lower, user, target, moonPhase);
