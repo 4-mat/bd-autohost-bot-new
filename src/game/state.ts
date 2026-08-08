@@ -156,6 +156,10 @@ export function parseFrequency(frequency: string) {
     uses = 3;
   }
 
+  // BD frequency semantics (do not "fix" E2T to 2):
+  // "EoT" = every other turn (cooldown 2). In BD 4.3, "E2T" is equivalent to
+  // BD 4.4's "E3T" (every 3rd turn) and shares the cooldown of 3, despite the
+  // abbreviation. "every two turns" likewise maps to 3.
   if (f.includes("every other turn") || f.includes("eot")) {
     cooldown = 2;
   } else if (

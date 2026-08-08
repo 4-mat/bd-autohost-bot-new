@@ -218,7 +218,13 @@ function* resolveAttackFlow(
 
   // --- Variant choice for damageType "Varies" ---
   let active = ability;
-  if (ability.damageType === "Varies" && ability.variants?.length) {
+  if (ability.damageType === "Varies") {
+    if (!ability.variants?.length) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but it has no damage variants.`,
+      );
+      return result;
+    }
     const variantId = yield {
       kind: "selection",
       message: `Choose the type of ${ability.name}`,
@@ -665,7 +671,11 @@ function findTargets(
   });
 }
 
-export function isValidTarget(user: Entity, target: Entity, group: string): boolean {
+export function isValidTarget(
+  user: Entity,
+  target: Entity,
+  group: string,
+): boolean {
   if (target.curhp <= 0) return false;
   const g = group.toLowerCase();
 
