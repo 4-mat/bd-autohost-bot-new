@@ -1304,10 +1304,13 @@ function unlockAudio() {
       return;
     }
   }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
 }
-window.addEventListener('pointerdown', unlockAudio, { once: true });
-window.addEventListener('keydown', unlockAudio, { once: true });
+// Listeners stay attached for the whole session: if the context gets suspended
+// again (tab backgrounding, system sleep, audio device change), the next
+// gesture resumes it so turn beeps never go permanently silent.
+window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('keydown', unlockAudio);
 
 function beep() {
   if (!audioCtx || audioCtx.state !== 'running') return;
