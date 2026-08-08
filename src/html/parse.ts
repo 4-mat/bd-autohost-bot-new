@@ -275,9 +275,16 @@ export function handleKyubsInfo(roomid: string, html: string) {
       entity.pos = pos;
       entity.className = p.className;
       entity.weaponName = p.weaponName;
-      // Backfill the subweapon on re-import only when missing -- never
-      // stomp an in-game swapped stance.
-      if (!entity.subweapon) entity.subweapon = startingSubweapon(p.weaponName);
+      // Subweapons are a Gladius-only mechanic. Re-imports must drop stale
+      // subweapon state when the imported weapon isn't Gladius (a former
+      // Gladius user re-imported as another weapon would otherwise keep an
+      // unequippable stance). For Gladius users, preserve an in-game swapped
+      // stance and only backfill when missing.
+      if (toId(p.weaponName) !== "gladius") {
+        entity.subweapon = undefined;
+      } else if (!entity.subweapon) {
+        entity.subweapon = startingSubweapon(p.weaponName);
+      }
       entity.classLevel = p.classLevel;
       entity.weaponLevel = p.weaponLevel;
       entity.abilities = getAbilities(p.className, p.weaponName);

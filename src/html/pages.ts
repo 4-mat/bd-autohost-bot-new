@@ -22,6 +22,7 @@ import {
   normalizeSubweapon,
   requiredSubweapons,
   getPassiveRangeBonus,
+  formatSubweapon,
 } from "../game/effects.js";
 import { runoffOptions, tallyVotes, voteOptionsFor } from "../data/gamemodes.js";
 
@@ -179,16 +180,12 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function cap(s: string): string {
-  if (!s) return s;
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 // Equipped-subweapon badge for Gladius (Fighter weapon) users, e.g.
-// "[Pilum]". Empty for everyone else.
+// "[Pilum]". Empty for everyone else. formatSubweapon canonicalizes the
+// value (aliases like "PILUM" / "pi-lum" render as "Pilum").
 function subweaponBadge(entity: Entity): string {
   if (!entity.subweapon) return "";
-  return ` <span style="color:#c90;font-size:10px">[${cap(entity.subweapon)}]</span>`;
+  return ` <span style="color:#c90;font-size:10px">[${formatSubweapon(entity.subweapon)}]</span>`;
 }
 
 // Moon phase badge (Lunar Rod / Dark-class mechanic); empty when no phase is
@@ -629,7 +626,7 @@ function buildEntityStats(entity: Entity, game?: Game): string {
   html += ` <b>MD:</b> ${entity.md}`;
   html += ` <b>EVA:</b> ${entity.eva}`;
   html += ` <b>MP:</b> <b style="color:#08c">${entity.mp}</b>`;
-  if (entity.subweapon) html += ` <b>Sub:</b> ${cap(entity.subweapon)}`;
+  if (entity.subweapon) html += ` <b>Sub:</b> ${formatSubweapon(entity.subweapon)}`;
   if (game?.moonPhase) {
     html += ` <b>Phase:</b> \u{1F319}${formatPhase(game.moonPhase)}`;
     if (entity.phaseChoice) {
