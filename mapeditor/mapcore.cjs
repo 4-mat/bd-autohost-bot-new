@@ -41,7 +41,7 @@
 		bone:   { color: '#CCCCAA', label: 'Bone',   code: 'b', dark: false },
 		stone:  { color: '#888888', label: 'Stone',  code: 'o', dark: true },
 		hearth: { color: '#FF6633', label: 'Hearth', code: 'h', dark: true },
-		boost:  { color: '#AAFFAA', label: 'Boost',  code: '+', dark: false }
+		boost:  { color: '#A855F7', label: 'Boost',  code: '+', dark: true }
 	};
 
 	// Default token colors (P1 green / P2 blue are the classic ones).
@@ -63,7 +63,7 @@
 	const COLOR_TO_TERRAIN = {};
 	for (const t in TERRAINS) COLOR_TO_TERRAIN[TERRAINS[t].color.toLowerCase()] = t;
 
-	const MIN_DIM = 7;
+	const MIN_DIM = 5;
 	const MAX_DIM = 60;
 
 	function rowLabel(i) {
@@ -341,6 +341,61 @@
 	}
 
 	/**
+	 * Move a rectangular block of tiles (and any tokens inside it) by (dr, dc).
+	 * Mutates `map` in place. Returns the selection box at its new position
+	 * ({r0, c0, r1, c1}, inclusive) or null if the move would go out of bounds.
+	 * A token from outside the block sitting on a destination cell is displaced
+	 * (the moved token wins).
+	 */
+	function translateBlock(map, sel, dr, dc) {
+		dr = Math.round(dr) || 0;
+		dc = Math.round(dc) || 0;
+		if (!dr && !dc) return { r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 };
+		const s = {
+			r0: Math.min(sel.r0, sel.r1), c0: Math.min(sel.c0, sel.c1),
+			r1: Math.max(sel.r0, sel.r1), c1: Math.max(sel.c0, sel.c1)
+		};
+		const w = s.r1 - s.r0 + 1, h = s.c1 - s.c0 + 1;
+		const nr0 = s.r0 + dr, nc0 = s.c0 + dc;
+		if (nr0 < 0 || nc0 < 0 || nr0 + w > map.rows || nc0 + h > map.cols) return null;
+
+		// Snapshot the block (tiles + tokens inside it).
+		const block = [];
+		for (let r = s.r0; r <= s.r1; r++)
+			for (let c = s.c0; c <= s.c1; c++)
+				block.push(map.tiles[r][c]);
+		const blockTokens = [];
+		for (const name in map.tokens) {
+			const t = map.tokens[name];
+			if (t.row >= s.r0 && t.row <= s.r1 && t.col >= s.c0 && t.col <= s.c1) {
+				blockTokens.push({ name, row: t.row - s.r0, col: t.col - s.c0, color: t.color });
+			}
+		}
+
+		// Cut: clear the source region.
+		for (let r = s.r0; r <= s.r1; r++)
+			for (let c = s.c0; c <= s.c1; c++)
+				map.tiles[r][c] = 'normal';
+		for (const bt of blockTokens) delete map.tokens[bt.name];
+
+		// Paste at the destination.
+		let i = 0;
+		for (let r = s.r0; r <= s.r1; r++)
+			for (let c = s.c0; c <= s.c1; c++)
+				map.tiles[nr0 + (r - s.r0)][nc0 + (c - s.c0)] = block[i++];
+		for (const bt of blockTokens) {
+			const tr = nr0 + bt.row, tc = nc0 + bt.col;
+			for (const name in map.tokens) {
+				const o = map.tokens[name];
+				if (o.row === tr && o.col === tc) delete map.tokens[name];
+			}
+			map.tokens[bt.name] = { row: tr, col: tc, color: bt.color || tokenColorFor(bt.name) };
+		}
+
+		return { r0: nr0, c0: nc0, r1: nr0 + w - 1, c1: nc0 + h - 1 };
+	}
+
+	/**
 	 * Volunteer .txt format for maps/ in this repo. Note: player tokens are
 	 * editor-only and not representable in this format (they're ignored).
 	 */
@@ -418,6 +473,50 @@
 		return counts;
 	}
 
+	// Rotate the map 90° clockwise, turns times (1-3). Returns a new map object (tiles + tokens + dims).
+	function rotateMap(map, turns) {
+		const m = normalizeMap(map);
+		turns = ((Math.floor(turns) || 0) % 4 + 4) % 4;
+		let tiles = m.tiles, rows = m.rows, cols = m.cols, tokens = m.tokens;
+		for (let i = 0; i < turns; i++) {
+			const nt = [];
+			for (let c = 0; c < cols; c++) {
+				const row = [];
+				for (let r = rows - 1; r >= 0; r--) row.push(tiles[r][c]);
+				nt.push(row);
+			}
+			const ntoks = {};
+			for (const name in tokens) {
+				const t = tokens[name];
+				ntoks[name] = { row: t.col, col: rows - 1 - t.row, color: t.color };
+			}
+			tiles = nt; tokens = ntoks;
+			const oldRows = rows; rows = cols; cols = oldRows;
+		}
+		return normalizeMap({ name: m.name, displayName: m.displayName, rows, cols, tiles, tokens });
+	}
+
+	// Mirror the map: 'h' = left-right, 'v' = top-bottom. Returns a new map object.
+	function flipMap(map, axis) {
+		const m = normalizeMap(map);
+		const tiles = [];
+		const tokens = {};
+		if (axis === 'h') {
+			for (let r = 0; r < m.rows; r++) tiles.push(m.tiles[r].slice().reverse());
+			for (const name in m.tokens) {
+				const t = m.tokens[name];
+				tokens[name] = { row: t.row, col: m.cols - 1 - t.col, color: t.color };
+			}
+		} else {
+			for (let r = m.rows - 1; r >= 0; r--) tiles.push(m.tiles[r].slice());
+			for (const name in m.tokens) {
+				const t = m.tokens[name];
+				tokens[name] = { row: m.rows - 1 - t.row, col: t.col, color: t.color };
+			}
+		}
+		return normalizeMap({ name: m.name, displayName: m.displayName, rows: m.rows, cols: m.cols, tiles, tokens });
+	}
+
 	return {
 		TERRAINS,
 		DEFAULT_TOKEN_COLORS,
@@ -440,6 +539,9 @@
 		toJSON,
 		toTextGrid,
 		tileCounts,
-		tokenAt
+		tokenAt,
+		translateBlock,
+		rotateMap,
+		flipMap
 	};
 }));
