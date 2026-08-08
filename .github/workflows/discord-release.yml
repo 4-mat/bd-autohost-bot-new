@@ -1,0 +1,43 @@
+name: Discord major-release notification
+
+on:
+  release:
+    types: [released]
+
+jobs:
+  notify:
+    if: >
+      endsWith(github.event.release.tag_name, '.0.0') ||
+      github.event.release.tag_name == '0.1.0' ||
+      github.event.release.tag_name == 'v0.1.0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG: ${{ github.event.release.tag_name }}
+          NAME: ${{ github.event.release.name }}
+          URL: ${{ github.event.release.html_url }}
+          BODY: ${{ github.event.release.body }}
+        run: |
+          body=$(jq -n \
+            --arg tag "$TAG" \
+            --arg name "$NAME" \
+            --arg url "$URL" \
+            --arg body "$BODY" \
+            '{
+              content: "<@&1535455535896334467>",
+              embeds: [{
+                title: "🚀 Battle Dome Autohost — $tag",
+                description: ($name // $tag),
+                url: $url,
+                color: 15548997,
+                fields: [{
+                  name: "Release notes",
+                  value: (if ($body | length) > 0 then $body else "See the release for details." end)
+                }]
+              }]
+            }')
+          curl -sS -H "Content-Type: application/json" \
+            -d "$body" \
+            "$WEBHOOK_URL" || exit 1
