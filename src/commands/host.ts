@@ -9,6 +9,10 @@ import {
   pushSnapshot,
   nextTurn,
   removeEntity,
+  startingSubweapon,
+  formatPhase,
+  hasMoonPhaseHolder,
+  normalizePhase,
   type Game,
   type Entity,
   Terrain,
@@ -23,6 +27,7 @@ import {
 } from "../data/index.js";
 import { getVersionData } from "../data/version43.js";
 import type { GameVersion } from "../data/index.js";
+import { normalizeSubweapon } from "../game/effects.js";
 import { getMapByName, listMaps } from "../data/maps.js";
 import {
   GAMEMODE_MAPS,
@@ -148,6 +153,8 @@ const HOST_CMDS: Record<string, HostCmd> = {
   setweapon: (r, u, full) => handleSetWeapon(r, u, full),
   setloadout: (r, u, full) => handleSetEntityLoadout(r, u, full),
   setjugg: (r, u, full) => handleSetJugg(r, u, full),
+  setsubweapon: (r, u, full) => handleSetSubweapon(r, u, full),
+  setphase: (r, u, full) => handleSetPhase(r, u, full),
   listmaps: (r, u, full) => handleListMaps(r, u, full),
   join: (r, u, full) => handleJoin(r, u, full),
   genpos: (r, u, full) => handleGenPos(r, u, full),
@@ -1549,6 +1556,116 @@ function handleSetJugg(room: Room, user: User, args: string) {
   broadcastPages(game);
 }
 
+// -- .setsubweapon <entity>, <gladius|scutum|pilum|clear> - Set subweapon -----
+
+function handleSetSubweapon(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %setsubweapon.");
+  }
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(
+      user.name,
+      "Usage: %setsubweapon <entity>, <gladius|scutum|pilum|clear>",
+    );
+  }
+
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+
+  // Clear must work for ANY entity: mid-game weapon swaps deliberately
+  // preserve the old subweapon (applyWeaponChange), so a former Gladius user
+  // can carry a stale stance that needs to be removable.
+  const raw = parts[1].toLowerCase();
+  if (raw === "clear" || raw === "none" || raw === "off") {
+    pushSnapshot(game);
+    const old = entity.subweapon;
+    entity.subweapon = undefined;
+    send(
+      room.id,
+      `${entity.num} (${entity.name}) subweapon: ${old ? capSub(old) : "none"} -> none`,
+    );
+    broadcastPages(game);
+    return;
+  }
+
+  // Subweapons are a Gladius (Fighter weapon) mechanic: only Gladius users
+  // carry them, so monsters and other weapons have no stance to swap.
+  if (entity.isMonster) {
+    return sendPm(
+      user.name,
+      `${entity.num} (${entity.name}) is a monster — subweapons are a Gladius mechanic.`,
+    );
+  }
+  if (toId(entity.weaponName) !== "gladius") {
+    return sendPm(
+      user.name,
+      `${entity.num} (${entity.name}) wields ${entity.weaponName} — only Gladius users have subweapons.`,
+    );
+  }
+
+  const sub = normalizeSubweapon(raw);
+  if (!sub) {
+    return sendPm(
+      user.name,
+      "Subweapon must be gladius, scutum, or pilum (or clear).",
+    );
+  }
+
+  pushSnapshot(game);
+  const old = entity.subweapon;
+  entity.subweapon = sub;
+  send(
+    room.id,
+    `${entity.num} (${entity.name}) subweapon: ${old ? capSub(old) : "none"} -> ${capSub(sub)}`,
+  );
+  broadcastPages(game);
+}
+
+function capSub(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// -- .setphase <new moon|waxing|full moon|waning|clear> - Set the moon phase -
+// The Lunar Phase passive says "Start of first turn: choose Phase" -- this is
+// the host's knob for that choice (before %start or mid-game). After the
+// first turn the phase auto-shifts at the start of each turn (nextTurn).
+
+function handleSetPhase(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %setphase.");
+  }
+
+  const arg = args.trim();
+  if (toId(arg) === "clear" || toId(arg) === "off" || toId(arg) === "none") {
+    pushSnapshot(game);
+    const old = game.moonPhase ? formatPhase(game.moonPhase) : "none";
+    game.moonPhase = undefined;
+    send(room.id, `Moon phase: ${old} -> none.`);
+    broadcastPages(game);
+    return;
+  }
+
+  const phase = normalizePhase(arg);
+  if (!phase) {
+    return sendPm(
+      user.name,
+      "Phase must be new moon, waxing, full moon, or waning (or clear).",
+    );
+  }
+
+  pushSnapshot(game);
+  const old = game.moonPhase ? formatPhase(game.moonPhase) : "none";
+  game.moonPhase = phase;
+  send(room.id, `Moon phase: ${old} -> **${formatPhase(phase)}**.`);
+  broadcastPages(game);
+}
+
 // -- .remp <name> - Remove a player --------------------------------------------
 
 function handleRemPlayer(room: Room, user: User, args: string) {
@@ -1810,6 +1927,16 @@ function handleStart(room: Room, user: User) {
     room.id,
     `Mode: ${game.mode} | Map: ${game.mapName} | Players: ${game.entities.length}`,
   );
+
+  // Moon phase: "Start of first turn: choose Phase." Default to New Moon when
+  // the host didn't %setphase during setup; it auto-shifts each turn after.
+  if (hasMoonPhaseHolder(game)) {
+    game.moonPhase = game.moonPhase ?? "new moon";
+    send(
+      room.id,
+      `\u{1F319} **Lunar Phase active** — starting on **${formatPhase(game.moonPhase)}**. The phase shifts at the start of each turn (host: %setphase).`,
+    );
+  }
 
   // Announce first turn
   const first = getCurrentEntity(game);

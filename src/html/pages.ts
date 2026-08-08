@@ -10,6 +10,7 @@ import {
   DIRECTION_LABELS,
   parseFrequency,
   formatChatTime,
+  formatPhase,
   type Game,
   type Entity,
   type AbilityData,
@@ -17,7 +18,8 @@ import {
 import { posToStr } from "../utils.js";
 import { eva43 } from "../game/resolve.js";
 import { getVersionData } from "../data/version43.js";
-import { requiredSubweapons } from "../game/effects.js";
+import { classes, weapons } from "../data/index.js";
+import { normalizeSubweapon, requiredSubweapons } from "../game/effects.js";
 import {
   runoffOptions,
   tallyVotes,
@@ -196,11 +198,21 @@ function subweaponBadge(entity: Entity): string {
   return ` <span style="color:#c90;font-size:10px">[${cap(entity.subweapon)}]</span>`;
 }
 
+// Moon phase badge (Lunar Rod / Dark-class mechanic); empty when no phase is
+// active. The phase is game-global, so everyone sees the same one.
+function moonBadge(game: Game): string {
+  if (!game.moonPhase) return "";
+  return ` <span style="color:#a06;font-size:10px" title="Moon phase - shifts at the start of each turn">\u{1F319} ${formatPhase(game.moonPhase)}</span>`;
+}
+
 // True when an ability has a "Requires X" clause the entity's equipped
 // subweapon doesn't satisfy -- such abilities are hidden from the buttons.
 function subweaponGated(ab: AbilityData, entity: Entity): boolean {
   const requires = requiredSubweapons(ab.effect);
-  return requires.length > 0 && !requires.includes(entity.subweapon ?? "");
+  return (
+    requires.length > 0 &&
+    !requires.includes(normalizeSubweapon(entity.subweapon) ?? "")
+  );
 }
 
 // -- Host Page ----------------------------------------------------------------
@@ -217,9 +229,10 @@ export function buildHostPage(game: Game): string {
   // vote, or %genpos) — don't claim a mode in the header before then.
   const modeSeg =
     game.modeChosen || game.started ? ` -- ${esc(game.mode)} --` : "";
+  const moonSeg = moonBadge(game);
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
-  <b>Game: ${esc(game.id)}</b>${modeSeg} Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
+  <b>Game: ${esc(game.id)}</b>${modeSeg} Round <b>${game.round}</b>${moonSeg} -- Phase: ${esc(game.phase)}
   <hr>${setup}${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}${controls ? `<hr>${controls}` : ""}
   ${buildToasts(game)}
 </div>`;
@@ -325,7 +338,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   ${map}${pl}
-  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${subweaponBadge(entity)}${stats}
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${subweaponBadge(entity)}${moonBadge(game)}${stats}
   ${buildVotePanel(game, entity)}
   ${loadout}
   <hr>${phase}${prompt}${actions}
