@@ -1,6 +1,11 @@
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { loadGameData, classes, weapons } from "./src/data/index.js";
+import {
+  readEditorSnapshot,
+  applyEditorSnapshot,
+} from "./src/data/overrides.js";
+import { createHash } from "crypto";
 import { rooms, type Room } from "./src/rooms.js";
 import { users } from "./src/users.js";
 import { handleCommand } from "./src/commands/index.js";
@@ -15,6 +20,42 @@ import {
 import { broadcastPages } from "./src/commands/game.js";
 
 loadGameData();
+
+// -- Ability Editor live data ------------------------------------------------
+// The ability editor (abilityeditor/, npm run editor) writes a runtime-data
+// snapshot after every change. Apply it here so custom test classes/weapons
+// and live ability edits show up in the test client without a restart.
+
+function editorDataHash(): string {
+  const snap = readEditorSnapshot();
+  return snap
+    ? createHash("sha256").update(JSON.stringify(snap)).digest("hex").slice(0, 16)
+    : "";
+}
+
+function reloadEditorData(announce = true): number {
+  const applied = applyEditorSnapshot(readEditorSnapshot());
+  lastEditorDataHash = editorDataHash();
+  if (applied > 0 && announce) {
+    broadcast(
+      JSON.stringify({
+        type: "system",
+        text: "Ability data updated from the Ability Editor (live reload).",
+      }),
+    );
+  }
+  refreshAllTabs();
+  return applied;
+}
+
+let lastEditorDataHash = editorDataHash();
+// Apply whatever the editor already has at startup (customs + live edits).
+if (lastEditorDataHash) applyEditorSnapshot(readEditorSnapshot());
+// Pick up editor changes made while the test client is running.
+setInterval(() => {
+  const h = editorDataHash();
+  if (h && h !== lastEditorDataHash) reloadEditorData();
+}, 2000);
 
 const PORT = Number(process.env.PORT) || 4000;
 const PREFIX = "%";
@@ -923,6 +964,17 @@ wss.on("connection", (ws) => {
           );
           refreshPlayerList();
           sendSpectatorGui(session.username);
+          return;
+        }
+
+        if (cmd === "reloaddata") {
+          const applied = reloadEditorData();
+          sendToUser(session.username, {
+            type: "system",
+            text: applied
+              ? `Reloaded ${applied} class/weapon entries from the ability editor.`
+              : "No ability-editor data found (start the editor with: npm run editor).",
+          });
           return;
         }
 
