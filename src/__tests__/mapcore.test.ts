@@ -120,6 +120,7 @@ describe("mapcore modes support", () => {
     expect(modeIdFor("duel")).toBe("1v1");
     expect(modeIdFor("2v2")).toBe("pvp");
     expect(modeIdFor("pvp juggernaut")).toBe("pvp");
+    expect(modeIdFor("pvp  juggernaut")).toBe("pvp"); // double space collapses
     expect(modeIdFor("banana")).toBeUndefined();
   });
 
@@ -140,5 +141,33 @@ describe("mapcore modes support", () => {
     expect(() =>
       parseTxt(mapTxt({ modes: "ffa", rows }), "narrow.txt"),
     ).toThrow(/columns, need 7-60/);
+  });
+
+  test("parses multi-word mode aliases as a whole entry", () => {
+    const pvpj = mapTxt({ modes: "pvp juggernaut", rows: FFA_7 });
+    expect(parseTxt(pvpj, "t.txt").modes).toEqual(["pvp"]);
+    const pvpntr = mapTxt({ modes: "pvp ntr" });
+    expect(parseTxt(pvpntr, "t.txt").modes).toEqual(["ntr"]);
+  });
+
+  test("still rejects unknown words after a valid one", () => {
+    expect(() =>
+      parseTxt(mapTxt({ modes: "pvp banana", rows: FFA_7 }), "t.txt"),
+    ).toThrow(/unknown game mode "banana"/);
+  });
+
+  test("normalizeMap strips CR/LF and caps displayName at 60 chars", () => {
+    const map = normalizeMap({
+      name: "foo",
+      rows: 7,
+      cols: 7,
+      tiles: [],
+      tokens: [],
+      displayName:
+        "Line1\r\nLine2 with a long tail that definitely exceeds sixty characters here okay yes",
+    });
+    expect(map.displayName).not.toMatch(/[\r\n]/);
+    expect(map.displayName).toMatch(/^Line1 Line2/);
+    expect(map.displayName.length).toBeLessThanOrEqual(60);
   });
 });
