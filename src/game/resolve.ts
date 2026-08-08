@@ -1,26 +1,9 @@
-/**
- * Attack resolution pipeline for bd-autohost-bot-new.
- *
- * Declares -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
- * -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
- *
- * Exports:
- * - ResolutionResult, AttackPrompt, PromptResponse types
- * - resolveAction(), startAttack(), respondToChoice/Target/Dir/Tile
- * - Core resolution pipeline: resolveAttackFlow, chooseTargets, resolveTargetAction
- * - Damage calculation: resolveHitDamage, resolveHeal, resolveSplash
- * - Cooldown/uses tracking: recordActionUsage, setCooldown
- * - Modifiers math: extractCombatMetadata, formatDamageModsLine, buildModTags
- * - Legacy: resolveAction() for existing callers
- *
- * Import: `import { resolveAction, startAttack } from "../game/resolve.js"`
- * or `import { rollAccuracy, dealDamage } from "../game/state.js"`
- */
 import {
   type Game,
   type Entity,
   type AbilityData,
   type AbilityCost,
+  type DelayedAttack,
   rollAccuracy,
   dealDamage,
   removeEntity,
@@ -38,15 +21,14 @@ import {
   placeTerrain,
   TERRAIN_NAMES,
 } from "./state.js";
-import { modeIdFor } from "../data/gamemodes.js";
-import { matchesTargetGroup } from "./targeting.js";
 import {
   parseEffects,
   applyEffects,
   applyEffectStream,
   extractCombatMetadata,
   type CombatMetadata,
-  type EffectChoosePrompt,
+  type Effect,
+  type EffectStreamPrompt,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
@@ -80,7 +62,27 @@ export function eva43(entity: Entity, damageType: string): number {
 }
 
 export function getEffectiveStat(entity: Entity, stat: string): number {
-  let base = BASE_STATS[stat]?.(entity) ?? 0;
+  let base = 0;
+  switch (stat) {
+    case "atk":
+      base = entity.atk;
+      break;
+    case "mag":
+      base = entity.mag;
+      break;
+    case "pd":
+      base = entity.pd;
+      break;
+    case "md":
+      base = entity.md;
+      break;
+    case "eva":
+      base = entity.eva;
+      break;
+    case "mp":
+      base = entity.mp;
+      break;
+  }
   for (const b of entity.buffs) {
     if (b.stat === stat) base += b.amount;
     // DEF raises both physical and magical defense
@@ -91,15 +93,6 @@ export function getEffectiveStat(entity: Entity, stat: string): number {
   if ((stat === "pd" || stat === "md") && hasStatus(entity, "curse")) base -= 4;
   return Math.max(0, base);
 }
-
-const BASE_STATS: Record<string, (e: Entity) => number> = {
-  atk: (e) => e.atk,
-  mag: (e) => e.mag,
-  pd: (e) => e.pd,
-  md: (e) => e.md,
-  eva: (e) => e.eva,
-  mp: (e) => e.mp,
-};
 
 export function getStatBonus(entity: Entity, stat: string): number {
   let bonus = 0;
@@ -140,8 +133,6 @@ export type AttackPrompt =
 
 export type PromptResponse = string;
 
-type PushPullResult = { type: "push" | "pull"; amount: number };
-
 export type AttackStep =
   | { done: false; prompt: AttackPrompt }
   | { done: true; result: ResolutionResult };
@@ -163,7 +154,7 @@ export type AttackStep =
  * value.
  */
 function* runEffectStream(
-  gen: Generator<EffectChoosePrompt, string[], string>,
+  gen: Generator<EffectStreamPrompt, string[], string>,
 ): Generator<AttackPrompt, string[], string> {
   let nextInput: string | undefined = undefined;
   while (true) {
@@ -172,125 +163,25 @@ function* runEffectStream(
     if (step.done) {
       return step.value as string[];
     }
-    // EffectChoosePrompt maps cleanly onto AttackPrompt-selection: both
-    // are "pick one of N labelled options" interactions.
-    const prompt = step.value as EffectChoosePrompt;
-    const chosenId: string = yield {
-      kind: "selection",
-      message: prompt.message,
-      options: prompt.options,
-    };
-    nextInput = chosenId;
+    const prompt = step.value as EffectStreamPrompt;
+    if (prompt.kind === "choose") {
+      // Choose maps onto AttackPrompt-selection: "pick one of N options".
+      const chosenId: string = yield {
+        kind: "selection",
+        message: prompt.message,
+        options: prompt.options,
+      };
+      nextInput = chosenId;
+    } else {
+      // Tile placement maps onto AttackPrompt-tile: "pick a tile ref".
+      const tileRef: string = yield {
+        kind: "tile",
+        message: prompt.message,
+        candidates: prompt.candidates,
+      };
+      nextInput = tileRef;
+    }
   }
-}
-
-/** Prompt for targets when the ability has none pre-selected. Returns
- * null (with a message already pushed) when no valid target exists. */
-function* chooseTargets(
-  game: Game,
-  user: Entity,
-  ability: AbilityData,
-  initialTarget: string | undefined,
-  result: ResolutionResult,
-): Generator<AttackPrompt, Entity[] | null, PromptResponse> {
-  const candidates = getTargetCandidates(game, user, ability);
-  if (candidates.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return null;
-  }
-
-  const targetRef =
-    initialTarget ??
-    (yield {
-      kind: "target",
-      message: `Choose a target for ${ability.name}`,
-      candidates,
-    });
-
-  const targets = findTargets(game, user, ability, targetRef);
-  if (targets.length === 0) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but no valid targets found.`,
-    );
-    return null;
-  }
-  return targets;
-}
-
-/** If the ability has damageType "Varies", prompt for a variant and return
- * the resolved ability; otherwise return the ability unchanged. Returns null
- * (with a message pushed) when the variant choice can't be made. */
-function* resolveVariantChoice(
-  user: Entity,
-  ability: AbilityData,
-  result: ResolutionResult,
-): Generator<AttackPrompt, AbilityData | null, PromptResponse> {
-  if (ability.damageType !== "Varies") return ability;
-
-  if (!ability.variants?.length) {
-    result.messages.push(
-      `${user.num} uses ${ability.name} but it has no damage variants.`,
-    );
-    return null;
-  }
-  const variantId = yield {
-    kind: "selection",
-    message: `Choose the type of ${ability.name}`,
-    options: ability.variants.map((v) => ({ id: v.id, label: v.label })),
-  };
-  const variant = ability.variants.find((v) => v.id === variantId);
-  if (!variant) {
-    result.messages.push(
-      `${user.num} cancels ${ability.name}: unknown variant.`,
-    );
-    return null;
-  }
-  return {
-    ...ability,
-    damageType: variant.damageType,
-    range: variant.range ?? ability.range,
-    effect: variant.effect ?? ability.effect,
-  };
-}
-
-/** Prompt for a selection-based ability (choices / sacrifice / pay costs).
- * Returns true when paid, false (with a message pushed) when it can't. */
-function* resolveSelection(
-  user: Entity,
-  ability: AbilityData,
-  result: ResolutionResult,
-): Generator<AttackPrompt, boolean, PromptResponse> {
-  if (!abilityNeedsSelection(ability)) return true;
-
-  const choiceId = yield {
-    kind: "selection",
-    message: `Choose an option for ${ability.name}`,
-    options: buildSelectionOptions(ability),
-  };
-  if (applySelection(user, ability, choiceId)) return true;
-
-  result.messages.push(
-    `${user.num} could not pay the cost for ${ability.name}.`,
-  );
-  return false;
-}
-
-/** Prompt for a direction when the ability needs one and none is pending. */
-function* resolveDirection(
-  user: Entity,
-  ability: AbilityData,
-  active: AbilityData,
-): Generator<AttackPrompt, string | undefined, PromptResponse> {
-  if (!needsDirection(active)) return undefined;
-  if (user.pendingAction?.direction) return user.pendingAction.direction;
-
-  return yield {
-    kind: "direction",
-    message: `Choose a direction for ${ability.name}`,
-    candidates: getDirectionCandidates(),
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -311,27 +202,65 @@ function* resolveAttackFlow(
   // result.messages.push(`/me declares ${ability.name}`);
 
   // --- Auto-deduct non-prompted costs ---
-  if (
-    ability.cost &&
-    !ability.cost.prompt &&
-    !autoDeductCost(user, ability.cost)
-  ) {
-    result.messages.push(
-      `${user.num} could not pay the cost for ${ability.name}.`,
-    );
-    return result;
+  if (ability.cost && !ability.cost.prompt) {
+    if (!autoDeductCost(user, ability.cost)) {
+      result.messages.push(
+        `${user.num} could not pay the cost for ${ability.name}.`,
+      );
+      return result;
+    }
   }
 
   // --- Selection / Choices / Sacrifice / Pay Costs ---
-  const paid = yield* resolveSelection(user, ability, result);
-  if (!paid) return result;
+  if (abilityNeedsSelection(ability)) {
+    const choiceId = yield {
+      kind: "selection",
+      message: `Choose an option for ${ability.name}`,
+      options: buildSelectionOptions(ability),
+    };
+    const paid = applySelection(user, ability, choiceId);
+    if (!paid) {
+      result.messages.push(
+        `${user.num} could not pay the cost for ${ability.name}.`,
+      );
+      return result;
+    }
+  }
 
   // --- Variant choice for damageType "Varies" ---
-  const active = yield* resolveVariantChoice(user, ability, result);
-  if (!active) return result;
+  let active = ability;
+  if (ability.damageType === "Varies" && ability.variants?.length) {
+    const variantId = yield {
+      kind: "selection",
+      message: `Choose the type of ${ability.name}`,
+      options: ability.variants.map((v) => ({ id: v.id, label: v.label })),
+    };
+    const variant = ability.variants.find((v) => v.id === variantId);
+    if (!variant) {
+      result.messages.push(
+        `${user.num} cancels ${ability.name}: unknown variant.`,
+      );
+      return result;
+    }
+    active = {
+      ...ability,
+      damageType: variant.damageType,
+      range: variant.range ?? ability.range,
+      effect: variant.effect ?? ability.effect,
+    };
+  }
 
   // --- Direction prompt for AoE abilities ---
-  const dir = yield* resolveDirection(user, ability, active);
+  const needsDir = needsDirection(active);
+  let dir = user.pendingAction?.direction;
+  if (needsDir && !dir) {
+    const dirs = getDirectionCandidates();
+    dir = yield {
+      kind: "direction",
+      message: `Choose a direction for ${ability.name}`,
+      candidates: dirs,
+    };
+  }
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   const {
@@ -341,15 +270,31 @@ function* resolveAttackFlow(
   } = prepareTargeting(game, user, active);
   let targets = autoTargets;
   if (targets.length === 0) {
-    const chosen = yield* chooseTargets(
-      game,
-      user,
-      active,
-      initialTarget,
-      result,
-    );
-    if (chosen === null) return result;
-    targets = chosen;
+    const candidates = getTargetCandidates(game, user, active);
+
+    if (candidates.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${active.name} but no valid targets found.`,
+      );
+      return result;
+    }
+
+    const targetRef =
+      initialTarget ??
+      (yield {
+        kind: "target",
+        message: `Choose a target for ${active.name}`,
+        candidates,
+      });
+
+    targets = findTargets(game, user, active, targetRef);
+
+    if (targets.length === 0) {
+      result.messages.push(
+        `${user.num} uses ${active.name} but no valid targets found.`,
+      );
+      return result;
+    }
   }
 
   const targetNames = targets.map((t) => t.num).join(", ");
@@ -374,143 +319,106 @@ function* resolveAttackFlow(
   const combat = extractCombatMetadata(effects);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
-  for (const target of targets) {
-    const userDefeated = yield* resolveTargetAction(
-      game,
-      user,
-      active,
-      target,
-      combat,
-      effectiveHitCount,
-      isAttack,
-      isHeal,
-      pushPullResult,
-      result,
-    );
-    if (userDefeated) break;
+  // Choice-gated delays ("Before accuracy, the user may choose to give this
+  // move Delay-N ...") are offered once per attack, before any accuracy or
+  // damage roll. Accepting queues the whole attack as delayed.
+  const baseDelayRounds = maxDelayRounds(effects);
+  let extraDelayRounds = 0;
+  // Skip the delay prompt when a structured selection (choices / prompted
+  // cost / Varies variant) already asked the player something this action —
+  // two consecutive %choose prompts would be confusing.
+  const alreadyPrompted =
+    abilityNeedsSelection(active) ||
+    (active.damageType === "Varies" && (active.variants?.length ?? 0) > 0);
+  if (isAttack && baseDelayRounds === 0 && !alreadyPrompted) {
+    const delayChoice = parseDelayChoice(active.effect, targets.length);
+    if (delayChoice) {
+      const pick = (yield {
+        kind: "selection",
+        message: `Give ${active.name} ${delayChoice.label}?`,
+        options: [
+          { id: "no_delay", label: "Resolve now" },
+          { id: "add_delay", label: delayChoice.label },
+        ],
+      }) as string;
+      if (pick === "add_delay") extraDelayRounds = delayChoice.rounds;
+    }
   }
+  // A delayed attack's splash must not resolve immediately while the main
+  // damage is queued for a later round — skip splash for delayed abilities.
+  const delayed = baseDelayRounds > 0 || extraDelayRounds > 0;
 
-  resolveSplashFor(
-    game,
-    user,
-    active,
-    targets,
-    combat,
-    isAttack,
-    isAoE,
-    result,
-  );
+  for (const target of targets) {
+    if (isAttack) {
+      let confusionApplied = false;
+      for (let h = 0; h < effectiveHitCount; h++) {
+        const label =
+          effectiveHitCount > 1 ? ` (Hit ${h + 1}/${effectiveHitCount})` : "";
+        const singleResult: ResolutionResult = yield* resolveSingleTarget(
+          game,
+          user,
+          active,
+          target,
+          combat,
+          label,
+          confusionApplied,
+          extraDelayRounds,
+        );
+        result.messages.push(...singleResult.messages);
+        result.deaths.push(...singleResult.deaths);
 
-  // --- After Resolving (cooldowns, use tracking, win check) ---
-  recordActionUsage(user, active);
-  checkActionWin(game, result);
+        if (!confusionApplied && singleResult.confusionTriggered) {
+          confusionApplied = true;
+        }
 
-  return result;
-}
-
-/** Apply splash damage to nearby tiles when a single-target attack hits. */
-function resolveSplashFor(
-  game: Game,
-  user: Entity,
-  active: AbilityData,
-  targets: Entity[],
-  combat: CombatMetadata,
-  isAttack: boolean,
-  isAoE: boolean,
-  result: ResolutionResult,
-): void {
-  if (!isAttack || isAoE || targets.length === 0) return;
-  const splashResult = resolveSplash(game, user, active, targets[0], combat);
-  result.messages.push(...splashResult.messages);
-  result.deaths.push(...splashResult.deaths);
-}
-
-/** Resolve one ability against one target (attack hits / heal / status).
- * Returns true if the attacker (user) was defeated and resolution should stop. */
-function* resolveTargetAction(
-  game: Game,
-  user: Entity,
-  active: AbilityData,
-  target: Entity,
-  combat: CombatMetadata,
-  effectiveHitCount: number,
-  isAttack: boolean,
-  isHeal: boolean,
-  pushPullResult: PushPullResult | null,
-  result: ResolutionResult,
-): Generator<AttackPrompt, boolean, PromptResponse> {
-  if (isAttack) {
-    let confusionApplied = false;
-    for (let h = 0; h < effectiveHitCount; h++) {
-      const label =
-        effectiveHitCount > 1 ? ` (Hit ${h + 1}/${effectiveHitCount})` : "";
-      const singleResult: ResolutionResult = yield* resolveSingleTarget(
+        if (
+          pushPullResult &&
+          singleResult.messages.some((m) => m.includes("HIT"))
+        ) {
+          applyPushPull(game, user, target, pushPullResult, result);
+        }
+      }
+    } else if (isHeal) {
+      const healResult = resolveHeal(game, user, active, target);
+      result.messages.push(...healResult.messages);
+    } else {
+      const statusResult: ResolutionResult = yield* resolveNonDamaging(
         game,
         user,
         active,
         target,
-        combat,
-        label,
-        confusionApplied,
       );
-      result.messages.push(...singleResult.messages);
-      result.deaths.push(...singleResult.deaths);
-
-      // If the attacker was defeated by recoil or confusion, stop remaining hits
-      if (singleResult.deaths.some((d) => d.num === user.num)) {
-        return true;
-      }
-
-      if (!confusionApplied && singleResult.confusionTriggered) {
-        confusionApplied = true;
-      }
-
-      if (
-        pushPullResult &&
-        singleResult.messages.some((m) => m.includes("HIT"))
-      ) {
-        applyPushPull(game, user, target, pushPullResult, result);
-      }
+      result.messages.push(...statusResult.messages);
+      result.deaths.push(...statusResult.deaths);
     }
-  } else if (isHeal) {
-    const healResult = resolveHeal(game, user, active, target);
-    result.messages.push(...healResult.messages);
-  } else {
-    const statusResult: ResolutionResult = yield* resolveNonDamaging(
-      game,
-      user,
-      active,
-      target,
-    );
-    result.messages.push(...statusResult.messages);
-    result.deaths.push(...statusResult.deaths);
   }
-  return false;
-}
 
-/** Track cooldown + use count after an ability resolves. */
-function recordActionUsage(user: Entity, active: AbilityData) {
+  if (isAttack && !isAoE && targets.length > 0 && !delayed) {
+    const splashResult = resolveSplash(game, user, active, targets[0], combat);
+    result.messages.push(...splashResult.messages);
+    result.deaths.push(...splashResult.deaths);
+  }
+
+  // --- After Resolving (cooldowns, use tracking, win check) ---
   setCooldown(user, active);
   const { uses } = parseFrequency(active.frequency);
   if (active.maxUses ?? uses) {
     user.usesUsed[active.name] = (user.usesUsed[active.name] ?? 0) + 1;
   }
-}
+  // Bug fix carried over: check win condition once after all deaths this
+  // action, not once per death (was producing duplicate "Game over!" lines
+  // on multi-kill splash/AoE).
+  if (result.deaths.length > 0 && isWinCondition(game)) {
+    result.gameOver = true;
+    const winner = game.entities[0];
+    result.messages.push(
+      winner
+        ? `**Game over! ${winner.num} (${winner.name}) wins!**`
+        : "**Game over! No survivors!**",
+    );
+  }
 
-/**
- * Check win condition once after all deaths this action (not once per
- * death — that produced duplicate "Game over!" lines on multi-kill
- * splash/AoE).
- */
-function checkActionWin(game: Game, result: ResolutionResult) {
-  if (result.deaths.length === 0 || !isWinCondition(game)) return;
-  result.gameOver = true;
-  const winner = game.entities[0];
-  result.messages.push(
-    winner
-      ? `**Game over! ${winner.num} (${winner.name}) wins!**`
-      : "**Game over! No survivors!**",
-  );
+  return result;
 }
 
 export function startAttack(
@@ -525,8 +433,6 @@ export function startAttack(
   }
   const flow = resolveAttackFlow(game, user, ability, target);
   user.pendingResolution = flow;
-  // undefined passed as initial prompt input — advanceAttack handles the
-  // undefined case by yielding a prompt kind for the caller to respond to.
   return advanceAttack(user, flow, undefined as unknown as PromptResponse);
 }
 
@@ -697,44 +603,6 @@ function getTargetCandidates(
   });
 }
 
-function getTileCandidates(
-  game: Game,
-  user: Entity,
-  ability: AbilityData,
-): string[] {
-  const tiles: string[] = [];
-  const rangeStr = ability.range.toLowerCase().trim();
-  const rangeMatch = rangeStr.match(/(?:range|homing)\s*(\d+)/);
-  const range = rangeMatch ? parseInt(rangeMatch[1]) : 3;
-
-  for (let r = 0; r < game.map.length; r++) {
-    for (let c = 0; c < game.map[0].length; c++) {
-      const d = Math.abs(r - user.pos[0]) + Math.abs(c - user.pos[1]);
-      if (d === 0) continue;
-      if (d > range) continue;
-      tiles.push(posToStr(r, c));
-    }
-  }
-  return tiles;
-}
-
-function parseTileRef(ref: string): [number, number] | null {
-  const parts = ref.split(",");
-  if (parts.length === 2) {
-    const r = parseInt(parts[0]);
-    const c = parseInt(parts[1]);
-    if (!isNaN(r) && !isNaN(c)) return [r, c];
-  }
-  // Letter-number format: A1, B3, etc.
-  const match = ref.match(/^([a-zA-Z])\s*(\d+)$/);
-  if (match) {
-    const r = match[1].toUpperCase().charCodeAt(0) - 65;
-    const c = parseInt(match[2]) - 1;
-    if (r >= 0 && c >= 0) return [r, c];
-  }
-  return null;
-}
-
 // ---------------------------
 // Targeting / hit resolution
 // ---------------------------
@@ -800,13 +668,26 @@ function findTargets(
   });
 }
 
-export function isValidTarget(
-  user: Entity,
-  target: Entity,
-  group: string,
-): boolean {
+export function isValidTarget(user: Entity, target: Entity, group: string): boolean {
   if (target.curhp <= 0) return false;
-  return matchesTargetGroup(user, target, group.toLowerCase());
+  const g = group.toLowerCase();
+
+  if (g.includes("self and allies") || g.includes("self and ally"))
+    return target.team === user.team;
+  if (g.includes("self or ally") || g.includes("self or allies"))
+    return target.team === user.team;
+  if (g.includes("self or foe")) return true;
+  if (g.includes("foe or ally")) return target.num !== user.num;
+  if (g.includes("self, foes, allies") || g.includes("self, foes, and allies"))
+    return true;
+
+  if (g === "self") return target.num === user.num;
+  if (g === "ally") return target.team === user.team && target.num !== user.num;
+  if (g === "foe") return target.team !== user.team;
+  if (g === "any") return true;
+  if (g === "tile") return false;
+
+  return true;
 }
 
 function* resolveSingleTarget(
@@ -817,6 +698,7 @@ function* resolveSingleTarget(
   combat: CombatMetadata,
   hitLabel = "",
   confusionAlreadyApplied = false,
+  extraDelayRounds = 0,
 ): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
 
@@ -835,170 +717,132 @@ function* resolveSingleTarget(
     `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
+  const effects = parseEffects(ability.effect);
+
   // --- Hit resolves first (damage to target first) ---
   if (hit) {
-    const resolved = yield* resolveHitDamage(
-      game,
-      user,
-      ability,
-      target,
-      combat,
-      crit,
-      hitLabel,
-      result,
+    const damageRoll = rollDice(ability.roll);
+    const userOff = combat.ignore.atkMag
+      ? 0
+      : offensiveStat(user, ability.damageType);
+    const targetDef = applyIgnoreToDefense(
+      defensiveStat(target, ability.damageType),
+      combat.ignore,
     );
-    if (resolved === "user-defeated") return result;
-  } else {
-    // --- On Miss: apply miss-only effects to the attacker ---
-    const allEffects = parseEffects(ability.effect);
-    const onMiss = allEffects.filter((e) => e.type === "onMiss");
-    if (onMiss.length > 0) {
-      result.messages.push(`  [On Miss]`);
-      for (const om of onMiss) {
-        if (om.type !== "onMiss") continue;
-        const missMsgs: string[] = yield* runEffectStream(
-          applyEffectStream(game, user, user, om.effects, ability),
+
+    let baseDamage = damageRoll.total + userOff - targetDef;
+
+    if (crit) {
+      const critRoll = rollDice(ability.roll);
+      baseDamage += critRoll.total;
+      result.messages.push(
+        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+      );
+    }
+
+    const bleed = hasStatus(user, "bleed") ? 5 : 0;
+    // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
+    // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
+    // multiplicative 1.69x. extractCombatMetadata already summed the
+    // percent values additively.
+    let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
+    finalDamage += combat.flatDamage;
+    finalDamage = Math.max(0, Math.floor(finalDamage));
+    finalDamage = Math.max(0, finalDamage - bleed);
+
+    // --- Delay-N: queue the attack instead of resolving it now. Damage was
+    // rolled above (at use time, per the glossary); it and the on-hit
+    // effects land at the start of the user's turn N rounds later via
+    // landDelayedAttacks. `baseDelayRounds` covers unconditional clauses
+    // ("This move has Delay-N"); `extraDelayRounds` comes from the accepted
+    // choice-gated prompt above.
+    const delayRounds = Math.max(maxDelayRounds(effects), extraDelayRounds);
+    if (delayRounds > 0) {
+      user.delayedAttacks ??= [];
+      user.delayedAttacks.push({
+        ability,
+        targetNum: target.num,
+        damage: finalDamage,
+        roundsLeft: delayRounds,
+      });
+      result.messages.push(
+        `  **${ability.name}${hitLabel} is Delayed ${delayRounds} round${delayRounds > 1 ? "s" : ""}.** Damage **${finalDamage}** will land at the start of ${user.num}'s turn.`,
+      );
+    } else {
+      const dmgResult = dealDamage(target, finalDamage);
+      const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
+      result.messages.push(
+        `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+      );
+      emitDamageModTrail(result.messages, combat, finalDamage);
+
+      if (dmgResult.shieldAbsorbed > 0) {
+        result.messages.push(
+          `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
         );
-        result.messages.push(...missMsgs);
+      }
+
+      const effectMsgs = yield* runEffectStream(
+        applyEffectStream(game, user, target, effects, ability),
+      );
+      result.messages.push(...effectMsgs);
+
+      // Apply recoil damage after hit damage (reuse the parsed `effects`
+      // array rather than re-running the regex-based clause splitter).
+      // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
+      // Recoil 25%" combo reflects the boosted total.
+      for (const e of effects) {
+        if (e.type === "recoil") {
+          const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
+          dealDamage(user, recoilDmg);
+          result.messages.push(
+            `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
+          );
+        }
+      }
+
+      if (target.curhp <= 0) {
+        result.messages.push(
+          `  **${target.num} (${target.name}) has been defeated!**`,
+        );
+        removeEntity(game, target);
+        result.deaths.push(target);
+      }
+
+      // Check if recoil killed the user (after target death is recorded)
+      if (user.curhp <= 0) {
+        result.messages.push(
+          `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
+        );
+        removeEntity(game, user);
+        result.deaths.push(user);
+        return result;
       }
     }
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
-  resolveConfusionSelfDamage(
-    game,
-    user,
-    accRoll,
-    confusionAlreadyApplied,
-    result,
-  );
-
-  return result;
-}
-
-/**
- * Resolve the damage portion of a hit: roll, crit, modifiers, recoil,
- * and deaths. Returns "user-defeated" if recoil killed the attacker.
- */
-function* resolveHitDamage(
-  game: Game,
-  user: Entity,
-  ability: AbilityData,
-  target: Entity,
-  combat: CombatMetadata,
-  crit: boolean,
-  hitLabel: string,
-  result: ResolutionResult,
-): Generator<AttackPrompt, "user-defeated" | "done", string> {
-  const damageRoll = rollDice(ability.roll);
-  const userOff = combat.ignore.atkMag
-    ? 0
-    : offensiveStat(user, ability.damageType);
-  const targetDef = applyIgnoreToDefense(
-    defensiveStat(target, ability.damageType),
-    combat.ignore,
-  );
-
-  let baseDamage = damageRoll.total + userOff - targetDef;
-
-  if (crit) {
-    const critRoll = rollDice(ability.roll);
-    baseDamage += critRoll.total;
-    result.messages.push(
-      `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+  if (isConfused(user) && accRoll >= 16 && !confusionAlreadyApplied) {
+    const offStat = Math.max(
+      getEffectiveStat(user, "atk"),
+      getEffectiveStat(user, "mag"),
     );
-  }
-
-  const bleed = hasStatus(user, "bleed") ? 5 : 0;
-  // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
-  // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
-  // multiplicative 1.69x. extractCombatMetadata already summed the
-  // percent values additively.
-  let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
-  finalDamage += combat.flatDamage;
-  finalDamage = Math.max(0, Math.floor(finalDamage));
-  finalDamage = Math.max(0, finalDamage - bleed);
-
-  const dmgResult = dealDamage(target, finalDamage);
-  const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
-  result.messages.push(
-    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
-  );
-  emitDamageModTrail(result.messages, combat, finalDamage);
-
-  if (dmgResult.shieldAbsorbed > 0) {
+    dealDamage(user, offStat);
     result.messages.push(
-      `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+      `  **${user.num} is Confused!** Takes **${offStat}** self-damage from their own ${offStat === getEffectiveStat(user, "atk") ? "ATK" : "MAG"} (${user.curhp}/${user.maxhp} HP).`,
     );
-  }
+    result.confusionTriggered = true;
 
-  const effects = parseEffects(ability.effect);
-  const effectMsgs = yield* runEffectStream(
-    applyEffectStream(game, user, target, effects, ability),
-  );
-  result.messages.push(...effectMsgs);
-
-  // Apply recoil damage after hit damage (reuse the parsed `effects`
-  // array rather than re-running the regex-based clause splitter).
-  // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
-  // Recoil 25%" combo reflects the boosted total.
-  for (const e of effects) {
-    if (e.type === "recoil") {
-      const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
-      dealDamage(user, recoilDmg);
+    if (user.curhp <= 0) {
       result.messages.push(
-        `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
+        `  **${user.num} (${user.name}) has been defeated by Confusion!**`,
       );
+      removeEntity(game, user);
+      result.deaths.push(user);
     }
   }
 
-  if (target.curhp <= 0) {
-    result.messages.push(
-      `  **${target.num} (${target.name}) has been defeated!**`,
-    );
-    removeEntity(game, target);
-    result.deaths.push(target);
-  }
-
-  // Check if recoil killed the user (after target death is recorded)
-  if (user.curhp <= 0) {
-    result.messages.push(
-      `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
-    );
-    removeEntity(game, user);
-    result.deaths.push(user);
-    return "user-defeated";
-  }
-
-  return "done";
-}
-
-/** Self-damage from Confusion, applied after the hit resolves. */
-function resolveConfusionSelfDamage(
-  game: Game,
-  user: Entity,
-  accRoll: number,
-  confusionAlreadyApplied: boolean,
-  result: ResolutionResult,
-) {
-  if (!isConfused(user) || accRoll < 16 || confusionAlreadyApplied) return;
-  const offStat = Math.max(
-    getEffectiveStat(user, "atk"),
-    getEffectiveStat(user, "mag"),
-  );
-  dealDamage(user, offStat);
-  result.messages.push(
-    `  **${user.num} is Confused!** Takes **${offStat}** self-damage from their own ${offStat === getEffectiveStat(user, "atk") ? "ATK" : "MAG"} (${user.curhp}/${user.maxhp} HP).`,
-  );
-  result.confusionTriggered = true;
-
-  if (user.curhp <= 0) {
-    result.messages.push(
-      `  **${user.num} (${user.name}) has been defeated by Confusion!**`,
-    );
-    removeEntity(game, user);
-    result.deaths.push(user);
-  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1068,30 +912,18 @@ function emitDamageModTrail(
   combat: CombatMetadata,
   finalDamage: number,
 ): void {
-  if (!hasDamageMods(combat)) return;
-  log.push(
-    `  *Damage Modifiers applied:* ${buildModTags(combat).join(", ")} -> **${finalDamage}**`,
-  );
-}
-
-/** Whether any damage modifier changed the math (no trail if none). */
-function hasDamageMods(combat: CombatMetadata): boolean {
-  const { ignore } = combat;
-  return (
-    combat.damagePercent !== 0 ||
-    combat.flatDamage !== 0 ||
-    ignore.atkMag ||
-    ignore.def ||
-    ignore.halfDef ||
-    ignore.quarterDef ||
-    ignore.defReduction > 0 ||
-    ignore.other.length > 0 ||
-    ignore.outsideFactors
-  );
-}
-
-/** Human-readable tags describing the applied damage modifiers. */
-function buildModTags(combat: CombatMetadata): string[] {
+  if (
+    combat.damagePercent === 0 &&
+    combat.flatDamage === 0 &&
+    !combat.ignore.atkMag &&
+    !combat.ignore.def &&
+    !combat.ignore.halfDef &&
+    !combat.ignore.quarterDef &&
+    combat.ignore.defReduction === 0 &&
+    combat.ignore.other.length === 0 &&
+    !combat.ignore.outsideFactors
+  )
+    return;
   const tags: string[] = [];
   if (combat.damagePercent !== 0) {
     const sign = combat.damagePercent > 0 ? "+" : "";
@@ -1109,7 +941,9 @@ function buildModTags(combat: CombatMetadata): string[] {
     tags.push(`Ignores ${combat.ignore.defReduction} DEF`);
   if (combat.ignore.outsideFactors) tags.push("Ignores outside damage factors");
   for (const o of combat.ignore.other) tags.push(`Ignores ${o}`);
-  return tags;
+  log.push(
+    `  *Damage Modifiers applied:* ${tags.join(", ")} -> **${finalDamage}**`,
+  );
 }
 
 function setCooldown(entity: Entity, ability: AbilityData) {
@@ -1118,23 +952,7 @@ function setCooldown(entity: Entity, ability: AbilityData) {
 }
 
 function isWinCondition(game: Game): boolean {
-  // game.mode is stored uppercase (e.g. "FFA", "2V2", "NTR", "JUGG");
-  // normalize before matching so mode rules always resolve correctly.
-  const mode = game.mode.toLowerCase();
-  const id = modeIdFor(game.mode);
-  if (id === "jugg") {
-    // Juggernaut: the jugg side wins by surviving; the field wins by
-    // killing the jugg. Handled by the jugg-designation logic elsewhere —
-    // here a generic "one side left" check still applies.
-    const teams = new Map<number, boolean>();
-    for (const e of game.entities) {
-      if (!teams.has(e.team)) teams.set(e.team, false);
-      if (e.curhp > 0) teams.set(e.team, true);
-    }
-    return [...teams.values()].filter(Boolean).length <= 1;
-  }
-  if (id === "ffa" || id === "ntr" || id === "pvp" || id === "1v1" ||
-      mode.includes("ffa") || mode.includes("pvp")) {
+  if (game.mode.includes("ffa") || game.mode.includes("pvp")) {
     return game.entities.filter((e) => e.curhp > 0).length <= 1;
   }
   const teams = new Map<number, boolean>();
@@ -1188,6 +1006,115 @@ function applyPushPull(
       `  **${label}**: ${target.num} could not be ${pp.type === "push" ? "pushed" : "pulled"}.`,
     );
   }
+}
+
+/** Highest Delay-N among the (top-level) parsed effects of an ability. */
+function maxDelayRounds(effects: Effect[]): number {
+  let max = 0;
+  for (const e of effects) {
+    if (e.type === "delay") max = Math.max(max, e.rounds);
+  }
+  return max;
+}
+
+/** A delay amount offered by a choice-gated delay clause. */
+interface DelayChoiceOffer {
+  rounds: number;
+  label: string;
+}
+
+/**
+ * Detects choice-gated delay phrasing ("Before accuracy, the user may choose
+ * to give this move Delay-N ...", "The user may choose to add Delay-X ...")
+ * and returns the offered delay. `Delay-X` resolves to the number of targets
+ * being hit (Prismatic Burst). Only the first offered delay is used — e.g.
+ * Corruption's "Delay-1 ... or Delay-2 for both" offers Delay-1.
+ */
+function parseDelayChoice(
+  effectText: string,
+  targetCount: number,
+): DelayChoiceOffer | null {
+  const m = effectText.toLowerCase().match(
+    /may (?:choose to )?(?:give (?:this (?:move|ability|attack|spell|skill) )?|add )(?:a )?delay[\s-]?(\d+|x)/,
+  );
+  if (!m) return null;
+  if (m[1] === "x") {
+    const rounds = Math.max(1, targetCount);
+    return {
+      rounds,
+      label: `Delay-X (${targetCount} target${targetCount > 1 ? "s" : ""})`,
+    };
+  }
+  return { rounds: parseInt(m[1], 10), label: `Delay-${m[1]}` };
+}
+
+/**
+ * Land delayed attacks that are due at the start of `entity`'s turn.
+ *
+ * Called from the command layer right after `nextTurn` hands the turn to the
+ * entity: each queued attack's counter ticks down, and the ones that reach 0
+ * deal their stored (rolled-at-use) damage and re-apply the ability's on-hit
+ * effects against the landing-time board state, so gated clauses
+ * (Apex/Thirst/Conditional) evaluate when the attack actually lands.
+ */
+export function landDelayedAttacks(game: Game, entity: Entity): string[] {
+  const messages: string[] = [];
+  const pending = entity.delayedAttacks ?? [];
+  if (pending.length === 0) return messages;
+
+  const remaining: DelayedAttack[] = [];
+  for (const da of pending) {
+    da.roundsLeft -= 1;
+    if (da.roundsLeft > 0) {
+      remaining.push(da);
+      continue;
+    }
+
+    const target = game.entities.find((e) => e.num === da.targetNum);
+    if (!target || target.curhp <= 0) {
+      messages.push(
+        `  **${entity.num}'s delayed ${da.ability.name} fizzles** — the target is no longer in the fight.`,
+      );
+      continue;
+    }
+
+    messages.push(`  **${entity.num}'s delayed ${da.ability.name} lands!**`);
+    const dmgResult = dealDamage(target, da.damage);
+    messages.push(
+      `  **Damage**: ${da.damage} -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    );
+    if (dmgResult.shieldAbsorbed > 0) {
+      messages.push(
+        `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+      );
+    }
+
+    // Re-apply the on-hit effects. Drop the delay clause itself from the
+    // re-parsed list so landing doesn't log a spurious "Delay N rounds".
+    const landedEffects = parseEffects(da.ability.effect).filter(
+      (e) => e.type !== "delay",
+    );
+    const effectMsgs = applyEffects(
+      game,
+      entity,
+      target,
+      landedEffects,
+      da.ability,
+    );
+    messages.push(...effectMsgs);
+
+    if (target.curhp <= 0) {
+      messages.push(
+        `  **${target.num} (${target.name}) has been defeated!**`,
+      );
+      removeEntity(game, target);
+      // Credit the kill to the attack's owner, matching normal resolve.
+      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+    }
+  }
+
+  entity.delayedAttacks = remaining;
+  return messages;
 }
 
 function resolveHeal(

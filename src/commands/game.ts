@@ -62,6 +62,7 @@ import {
   respondToDir,
   respondToTile,
   startAttack,
+  landDelayedAttacks,
   isValidTarget,
   type AttackStep,
 } from "../game/resolve.js";
@@ -784,6 +785,26 @@ function handleCancel(game: Game, user: User) {
   broadcastPages(game);
 }
 
+/**
+ * Land any delayed attacks (queued by Delay-N clauses) that are due for the
+ * entity whose turn is starting, broadcasting the landing messages. Returns
+ * true when the game ended as a result so the caller can bail out.
+ */
+function landQueuedDelays(game: Game, entity: Entity | null): boolean {
+  if (!entity) return false;
+  const delayMsgs = landDelayedAttacks(game, entity);
+  if (delayMsgs.length === 0) return false;
+  for (const msg of delayMsgs) {
+    send(game.room, msg);
+  }
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return true;
+  }
+  return false;
+}
+
 function handleAdvanceTurn(game: Game, user: User) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can advance turns.");
@@ -830,6 +851,9 @@ function handleAdvanceTurn(game: Game, user: User) {
     send(game.room, msg);
   }
 
+  // Delayed attacks (Delay-N) land at the start of the new turn's entity.
+  if (!result.died && landQueuedDelays(game, result.entity)) return;
+
   if (result.died || !result.entity) {
     if (handleTurnDeath(game, result)) return;
   }
@@ -855,6 +879,8 @@ function handleTurnDeath(
     for (const msg of retry.messages) {
       send(game.room, msg);
     }
+    // Delayed attacks also land for the entity picked up by the retry.
+    if (!retry.died && landQueuedDelays(game, retry.entity)) return true;
     if (!retry.entity) {
       const winner = checkGameOver(game);
       announceGameOver(game, winner);

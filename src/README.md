@@ -1,6 +1,6 @@
 # BD Autohost Bot
 
-A Pokemon Showdown autohost bot for **Battle Dome 4.4**. It connects to
+A Pokemon Showdown autohost bot for **Battle Dome** (4.4 ruleset, with 4.3 support via the game's `version`). It connects to
 `ws://sim.smogon.com:8000/showdown/websocket` as a PS user, auto-joins
 `battledome`, and runs the full game loop: setup, turn-based combat,
 and loot distribution.
@@ -129,7 +129,7 @@ In-play actions routed by `gameCommand()`:
 | `%attack` / `%use`       | `handleAttack`      | Selects an ability with optional `@ Target`, checks cooldowns/uses/action type, sets `pendingAction` |
 | `%confirm`               | `handleConfirm`     | Calls `resolveAction` (wraps `startAttack`), checks game over                                        |
 | `%cancel`                | `handleCancel`      | Clears `pendingAction`, refunds action flags                                                         |
-| `%endturn` / `%next`     | `handleAdvanceTurn` | Resolves pending action, calls `nextTurn`, checks for DoT deaths and game over                       |
+| `%endturn` / `%next`     | `handleAdvanceTurn` | Resolves pending action, calls `nextTurn`, lands due delayed attacks, checks for deaths and game over |
 | `%back`                  | `handleBack`        | Calls `popSnapshot` — undoes last action                                                             |
 | `%roll` / `%r` / `%dice` | `handleRoll`        | Rolls dice via `rollDice` (default 1d20)                                                             |
 | `%info`                  | `handleInfo`        | Shows game summary or entity details + statuses + buffs                                              |
@@ -150,8 +150,9 @@ In-play actions routed by `gameCommand()`:
    and marks the action slot used (standardUsed, swiftUsed, etc.)
 2. `%confirm` calls `resolveAction(game, entity)` → `startAttack` → the
    generator pipeline → returns `AttackStep`
-3. If the step needs a target or selection, it returns `{ done: false, prompt }`
-   and the host/user responds with `%target` or `%choose`
+3. If the step needs a target, selection, direction, or tile, it returns
+   `{ done: false, prompt }` and the host/user responds with `%target`,
+   `%choose`, `%dir`, or `%tile`
 4. On `done: true`, the result messages are broadcast, `pendingAction` is
    cleared, and `checkGameOver` is evaluated
 
@@ -224,7 +225,7 @@ identifier: num, name, id, isMonster, isJuggernaut
 stats:      curhp, maxhp, atk, mag, pd, md, eva, mp
 position:   pos[2] (row, col), team
 loadout:    className, weaponName, classLevel, weaponLevel, abilities[]
-state:      statuses[], buffs[], cooldowns{}, usesUsed{}
+state:      statuses[], buffs[], cooldowns{}, usesUsed{}, delayedAttacks?[]
 actions:    pendingAction, dashUsed, standardUsed, movementUsed, swiftUsed
 resolve:    pendingResolution?, pendingPromptKind?
 ```
@@ -414,6 +415,11 @@ Buffs also tick down at the end of the buffed entity's turn (inside
 before the affected entity's turn, while round counters and cooldowns
 decrement when that entity's turn ends.
 
+Delayed attacks (Delay-N) land at the start of the caster's turn:
+`handleAdvanceTurn` calls `landDelayedAttacks(game, entity)` right after
+`nextTurn` hands the turn over, so a Delay-N attack used on turn T lands
+(and is announced) before that entity acts on turn T+N.
+
 ---
 
 **Game over: `checkGameOver`**
@@ -440,9 +446,9 @@ popSnapshot(game)   → restores most recent snapshot, returns false if empty
 ```
 
 `serializeState` captures a shallow copy of: `curhp`, `maxhp`, `pos`,
-`statuses`, `buffs`, `cooldowns`, `usesUsed`, `dashUsed`, `standardUsed`,
-`movementUsed`, `swiftUsed` for each entity, plus `turnIndex` and `round`.
-Stack is capped at 20 entries.
+`statuses`, `buffs`, `cooldowns`, `usesUsed`, `delayedAttacks`, `dashUsed`,
+`standardUsed`, `movementUsed`, `swiftUsed` for each entity, plus `turnIndex`
+and `round`. Stack is capped at 20 entries.
 
 Commands that mutate state (`move`, `hp`, `cut`, `status`, `confirm`,
 `endturn`) call `pushSnapshot` before changing anything. `%back` calls
@@ -478,10 +484,12 @@ type AttackStep =
   | { done: true; result: ResolutionResult };
 ```
 
-Where `AttackPrompt` is either:
+Where `AttackPrompt` is one of:
 
 - `{ kind: "selection", message, options }` — the player must `%choose`
 - `{ kind: "target", message, candidates }` — the player must `%target`
+- `{ kind: "direction", message, candidates }` — the player must `%dir`
+- `{ kind: "tile", message, candidates }` — the player must `%tile`
 
 ---
 
@@ -504,10 +512,11 @@ Declare → Selection/Costs → Target → Accuracy → Splash → Damage → Po
 **Stage 1: Declare**
 Prints the ability name and target to the room.
 
-**Stage 2: Selection/Costs** (STUB)
-If `abilityNeedsSelection` returns true, yields a "selection" prompt.
-The selection/choice system is not yet implemented — the function always
-returns false.
+**Stage 2: Selection/Costs**
+If the ability has structured `cost`/`choices` or a `Varies` damage type with
+`variants`, yields a "selection" prompt answered via `%choose`. Non-prompted
+costs (HP/MP/Resource) auto-deduct. Choice-gated delays ("may choose to give
+this move Delay-N") are also offered before any accuracy roll.
 
 **Stage 3: Target**
 
@@ -522,9 +531,7 @@ returns false.
 **Stage 4: Loop over hits and targets**
 For each target, for each hit (1 for single, 2 for double, 3 for triple):
 
-```
-resolveSingleTarget(game, user, ability, target, hitLabel, confusionAlreadyApplied)
-```
+```resolveSingleTarget(game, user, ability, target, combat, hitLabel, confusionAlreadyApplied, extraDelayRounds)```
 
 **Stage 6: Accuracy**
 `rollAccuracy(ability.mr, target.eva, user.accBonus)` → hit/miss/crit.
@@ -536,7 +543,8 @@ Crit adds an extra roll of the same dice. Final damage is floored at 0.
 Shield absorption messages are printed if applicable.
 
 **Stage 8: Effects**
-`parseEffects(ability.effect)` then `applyEffects(game, user, target, effects)`.
+`parseEffects(ability.effect)` then `applyEffects(game, user, target, effects, ability)`
+(or `applyEffectStream` for interactive choose/tile prompts).
 See effects.ts below.
 
 **Stage 9: Push/Pull**
@@ -565,6 +573,8 @@ If any deaths occurred, `checkGameOver(game)` runs once after all deaths
 ```
 respondToChoice(user, choiceId): AttackStep
 respondToTarget(user, targetRef): AttackStep
+respondToDir(user, direction): AttackStep
+respondToTile(user, tileRef): AttackStep
 ```
 
 These feed the user's response back into the generator via
@@ -640,7 +650,9 @@ Adds `{ stat, amount, rounds }` to `target.buffs`. Percent buffs compute from ba
 Same as buff but negative amounts.
 
 **`damageMod`** — `/+\d+% damage/`, `/+\d+ DMG\/M/`
-Printed as a marker. No mechanical effect yet.
+Extracted into combat metadata (`extractCombatMetadata`) and applied by the
+resolve layer: `+N%` stacks additively and flat `+N DMG` adds per hit;
+round-limited clauses ride the buff lifecycle.
 
 **`heal`** — `/Heal \d+ HP/`
 Adds HP up to `maxhp`. No amount → "manual resolution needed".
@@ -664,13 +676,20 @@ Swaps caster and target positions directly, no passability check.
 Needs host to pick a tile.
 
 **`resource`** — `/Gain/Spend/Lose N resource/`
-Resource system not mechanically implemented.
+`Gain` adds to (and `Spend`/`Lose` deduct from, clamped at 0) the caster's
+`resources` pool. Variable amounts ("Spend X Blood") fall back to a
+manual-resolution note.
 
 **`recoil`** — `/Recoil N%/`
-Implementation pending.
+After a hit lands, the caster takes N% of the post-mod damage (resolve.ts).
 
-**`delay`** — `/Delay N rounds/`
-Prints message.
+**`delay`** — `/Delay N rounds/`, `/This move has Delay-N/`
+Unconditional Delay-N clauses queue the attack on the caster's
+`delayedAttacks`; damage is rolled at use and dealt — with on-hit effects
+re-applied — at the start of the caster's turn N rounds later
+(`landDelayedAttacks`). Choice-gated delays ("may choose to give this move
+Delay-N") prompt via `%choose` before accuracy; `Delay-X` resolves to the
+number of targets hit.
 
 **`ignore`** — `/Ignores X/`
 Prints message.
@@ -681,17 +700,26 @@ Prints message.
 **`phase`** — `/Phase: moon phase/`
 Prints message.
 
-**`conditional`** — `/If CONDITION, EFFECT/`
-Applies then-effects (and optionally else-effects). Condition evaluation is TODO.
+**`conditional`** — `/If CONDITION, EFFECT [Otherwise, EFFECT]/`
+Evaluated via `evaluateCondition` (alive/dead, statuses, resource thresholds,
+stat comparisons, negation). Unrecognised conditions fall back to the
+then-branch with a "condition evaluation TODO" log line.
 
 **`thirst`** — `/Thirst N: EFFECT/`
-Applies sub-effects. Threshold evaluation is TODO.
+Gated by `isThirstActive` (caster's Blood >= N); sub-effects run only when
+the gate succeeds.
 
 **`apex`** — `/Apex: EFFECT/`
-Applies sub-effects. Distance evaluation is TODO.
+Gated by `isApexActive` (target at the ability's maximum listed range, with
+per-range-type geometry and LOS).
 
 **`choose`** — `/Choose: A or B or C/`
-Prints all options. Player choice not yet interactive.
+`applyEffectStream` yields an interactive prompt relayed to the player via
+`%choose`; only the chosen option's sub-effects apply (nested gates work).
+
+**`tile`** — `/Place X tiles/`
+Yields a `%tile` prompt; the chosen tile (within range, in bounds) is set on
+the map via `placeTerrain`.
 
 **`unknown`** — fallback
 Raw text passthrough for unparseable clauses.

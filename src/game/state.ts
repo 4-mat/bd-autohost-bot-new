@@ -188,6 +188,30 @@ export function parseFrequency(frequency: string) {
   return { uses, cooldown };
 }
 
+/**
+ * An attack queued by a Delay-N clause in an ability's effect text.
+ *
+ * BD 4.4 delay semantics (Clairvoyant): "Delay moves have their damage and
+ * effects delayed for a specified number of rounds, landing at the start of
+ * the user's turn. Damage is rolled when the move is used." So the damage
+ * number is fixed at use time, the attack sits in `delayedAttacks` for N of
+ * the user's own turn cycles, and at the start of the user's turn (the
+ * `landDelayedAttacks` hook in the command layer) it deals the stored damage
+ * and re-applies the ability's on-hit effects against the landing-time board.
+ *
+ * Stored on the caster — the queue is dropped if the caster dies (only the
+ * Future Sight passive "Delay attacks always land ... even if the user is
+ * dead" would preserve it, and that isn't modelled yet).
+ */
+export interface DelayedAttack {
+  ability: AbilityData;
+  targetNum: string;
+  /** Damage rolled at use time (after crit + damage modifiers). */
+  damage: number;
+  /** Decremented each time the caster's turn starts; the attack lands at 0. */
+  roundsLeft: number;
+}
+
 export interface Entity {
   num: string; // P1, P2, M1, M2...
   name: string;
@@ -219,6 +243,8 @@ export interface Entity {
   movementUsed: boolean;
   swiftUsed: boolean;
   resources: Record<string, number>;
+  /** Attacks queued by Delay-N clauses; landed by `landDelayedAttacks`. */
+  delayedAttacks?: DelayedAttack[];
   triggered?: boolean;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
@@ -353,6 +379,7 @@ function serializeState(game: Game): string {
       movementUsed: e.movementUsed,
       swiftUsed: e.swiftUsed,
       triggered: e.triggered,
+      delayedAttacks: e.delayedAttacks,
     })),
     turnIndex: game.turnIndex,
     round: game.round,
@@ -385,6 +412,7 @@ export function popSnapshot(game: Game): boolean {
       ent.movementUsed = e.movementUsed;
       ent.swiftUsed = e.swiftUsed;
       ent.triggered = e.triggered;
+      ent.delayedAttacks = e.delayedAttacks;
     }
   }
   game.turnIndex = data.turnIndex;
