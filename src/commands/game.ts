@@ -31,11 +31,21 @@ import {
   isConfused,
   getEffectiveMp,
   parseFrequency,
+  isStandable,
   type Game,
   type Entity,
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
-import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
+import {
+  buildHostPage,
+  buildPlayerPage,
+  premoveSet,
+  pathState,
+  reachPreview,
+  dashMode,
+  clearMovementState,
+  pathCost,
+} from "../html/pages.js";
 import {
   resolveAction,
   respondToChoice,
@@ -43,14 +53,16 @@ import {
   respondToDir,
   respondToTile,
   startAttack,
+  landDelayedAttacks,
   isValidTarget,
   type AttackStep,
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
-import {    normalizeVoteMode,
-    pendingVoterIds,
-    runoffOptions,
-    tallyVotes,
+import {
+  normalizeVoteMode,
+  pendingVoterIds,
+  runoffOptions,
+  tallyVotes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
 
@@ -160,6 +172,31 @@ export function gameCommand(
     case "pass":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handlePassMove(game, user);
+      break;
+
+    case "pathstep":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handlePathStep(game, user, full);
+      break;
+
+    case "confirmmove":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleConfirmMove(game, user);
+      break;
+
+    case "cancelpath":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleCancelPath(game, user);
+      break;
+
+    case "viewreach":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleViewReach(game, user, full);
+      break;
+
+    case "dashmode":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleDashMode(game, user);
       break;
 
     case "pl":
@@ -337,6 +374,7 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
     entity.standardUsed = true;
   }
   premoveSet.delete(entity.num);
+  clearMovementState(entity.num);
 
   logEntry(
     game,
@@ -481,6 +519,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (ability.actionType === "Full") {
     entity.standardUsed = true;
     entity.movementUsed = true;
+    clearMovementState(entity.num);
   }
   if (ability.actionType === "Trigger") entity.triggered = true;
   entity.pendingAction = {
@@ -598,7 +637,8 @@ function handleVote(game: Game, user: User, args: string) {
   if (!arg) {
     const lines = [buildVoteStatus(game)];
     const myVote = game.votes[entity.id];
-    if (myVote) lines.push(`You voted: **${myVote}** (use %unvote to withdraw).`);
+    if (myVote)
+      lines.push(`You voted: **${myVote}** (use %unvote to withdraw).`);
     const list = options.map((o) => o.id).join(", ");
     lines.push(`Vote with %vote <mode>${list ? ` — available: ${list}` : ""}.`);
     return sendPm(user.name, lines.join("\n"));
@@ -788,6 +828,26 @@ function handleCancel(game: Game, user: User) {
   broadcastPages(game);
 }
 
+/**
+ * Land any delayed attacks (queued by Delay-N clauses) that are due for the
+ * entity whose turn is starting, broadcasting the landing messages. Returns
+ * true when the game ended as a result so the caller can bail out.
+ */
+function landQueuedDelays(game: Game, entity: Entity | null): boolean {
+  if (!entity) return false;
+  const delayMsgs = landDelayedAttacks(game, entity);
+  if (delayMsgs.length === 0) return false;
+  for (const msg of delayMsgs) {
+    send(game.room, msg);
+  }
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return true;
+  }
+  return false;
+}
+
 function handleAdvanceTurn(game: Game, user: User) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can advance turns.");
@@ -795,6 +855,9 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   const entity = getCurrentEntity(game);
   if (!entity) return;
+
+  // Any in-progress movement path/reach preview ends with the turn.
+  clearMovementState(entity.num);
 
   pushSnapshot(game);
 
@@ -849,6 +912,9 @@ function handleAdvanceTurn(game: Game, user: User) {
     send(game.room, msg);
   }
 
+  // Delayed attacks (Delay-N) land at the start of the new turn's entity.
+  if (!result.died && landQueuedDelays(game, result.entity)) return;
+
   if (result.died || !result.entity) {
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
@@ -861,6 +927,8 @@ function handleAdvanceTurn(game: Game, user: User) {
       for (const msg of retry.messages) {
         send(game.room, msg);
       }
+      // Delayed attacks also land for the entity picked up by the retry.
+      if (!retry.died && landQueuedDelays(game, retry.entity)) return;
       if (!retry.entity) {
         const winner = checkGameOver(game);
         announceGameOver(game, winner);
@@ -1056,8 +1124,217 @@ function handlePassMove(game: Game, user: User) {
   pushSnapshot(game);
   entity.movementUsed = true;
   premoveSet.delete(entity.num);
+  clearMovementState(entity.num);
   logEntry(game, entity, `${entity.num} (${entity.name}) passes movement`);
   send(game.room, `/me ${entity.num} passes movement`);
+  broadcastPages(game);
+}
+
+// -- Interactive movement path handlers ----------------------------------------
+
+function handlePathStep(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entityName = "";
+  let posStr = args;
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length >= 2) {
+    entityName = parts[parts.length - 1];
+    posStr = parts.slice(0, -1).join(",");
+  }
+
+  let entity: Entity | null = null;
+  if (entityName && isHost) {
+    entity = getEntity(game, entityName);
+    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
+  } else {
+    entity = getCurrentEntity(game);
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (isStunned(entity)) {
+    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+  }
+  if (isRooted(entity)) {
+    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+  if (entity.dashUsed) {
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
+
+  const pos = parsePos(posStr);
+  if (!pos)
+    return sendPm(user.name, "Invalid tile. Use: %pathstep e4[,entity]");
+
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  if (pos[0] < 0 || pos[0] >= rows || pos[1] < 0 || pos[1] >= cols) {
+    return sendPm(user.name, "That tile is off the map.");
+  }
+  if (!isStandable(game.map[pos[0]][pos[1]])) {
+    return sendPm(user.name, "That tile cannot be moved onto.");
+  }
+  const occupied = game.entities.some(
+    (e) => e.pos[0] === pos[0] && e.pos[1] === pos[1],
+  );
+  if (occupied) return sendPm(user.name, "That tile is occupied.");
+
+  const path = pathState.get(entity.num) ?? [];
+  const tip = path.length > 0 ? path[path.length - 1] : entity.pos;
+  if (manhattan(tip, pos) !== 1) {
+    return sendPm(user.name, "You can only step to an adjacent tile.");
+  }
+
+  const key = posToStr(pos[0], pos[1]);
+  const idx = path.findIndex(([r, c]) => posToStr(r, c) === key);
+  // Clicking a tile already in the path truncates the path there (lets the
+  // player shorten it). Otherwise append it as the next step.
+  const candidate = idx >= 0 ? path.slice(0, idx) : [...path, pos];
+
+  if (pathCost(game, candidate) > getEffectiveMp(entity)) {
+    return sendPm(user.name, "That tile costs too much MP.");
+  }
+
+  pathState.set(entity.num, candidate);
+  broadcastPages(game);
+}
+
+function handleConfirmMove(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (isStunned(entity)) {
+    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+  }
+  if (isRooted(entity)) {
+    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+
+  const path = pathState.get(entity.num);
+  if (!path || path.length === 0) {
+    return sendPm(
+      user.name,
+      "No path to confirm. Click tiles on the map first.",
+    );
+  }
+  if (pathCost(game, path) > getEffectiveMp(entity)) {
+    return sendPm(user.name, "That path costs more MP than you have.");
+  }
+
+  const target = path[path.length - 1];
+  const occupied = game.entities.some(
+    (e) => e.pos[0] === target[0] && e.pos[1] === target[1],
+  );
+  if (occupied) {
+    return sendPm(user.name, "The end tile is occupied.");
+  }
+
+  pushSnapshot(game);
+  entity.pos = target;
+  entity.movementUsed = true;
+  clearMovementState(entity.num);
+
+  const key = posToStr(target[0], target[1]);
+  logEntry(game, entity, `${entity.num} (${entity.name}) moves to ${key}`);
+  send(game.room, `/me moves ${entity.num} to ${key}`);
+  broadcastPages(game);
+}
+
+function handleCancelPath(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+
+  pathState.delete(entity.num);
+  dashMode.delete(entity.num);
+  broadcastPages(game);
+}
+
+function handleViewReach(game: Game, user: User, args: string) {
+  const parts = args.split(",").map((s) => s.trim());
+  const targetNum = parts[0];
+  const viewerName = parts.slice(1).join(",");
+
+  let viewer: Entity | null = null;
+  if (viewerName) {
+    viewer = getEntity(game, viewerName);
+    if (!viewer) return sendPm(user.name, `Unknown entity: ${viewerName}`);
+  } else {
+    viewer = getCurrentEntity(game);
+  }
+
+  if (!viewer) return sendPm(user.name, "No active turn.");
+  if (
+    toId(viewer.name) !== toId(user.name) &&
+    toId(user.name) !== toId(game.host)
+  ) {
+    return sendPm(user.name, "You can only preview your own view.");
+  }
+
+  const target = getEntity(game, targetNum);
+  if (!target) return sendPm(user.name, `Unknown entity: ${targetNum}`);
+  if (target.num === viewer.num) {
+    return sendPm(
+      user.name,
+      "That's you. Click a highlighted tile to move instead.",
+    );
+  }
+
+  if (reachPreview.get(viewer.num) === target.num) {
+    reachPreview.delete(viewer.num);
+  } else {
+    reachPreview.set(viewer.num, target.num);
+  }
+  broadcastPages(game);
+}
+
+function handleDashMode(game: Game, user: User) {
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = getCurrentEntity(game);
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+  if (entity.dashUsed) {
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
+  if (entity.standardUsed) {
+    return sendPm(
+      user.name,
+      `${entity.num} already used their Standard — Dash is a Full action.`,
+    );
+  }
+
+  if (dashMode.has(entity.num)) {
+    dashMode.delete(entity.num);
+    send(game.room, `/me ${entity.num} back to normal movement`);
+  } else {
+    pathState.delete(entity.num);
+    dashMode.add(entity.num);
+    send(game.room, `/me ${entity.num} entering dash mode`);
+  }
   broadcastPages(game);
 }
 
@@ -1307,7 +1584,7 @@ function handleCheckRange(game: Game, user: User, args: string) {
   const source =
     current && (!mine || toId(current.name) === toId(user.name))
       ? current
-      : mine ?? current;
+      : (mine ?? current);
   if (!source) {
     return sendPm(user.name, "No entity to check range from.");
   }

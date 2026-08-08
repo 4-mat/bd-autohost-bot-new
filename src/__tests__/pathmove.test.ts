@@ -1,0 +1,209 @@
+import { describe, it, expect, beforeEach } from "bun:test";
+import { gameCommand } from "../commands/game.js";
+import { games, type Game, type Entity, Terrain } from "../game/state.js";
+import {
+  buildHostPage,
+  buildPlayerPage,
+  pathState,
+  reachPreview,
+  dashMode,
+  premoveSet,
+} from "../html/pages.js";
+import { setWs } from "../utils.js";
+import type { Room } from "../rooms.js";
+import type { User } from "../users.js";
+
+setWs({ send() {} });
+
+beforeEach(() => {
+  pathState.clear();
+  reachPreview.clear();
+  dashMode.clear();
+  premoveSet.clear();
+});
+
+function makeEntity(
+  overrides: Partial<Entity> & { num: string; name: string },
+): Entity {
+  return {
+    id: overrides.num.toLowerCase(),
+    isMonster: false,
+    curhp: 100,
+    maxhp: 100,
+    atk: 10,
+    mag: 10,
+    pd: 5,
+    md: 5,
+    eva: 0,
+    mp: 3,
+    pos: [0, 0],
+    team: 0,
+    className: "Monk",
+    weaponName: "Fist",
+    classLevel: 1,
+    weaponLevel: 1,
+    abilities: [],
+    statuses: [],
+    buffs: [],
+    cooldowns: {},
+    usesUsed: {},
+    resources: {},
+    pendingAction: null,
+    dashUsed: false,
+    standardUsed: false,
+    movementUsed: false,
+    swiftUsed: false,
+    ...overrides,
+  };
+}
+
+function makeGame(opts: { entities?: Entity[] } = {}): Game {
+  const entities = opts.entities ?? [
+    makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+    makeEntity({ num: "P2", name: "Bob", pos: [2, 2], team: 1 }),
+  ];
+  return {
+    id: "test",
+    room: "battledome",
+    host: "Host",
+    entities,
+    map: Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal)),
+    mapName: "test",
+    turnOrder: entities.map((e) => e.num),
+    turnIndex: 0,
+    round: 1,
+    log: [],
+    snapshots: [],
+    mode: "ffa",
+    phase: "playing",
+    started: true,
+    kills: {},
+    winner: null,
+    chatLog: [],
+    toasts: [],
+    signupsOpen: false,
+    votes: {},
+    voteOpen: false,
+    voteRunoff: null,
+  };
+}
+
+const room: Room = { id: "battledome", type: "battle", users: [] };
+const alice: User = { id: "alice", name: "Alice", rooms: {}, last: 0 };
+
+function freshGame(): Game {
+  const g = makeGame();
+  games.set(g.id, g);
+  return g;
+}
+
+describe("interactive movement pathing", () => {
+  it("builds a path with %pathstep and confirms it with %confirmmove", () => {
+    const game = freshGame();
+    const p1 = game.entities[0];
+
+    gameCommand(room, alice, "pathstep", "a", "2,P1");
+    gameCommand(room, alice, "pathstep", "b", "2,P1");
+
+    expect(pathState.get("P1")).toEqual([
+      [0, 1],
+      [1, 1],
+    ]);
+    expect(p1.movementUsed).toBe(false);
+
+    gameCommand(room, alice, "confirmmove", "P1", "");
+    expect(p1.pos).toEqual([1, 1]);
+    expect(p1.movementUsed).toBe(true);
+    expect(pathState.get("P1")).toBeUndefined();
+  });
+
+  it("rejects non-adjacent, occupied, and over-MP steps", () => {
+    const game = freshGame();
+
+    // [2,2] is far away -- must step adjacent tiles only.
+    gameCommand(room, alice, "pathstep", "c", "3,P1");
+    expect(pathState.get("P1")).toBeUndefined();
+
+    // P2 occupies [2,2] ("c,3").
+    gameCommand(room, alice, "pathstep", "a", "2,P1");
+    gameCommand(room, alice, "pathstep", "b", "2,P1"); // [1,1], ok (2 MP)
+    expect(pathState.get("P1")?.length).toBe(2);
+    gameCommand(room, alice, "pathstep", "c", "3,P1"); // occupied
+    expect(pathState.get("P1")?.length).toBe(2);
+  });
+
+  it("over-MP step is rejected and truncates back", () => {
+    const game = freshGame();
+    const p1 = game.entities[0];
+
+    gameCommand(room, alice, "pathstep", "a", "2,P1");
+    gameCommand(room, alice, "pathstep", "b", "2,P1");
+    gameCommand(room, alice, "pathstep", "c", "2,P1");
+    // mp=3, path [0,1],[1,1],[2,1] costs 3 -- the 4th would exceed budget
+    gameCommand(room, alice, "pathstep", "d", "2,P1");
+    expect(pathState.get("P1")?.length).toBe(3);
+  });
+
+  it("clicking a tile already in the path truncates it there", () => {
+    const game = freshGame();
+
+    gameCommand(room, alice, "pathstep", "a", "2,P1");
+    gameCommand(room, alice, "pathstep", "b", "2,P1");
+    gameCommand(room, alice, "pathstep", "c", "2,P1");
+    expect(pathState.get("P1")?.length).toBe(3);
+    // Clicking the middle tile (index 1) drops it and everything after.
+    gameCommand(room, alice, "pathstep", "b", "2,P1");
+    expect(pathState.get("P1")).toEqual([[0, 1]]);
+  });
+
+  it("%cancelpath clears the path", () => {
+    const game = freshGame();
+
+    gameCommand(room, alice, "pathstep", "a", "2,P1");
+    expect(pathState.get("P1")?.length).toBe(1);
+    gameCommand(room, alice, "cancelpath", "P1", "");
+    expect(pathState.get("P1")).toBeUndefined();
+  });
+
+  it("%dashmode toggles dash mode", () => {
+    const game = freshGame();
+
+    gameCommand(room, alice, "dashmode", "P1", "");
+    expect(dashMode.has("P1")).toBe(true);
+    gameCommand(room, alice, "dashmode", "P1", "");
+    expect(dashMode.has("P1")).toBe(false);
+  });
+
+  it("%viewreach previews another character's reach", () => {
+    const game = freshGame();
+
+    gameCommand(room, alice, "viewreach", "P2", "P1");
+    expect(reachPreview.get("P1")).toBe("P2");
+    gameCommand(room, alice, "viewreach", "P2", "P1");
+    expect(reachPreview.get("P1")).toBeUndefined();
+  });
+
+  it("renders gridlines and interactive overlays on the player page", () => {
+    const game = freshGame();
+    const p1 = game.entities[0];
+
+    gameCommand(room, alice, "pathstep", "a", "2,P1");
+    const html = buildPlayerPage(game, p1);
+    expect(html).toContain("border:1px solid #888");
+    expect(html).toContain("rgba(110,190,255,0.55)"); // reachable overlay
+    expect(html).toContain("rgba(20,70,190,0.80)"); // path overlay
+    expect(html).toContain("%pathstep a,3,Alice"); // reachable tile button
+    expect(html).toContain("%confirmmove Alice");
+    expect(html).toContain("%cancelpath Alice");
+    expect(html).toContain("%viewreach P2,Alice");
+    expect(html).toContain("width:34px");
+  });
+
+  it("host page shows the map with gridlines, no interactivity", () => {
+    const game = freshGame();
+    const html = buildHostPage(game);
+    expect(html).toContain("border:1px solid #888");
+    expect(html).not.toContain("%pathstep");
+    expect(html).toContain("width:34px");
+  });
+});
