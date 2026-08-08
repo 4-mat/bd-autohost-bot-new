@@ -1075,6 +1075,7 @@ export function evaluateCondition(
   text: string,
   user: Entity,
   target: Entity,
+  moonPhase?: string,
 ): ConditionOutcome {
   const lower = text.toLowerCase().trim();
 
@@ -1266,8 +1267,9 @@ function applyConditional(
   user: Entity,
   target: Entity,
   effect: ConditionalEffect,
+  moonPhase?: string,
 ): { messages: string[]; outcome: ConditionOutcome } {
-  const outcome = evaluateCondition(effect.condition, user, target);
+  const outcome = evaluateCondition(effect.condition, user, target, moonPhase);
   const messages: string[] = [];
   if (outcome === "unknown") {
     messages.push(
@@ -1657,6 +1659,45 @@ export function* applyEffectStream(
 /** Join sub-effect summaries into a single string. */
 function summariseEffects(effects: Effect[]): string {
   return effects.map(summariseEffect).join(", ");
+}
+
+/**
+ * True when a `Per X:` trigger fires in the current stream context.
+ *
+ * These effects reach the stream on a successful hit (resolve.ts applies
+ * non-phase effects after damage), so hit-context triggers dispatch their
+ * sub-effects. Resource-count triggers ("Per 5 CP:") dispatch when the
+ * user's pool meets the count; anything else stays summarized until a
+ * dedicated dispatch point exists for it.
+ */
+function perTriggerApplies(trigger: string, user: Entity): boolean {
+  const t = trigger.toLowerCase().trim();
+  // "Per hit:" fires on a successful hit (the context these effects reach
+  // the stream in). "Per crit:" needs crit context the stream doesn't have,
+  // so it stays summarized until a dedicated crit dispatch point exists.
+  if (t === "hit") return true;
+  const resMatch = t.match(/^(\d+)\s+(.+)$/);
+  if (resMatch) {
+    const need = parseInt(resMatch[1]);
+    const res = canonicalResource(resMatch[2]);
+    if (res) return (user.resources[res] ?? 0) >= need;
+  }
+  return false;
+}
+
+/**
+ * True when a `When X:` trigger fires in the current stream context.
+ * Hit-context events ("user damages a foe", "user kills a foe", "hit")
+ * dispatch their sub-effects on a successful hit; other events stay
+ * summarized until a dedicated dispatch point exists for them.
+ */
+function triggerApplies(event: string, user: Entity, target: Entity): boolean {
+  const t = event.toLowerCase().trim();
+  if (t === "hit") return true;
+  if (t === "user damages a foe" || t === "user damages foe") return true;
+  if (t === "user kills a foe" || t === "user kills foe")
+    return target.curhp <= 0;
+  return false;
 }
 
 function drainApplyStream(
