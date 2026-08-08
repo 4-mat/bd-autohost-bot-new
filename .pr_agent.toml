@@ -1,4 +1,4 @@
 [config]
-model = "gemini/gemini-2.5-flash"
-fallback_models = ["gemini/gemini-2.5-flash-lite"]
+model = "gemini/gemini-3.6-flash"
+fallback_models = ["gemini/gemini-3-flash-preview"]
 max_model_tokens = 32000
