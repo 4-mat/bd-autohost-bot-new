@@ -148,6 +148,34 @@ export interface TriggerEffect {
   effects: Effect[];
 }
 
+export interface CritModEffect {
+  type: "critMod";
+  threshold: number;
+}
+
+export interface DiceModEffect {
+  type: "diceMod";
+  kind: "dice" | "diceFaces" | "baseDice";
+  amount: number;
+  rounds?: number;
+}
+
+export interface MrModEffect {
+  type: "mrMod";
+  amount: number;
+  rounds?: number;
+}
+
+export interface RequiresEffect {
+  type: "requires";
+  weapons: string[]; // gladius / scutum / pilum
+}
+
+export interface SwitchWeaponEffect {
+  type: "switchWeapon";
+  to: string[]; // gladius / scutum / pilum -- >1 when the player may pick
+}
+
 export type PhaseTiming = "before-acc" | "before-damage" | "on-miss" | "regardless";
 
 export interface PhaseTimingEffect {
@@ -178,6 +206,11 @@ export type Effect =
   | TileEffect
   | PerEffect
   | TriggerEffect
+  | CritModEffect
+  | DiceModEffect
+  | MrModEffect
+  | RequiresEffect
+  | SwitchWeaponEffect
   | PhaseTimingEffect
   | UnknownEffect;
 
@@ -229,6 +262,34 @@ const RESOURCE_NAMES = [
   "mark",
   "enrage",
 ];
+
+/** Gladius-class subweapons referenced by "Requires X" / "Switch to X" / "X: EFFECT" clauses. */
+const SUBWEAPONS = ["gladius", "scutum", "pilum"] as const;
+
+/**
+ * Splits a subweapon list like "Gladius or Pilum" / "Scutum" into canonical
+ * lowercase ids, ignoring anything that isn't a known subweapon.
+ */
+function parseSubweaponList(text: string): string[] {
+  return text
+    .split(/\s+(?:or|and)\s+|\s*,\s*/)
+    .map((w) => toId(w))
+    .filter((w) => (SUBWEAPONS as readonly string[]).includes(w));
+}
+
+/**
+ * Collect the subweapons required by an ability's effect text ("Requires
+ * Pilum" / "Requires Gladius or Scutum"). Returns [] when the effect has
+ * no `requires` clause. Command/resolve layers use this to gate abilities
+ * the user's equipped subweapon doesn't satisfy.
+ */
+export function requiredSubweapons(effect: string): string[] {
+  const required: string[] = [];
+  for (const e of parseEffects(effect)) {
+    if (e.type === "requires") required.push(...e.weapons);
+  }
+  return [...new Set(required)];
+}
 
 /**
  * Maps a subset of resource name variants (singular / plural / case
@@ -290,10 +351,28 @@ export function parseEffects(text: string): Effect[] {
   return effects;
 }
 
+/**
+ * True when the given text plausibly *starts an effect clause* ("gain +1
+ * ACC", "-1 MR", "inflict 3 Bleed/1") rather than continuing a list
+ * ("and MAG", "and target gain X"). splitClauses uses this so conjunctive
+ * pairings like "swap ATK and MAG" / "User and target ..." / "obstructions
+ * and DEF" stay whole instead of fragmenting into orphan tokens.
+ */
+function looksLikeEffectStart(text: string): boolean {
+  return /^(?:gain|gains|lose|loses|take|takes|inflict|inflicts|deal|deals|heal|heals|push|pulls?|add|adds|reduce|reduces|remove|removes|become|becomes|treat|treated|convert|converts|double|halve|grant|grants|spend|spends|swap|swaps|shield|ignore|ignores|attack|attacks|regain|recover|cleanse|reset|recharge|restore|sacrifice|designate|channel|reroll|roll|start|starts|end|ends|prevent|cannot|may|also|next|this|until|while|per\b|when\b|if\b|crit\b|requir|once|for\s+\d+|[+\-]|x|×|\d)/i.test(
+    text.trim(),
+  );
+}
+
 function splitClauses(text: string): string[] {
   const clauses: string[] = [];
   let depth = 0;
   let current = "";
+
+  // The data sometimes uses a literal "\n" (backslash-n) as a line break
+  // (e.g. the numbered d14 table on Cards/Stacked Deck). Normalize to a
+  // real newline so the whitespace guards below treat it as a separator.
+  text = text.replace(/\\n/g, "\n");
 
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
@@ -301,22 +380,52 @@ function splitClauses(text: string): string[] {
     if (ch === "(" || ch === "[") depth++;
     else if (ch === ")" || ch === "]") depth--;
     else if (depth === 0) {
-      if (ch === "." && !isInsideDice(text, i)) {
-        if (current.trim()) clauses.push(current.trim());
-        current = "";
-        continue;
-      }
+      // A period inside a decimal number (e.g. "-1.5 dice faces",
+      // "x1.25") is not a clause boundary -- only sentence periods are.
+      const isDecimalDot =
+        /\d/.test(text[i - 1] ?? "") && /\d/.test(text[i + 1] ?? "");
+      // A period after a bare number is a numbered-list marker ("4. After
+      // damage"), not a sentence end -- keep it attached to the item.
+      const isListMarkerDot = /^\d+$/.test(current.trim());
       if (
-        ch === "," &&
+        ch === "." &&
         !isInsideDice(text, i) &&
-        !text.slice(i).match(/^,\s*(?:and|or)\s/i) &&
-        !/^(thirst\s+\d+:|apex:)/i.test(current.trim())
+        !isDecimalDot &&
+        !isListMarkerDot
       ) {
         if (current.trim()) clauses.push(current.trim());
         current = "";
         continue;
       }
-      if (text.slice(i).match(/^ and /i) && !isInsideDice(text, i)) {
+      if (ch === ",") {
+        const inNumberedItem = /^\d+[.:]\s/.test(current.trim());
+        const commaStartsNewItem = /^,\s*\d+[.:]\s/.test(text.slice(i));
+        const isCommaSplit =
+          !isInsideDice(text, i) &&
+          !text.slice(i).match(/^,\s*(?:and|or)\s/i) &&
+          !/^(thirst\s+\d+:|apex:|ignores?\b|if\b|gladius:|scutum:|pilum:)/i.test(
+            current.trim(),
+          ) &&
+          // A comma inside a numbered list item ("5. For one round, attacks
+          // ...") is mid-item, not a clause boundary -- unless it introduces
+          // the next item ("..., 6. The user ...").
+          !(inNumberedItem && !commaStartsNewItem);
+        if (isCommaSplit) {
+          if (current.trim()) clauses.push(current.trim());
+          current = "";
+          continue;
+        }
+      }
+      if (
+        text.slice(i).match(/^ and /i) &&
+        !isInsideDice(text, i) &&
+        !/^(thirst\s+\d+:|apex:|ignores?\b|if\b|gladius:|scutum:|pilum:)/i.test(
+          current.trim(),
+        ) &&
+        // Only treat " and " as a clause boundary when the right side
+        // starts an effect of its own.
+        looksLikeEffectStart(text.slice(i + 5))
+      ) {
         if (current.trim()) clauses.push(current.trim());
         current = "";
         i += 4;
@@ -346,7 +455,10 @@ function isInsideDice(text: string, pos: number): boolean {
 }
 
 function parseClause(clause: string): Effect[] {
-  const lower = clause.toLowerCase().trim();
+  // Drop a numbered-list marker ("1. " / "7: ") so table entries like
+  // "5. For one round, ..." parse as their content. Markers like "10
+  // Shield/1" are untouched (the token after the digits isn't a marker).
+  const lower = clause.replace(/^\d+[.:]\s/, "").toLowerCase().trim();
   const effects: Effect[] = [];
 
   // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
@@ -444,6 +556,21 @@ function parseClause(clause: string): Effect[] {
     return effects;
   }
 
+  // Reaction/Trigger-prefixed triggers: "Reaction: When X: EFFECT" /
+  // "Trigger: When X: EFFECT" -- the action-economy label is redundant
+  // with the ability's actionType, so strip it and parse the When clause.
+  const reactWhenMatch = lower.match(
+    /^(?:reaction|trigger):\s*when\s+(.+?):\s*(.+)$/,
+  );
+  if (reactWhenMatch) {
+    effects.push({
+      type: "trigger",
+      event: reactWhenMatch[1].trim(),
+      effects: parseEffects(reactWhenMatch[2]),
+    });
+    return effects;
+  }
+
   // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
   const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
   if (whenMatch) {
@@ -477,6 +604,54 @@ function parseClause(clause: string): Effect[] {
     return effects;
   }
 
+  // Subweapon requirement: "Requires Pilum." / "Requires Gladius or Pilum."
+  // (Gladius class). Gated abilities may only be used while the named
+  // subweapon is equipped; the resolve layer surfaces this as a marker.
+  const requiresMatch = lower.match(/^requires\s+(.+?)\s*\.?$/);
+  if (requiresMatch) {
+    const weapons = parseSubweaponList(requiresMatch[1]);
+    if (weapons.length > 0) {
+      effects.push({ type: "requires", weapons });
+      return effects;
+    }
+  }
+
+  // Switch subweapon: "Switch to Pilum." / "swap to Gladius" /
+  // "Switch to Gladius or Scutum." / "Start in Gladius."
+  const switchMatch = lower.match(
+    /^(?:switch|swap)\s+to\s+(.+?)\s*\.?$|^start\s+in\s+(.+?)\s*\.?$/,
+  );
+  if (switchMatch) {
+    const weapons = parseSubweaponList(switchMatch[1] ?? switchMatch[2]);
+    if (weapons.length > 0) {
+      effects.push({ type: "switchWeapon", to: weapons });
+      return effects;
+    }
+  }
+
+  // "Swap subweapons (Standard)" -- free-form swap action.
+  if (/^swap subweapons?/.test(lower)) {
+    effects.push({
+      type: "switchWeapon",
+      to: ["gladius", "scutum", "pilum"],
+    });
+    return effects;
+  }
+
+  // Subweapon-conditional sub-effect: "Gladius: EFFECT" / "Scutum: EFFECT" /
+  // "Pilum: EFFECT" -- each branch applies only while that subweapon is held.
+  const subweaponCondMatch = lower.match(
+    /^(gladius|scutum|pilum):\s*(.+)$/,
+  );
+  if (subweaponCondMatch) {
+    effects.push({
+      type: "conditional",
+      condition: `subweapon is ${subweaponCondMatch[1]}`,
+      thenEffects: parseEffects(subweaponCondMatch[2]),
+    });
+    return effects;
+  }
+
   // Delay: "Delay N rounds" or "Delay-N"
   const delayMatch = lower.match(/^delay[\s-]+(\d+)\s+rounds?$/);
   if (delayMatch) {
@@ -488,6 +663,50 @@ function parseClause(clause: string): Effect[] {
   const recoilMatch = lower.match(/^recoil\s+(\d+)%$/);
   if (recoilMatch) {
     effects.push({ type: "recoil", percent: parseInt(recoilMatch[1]) });
+    return effects;
+  }
+
+  // Crit threshold: "Crit on 18+" / "Crit on 14+" -- lowers the roll
+  // needed to crit from the engine default of 20.
+  const critModMatch = lower.match(/^crit\s+on\s+(\d+)\+?$/);
+  if (critModMatch) {
+    effects.push({ type: "critMod", threshold: parseInt(critModMatch[1]) });
+    return effects;
+  }
+
+  // Dice modifiers: "+1 dice" / "+1 base dice" / "+4 dice faces" /
+  // "-1.5 dice faces" / "+1 dice/1". Optional "gain/gains" verb. We
+  // deliberately do NOT accept a "label:" prefix (e.g. "Melee on Bounty:
+  // +1 dice") -- those clauses are gated conditions, and extractCombatMetadata
+  // would otherwise apply them to every attack as unconditional dice.
+  const diceModMatch = lower.match(
+    /^(?:(?:gain|gains)\s*)?([+-])\s*(\d+(?:\.\d+)?)\s+(?:(base)\s+)?dice(?:\s+faces)?(?:\s*\/\s*(\d+))?$/,
+  );
+  if (diceModMatch) {
+    const sign = diceModMatch[1] === "-" ? -1 : 1;
+    const kind = diceModMatch[3]
+      ? "baseDice"
+      : /faces/.test(diceModMatch[0])
+        ? "diceFaces"
+        : "dice";
+    effects.push({
+      type: "diceMod",
+      kind,
+      amount: sign * parseFloat(diceModMatch[2]),
+      rounds: diceModMatch[4] ? parseInt(diceModMatch[4]) : undefined,
+    });
+    return effects;
+  }
+
+  // Miss-rate modifier: "+2 MR" / "-1 MR" / "+3 MR/1" (with duration).
+  const mrModMatch = lower.match(/^([+-])\s*(\d+)\s+mr(?:\s*\/\s*(\d+))?$/);
+  if (mrModMatch) {
+    const sign = mrModMatch[1] === "-" ? -1 : 1;
+    effects.push({
+      type: "mrMod",
+      amount: sign * parseInt(mrModMatch[2]),
+      rounds: mrModMatch[3] ? parseInt(mrModMatch[3]) : undefined,
+    });
     return effects;
   }
 
@@ -1183,6 +1402,18 @@ export function evaluateCondition(
     return current === phaseMatch[1] ? "then" : "else";
   }
 
+  // Subweapon condition, generated by the "Gladius: EFFECT" / "Scutum: EFFECT"
+  // / "Pilum: EFFECT" parser branch (condition text: "subweapon is gladius"
+  // etc.). Resolves against the user's equipped subweapon; entities without a
+  // subweapon (non-Gladius classes) read as "" and so never match.
+  const subweaponMatch = lower.match(
+    /^subweapon is (gladius|scutum|pilum)$/,
+  );
+  if (subweaponMatch) {
+    const current = (user.subweapon ?? "").toLowerCase().trim();
+    return current === subweaponMatch[1] ? "then" : "else";
+  }
+
   // Negation wrappers
   const negateMatch = lower.match(/^(?:not|no)\s+(.+)$/);
   if (negateMatch) {
@@ -1604,6 +1835,68 @@ export function* applyEffectStream(
         break;
       }
 
+      case "critMod": {
+        // The crit threshold itself is consumed by extractCombatMetadata /
+        // rollAccuracy in resolve.ts; here we just announce the marker so
+        // the effect stream log reads naturally.
+        messages.push(
+          `  Crit threshold lowered to ${effect.threshold}+.`,
+        );
+        break;
+      }
+
+      case "diceMod": {
+        const kindLabel =
+          effect.kind === "baseDice"
+            ? "base dice"
+            : effect.kind === "diceFaces"
+              ? "dice faces"
+              : "dice";
+        messages.push(
+          `  Attack gains ${effect.amount > 0 ? "+" : ""}${effect.amount} ${kindLabel}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+        );
+        break;
+      }
+
+      case "mrMod": {
+        messages.push(
+          `  Miss Rate ${effect.amount > 0 ? "+" : ""}${effect.amount}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+        );
+        break;
+      }
+
+      case "requires": {
+        messages.push(
+          `  Requires ${effect.weapons.map(capitalize).join(" or ")}.`,
+        );
+        break;
+      }
+
+      case "switchWeapon": {
+        if (effect.to.length === 1) {
+          user.subweapon = effect.to[0];
+          messages.push(`  ${user.num} switches to ${capitalize(effect.to[0])}.`);
+        } else {
+          // Multi-option switch ("Switch to Gladius or Scutum"): ask the
+          // player which subweapon to equip, same prompt machinery as
+          // `choose` clauses so resolve.ts can relay it to the user.
+          const clauseId = `switch-${messages.length}`;
+          const chosenId = yield {
+            kind: "choose",
+            clauseId,
+            message: `Choose a subweapon to switch to`,
+            options: effect.to.map((w, i) => ({
+              id: `${clauseId}:${i}`,
+              label: capitalize(w),
+            })),
+          } satisfies EffectChoosePrompt;
+          const idx = parseChosenIdx(chosenId, effect.to.length);
+          user.subweapon = effect.to[idx];
+          messages.push(`  ${user.num} switches to ${capitalize(effect.to[idx])}.`);
+        }
+        break;
+      }
+
       case "conditional": {
         const { outcome, messages: condMsgs } = applyConditional(
           user,
@@ -1891,6 +2184,16 @@ function summariseEffect(eff: Effect): string {
       return `recoil ${eff.percent}%`;
     case "ignore":
       return `ignore ${eff.what}`;
+    case "critMod":
+      return `crit on ${eff.threshold}+`;
+    case "diceMod":
+      return `${eff.amount > 0 ? "+" : ""}${eff.amount} ${eff.kind === "baseDice" ? "base dice" : eff.kind === "diceFaces" ? "dice faces" : "dice"}`;
+    case "mrMod":
+      return `${eff.amount > 0 ? "+" : ""}${eff.amount} MR${eff.rounds ? `/${eff.rounds}` : ""}`;
+    case "requires":
+      return `requires ${eff.weapons.join(" or ")}`;
+    case "switchWeapon":
+      return `switch to ${eff.to.join(" or ")}`;
     case "channel":
       return `channel ${eff.stat} for ${eff.rounds}r`;
     case "phase":
@@ -1970,6 +2273,32 @@ export interface CombatMetadata {
    */
   additionalHits: number;
   ignore: CombatIgnoreMetadata;
+  /**
+   * Lowest parsed "Crit on N+" threshold. null when no explicit
+   * threshold clause is present (engine default of 20 applies).
+   */
+  critThreshold: number | null;
+  /**
+   * Extra damage dice added to the roll from "+N dice" clauses.
+   * Applied as additional dice of the ability's die size.
+   */
+  extraDice: number;
+  /**
+   * Extra faces per die from "+N dice faces" clauses. Applied by
+   * increasing each die's side count.
+   */
+  extraDiceFaces: number;
+  /**
+   * Extra BASE dice from "+N base dice" clauses. Base dice are the
+   * pre-crit-multiplier dice, so they double on a crit along with the
+   * rest of the roll.
+   */
+  extraBaseDice: number;
+  /**
+   * Summed Miss Rate modifier from "+N MR" / "-N MR" clauses. Added to
+   * the ability's base miss rate before the accuracy roll.
+   */
+  mrMod: number;
 }
 
 export interface CombatIgnoreMetadata {
@@ -1997,24 +2326,54 @@ export interface CombatIgnoreMetadata {
   other: string[];
 }
 
-export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
+export function extractCombatMetadata(
+  effects: Effect[],
+  subweapon?: string,
+): CombatMetadata {
   const out: CombatMetadata = {
     damagePercent: 0,
     flatDamage: 0,
     additionalHits: 0,
     ignore: freshIgnoreMetadata(),
+    critThreshold: null,
+    extraDice: 0,
+    extraDiceFaces: 0,
+    extraBaseDice: 0,
+    mrMod: 0,
   };
 
-  // We intentionally do NOT descend into Apex, Thirst, Conditional, or
-  // Choose sub-trees. All four are *gated* clauses whose sub-effects run
-  // only when their gate succeeds, so any metadata extracted from their
-  // children is conditional on the gate firing. resolveSingleTarget
-  // re-evaluates each gate per hit and only contributes the matching
-  // buff / status / sub-effect to the damage path through the existing
-  // entity.buffs / statuses / extra-rolls infrastructure. Surfacing
-  // gated metadata here would over-apply -- e.g. "Apex: +50% damage"
-  // would otherwise turn the ability into +50% at any range.
+  mergeCombatMetadata(out, effects, subweapon);
+  return out;
+}
+
+/**
+ * Fold top-level combat metadata from `effects` into `out`. Recurses into
+ * subweapon branches ("Gladius: +1 dice") whose condition matches the
+ * user's equipped subweapon -- those gates ARE knowable here, so the
+ * branch's dice/crit/MR mods count toward the damage math. Other gated
+ * clauses are NOT descended into:
+ *
+ *   - Apex / Thirst / Conditional(if) / Choose sub-trees all fire only
+ *     when their runtime gate succeeds, so metadata extracted from their
+ *     children would over-apply (e.g. "Apex: +50% damage" would turn the
+ *     ability into +50% at any range). resolveSingleTarget re-evaluates
+ *     each gate per hit through the entity.buffs/statuses path instead.
+ */
+function mergeCombatMetadata(
+  out: CombatMetadata,
+  effects: Effect[],
+  subweapon?: string,
+): void {
   for (const e of effects) {
+    if (e.type === "conditional" && e.condition.startsWith("subweapon is ")) {
+      // Only the matching branch's sub-effects count; the non-matching
+      // branches are dead code for this user's equipped subweapon.
+      const want = e.condition.slice("subweapon is ".length);
+      if (subweapon && subweapon === want) {
+        mergeCombatMetadata(out, e.thenEffects, subweapon);
+      }
+      continue;
+    }
     if (e.type === "damageMod") {
       if (e.percent) out.damagePercent += e.percent;
       if (typeof e.flat === "number") out.flatDamage += e.flat;
@@ -2022,6 +2381,17 @@ export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
       out.additionalHits = Math.max(out.additionalHits, e.hits - 1);
     } else if (e.type === "ignore") {
       classifyIgnore(e.what, out.ignore);
+    } else if (e.type === "critMod") {
+      out.critThreshold =
+        out.critThreshold === null
+          ? e.threshold
+          : Math.min(out.critThreshold, e.threshold);
+    } else if (e.type === "diceMod") {
+      if (e.kind === "dice") out.extraDice += e.amount;
+      else if (e.kind === "diceFaces") out.extraDiceFaces += e.amount;
+      else out.extraBaseDice += e.amount;
+    } else if (e.type === "mrMod") {
+      out.mrMod += e.amount;
     } else if (e.type === "buff" || e.type === "debuff") {
       // parseStatMods emits a "buff"/"debuff" with stat: "dmg" for the
       // every-day "+50% damage", "+5 DMG", "-10% damage" clauses --
@@ -2041,7 +2411,6 @@ export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
       }
     }
   }
-  return out;
 }
 
 function freshIgnoreMetadata(): CombatIgnoreMetadata {
@@ -2057,8 +2426,25 @@ function freshIgnoreMetadata(): CombatIgnoreMetadata {
 }
 
 function classifyIgnore(what: string, out: CombatIgnoreMetadata): void {
-  const lower = what.toLowerCase().trim();
+  // Ignore lists arrive as a single clause now (splitClauses keeps
+  // "Ignores X, Y, and Z" together), e.g. "ATK/MAG, half DEF, and
+  // outside damage factors". Classify each fragment independently so
+  // a combined list sets all matching flags instead of just the first.
+  const fragments = what
+    .toLowerCase()
+    .split(/\s*(?:,| and | or )\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (fragments.length === 0) return;
+  for (const fragment of fragments) {
+    classifyIgnoreFragment(fragment, out);
+  }
+}
 
+function classifyIgnoreFragment(
+  lower: string,
+  out: CombatIgnoreMetadata,
+): void {
   if (
     /\batk\/?mag\b/.test(lower) ||
     lower === "atk" ||
@@ -2106,9 +2492,9 @@ function classifyIgnore(what: string, out: CombatIgnoreMetadata): void {
   }
 
   if (lower.includes("non-target") || lower.includes("obstruction")) {
-    out.other.push(what);
+    out.other.push(lower);
     return;
   }
 
-  out.other.push(what);
+  out.other.push(lower);
 }

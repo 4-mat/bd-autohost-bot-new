@@ -9,6 +9,7 @@ import {
   pushSnapshot,
   nextTurn,
   removeEntity,
+  startingSubweapon,
   type Game,
   type Entity,
   Terrain,
@@ -46,13 +47,6 @@ function juggSetupHint(mode: string): string {
 
 function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
   return a.level === "EX1" || a.level === "EX2" ? exOk : a.level <= lvl;
-}
-
-// Whether a user may change this entity's class/weapon: hosts any time,
-// players only their own entity until the game starts.
-function mayChangeLoadout(user: User, game: Game, entity: Entity): boolean {
-  if (toId(user.name) === toId(game.host)) return true;
-  return !game.started && toId(entity.name) === toId(user.name);
 }
 
 // Recalculate an entity's maxhp/curhp, stats, and abilities from its current
@@ -185,6 +179,9 @@ export function hostCommand(
       break;
     case "setjugg":
       handleSetJugg(room, user, full);
+      break;
+    case "setsubweapon":
+      handleSetSubweapon(room, user, full);
       break;
     case "listmaps":
       handleListMaps(room, user, full);
@@ -1019,6 +1016,7 @@ function createPlayerEntity(
     team,
     className: classData.name,
     weaponName: weaponData.name,
+    subweapon: startingSubweapon(weaponData.name),
     classLevel: lvl,
     weaponLevel: lvl,
     abilities: allAbilities,
@@ -1156,6 +1154,9 @@ function applyWeaponChange(
   pushSnapshot(game);
   const oldWeapon = entity.weaponName;
   entity.weaponName = weaponData.name;
+  // Only reset the subweapon on a pre-game weapon change. Mid-game, a host
+  // re-equipping a weapon shouldn't silently wipe a swapped stance.
+  if (!game.started) entity.subweapon = startingSubweapon(weaponData.name);
   const newMaxhp = recalcEntityStats(entity);
   send(
     room.id,
@@ -1180,6 +1181,9 @@ function applyLoadoutChange(
   const oldWeapon = entity.weaponName;
   entity.className = classData.name;
   entity.weaponName = weaponData.name;
+  // Only reset the subweapon on a pre-game loadout change (see
+  // applyWeaponChange).
+  if (!game.started) entity.subweapon = startingSubweapon(weaponData.name);
   const newMaxhp = recalcEntityStats(entity);
   send(
     room.id,
@@ -1198,11 +1202,9 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   if (!parts[0]) {
     return sendPm(user.name, "Usage: %sc <class>");
   }
+  if (game.started) return sendPm(user.name, "The game has already started.");
   const entity = getEntity(game, user.name);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
-  if (!mayChangeLoadout(user, game, entity)) {
-    return sendPm(user.name, "The game has already started.");
-  }
+  if (!entity) return sendPm(user.name, "You are not in the game.");
   if (!applyClassChange(game, room, entity, parts[0])) {
     return sendPm(user.name, `Unknown class: ${parts[0]}. Use %wt to look up.`);
   }
@@ -1217,11 +1219,9 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   if (!parts[0]) {
     return sendPm(user.name, "Usage: %sw <weapon>");
   }
+  if (game.started) return sendPm(user.name, "The game has already started.");
   const entity = getEntity(game, user.name);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
-  if (!mayChangeLoadout(user, game, entity)) {
-    return sendPm(user.name, "The game has already started.");
-  }
+  if (!entity) return sendPm(user.name, "You are not in the game.");
   if (!applyWeaponChange(game, room, entity, parts[0])) {
     return sendPm(
       user.name,
@@ -1232,8 +1232,7 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
 
 /**
  * %sco <class>, <weapon> — set your own class AND weapon in one go.
- * Same permissions as %sc/%sw: players may change their own until the
- * game starts.
+ * Same permissions as %sc/%sw: your own loadout until the game starts.
  */
 function handleSelfLoadout(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
@@ -1242,11 +1241,9 @@ function handleSelfLoadout(room: Room, user: User, args: string) {
   if (parts.length < 2 || !parts[0] || !parts[1]) {
     return sendPm(user.name, "Usage: %sco <class>, <weapon>");
   }
+  if (game.started) return sendPm(user.name, "The game has already started.");
   const entity = getEntity(game, user.name);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
-  if (!mayChangeLoadout(user, game, entity)) {
-    return sendPm(user.name, "The game has already started.");
-  }
+  if (!entity) return sendPm(user.name, "You are not in the game.");
   if (!applyLoadoutChange(game, room, entity, parts[0], parts[1])) {
     return sendPm(
       user.name,
@@ -1255,65 +1252,59 @@ function handleSelfLoadout(room: Room, user: User, args: string) {
   }
 }
 
-// -- .setclass <entity>, <class> - Host-only: set any entity's class ----------
+// -- .setclass <class> - Set YOUR class until the game starts -----------------
 
 function handleSetClass(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
   if (!game) return sendPm(user.name, "No active game in this room.");
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can use %setclass.");
-  }
+  if (game.started) return sendPm(user.name, "The game has already started.");
   const parts = args.split(",").map((s) => s.trim());
-  if (parts.length < 2 || !parts[0] || !parts[1]) {
-    return sendPm(user.name, "Usage: %setclass <entity>, <class>");
+  if (!parts[0]) {
+    return sendPm(user.name, "Usage: %setclass <class>");
   }
-  const entity = getEntity(game, parts[0]);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-  if (!applyClassChange(game, room, entity, parts[1])) {
-    return sendPm(user.name, `Unknown class: ${parts[1]}. Use %wt to look up.`);
+  const entity = getEntity(game, user.name);
+  if (!entity) return sendPm(user.name, "You are not in the game.");
+  if (!applyClassChange(game, room, entity, parts[0])) {
+    return sendPm(user.name, `Unknown class: ${parts[0]}. Use %wt to look up.`);
   }
 }
 
-// -- .setweapon <entity>, <weapon> - Host-only: set any entity's weapon --------
+// -- .setweapon <weapon> - Set YOUR weapon until the game starts --------------
 
 function handleSetWeapon(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
   if (!game) return sendPm(user.name, "No active game in this room.");
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can use %setweapon.");
-  }
+  if (game.started) return sendPm(user.name, "The game has already started.");
   const parts = args.split(",").map((s) => s.trim());
-  if (parts.length < 2 || !parts[0] || !parts[1]) {
-    return sendPm(user.name, "Usage: %setweapon <entity>, <weapon>");
+  if (!parts[0]) {
+    return sendPm(user.name, "Usage: %setweapon <weapon>");
   }
-  const entity = getEntity(game, parts[0]);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-  if (!applyWeaponChange(game, room, entity, parts[1])) {
+  const entity = getEntity(game, user.name);
+  if (!entity) return sendPm(user.name, "You are not in the game.");
+  if (!applyWeaponChange(game, room, entity, parts[0])) {
     return sendPm(
       user.name,
-      `Unknown weapon: ${parts[1]}. Use %wt to look up.`,
+      `Unknown weapon: ${parts[0]}. Use %wt to look up.`,
     );
   }
 }
 
-// -- .setloadout <entity>, <class>, <weapon> - Host-only ----------------------
+// -- .setloadout <class>, <weapon> - Set YOUR loadout until the game starts ----
 
 function handleSetEntityLoadout(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
   if (!game) return sendPm(user.name, "No active game in this room.");
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can use %setloadout.");
-  }
+  if (game.started) return sendPm(user.name, "The game has already started.");
   const parts = args.split(",").map((s) => s.trim());
-  if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) {
-    return sendPm(user.name, "Usage: %setloadout <entity>, <class>, <weapon>");
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %setloadout <class>, <weapon>");
   }
-  const entity = getEntity(game, parts[0]);
-  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-  if (!applyLoadoutChange(game, room, entity, parts[1], parts[2])) {
+  const entity = getEntity(game, user.name);
+  if (!entity) return sendPm(user.name, "You are not in the game.");
+  if (!applyLoadoutChange(game, room, entity, parts[0], parts[1])) {
     return sendPm(
       user.name,
-      `Unknown class or weapon: ${parts[1]}/${parts[2]}. Use %wt to look up.`,
+      `Unknown class or weapon: ${parts[0]}/${parts[1]}. Use %wt to look up.`,
     );
   }
 }
@@ -1459,6 +1450,60 @@ function handleSetJugg(room: Room, user: User, args: string) {
     `${entity.num} (${entity.name}) is ${entity.isJuggernaut ? "now" : "no longer"} a Juggernaut.`,
   );
   broadcastPages(game);
+}
+
+// -- .setsubweapon <entity>, <gladius|scutum|pilum|clear> - Set subweapon -----
+
+function handleSetSubweapon(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %setsubweapon.");
+  }
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(
+      user.name,
+      "Usage: %setsubweapon <entity>, <gladius|scutum|pilum|clear>",
+    );
+  }
+
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+
+  const sub = parts[1].toLowerCase();
+  if (sub === "clear" || sub === "none" || sub === "off") {
+    pushSnapshot(game);
+    const old = entity.subweapon;
+    entity.subweapon = undefined;
+    send(
+      room.id,
+      `${entity.num} (${entity.name}) subweapon: ${old ? capSub(old) : "none"} -> none`,
+    );
+    broadcastPages(game);
+    return;
+  }
+
+  if (!["gladius", "scutum", "pilum"].includes(sub)) {
+    return sendPm(
+      user.name,
+      "Subweapon must be gladius, scutum, or pilum (or clear).",
+    );
+  }
+
+  pushSnapshot(game);
+  const old = entity.subweapon;
+  entity.subweapon = sub;
+  send(
+    room.id,
+    `${entity.num} (${entity.name}) subweapon: ${old ? capSub(old) : "none"} -> ${capSub(sub)}`,
+  );
+  broadcastPages(game);
+}
+
+function capSub(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // -- .remp <name> - Remove a player --------------------------------------------

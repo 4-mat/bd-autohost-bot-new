@@ -125,9 +125,10 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%sc [class]`                       | Change YOUR class until the game starts.    |
 | `%sw [weapon]`                      | Change YOUR weapon until the game starts.   |
 | `%sco [class], [weapon]`            | Set YOUR class AND weapon in one go until the game starts. |
-| `%setclass [player], [class]`       | Host-only: set any player's class (any time).              |
-| `%setweapon [player], [weapon]`     | Host-only: set any player's weapon (any time).             |
-| `%setloadout [player], [class], [weapon]` | Host-only: set any player's class AND weapon (any time).     |
+| `%setclass [class]`                 | Set YOUR class until the game starts.                       |
+| `%setweapon [weapon]`               | Set YOUR weapon until the game starts.                      |
+| `%setloadout [class], [weapon]`     | Set YOUR class AND weapon in one go until the game starts.  |
+| `%setsubweapon [player], [gladius\|scutum\|pilum\|clear]` | Host-only: set any player's equipped subweapon (any time). `clear` (or `none`/`off`) unequips it. |
 | `%regp [player], [class], [weapon]` | Register a player.      |
 
 ### Loot/Progression Commands

@@ -59,3 +59,14 @@ http://localhost:4000
 
 %start
 ```
+
+---
+
+## Roadmap
+
+**Stances (planned, not yet implemented):** per-combat toggle mechanics — moon
+phases (Dark-class `"Phase: X"` effects), subweapons (Gladius `"Switch to X"` /
+`"X:"` branches / `"Requires X"` clauses), and similar — are slated to be
+consolidated into a single **Stance** structure owned by each entity. See
+[`STANCES.md`](STANCES.md) for the design intent and migration plan.
+

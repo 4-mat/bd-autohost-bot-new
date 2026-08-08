@@ -177,6 +177,11 @@ export interface Entity {
   weaponName: string;
   classLevel: number;
   weaponLevel: number;
+  /** Equipped subweapon for Gladius (Fighter weapon) users ("gladius" | "scutum" | "pilum"). Set by "Switch to X" effects; read by "Gladius:" branch conditions. */
+  // FUTURE (Stances): subweapon -- together with moonPhase, "Phase:" effects and
+  // similar per-combat toggles -- is slated to be consolidated into a single
+  // "Stance" structure owned by the entity. See STANCES.md for the design intent.
+  subweapon?: string;
   abilities: AbilityData[];
   statuses: StatusEffect[];
   buffs: { stat: string; amount: number; rounds: number }[];
@@ -192,6 +197,13 @@ export interface Entity {
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
   pendingPrompt?: AttackPrompt;
+}
+
+// Gladius users start with the Gladius subweapon equipped (the Fighter data
+// says "Swap subweapons (Standard)... Start in Gladius."). Everyone else has
+// no subweapon; switching away from Gladius clears it.
+export function startingSubweapon(weaponName: string): string | undefined {
+  return weaponName === "Gladius" ? "gladius" : undefined;
 }
 
 export interface PendingAction {
@@ -299,6 +311,9 @@ export interface Game {
    * Current moon phase (Dark-class mechanic). Set by "Phase: X" effects;
    * read by "Phase is X" condition clauses ("New Moon:", "Full Moon:", ...).
    */
+  // FUTURE (Stances): moonPhase -- together with subweapon and similar
+  // per-combat toggles -- is slated to be consolidated into a single "Stance"
+  // structure owned by the entity. See STANCES.md for the design intent.
   moonPhase?: string;
 }
 
@@ -317,6 +332,7 @@ function serializeState(game: Game): string {
       buffs: e.buffs,
       cooldowns: e.cooldowns,
       usesUsed: e.usesUsed,
+      subweapon: e.subweapon,
       dashUsed: e.dashUsed,
       standardUsed: e.standardUsed,
       movementUsed: e.movementUsed,
@@ -349,6 +365,7 @@ export function popSnapshot(game: Game): boolean {
       ent.buffs = e.buffs;
       ent.cooldowns = e.cooldowns;
       ent.usesUsed = e.usesUsed;
+      ent.subweapon = e.subweapon;
       ent.dashUsed = e.dashUsed;
       ent.standardUsed = e.standardUsed;
       ent.movementUsed = e.movementUsed;
@@ -967,10 +984,11 @@ export function rollAccuracy(
   mr: number,
   eva: number,
   bonuses = 0,
+  critThreshold = 20,
 ): { hit: boolean; roll: number; crit: boolean } {
   const roll = rollDice("1d20").total + bonuses;
   const hit = roll >= mr + eva;
-  const crit = roll >= 20;
+  const crit = roll >= critThreshold;
   return { hit, roll, crit };
 }
 

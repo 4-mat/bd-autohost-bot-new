@@ -713,6 +713,24 @@ describe("rollAccuracy", () => {
     }
     expect(sawCrit).toBe(true);
   });
+
+  it("respects a lowered crit threshold from 'Crit on N+'", () => {
+    // With threshold 1, every roll (1..20) is a crit.
+    let allCrit = true;
+    for (let i = 0; i < 200; i++) {
+      if (!rollAccuracy(0, 0, 0, 1).crit) allCrit = false;
+    }
+    expect(allCrit).toBe(true);
+  });
+
+  it("raises the crit threshold when told to (no crit below 21)", () => {
+    // A threshold above 20 means crits can never happen on 1d20.
+    let sawCrit = false;
+    for (let i = 0; i < 200; i++) {
+      if (rollAccuracy(0, 0, 0, 21).crit) sawCrit = true;
+    }
+    expect(sawCrit).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -849,6 +867,19 @@ describe("Snapshots", () => {
 
     popSnapshot(game);
     expect(game.log.length).toBe(0);
+  });
+
+  it("preserves the subweapon field through push/pop", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [0, 0] });
+    p1.subweapon = "gladius";
+    const game = makeGame({ entities: [p1] });
+
+    pushSnapshot(game);
+    p1.subweapon = "pilum";
+    expect(p1.subweapon).toBe("pilum");
+
+    popSnapshot(game);
+    expect(p1.subweapon).toBe("gladius");
   });
 
   it("returns false when no snapshots", () => {
