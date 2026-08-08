@@ -26,6 +26,7 @@ jobs:
             --arg url "$URL" \
             --arg body "$BODY" \
             '{
+              content: "<@&1535455535896334467>",
               embeds: [{
                 title: "🚀 Battle Dome Autohost — $tag",
                 description: ($name // $tag),
