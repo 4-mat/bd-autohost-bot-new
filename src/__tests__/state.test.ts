@@ -864,6 +864,25 @@ describe("Snapshots", () => {
     expect(game.log.length).toBe(0);
   });
 
+  it("resurrects entities removed after the snapshot", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 40, pos: [1, 1] });
+    const game = makeGame({ entities: [p1, p2] });
+    expect(game.turnOrder).toEqual(["P1", "P2"]);
+
+    pushSnapshot(game);
+    removeEntity(game, p2);
+    expect(game.entities.some((e) => e.num === "P2")).toBe(false);
+    expect(game.turnOrder).toEqual(["P1"]);
+
+    popSnapshot(game);
+    const revived = game.entities.find((e) => e.num === "P2");
+    expect(revived).toBeDefined();
+    expect(revived!.curhp).toBe(40);
+    expect(revived!.pos).toEqual([1, 1]);
+    expect(game.turnOrder).toEqual(["P1", "P2"]);
+  });
+
   it("returns false when no snapshots", () => {
     const game = makeGame();
     expect(popSnapshot(game)).toBe(false);

@@ -338,25 +338,14 @@ export const games = new Map<string, Game>();
 function serializeState(game: Game): string {
   return JSON.stringify({
     entities: game.entities.map((e) => ({
-      num: e.num,
-      name: e.name,
-      curhp: e.curhp,
-      maxhp: e.maxhp,
-      pos: e.pos,
-      team: e.team,
-      statuses: e.statuses,
-      buffs: e.buffs,
-      cooldowns: e.cooldowns,
-      usesUsed: e.usesUsed,
-      dashUsed: e.dashUsed,
-      standardUsed: e.standardUsed,
-      movementUsed: e.movementUsed,
-      swiftUsed: e.swiftUsed,
-      triggered: e.triggered,
+      ...e,
+      pendingResolution: undefined,
     })),
+    turnOrder: game.turnOrder,
     turnIndex: game.turnIndex,
     round: game.round,
     log: game.log,
+    votes: game.votes,
   });
 }
 
@@ -369,27 +358,25 @@ export function popSnapshot(game: Game): boolean {
   const snap = game.snapshots.pop();
   if (!snap) return false;
   const data = JSON.parse(snap);
+
+  const byNum = new Set<string>(data.entities.map((e: Entity) => e.num));
+  game.entities = game.entities.filter((e) => byNum.has(e.num));
+
   for (const e of data.entities) {
     const ent = game.entities.find((x) => x.num === e.num);
     if (ent) {
-      ent.curhp = e.curhp;
-      ent.maxhp = e.maxhp;
-      ent.pos = e.pos;
-      ent.team = e.team;
-      ent.statuses = e.statuses;
-      ent.buffs = e.buffs;
-      ent.cooldowns = e.cooldowns;
-      ent.usesUsed = e.usesUsed;
-      ent.dashUsed = e.dashUsed;
-      ent.standardUsed = e.standardUsed;
-      ent.movementUsed = e.movementUsed;
-      ent.swiftUsed = e.swiftUsed;
-      ent.triggered = e.triggered;
+      Object.assign(ent, e);
+      ent.pendingResolution = undefined;
+    } else {
+      game.entities.push(e as Entity);
     }
   }
+
+  game.turnOrder = data.turnOrder;
   game.turnIndex = data.turnIndex;
   game.round = data.round;
   if (data.log) game.log = data.log;
+  if (data.votes) game.votes = data.votes;
   return true;
 }
 
