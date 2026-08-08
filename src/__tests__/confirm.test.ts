@@ -139,6 +139,39 @@ describe("confirm", () => {
     expect(target.curhp).toBeLessThan(100);
   });
 
+  it("aborts a Varies attack that has no variants instead of resolving it", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+    games.set(game.id, game);
+
+    const ability = makeAbility({
+      name: "Broken Varies",
+      mr: 0,
+      roll: "2d6+3",
+      damageType: "Varies",
+    });
+    user.pendingAction = { type: "attack", ability, target: "P2" };
+    user.standardUsed = true;
+
+    gameCommand(room, alice, "confirm", "", "");
+
+    expect(user.pendingAction).toBeNull();
+    expect(game.log.length).toBe(1);
+    expect(game.log[0].description).not.toContain("Broken Varies");
+    expect(target.curhp).toBe(100);
+  });
+
   it("clears pendingAction even on miss", () => {
     const user = makeEntity({
       num: "P1",
