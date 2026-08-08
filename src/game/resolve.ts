@@ -29,6 +29,7 @@ import {
   getPassiveRangeBonus,
   getDefenderDiceMods,
   normalizeSubweapon,
+  formatSubweapon,
   requiredSubweapons,
   type CombatMetadata,
   type EffectChoosePrompt,
@@ -198,10 +199,10 @@ function* resolveAttackFlow(
   // requirement instead of a half-resolved action.
   const requires = requiredSubweapons(ability.effect);
   if (requires.length > 0) {
-    const equipped = normalizeSubweapon(user.subweapon);
-    if (!equipped || !requires.includes(equipped)) {
+    const equippedId = normalizeSubweapon(user.subweapon);
+    if (!equippedId || !requires.includes(equippedId)) {
       result.messages.push(
-        `${user.num} could not use ${ability.name}: requires the ${requires.map(capitalize).join(" or ")} subweapon${equipped ? ` (equipped: ${capitalize(equipped)})` : ""}.`,
+        `${user.num} could not use ${ability.name}: requires the ${requires.map(capitalize).join(" or ")} subweapon${equippedId ? ` (equipped: ${formatSubweapon(user.subweapon)})` : ""}.`,
       );
       return result;
     }
@@ -969,12 +970,19 @@ function effectiveRollFormula(
   }
   const m = roll.match(/^(\d+)d(\d+)([+-]\d+)?$/);
   if (!m) return roll;
+  // The parser accepts fractional dice mods ("+1.5 dice faces"), so round to
+  // whole dice/sides before building the NdM string -- otherwise rollDice
+  // can't parse e.g. "1d7.5" and the roll silently zeroes.
   const count = Math.max(
     1,
-    parseInt(m[1]) +
-      (forCrit ? combat.extraBaseDice : combat.extraDice + combat.extraBaseDice),
+    Math.round(
+      parseInt(m[1]) +
+        (forCrit
+          ? combat.extraBaseDice
+          : combat.extraDice + combat.extraBaseDice),
+    ),
   );
-  const sides = Math.max(1, parseInt(m[2]) + combat.extraDiceFaces);
+  const sides = Math.max(1, Math.round(parseInt(m[2]) + combat.extraDiceFaces));
   return `${count}d${sides}${m[3] ?? ""}`;
 }
 

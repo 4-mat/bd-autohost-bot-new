@@ -852,6 +852,55 @@ describe("resolveAttackFlow: defender Full Moon dice penalty", () => {
   });
 });
 
+describe("resolveAttackFlow: fractional dice mods", () => {
+  it("rounds +1.5 dice faces into a parseable formula", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    user.abilities = [];
+    const game = makeGame({ entities: [user, target] });
+    const ability = makeAbility({
+      name: "Half Faces",
+      range: "Melee",
+      mr: 0,
+      roll: "1d6+0",
+      effect: "+1.5 dice faces",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    // 6 sides + 1.5 = 7.5 -> rounded to 8; never "1d7.5".
+    expect(log).toContain("1d8+0");
+    expect(log).not.toContain("d7.5");
+  });
+
+  it("rounds +1.5 dice on the count side too", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    user.abilities = [];
+    const game = makeGame({ entities: [user, target] });
+    const ability = makeAbility({
+      name: "Half Die",
+      range: "Melee",
+      mr: 0,
+      roll: "1d6+0",
+      effect: "+1.5 dice",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    // 1 + 1.5 = 2.5 -> rounded to 3 dice; the formula stays parseable.
+    expect(log).toContain("3d6+0");
+  });
+});
+
 // ===========================================================================
 // Splash: integration of resolveSplash through resolveAttackFlow
 // ===========================================================================
