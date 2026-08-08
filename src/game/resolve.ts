@@ -637,15 +637,23 @@ function findTargets(
 
 export function isValidTarget(user: Entity, target: Entity, group: string): boolean {
   if (target.curhp <= 0) return false;
-  const g = group.toLowerCase();
+  // Normalize plural/legacy spellings ("Foe(s)", "Self, Foes, Allies",
+  // "Allies and Self") so single-target and AoE targeting agree; see the
+  // equivalent normalization in state.ts isValidGroupTarget.
+  const g = group
+    .toLowerCase()
+    .replace(/foes/, "foe")
+    .replace(/allies/, "ally")
+    .replace(/foe\(s\)/, "foe")
+    .replace(/ally and self/, "self and ally");
 
-  if (g.includes("self and allies") || g.includes("self and ally"))
-    return target.team === user.team;
-  if (g.includes("self or ally") || g.includes("self or allies"))
-    return target.team === user.team;
-  if (g.includes("self or foe")) return true;
+  if (g.includes("self and ally")) return target.team === user.team;
+  if (g.includes("self or ally")) return target.team === user.team;
+  if (g.includes("self or foe"))
+    return target.num === user.num || target.team !== user.team;
   if (g.includes("foe or ally")) return target.num !== user.num;
-  if (g.includes("self, foes, allies") || g.includes("self, foes, and allies"))
+  if (g.includes("tile or foe")) return target.team !== user.team;
+  if (g.includes("self, foe, ally") || g.includes("self, foe, and ally"))
     return true;
 
   if (g === "self") return target.num === user.num;

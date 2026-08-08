@@ -491,6 +491,51 @@ describe("getAoETargets", () => {
     const targets = getAoETargets(game, p1, "Burst 1", "Foe");
     expect(targets.length).toBe(0);
   });
+
+  it("normalized group 'Self, Foes, Allies' targets allies and foes", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self, Foes, Allies");
+    expect(targets.map((t) => t.num).sort()).toEqual(["P2", "P3"]);
+  });
+
+  it("group 'Self or Foe' targets foes but excludes allies", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self or Foe");
+    expect(targets.map((t) => t.num)).toEqual(["P2"]);
+  });
+
+  it("legacy group 'Foe(s)' targets foes", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Foe(s)");
+    expect(targets.map((t) => t.num)).toEqual(["P2"]);
+  });
+
+  it("group 'Allies and Self' targets allies", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Allies and Self");
+    expect(targets.map((t) => t.num)).toEqual(["P3"]);
+  });
+
+  it("group 'Tile or Foe' targets foes", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Tile or Foe");
+    expect(targets.map((t) => t.num)).toEqual(["P2"]);
+  });
 });
 
 describe("getSplashTargets", () => {
