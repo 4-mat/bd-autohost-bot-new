@@ -69,6 +69,7 @@ import {
   normalizeSubweapon,
   requiredSubweapons,
   getPassiveRangeBonus,
+  formatSubweapon,
 } from "../game/effects.js";
 import { DIRECTION_LABELS, formatPhase } from "../game/state.js";
 import {
@@ -408,10 +409,9 @@ function checkAbilityAvailability(
     requires.length > 0 &&
     !requires.includes(normalizeSubweapon(entity.subweapon) ?? "")
   ) {
-    const equipped =
-      entity.subweapon
-        ? ` (equipped: ${entity.subweapon.charAt(0).toUpperCase()}${entity.subweapon.slice(1)})`
-        : "";
+    const equipped = entity.subweapon
+      ? ` (equipped: ${formatSubweapon(entity.subweapon)})`
+      : "";
     failAct(game, entity, `${ability.name} requires ${requires.join(" or ")}`);
     sendPm(
       user.name,
@@ -1130,7 +1130,7 @@ function handleInfo(game: Game, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${ref}`);
 
   const lines = [
-    `${entity.num} (${entity.name}) -- ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}${entity.subweapon ? ` | Subweapon: ${entity.subweapon.charAt(0).toUpperCase()}${entity.subweapon.slice(1)}` : ""}${entity.phaseChoice ? ` | 2nd Phase: ${formatPhase(entity.phaseChoice)}` : ""}`,
+    `${entity.num} (${entity.name}) -- ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}${entity.subweapon ? ` | Subweapon: ${formatSubweapon(entity.subweapon)}` : ""}${entity.phaseChoice ? ` | 2nd Phase: ${formatPhase(entity.phaseChoice)}` : ""}`,
     `HP: ${entity.curhp}/${entity.maxhp} | ATK: ${entity.atk} | MAG: ${entity.mag} | PD: ${entity.pd} | MD: ${entity.md} | EVA: ${entity.eva} | MP: ${entity.mp}`,
     `Pos: ${posToStr(entity.pos[0], entity.pos[1])} | Team: ${entity.team}`,
     `Abilities: ${entity.abilities.map((a) => a.name).join(", ") || "None"}`,
@@ -1485,7 +1485,7 @@ function buildPlayerList(game: Game): string {
     const marker = isCur ? " " : "";
     const hpColor = hpPct > 50 ? "[+]" : hpPct > 25 ? "[~]" : "[-]";
     lines.push(
-      `${hpColor} **${e.num}** ${e.name} -- ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel})${e.subweapon ? ` [${e.subweapon.charAt(0).toUpperCase()}${e.subweapon.slice(1)}]` : ""} | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${marker}`,
+      `${hpColor} **${e.num}** ${e.name} -- ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel})${e.subweapon ? ` [${formatSubweapon(e.subweapon)}]` : ""} | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${marker}`,
     );
   }
 
