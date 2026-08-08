@@ -1378,6 +1378,115 @@ describe("evaluateCondition: moon phase", () => {
   });
 });
 
+describe("Lunar Rod: phase-shift skip + second phase", () => {
+  it("parses 'no Phase shift next turn' as skipPhaseShift", () => {
+    const effects = parseEffects("no Phase shift next turn.");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("skipPhaseShift");
+  });
+
+  it("parses 'User's Phase disabled next turn' as skipPhaseShift", () => {
+    const effects = parseEffects("User's Phase disabled next turn.");
+    expect(effects[0].type).toBe("skipPhaseShift");
+  });
+
+  it("parses 'Choose another Phase' as choosePhase (not a generic Choose)", () => {
+    const effects = parseEffects("Choose another Phase (doesn't shift).");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("choosePhase");
+  });
+
+  it("parses a New/Full Moon slash-combo with an Otherwise else-branch", () => {
+    const effects = parseEffects(
+      "New/Full Moon: heal 1d10+2. Otherwise: no Phase shift next turn.",
+    );
+    expect(effects).toHaveLength(1);
+    const c = effects[0];
+    expect(c.type).toBe("conditional");
+    if (c.type !== "conditional") return;
+    expect(c.condition).toBe("phase is new moon or full moon");
+    expect(c.thenEffects[0].type).toBe("heal");
+    expect(c.elseEffects?.[0].type).toBe("skipPhaseShift");
+  });
+
+  it("parses a Waxing/Waning slash-combo with an Otherwise else-branch", () => {
+    const effects = parseEffects(
+      "Waxing/Waning: inflict 5 Poison/1. Otherwise: inflict 3 Bleed/1.",
+    );
+    const c = effects[0];
+    expect(c.type).toBe("conditional");
+    if (c.type !== "conditional") return;
+    expect(c.condition).toBe("phase is waxing or waning");
+    expect(c.thenEffects[0].type).toBe("status");
+    expect(c.elseEffects?.[0].type).toBe("status");
+  });
+
+  it("evaluates slash-combo phase conditions", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    expect(
+      evaluateCondition("phase is new moon or full moon", user, target, "new moon"),
+    ).toBe("then");
+    expect(
+      evaluateCondition("phase is new moon or full moon", user, target, "waning"),
+    ).toBe("else");
+  });
+
+  it("evaluates 'user has 2 Phases' from a chosen second phase", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    expect(evaluateCondition("user has 2 Phases", user, target)).toBe("else");
+    user.phaseChoice = "full moon";
+    expect(evaluateCondition("user has 2 Phases", user, target)).toBe("then");
+  });
+
+  it("applyEffectStream: choosePhase stores the picked second phase", () => {
+    const ability = makeAbility({
+      name: "Far Side of the Moon",
+      range: "Melee",
+      effect: "Choose another Phase (doesn't shift).",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    const { prompts } = driveStream(
+      applyEffectStream(game, user, target, parseEffects(ability.effect), ability),
+      (p) => 2, // pick the third option (Full Moon)
+    );
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].kind).toBe("choose");
+    expect(prompts[0].options.map((o: any) => o.label)).toEqual([
+      "New Moon",
+      "Waxing",
+      "Full Moon",
+      "Waning",
+    ]);
+    expect(user.phaseChoice).toBe("full moon");
+  });
+
+  it("applyEffects: skipPhaseShift sets the game flag", () => {
+    const ability = makeAbility({
+      name: "Harvest Moon",
+      range: "Melee",
+      effect: "no Phase shift next turn.",
+    });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+    expect(game.skipMoonPhaseShift).toBe(true);
+    expect(messages.some((m) => /no phase shift/i.test(m))).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Per / When triggers dispatch their sub-effects on hit
 // ---------------------------------------------------------------------------

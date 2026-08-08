@@ -10,6 +10,8 @@ import {
   parseFrequency,
   formatChatTime,
   formatPhase,
+  MOON_PHASE_CYCLE,
+  hasMoonPhaseHolder,
   type Game,
   type Entity,
   type AbilityData,
@@ -215,10 +217,16 @@ export function buildHostPage(game: Game): string {
   const modeSeg =
     game.modeChosen || game.started ? ` -- ${esc(game.mode)} --` : "";
   const moonSeg = moonBadge(game);
+  // Host moon-phase chooser: Lunar Phase's "Start of first turn: choose
+  // Phase" (usable before %start) plus mid-game manual shifts. Shown while a
+  // Lunar Phase carrier is in play; the active phase is highlighted.
+  const moonChooser = hasMoonPhaseHolder(game)
+    ? `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #a06;background:rgba(160,0,102,0.08)"><b style="color:#a06">Moon Phase</b> <span style="color:#888;font-size:10px">(shifts each turn)</span><br>${MOON_PHASE_CYCLE.map((p) => btn(`%setphase ${p}`, formatPhase(p), game.moonPhase === p ? "background:#a06;color:#fff;border-color:#a06;font-weight:bold;" : "")).join("")} ${btn("%setphase clear", "Clear")}</div>`
+    : "";
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   <b>Game: ${esc(game.id)}</b>${modeSeg} Round <b>${game.round}</b>${moonSeg} -- Phase: ${esc(game.phase)}
-  <hr>${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}${controls ? `<hr>${controls}` : ""}
+  ${moonChooser}<hr>${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}${controls ? `<hr>${controls}` : ""}
   ${buildToasts(game)}
 </div>`;
 }

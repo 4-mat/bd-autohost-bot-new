@@ -336,6 +336,61 @@ describe("extractCombatMetadata", () => {
     expect(meta.extraDice).toBe(0);
   });
 
+  it("descends into a phase branch matching the current moon phase", () => {
+    const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "new moon");
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
+  it("ignores phase branches that do NOT match the current moon phase", () => {
+    const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "full moon");
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraDiceFaces).toBe(2);
+  });
+
+  it("handles slash-combo phase branches ('New/Full Moon') against the phase", () => {
+    const effects = parseEffects("New/Full Moon: +1 dice.");
+    expect(extractCombatMetadata(effects, undefined, "new moon").extraDice).toBe(1);
+    expect(extractCombatMetadata(effects, undefined, "full moon").extraDice).toBe(1);
+    expect(extractCombatMetadata(effects, undefined, "waning").extraDice).toBe(0);
+  });
+
+  it("leaves phase branches unmerged when no moon phase is active", () => {
+    const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
+    const meta = extractCombatMetadata(effects);
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
+  it("applies the user's Passive ability dice mods for the current moon phase", () => {
+    // Lunar Phase is a Passive: its phase-gated "Waning: +1 dice" must fold
+    // into the metadata of EVERY attack while the moon is waning.
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6], team: 1 });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "waning";
+    user.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Waning: +1 dice.",
+      }),
+      makeAbility({
+        name: "Strike",
+        damageType: "Physical",
+        roll: "1d6",
+        effect: "",
+      }),
+    ];
+    const step = startAttack(game, user, user.abilities[1], target.num);
+    const log = (step.done ? step.result.messages : []).join("\n");
+    // 1d6 + 1 extra dice => the Damage line shows a 2d6 roll.
+    expect(log).toContain("2d6");
+    expect(log).toMatch(/\+1 dice/);
+  });
+
   it("does NOT merge a subweapon branch nested under an If-gate", () => {
     // "If target is alive, +1 dice. Gladius: +2 base dice." parses as ONE
     // If-conditional whose then-branch contains the subweapon branch. The

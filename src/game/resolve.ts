@@ -297,7 +297,19 @@ function* resolveAttackFlow(
   // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
   // effect still rolls the highest of the two.
   const effects = parseEffects(ability.effect);
-  const combat = extractCombatMetadata(effects, normalizeSubweapon(user.subweapon));
+  // Fold the user's Passive abilities (e.g. Lunar Phase) into the metadata:
+  // passives grant standing dice / crit / MR / damage modifiers that apply to
+  // every attack while equipped. Their phase-gated branches ("Waxing: +2 dice
+  // faces") resolve against the current moon phase.
+  const passiveEffects: Effect[] = [];
+  for (const a of user.abilities) {
+    if (a.actionType === "Passive") passiveEffects.push(...parseEffects(a.effect));
+  }
+  const combat = extractCombatMetadata(
+    [...passiveEffects, ...effects],
+    normalizeSubweapon(user.subweapon),
+    game.moonPhase,
+  );
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   for (const target of targets) {

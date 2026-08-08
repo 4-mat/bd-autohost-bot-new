@@ -11,6 +11,8 @@ import {
   manhattan,
   pushEntity,
   pullEntity,
+  MOON_PHASE_CYCLE,
+  formatPhase,
 } from "./state.js";
 import { rollDice, toId } from "../utils.js";
 
@@ -116,6 +118,16 @@ export interface PhaseEffect {
   phase: string;
 }
 
+/** "No Phase shift next turn" / "User's Phase disabled next turn" (Harvest Moon / Celestial Blessing). */
+export interface SkipPhaseShiftEffect {
+  type: "skipPhaseShift";
+}
+
+/** "Choose another Phase (doesn't shift)" (Far Side of the Moon) -- prompts for a second phase. */
+export interface ChoosePhaseEffect {
+  type: "choosePhase";
+}
+
 export interface DelayLandEffect {
   type: "delayLand";
 }
@@ -201,6 +213,8 @@ export type Effect =
   | ChooseEffect
   | ChannelEffect
   | PhaseEffect
+  | SkipPhaseShiftEffect
+  | ChoosePhaseEffect
   | DelayLandEffect
   | MultiHitMod
   | TileEffect
@@ -357,7 +371,23 @@ export function parseEffects(text: string): Effect[] {
   const effects: Effect[] = [];
 
   for (const clause of clauses) {
-    const parsed = parseClause(clause.trim());
+    const c = clause.trim();
+    // Standalone "Otherwise: EFFECT" / "Otherwise, EFFECT" continues the
+    // PREVIOUS conditional as its else-branch (Blood Moon / Harvest Moon
+    // style "New/Full Moon: X. Otherwise: Y." pairings). A bare "Otherwise"
+    // with no preceding conditional falls through to parseClause and is
+    // surfaced as unknown rather than silently dropped.
+    const otherwiseMatch = c.toLowerCase().match(/^otherwise,?\s*:?\s*(.+)$/);
+    if (otherwiseMatch) {
+      const prev = effects[effects.length - 1];
+      // Never clobber an else-branch a conditional may already carry (a
+      // second "Otherwise:" after "If X, A. Otherwise, B." keeps B).
+      if (prev && prev.type === "conditional" && !prev.elseEffects) {
+        prev.elseEffects = parseEffects(otherwiseMatch[1]);
+        continue;
+      }
+    }
+    const parsed = parseClause(c);
     if (parsed) effects.push(...parsed);
   }
 
@@ -511,6 +541,15 @@ function parseClause(clause: string): Effect[] {
     return effects;
   }
 
+  // "Choose another Phase (doesn't shift)" -- Far Side of the Moon. Prompts
+  // the user for a SECOND phase that can power Lunar Rod effects; it never
+  // shifts the active phase itself. Must run before the generic Choose branch
+  // (which would otherwise treat "another phase (doesn't shift)" as an option).
+  if (/^choose (?:another|a) phase/.test(lower)) {
+    effects.push({ type: "choosePhase" });
+    return effects;
+  }
+
   // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
   // Optional colon + "one" prefix to match real glossary variants.
   const chooseMatch = lower.match(/^choose\s*:?\s+(?:one:\s*)?(.+)$/);
@@ -591,6 +630,47 @@ function parseClause(clause: string): Effect[] {
       type: "trigger",
       event: whenMatch[1].trim(),
       effects: parseEffects(whenMatch[2]),
+    });
+    return effects;
+  }
+
+  // "No Phase shift next turn" / "User's Phase disabled next turn" -- the
+  // Lunar Rod (Harvest Moon / Celestial Blessing) can suppress the next
+  // turn's auto-advance. nextTurn consumes the game-level flag.
+  if (
+    /^(?:no|skip)\s+phase shift(?: next turn)?$/.test(lower) ||
+    /^user'?s phase disabled next turn$/.test(lower)
+  ) {
+    effects.push({ type: "skipPhaseShift" });
+    return effects;
+  }
+
+  // Phase slash-combo: "New/Full Moon: EFFECT" / "Waxing/Waning: EFFECT" --
+  // two phases share one branch; the other two are the implicit else. The
+  // else can arrive either as an inline "... Otherwise: Y" (Harvest Moon's
+  // "1d10+2" plus-sign keeps the whole text in ONE clause) or as a separate
+  // clause (Blood Moon), which parseEffects' loop attaches below.
+  // "New/Full Moon" writes the first phase as a bare "new" (and the data
+  // only ever shortens "new"/"full"), so both spellings are accepted and
+  // normalized before building the condition.
+  const slashPhaseMatch = lower.match(
+    /^(new moon|new|waxing|full moon|full|waning)\s*\/\s*(new moon|waxing|full moon|waning):\s*(.+)$/,
+  );
+  if (slashPhaseMatch) {
+    const norm = (p: string) =>
+      p === "new" ? "new moon" : p === "full" ? "full moon" : p;
+    const body = slashPhaseMatch[3];
+    const elseAt = body.search(/\s+otherwise,?\s*:?\s*/i);
+    const thenText = elseAt >= 0 ? body.slice(0, elseAt) : body;
+    const elseText =
+      elseAt >= 0
+        ? body.slice(elseAt).replace(/^\s+otherwise,?\s*:?\s*/i, "")
+        : undefined;
+    effects.push({
+      type: "conditional",
+      condition: `phase is ${norm(slashPhaseMatch[1])} or ${norm(slashPhaseMatch[2])}`,
+      thenEffects: parseEffects(thenText),
+      elseEffects: elseText ? parseEffects(elseText) : undefined,
     });
     return effects;
   }
@@ -1415,6 +1495,26 @@ export function evaluateCondition(
     return current === phaseMatch[1] ? "then" : "else";
   }
 
+  // Phase slash-combo condition ("phase is new moon or full moon"), generated
+  // by the "New/Full Moon: EFFECT" parser branch -- true when the active phase
+  // is EITHER of the two named phases.
+  const phaseOrMatch = lower.match(
+    /^phase is (new moon|waxing|full moon|waning) or (new moon|waxing|full moon|waning)$/,
+  );
+  if (phaseOrMatch) {
+    const current = (moonPhase ?? "new moon").toLowerCase().trim();
+    return current === phaseOrMatch[1] || current === phaseOrMatch[2]
+      ? "then"
+      : "else";
+  }
+
+  // "user has 2 Phases" -- Far Side of the Moon stores a chosen second phase
+  // on the user (entity.phaseChoice); the condition holds while one exists.
+  const twoPhasesMatch = lower.match(/^user has (?:2|two) phases?$/);
+  if (twoPhasesMatch) {
+    return user.phaseChoice ? "then" : "else";
+  }
+
   // Subweapon condition, generated by the "Gladius: EFFECT" / "Scutum: EFFECT"
   // / "Pilum: EFFECT" parser branch (condition text: "subweapon is gladius"
   // etc.). Resolves against the user's equipped subweapon; entities without a
@@ -1753,6 +1853,36 @@ export function* applyEffectStream(
         // conditions (e.g. "New Moon:") evaluate correctly downstream.
         game.moonPhase = effect.phase;
         messages.push(`  Phase shifts to ${effect.phase}.`);
+        break;
+      }
+
+      case "choosePhase": {
+        // Far Side of the Moon: pick a second phase (never shifts the active
+        // one). Stored on the user so "user has 2 Phases" conditions read it.
+        const clauseId = `phase-${messages.length}`;
+        const chosenId = yield {
+          kind: "choose",
+          clauseId,
+          message: "Choose another Phase (doesn't shift the current one)",
+          options: MOON_PHASE_CYCLE.map((p, i) => ({
+            id: `${clauseId}:${i}`,
+            label: formatPhase(p),
+          })),
+        } satisfies EffectChoosePrompt;
+        const idx = parseChosenIdx(chosenId, MOON_PHASE_CYCLE.length);
+        const picked = MOON_PHASE_CYCLE[idx];
+        user.phaseChoice = picked;
+        messages.push(
+          `  ${user.num} picks **${formatPhase(picked)}** as a second Phase.`,
+        );
+        break;
+      }
+
+      case "skipPhaseShift": {
+        // Harvest Moon / Celestial Blessing: no auto-advance at the next
+        // turn boundary. nextTurn consumes (resets) the flag.
+        game.skipMoonPhaseShift = true;
+        messages.push(`  No Phase shift next turn.`);
         break;
       }
 
@@ -2211,6 +2341,10 @@ function summariseEffect(eff: Effect): string {
       return `channel ${eff.stat} for ${eff.rounds}r`;
     case "phase":
       return `phase ${eff.phase}`;
+    case "choosePhase":
+      return "choose another phase";
+    case "skipPhaseShift":
+      return "no phase shift next turn";
     case "multiHit":
       return `multi-hit ${eff.hits}`;
     case "apex":
@@ -2342,6 +2476,7 @@ export interface CombatIgnoreMetadata {
 export function extractCombatMetadata(
   effects: Effect[],
   subweapon?: string,
+  moonPhase?: string,
 ): CombatMetadata {
   const out: CombatMetadata = {
     damagePercent: 0,
@@ -2355,7 +2490,7 @@ export function extractCombatMetadata(
     mrMod: 0,
   };
 
-  mergeCombatMetadata(out, effects, subweapon);
+  mergeCombatMetadata(out, effects, subweapon, moonPhase);
   return out;
 }
 
@@ -2376,6 +2511,7 @@ function mergeCombatMetadata(
   out: CombatMetadata,
   effects: Effect[],
   subweapon?: string,
+  moonPhase?: string,
 ): void {
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("subweapon is ")) {
@@ -2383,7 +2519,21 @@ function mergeCombatMetadata(
       // branches are dead code for this user's equipped subweapon.
       const want = e.condition.slice("subweapon is ".length);
       if (subweapon && subweapon === want) {
-        mergeCombatMetadata(out, e.thenEffects, subweapon);
+        mergeCombatMetadata(out, e.thenEffects, subweapon, moonPhase);
+      }
+      continue;
+    }
+    if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
+      // Phase-gated branches (Lunar Phase's "Waxing: +2 dice faces") count
+      // only while the current moon phase matches. The condition is either
+      // "phase is X" or the slash-combo "phase is X or Y"; both are knowable
+      // at metadata time, so unlike If/Apex/Thirst gates we descend here.
+      const want = e.condition
+        .slice("phase is ".length)
+        .split(" or ")
+        .map((s) => s.trim());
+      if (moonPhase && want.includes(moonPhase)) {
+        mergeCombatMetadata(out, e.thenEffects, subweapon, moonPhase);
       }
       continue;
     }
