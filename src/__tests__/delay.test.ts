@@ -12,6 +12,7 @@ import {
   respondToChoice,
 } from "../game/resolve.js";
 import { gameCommand } from "../commands/game.js";
+import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { setWs } from "../utils.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
@@ -78,6 +79,7 @@ function makeGame(opts: {
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map,
     mapName: "test",
@@ -333,6 +335,59 @@ describe("choice-gated delays", () => {
     expect(user.delayedAttacks?.[0].roundsLeft).toBe(2);
     expect(target1.curhp).toBe(100);
     expect(target2.curhp).toBe(100);
+  });
+});
+
+describe("delayed attacks GUI", () => {
+  it("shows queued delayed attacks on the host and player pages", () => {
+    const ability = makeAbility({ name: "Augur", effect: "Delay-1" });
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [0, 0] });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 });
+    user.delayedAttacks = [
+      { ability, targetNum: "P2", damage: 12, roundsLeft: 2 },
+    ];
+    const game = makeGame({ entities: [user, target] });
+
+    const hostHtml = buildHostPage(game);
+    expect(hostHtml).toContain("Augur");
+    expect(hostHtml).toContain("Bob");
+    expect(hostHtml).toContain(">12</b> dmg");
+    expect(hostHtml).toContain("in 2 turns");
+
+    const playerHtml = buildPlayerPage(game, user);
+    expect(playerHtml).toContain("DELAYED ATTACKS");
+    expect(playerHtml).toContain("Augur");
+    expect(playerHtml).toContain("in 2 turns");
+  });
+
+  it("says 'next turn' for a Delay-1 attack and hides the block when empty", () => {
+    const ability = makeAbility({ name: "Requite", effect: "Delay-1" });
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [0, 0] });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 });
+    user.delayedAttacks = [
+      { ability, targetNum: "P2", damage: 8, roundsLeft: 1 },
+    ];
+    const game = makeGame({ entities: [user, target] });
+
+    expect(buildHostPage(game)).toContain("next turn");
+
+    // No queued attacks anywhere -> no delay UI at all.
+    user.delayedAttacks = [];
+    const html = buildHostPage(game);
+    expect(html).not.toContain("DELAYED ATTACKS");
+    expect(html).not.toContain("⏳");
+  });
+
+  it("falls back to the raw target num when the target has left the fight", () => {
+    const ability = makeAbility({ name: "Prophecy", effect: "Delay-1" });
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [0, 0] });
+    user.delayedAttacks = [
+      { ability, targetNum: "P9", damage: 15, roundsLeft: 1 },
+    ];
+    const game = makeGame({ entities: [user] });
+
+    const html = buildHostPage(game);
+    expect(html).toContain("P9");
   });
 });
 
