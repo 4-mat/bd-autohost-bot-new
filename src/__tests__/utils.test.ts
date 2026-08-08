@@ -17,15 +17,38 @@ beforeEach(() => {
   resetSendQueueForTests();
 });
 
-// A fake ws whose `send` throws until `open` flips true, mimicking a
-// socket that (re)connects mid-queue.
+// A fake ws whose `send` throws (and/or errors via callback) until `open`
+// flips true, mimicking a socket that (re)connects mid-queue. The callback
+// is invoked the same way the real `ws` package does: async send failure
+// surfaces as `cb(err)`, synchronous refusal as a throw.
 function makeFakeSocket() {
   const sent: string[] = [];
   let open = false;
   setWs({
-    send: (msg: string) => {
-      if (!open) throw new Error("WebSocket is not open");
+    send: (msg: string, cb?: (err?: Error) => void) => {
+      if (!open) {
+        throw new Error("WebSocket is not open");
+      }
       sent.push(msg);
+      cb?.();
+    },
+  });
+  return { sent, open: () => (open = true) };
+}
+
+// A fake ws that reports failure through the send callback instead of
+// throwing (the async-error path the real library can take).
+function makeFakeSocketCbError() {
+  const sent: string[] = [];
+  let open = false;
+  setWs({
+    send: (msg: string, cb?: (err?: Error) => void) => {
+      if (!open) {
+        cb?.(new Error("WebSocket is not open"));
+        return;
+      }
+      sent.push(msg);
+      cb?.();
     },
   });
   return { sent, open: () => (open = true) };
@@ -61,5 +84,18 @@ describe("send queue", () => {
     await new Promise((r) => setTimeout(r, 1300));
     // PM messages are sent without the room prefix.
     expect(sock.sent).toEqual(["|one", "two", "|three"]);
+  });
+
+  it("retains the head when the send callback reports an error, then resumes", async () => {
+    const sock = makeFakeSocketCbError();
+
+    send("battledome", "hello");
+    // The failure came through the callback: the message must NOT be dropped.
+    expect(sock.sent).toEqual([]);
+
+    sock.open();
+    resumeSending();
+    await new Promise((r) => setTimeout(r, 500));
+    expect(sock.sent).toEqual(["|hello"]);
   });
 });

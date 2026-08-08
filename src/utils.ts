@@ -28,17 +28,27 @@ function drain() {
   sending = true;
   const item = sendQueue[0];
   const prefix = item.room.startsWith("pm-") ? "" : `|`;
+  const onSent = (err?: Error) => {
+    if (err) {
+      // Asynchronous send failure (socket dropped mid-flight): keep the
+      // message at the front of the queue and stop draining. resumeSending()
+      // (called from the WebSocket open handler) retries once the socket is
+      // back.
+      sending = false;
+      drainTimer = null;
+      return;
+    }
+    sendQueue.shift();
+    drainTimer = setTimeout(drain, 400);
+  };
   try {
-    ws.send(`${prefix}${item.msg}`);
+    ws.send(`${prefix}${item.msg}`, onSent);
   } catch {
-    // Socket unavailable (not yet open / closed). Keep the message at the
-    // front of the queue and stop draining; resumeSending() (called from
-    // the WebSocket open handler) retries once the socket is back.
+    // Synchronous throw (socket not open / closed). Same retention contract
+    // as the async error path: keep the head, stop draining.
     sending = false;
-    return;
+    drainTimer = null;
   }
-  sendQueue.shift();
-  drainTimer = setTimeout(drain, 400);
 }
 
 /** Resume draining the outbound queue once the WebSocket (re)opens. */
@@ -140,7 +150,7 @@ export function rollDice(formula: string): {
   return { total: base + mod, rolls, base };
 }
 
-let ws: { send: (msg: string) => void };
-export function setWs(w: { send: (msg: string) => void }) {
+let ws: { send: (msg: string, cb?: (err?: Error) => void) => void };
+export function setWs(w: { send: (msg: string, cb?: (err?: Error) => void) => void }) {
   ws = w;
 }
