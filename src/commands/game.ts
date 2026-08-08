@@ -65,6 +65,7 @@ import {
   isValidTarget,
   type AttackStep,
 } from "../game/resolve.js";
+import { requiredSubweapons } from "../game/effects.js";
 import { DIRECTION_LABELS } from "../game/state.js";
 import {
   normalizeVoteMode,
@@ -395,6 +396,24 @@ function checkAbilityAvailability(
     );
     return false;
   }
+
+  // Subweapon requirement check ("Requires Pilum"): the ability may only
+  // be used while that subweapon is equipped.
+  const requires = requiredSubweapons(ability.effect);
+  if (requires.length > 0 && !requires.includes(entity.subweapon ?? "")) {
+    const equipped =
+      entity.subweapon
+        ? ` (equipped: ${entity.subweapon.charAt(0).toUpperCase()}${entity.subweapon.slice(1)})`
+        : "";
+    failAct(game, entity, `${ability.name} requires ${requires.join(" or ")}`);
+    sendPm(
+      user.name,
+      `${ability.name} requires the ${requires.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" or ")} subweapon${equipped}.`,
+    );
+    return false;
+  }
+
+  // Max uses check
   const maxUses = ability.maxUses ?? parseFrequency(ability.frequency).uses;
   if (maxUses) {
     const used = entity.usesUsed[ability.name] ?? 0;
@@ -1104,7 +1123,7 @@ function handleInfo(game: Game, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${ref}`);
 
   const lines = [
-    `${entity.num} (${entity.name}) -- ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}`,
+    `${entity.num} (${entity.name}) -- ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}${entity.subweapon ? ` | Subweapon: ${entity.subweapon.charAt(0).toUpperCase()}${entity.subweapon.slice(1)}` : ""}`,
     `HP: ${entity.curhp}/${entity.maxhp} | ATK: ${entity.atk} | MAG: ${entity.mag} | PD: ${entity.pd} | MD: ${entity.md} | EVA: ${entity.eva} | MP: ${entity.mp}`,
     `Pos: ${posToStr(entity.pos[0], entity.pos[1])} | Team: ${entity.team}`,
     `Abilities: ${entity.abilities.map((a) => a.name).join(", ") || "None"}`,
@@ -1438,7 +1457,7 @@ function buildPlayerList(game: Game): string {
     const marker = isCur ? " " : "";
     const hpColor = hpPct > 50 ? "[+]" : hpPct > 25 ? "[~]" : "[-]";
     lines.push(
-      `${hpColor} **${e.num}** ${e.name} -- ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel}) | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${marker}`,
+      `${hpColor} **${e.num}** ${e.name} -- ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel})${e.subweapon ? ` [${e.subweapon.charAt(0).toUpperCase()}${e.subweapon.slice(1)}]` : ""} | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${marker}`,
     );
   }
 

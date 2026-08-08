@@ -46,3 +46,4 @@ Two modes are available:
 - **Local mode** (`npm run editor`, http://localhost:4700): edits are mirrored to the test client. **Save to Bot** writes changes to `src/data/index.ts` with a minimal diff.
 
 For the full workflow, see [`abilityeditor/README.md`](abilityeditor/README.md).
+(feat: subweapons (requires/switch/branches), dice-crit-MR mods, stance enforcement, %setsubweapon, no-arg loadout commands)

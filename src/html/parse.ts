@@ -1,4 +1,11 @@
-import { Terrain, games, findGameForRoom, type Game, type Entity } from "../game/state.js";
+import {
+  Terrain,
+  games,
+  startingSubweapon,
+  findGameForRoom,
+  type Game,
+  type Entity,
+} from "../game/state.js";
 import { classes, weapons } from "../data/index.js";
 import { toId } from "../utils.js";
 import { broadcastPages } from "../commands/game.js";
@@ -266,6 +273,7 @@ export function handleKyubsInfo(roomid: string, html: string) {
         team: 0,
         className: p.className,
         weaponName: p.weaponName,
+        subweapon: startingSubweapon(p.weaponName),
         classLevel: p.classLevel,
         weaponLevel: p.weaponLevel,
         abilities: getAbilities(p.className, p.weaponName),
@@ -294,6 +302,9 @@ export function handleKyubsInfo(roomid: string, html: string) {
       entity.pos = pos;
       entity.className = p.className;
       entity.weaponName = p.weaponName;
+      // Backfill the subweapon on re-import only when missing -- never
+      // stomp an in-game swapped stance.
+      if (!entity.subweapon) entity.subweapon = startingSubweapon(p.weaponName);
       entity.classLevel = p.classLevel;
       entity.weaponLevel = p.weaponLevel;
       entity.abilities = getAbilities(p.className, p.weaponName);
