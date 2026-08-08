@@ -200,6 +200,8 @@ export function rollDice(formula: string): {
 }
 
 let ws: { send: (msg: string, cb?: (err?: Error) => void) => void };
-export function setWs(w: { send: (msg: string, cb?: (err?: Error) => void) => void }) {
+export function setWs(w: {
+  send: (msg: string, cb?: (err?: Error) => void) => void;
+}) {
   ws = w;
 }

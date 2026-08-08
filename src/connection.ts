@@ -48,6 +48,7 @@ export function connect() {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+
     // Flush anything queued while the previous socket was down.
     resumeSending();
   });
