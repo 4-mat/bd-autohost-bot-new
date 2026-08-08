@@ -12,6 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - run: bun install
+      # bun install occasionally flakes on tarball extraction (e.g. "Fail
+      # extracting tarball for xlsx"); retry a couple of times before giving up.
+      - name: Install dependencies (with retry)
+        run: |
+          for i in 1 2 3; do
+            if bun install; then
+              exit 0
+            fi
+            echo "bun install failed (attempt $i/3), retrying..."
+            sleep 5
+          done
+          exit 1
       - run: bun run typecheck
       - run: bun test
