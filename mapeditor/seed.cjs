@@ -11,7 +11,6 @@
  * Writes:
  *   - maps/curated.json     all curated maps, converted to editor JSON
  *   - maps/index.json       manifest the editor uses to list/load maps
- *   - maps/modes.json       game-mode map pools (from src/data/gamemodes.ts)
  *
  * Volunteer .txt files are read-only here — the editor downloads edited
  * maps as .txt which you drop back into maps/ (then run `bun run maps`).
@@ -106,30 +105,9 @@ if (errors.length) {
 }
 
 // ---------------------------------------------------------------
-// 4) Write maps/curated.json + maps/index.json + maps/modes.json
+// 4) Write maps/curated.json + maps/index.json
 // ---------------------------------------------------------------
 if (!fs.existsSync(MAPS_DIR)) fs.mkdirSync(MAPS_DIR, { recursive: true });
-
-// Game-mode map pools from src/data/gamemodes.ts (used by the map browser).
-const modes = {};
-const MODE_LABELS = { ffa: 'FFA', ntr: 'NTR', jugg: 'JUGG', pvp: 'PvP', '1v1': '1v1' };
-try {
-	const modesSrc = fs.readFileSync(path.join(ROOT, 'src', 'data', 'gamemodes.ts'), 'utf8');
-	const gm = modesSrc.match(/GAMEMODE_MAPS[\s\S]*?=\s*\{([\s\S]*?)\n\};/);
-	if (gm) {
-		for (const block of gm[1].matchAll(/([A-Za-z0-9_"']+)\s*:\s*\[([\s\S]*?)\]/g)) {
-			const key = block[1].replace(/["']/g, '');
-			const names = [...block[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-			if (names.length) modes[key] = names;
-		}
-	}
-} catch (e) {
-	console.error('  ! could not read gamemodes.ts: ' + e.message);
-}
-const modeLabels = {};
-for (const k of Object.keys(modes)) modeLabels[k] = MODE_LABELS[k] || k;
-fs.writeFileSync(path.join(MAPS_DIR, 'modes.json'), JSON.stringify({ modes, labels: modeLabels }, null, 2), 'utf8');
-console.log('  + modes.json  (' + Object.keys(modes).length + ' mode pools)');
 
 fs.writeFileSync(
 	path.join(MAPS_DIR, 'curated.json'),

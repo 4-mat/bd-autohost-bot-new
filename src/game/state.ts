@@ -37,7 +37,7 @@ export const TERRAIN_COLORS: Record<number, string> = {
   [Terrain.Bone]: "#CCCCAA",
   [Terrain.Stone]: "#888888",
   [Terrain.Hearth]: "#FF6633",
-  [Terrain.Boost]: "#A855F7",
+  [Terrain.Boost]: "#AAFFAA",
 };
 
 export const TERRAIN_NAMES: Record<number, string> = {
