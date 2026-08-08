@@ -10,7 +10,7 @@ import {
   parseEffects,
   extractCombatMetadata,
 } from "../game/effects.js";
-import { startAttack } from "../game/resolve.js";
+import { startAttack, isValidTarget } from "../game/resolve.js";
 
 setWs({ send() {} });
 
@@ -109,6 +109,54 @@ function makeAbility(
 }
 
 beforeEach(() => {});
+
+// ===========================================================================
+// isValidTarget — group matching (single-target path)
+// ===========================================================================
+
+describe("isValidTarget", () => {
+  const user = () => makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+  const foe = () => makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1 });
+  const ally = () => makeEntity({ num: "P3", name: "Cara", pos: [5, 4], team: 0 });
+
+  it("'Self or Foe' accepts the user and foes but not allies", () => {
+    expect(isValidTarget(user(), user(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), foe(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), ally(), "Self or Foe")).toBe(false);
+  });
+
+  it("basic groups still behave", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Self")).toBe(true);
+    expect(isValidTarget(u, ally(), "Self")).toBe(false);
+    expect(isValidTarget(u, ally(), "Ally")).toBe(true);
+    expect(isValidTarget(u, foe(), "Ally")).toBe(false);
+    expect(isValidTarget(u, foe(), "Foe")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe")).toBe(false);
+    expect(isValidTarget(u, foe(), "Foe or Ally")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe or Ally")).toBe(true);
+    expect(isValidTarget(u, u, "Any")).toBe(true);
+  });
+
+  it("legacy 'Foe(s)' targets foes, not allies (matches AoE path)", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Foe(s)")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe(s)")).toBe(false);
+  });
+
+  it("'Allies and Self' targets allies and self", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Allies and Self")).toBe(true);
+    expect(isValidTarget(u, ally(), "Allies and Self")).toBe(true);
+    expect(isValidTarget(u, foe(), "Allies and Self")).toBe(false);
+  });
+
+  it("rejects dead targets", () => {
+    expect(
+      isValidTarget(user(), makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }), "Foe"),
+    ).toBe(false);
+  });
+});
 
 // ===========================================================================
 // extractCombatMetadata — direct unit tests

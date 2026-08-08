@@ -6,8 +6,13 @@ export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// Outbound messages are retained indefinitely while the socket is down
+// (no expiry): the 400ms chain only advances after a successful send, and
+// resumeSending() restarts it on reconnect. `resetSendQueueForTests` exists
+// for the test suite to clear the queue between tests.
 const sendQueue: Array<{ room: string; msg: string }> = [];
 let sending = false;
+let drainTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function send(room: string, msg: string) {
   sendQueue.push({ room, msg });
@@ -17,17 +22,39 @@ export function send(room: string, msg: string) {
 function drain() {
   if (!sendQueue.length) {
     sending = false;
+    drainTimer = null;
     return;
   }
   sending = true;
-  const { room, msg } = sendQueue.shift()!;
-  const prefix = room.startsWith("pm-") ? "" : `|`;
+  const item = sendQueue[0];
+  const prefix = item.room.startsWith("pm-") ? "" : `|`;
   try {
-    ws.send(`${prefix}${msg}`);
+    ws.send(`${prefix}${item.msg}`);
   } catch {
-    // WebSocket closed, drop message silently
+    // Socket unavailable (not yet open / closed). Keep the message at the
+    // front of the queue and stop draining; resumeSending() (called from
+    // the WebSocket open handler) retries once the socket is back.
+    sending = false;
+    return;
   }
-  setTimeout(drain, 400);
+  sendQueue.shift();
+  drainTimer = setTimeout(drain, 400);
+}
+
+/** Resume draining the outbound queue once the WebSocket (re)opens. */
+export function resumeSending() {
+  if (!sending) drain();
+}
+
+/**
+ * Test-only: clear the outbound queue and cancel any in-flight drain so
+ * send-queue tests start from a known state.
+ */
+export function resetSendQueueForTests() {
+  if (drainTimer) clearTimeout(drainTimer);
+  drainTimer = null;
+  sendQueue.length = 0;
+  sending = false;
 }
 
 export function sendPm(user: string, msg: string) {

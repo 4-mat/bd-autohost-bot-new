@@ -856,7 +856,13 @@ function isValidGroupTarget(
   target: Entity,
   group: string,
 ): boolean {
-  const g = group.replace(/foes/, "foe").replace(/allies/, "ally");
+  // Normalize plural/legacy spellings so the checks below match the data as
+  // written ("Foe(s)", "Self, Foes, Allies", "Allies and Self", ...).
+  const g = group
+    .replace(/foes/, "foe")
+    .replace(/allies/, "ally")
+    .replace(/foe\(s\)/, "foe")
+    .replace(/ally and self/, "self and ally");
   if (g === "self") return target.num === user.num;
   if (g === "ally")
     return target.team === user.team && target.num !== user.num;
@@ -866,9 +872,11 @@ function isValidGroupTarget(
   if (g.includes("self and ally")) return target.team === user.team;
   if (g.includes("self or ally")) return target.team === user.team;
   if (g.includes("self or foe"))
-    return target.team === user.team || target.team !== user.team;
+    return target.num === user.num || target.team !== user.team;
   if (g.includes("foe or ally")) return target.num !== user.num;
-  if (g.includes("self, foes, allies")) return true;
+  if (g.includes("tile or foe")) return target.team !== user.team;
+  if (g.includes("self, foe, ally") || g.includes("self, foe, and ally"))
+    return true;
   return false;
 }
 
