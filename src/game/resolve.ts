@@ -48,6 +48,7 @@ import {
   getPassiveRangeBonus,
   getDefenderDiceMods,
   normalizeSubweapon,
+  formatSubweapon,
   requiredSubweapons,
   type CombatMetadata,
   type EffectChoosePrompt,
@@ -313,9 +314,9 @@ function* resolveDirection(
 function subweaponGateMessage(user: Entity, ability: AbilityData): string | null {
   const requires = requiredSubweapons(ability.effect);
   if (requires.length === 0) return null;
-  const equipped = normalizeSubweapon(user.subweapon);
-  if (equipped && requires.includes(equipped)) return null;
-  return `${user.num} could not use ${ability.name}: requires the ${requires.map(capitalize).join(" or ")} subweapon${equipped ? ` (equipped: ${capitalize(equipped)})` : ""}.`;
+  const equippedId = normalizeSubweapon(user.subweapon);
+  if (equippedId && requires.includes(equippedId)) return null;
+  return `${user.num} could not use ${ability.name}: requires the ${requires.map(capitalize).join(" or ")} subweapon${equippedId ? ` (equipped: ${formatSubweapon(user.subweapon)})` : ""}.`;
 }
 
 /** Returns a failure message when an unprompted cost could not be paid. */
@@ -1164,6 +1165,44 @@ function resolveConfusionSelfDamage(
 // ---------------------------------------------------------------------------
 
 /**
+ * Build the effective dice formula for an ability's roll given parsed
+ * dice modifiers ("+N dice" / "+N dice faces" / "+N base dice").
+ * Extra dice increase the die count, extra faces increase each die's
+ * sides, and base dice are ordinary dice that happen to double on crit
+ * via the normal crit re-roll. Falls back to the raw formula when the
+ * roll can't be parsed or no modifiers apply.
+ *
+ * When `forCrit` is set, only base dice (plus "+N base dice" extras) are
+ * re-rolled -- plain "+N dice" do NOT double on crit, per the standard
+ * Battle Dome convention.
+ */
+function effectiveRollFormula(
+  roll: string,
+  combat: CombatMetadata,
+  forCrit = false,
+): string {
+  if (combat.extraDice === 0 && combat.extraDiceFaces === 0 && combat.extraBaseDice === 0) {
+    return roll;
+  }
+  const m = roll.match(/^(\d+)d(\d+)([+-]\d+)?$/);
+  if (!m) return roll;
+  // The parser accepts fractional dice mods ("+1.5 dice faces"), so round to
+  // whole dice/sides before building the NdM string -- otherwise rollDice
+  // can't parse e.g. "1d7.5" and the roll silently zeroes.
+  const count = Math.max(
+    1,
+    Math.round(
+      parseInt(m[1]) +
+        (forCrit
+          ? combat.extraBaseDice
+          : combat.extraDice + combat.extraBaseDice),
+    ),
+  );
+  const sides = Math.max(1, Math.round(parseInt(m[2]) + combat.extraDiceFaces));
+  return `${count}d${sides}${m[3] ?? ""}`;
+}
+
+/**
  * Apply ignore-clause semantics to a target's defensive stat (PD or MD).
  *
  * Order of precedence (deepest reduction wins):
@@ -1276,37 +1315,6 @@ function buildModTags(combat: CombatMetadata, roll?: string): string[] {
   for (const o of combat.ignore.other) tags.push(`Ignores ${o}`);
   if (roll) tags.push(...diceModTags(combat, roll));
   return tags;
-}
-
-/**
- * Build the effective dice formula for an ability's roll given parsed
- * dice modifiers ("+N dice" / "+N dice faces" / "+N base dice").
- * Extra dice increase the die count, extra faces increase each die's
- * sides, and base dice are ordinary dice that happen to double on crit
- * via the normal crit re-roll. Falls back to the raw formula when the
- * roll can't be parsed or no modifiers apply.
- *
- * When `forCrit` is set, only base dice (plus "+N base dice" extras) are
- * re-rolled -- plain "+N dice" do NOT double on crit, per the standard
- * Battle Dome convention.
- */
-function effectiveRollFormula(
-  roll: string,
-  combat: CombatMetadata,
-  forCrit = false,
-): string {
-  if (combat.extraDice === 0 && combat.extraDiceFaces === 0 && combat.extraBaseDice === 0) {
-    return roll;
-  }
-  const m = roll.match(/^(\d+)d(\d+)([+-]\d+)?$/);
-  if (!m) return roll;
-  const count = Math.max(
-    1,
-    parseInt(m[1]) +
-      (forCrit ? combat.extraBaseDice : combat.extraDice + combat.extraBaseDice),
-  );
-  const sides = Math.max(1, parseInt(m[2]) + combat.extraDiceFaces);
-  return `${count}d${sides}${m[3] ?? ""}`;
 }
 
 /**

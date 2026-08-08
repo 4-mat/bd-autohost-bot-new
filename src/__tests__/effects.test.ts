@@ -17,6 +17,7 @@ import {
   requiredSubweapons,
   getPassiveRangeBonus,
   getDefenderDiceMods,
+  formatSubweapon,
 } from "../game/effects.js";
 
 // ---------------------------------------------------------------------------
@@ -2060,6 +2061,14 @@ describe("getPassiveRangeBonus", () => {
     expect(getPassiveRangeBonus(e, "new moon")).toBe(1);
     expect(getPassiveRangeBonus(e, "waning")).toBe(0);
     expect(getPassiveRangeBonus(e)).toBe(0); // no phase -> branch not entered
+  });
+
+  it("formatSubweapon canonicalizes aliases for display", () => {
+    expect(formatSubweapon("PILUM")).toBe("Pilum");
+    expect(formatSubweapon("pi-lum")).toBe("Pilum");
+    expect(formatSubweapon("gladius")).toBe("Gladius");
+    expect(formatSubweapon("axe")).toBe("");
+    expect(formatSubweapon(undefined)).toBe("");
   });
 
   it("sums across multiple passive abilities", () => {

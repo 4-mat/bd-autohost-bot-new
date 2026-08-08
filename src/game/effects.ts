@@ -340,6 +340,17 @@ export function normalizeSubweapon(
 }
 
 /**
+ * Canonical display form for a subweapon value ("Pilum" / "pi-lum" ->
+ * "Pilum"). Empty string for invalid/absent values, so stale restored state
+ * never renders raw.
+ */
+export function formatSubweapon(s?: string): string {
+  const n = normalizeSubweapon(s);
+  if (!n) return "";
+  return n.charAt(0).toUpperCase() + n.slice(1);
+}
+
+/**
  * Splits a subweapon list like "Gladius or Pilum" / "Scutum" into canonical
  * lowercase ids, ignoring anything that isn't a known subweapon.
  */
