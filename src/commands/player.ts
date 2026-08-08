@@ -40,11 +40,14 @@ export function playerCommand(user: User, cmd: string, args: string) {
       const hpPct = Math.max(0, (e.curhp / e.maxhp) * 100);
       const hpBar = hpPct > 50 ? "[+]" : hpPct > 25 ? "[~]" : "[-]";
 
+      const sub = e.subweapon
+        ? `**Subweapon**: ${e.subweapon.charAt(0).toUpperCase()}${e.subweapon.slice(1)}`
+        : "";
       const lines = [
         `**${e.num} ${e.name}** -- ${e.className}/${e.weaponName} (Lv.${e.classLevel}/${e.weaponLevel})`,
         `${hpBar} **HP**: ${e.curhp}/${e.maxhp}`,
         `**ATK**: ${e.atk} | **MAG**: ${e.mag} | **PD**: ${e.pd} | **MD**: ${e.md} | **EVA**: ${e.eva} | **MP**: ${e.mp}`,
-        `**Position**: ${posToStr(e.pos[0], e.pos[1])} | **Team**: ${e.team}`,
+        `**Position**: ${posToStr(e.pos[0], e.pos[1])} | **Team**: ${e.team}${sub ? ` | ${sub}` : ""}`,
       ];
 
       if (e.statuses.length > 0) {
@@ -82,6 +85,9 @@ export function playerCommand(user: User, cmd: string, args: string) {
         `**${e.num} ${e.name}** -- Levels`,
         `Class: ${e.className} (Lv.${e.classLevel})`,
         `Weapon: ${e.weaponName} (Lv.${e.weaponLevel})`,
+        ...(e.subweapon
+          ? [`Subweapon: ${e.subweapon.charAt(0).toUpperCase()}${e.subweapon.slice(1)}`]
+          : []),
         `Abilities:`,
       ];
 

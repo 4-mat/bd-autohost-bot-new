@@ -15,6 +15,7 @@ import {
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
 import { classes, weapons } from "../data/index.js";
+import { requiredSubweapons } from "../game/effects.js";
 import { runoffOptions, tallyVotes, voteOptionsFor } from "../data/gamemodes.js";
 
 // -- Premove Mode Tracking -----------------------------------------------------
@@ -171,6 +172,25 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function cap(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Equipped-subweapon badge for Gladius (Fighter weapon) users, e.g.
+// "[Pilum]". Empty for everyone else.
+function subweaponBadge(entity: Entity): string {
+  if (!entity.subweapon) return "";
+  return ` <span style="color:#c90;font-size:10px">[${cap(entity.subweapon)}]</span>`;
+}
+
+// True when an ability has a "Requires X" clause the entity's equipped
+// subweapon doesn't satisfy -- such abilities are hidden from the buttons.
+function subweaponGated(ab: AbilityData, entity: Entity): boolean {
+  const requires = requiredSubweapons(ab.effect);
+  return requires.length > 0 && !requires.includes(entity.subweapon ?? "");
+}
+
 // -- Host Page ----------------------------------------------------------------
 
 export function buildHostPage(game: Game): string {
@@ -290,7 +310,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   ${map}${pl}
-  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${subweaponBadge(entity)}${stats}
   ${buildVotePanel(game, entity)}
   ${loadout}
   <hr>${phase}${prompt}${actions}
@@ -483,7 +503,7 @@ title="${esc(e.className)}, ${esc(e.weaponName)}">
 
     html += `
 <th style="padding:0px 8px">
-${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
+${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})${subweaponBadge(e)}
 </th>
 `;
 
@@ -575,6 +595,7 @@ function buildEntityStats(entity: Entity): string {
   html += ` <b>MD:</b> ${entity.md}`;
   html += ` <b>EVA:</b> ${entity.eva}`;
   html += ` <b>MP:</b> <b style="color:#08c">${entity.mp}</b>`;
+  if (entity.subweapon) html += ` <b>Sub:</b> ${cap(entity.subweapon)}`;
 
   if (entity.statuses.length > 0 || entity.buffs.length > 0) {
     html += `<br>`;
@@ -816,6 +837,7 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
       (entity.standardUsed || entity.movementUsed)
     )
       return false;
+    if (subweaponGated(ab, entity)) return false;
 
     return true;
   });
@@ -848,6 +870,7 @@ function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
     }
 
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;
+    if (subweaponGated(ab, entity)) return false;
 
     return true;
   });

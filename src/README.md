@@ -170,9 +170,9 @@ Character viewer commands routed by `playerCommand()`:
 | `%vl` / `%viewlevels` | Class/weapon levels, all abilities with remaining uses and cooldowns |
 | `%vi` / `%viewitems`  | Stub                                                                 |
 | `%sco`               | Combined loadout setter: `%sco <class>, <weapon>` (your own, until start) |
-| `%setclass`          | Host-only: `%setclass <entity>, <class>` — set any entity's class (any time) |
-| `%setweapon`         | Host-only: `%setweapon <entity>, <weapon>` — set any entity's weapon (any time) |
-| `%setloadout`        | Host-only: `%setloadout <entity>, <class>, <weapon>` — set any entity's loadout (any time) |
+| `%setclass`          | `%setclass <class>` — set YOUR class until the game starts |
+| `%setweapon`         | `%setweapon <weapon>` — set YOUR weapon until the game starts |
+| `%setloadout`        | `%setloadout <class>, <weapon>` — set YOUR class AND weapon until the game starts |
 | `%score`             | Score display: HP + ability usage counts                            |
 
 Uses `findEntityInGames()` to locate the calling user's entity across

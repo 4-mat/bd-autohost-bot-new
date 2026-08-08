@@ -26,12 +26,18 @@ import {
   applyEffects,
   applyEffectStream,
   extractCombatMetadata,
+  requiredSubweapons,
   type CombatMetadata,
   type EffectChoosePrompt,
   type Effect,
   type PhaseTiming,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
+
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 export interface ResolutionResult {
   messages: string[];
@@ -183,6 +189,21 @@ function* resolveAttackFlow(
   // --- Declare Attack ---
   // result.messages.push(`/me declares ${ability.name}`);
 
+  // --- Subweapon requirement gate ---
+  // "Requires Pilum" abilities may only be used while that subweapon is
+  // equipped. Fail early (before costs/targeting) so the user sees the
+  // requirement instead of a half-resolved action.
+  const requires = requiredSubweapons(ability.effect);
+  if (requires.length > 0) {
+    const equipped = user.subweapon;
+    if (!equipped || !requires.includes(equipped)) {
+      result.messages.push(
+        `${user.num} could not use ${ability.name}: requires the ${requires.map(capitalize).join(" or ")} subweapon${equipped ? ` (equipped: ${capitalize(equipped)})` : ""}.`,
+      );
+      return result;
+    }
+  }
+
   // --- Auto-deduct non-prompted costs ---
   if (ability.cost && !ability.cost.prompt) {
     if (!autoDeductCost(user, ability.cost)) {
@@ -275,7 +296,7 @@ function* resolveAttackFlow(
   // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
   // effect still rolls the highest of the two.
   const effects = parseEffects(ability.effect);
-  const combat = extractCombatMetadata(effects);
+  const combat = extractCombatMetadata(effects, user.subweapon);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   for (const target of targets) {
@@ -712,19 +733,23 @@ function* resolveSingleTarget(
 
   const userAccBonus = getStatBonus(user, "acc");
   const targetEva = getEffectiveStat(target, "eva");
+  const effectiveMr = ability.mr + combat.mrMod;
+  const critThreshold = combat.critThreshold ?? 20;
   const {
     hit,
     roll: accRoll,
     crit,
-  } = rollAccuracy(ability.mr, targetEva, userAccBonus);
+  } = rollAccuracy(effectiveMr, targetEva, userAccBonus, critThreshold);
 
+  const critNote = critThreshold !== 20 ? ` (crit on ${critThreshold}+)` : "";
   result.messages.push(
-    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
+    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${effectiveMr} + EVA ${targetEva} = ${effectiveMr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}${critNote}`,
   );
 
   // --- Hit resolves first (damage to target first) ---
   if (hit) {
-    const damageRoll = rollDice(ability.roll);
+    const effectiveRoll = effectiveRollFormula(ability.roll, combat);
+    const damageRoll = rollDice(effectiveRoll);
     const userOff = combat.ignore.atkMag
       ? 0
       : offensiveStat(user, ability.damageType);
@@ -745,10 +770,13 @@ function* resolveSingleTarget(
     let baseDamage = damageRoll.total + userOff - targetDef;
 
     if (crit) {
-      const critRoll = rollDice(ability.roll);
+      // Crit re-rolls only the base dice (+ base-dice extras); plain
+      // "+N dice" are not doubled.
+      const critFormula = effectiveRollFormula(ability.roll, combat, true);
+      const critRoll = rollDice(critFormula);
       baseDamage += critRoll.total;
       result.messages.push(
-        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}${critFormula !== effectiveRoll ? ` (${critFormula})` : ""}`,
       );
     }
 
@@ -764,10 +792,11 @@ function* resolveSingleTarget(
 
     const dmgResult = dealDamage(target, finalDamage);
     const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
+    const rollShown = effectiveRoll;
     result.messages.push(
-      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+      `  **Damage${hitLabel}**: ${rollShown}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat, ability.roll)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
     );
-    emitDamageModTrail(result.messages, combat, finalDamage);
+    emitDamageModTrail(result.messages, combat, finalDamage, ability.roll);
 
     if (dmgResult.shieldAbsorbed > 0) {
       result.messages.push(
@@ -862,6 +891,37 @@ function* resolveSingleTarget(
 // ---------------------------------------------------------------------------
 
 /**
+ * Build the effective dice formula for an ability's roll given parsed
+ * dice modifiers ("+N dice" / "+N dice faces" / "+N base dice").
+ * Extra dice increase the die count, extra faces increase each die's
+ * sides, and base dice are ordinary dice that happen to double on crit
+ * via the normal crit re-roll. Falls back to the raw formula when the
+ * roll can't be parsed or no modifiers apply.
+ *
+ * When `forCrit` is set, only base dice (plus "+N base dice" extras) are
+ * re-rolled -- plain "+N dice" do NOT double on crit, per the standard
+ * Battle Dome convention.
+ */
+function effectiveRollFormula(
+  roll: string,
+  combat: CombatMetadata,
+  forCrit = false,
+): string {
+  if (combat.extraDice === 0 && combat.extraDiceFaces === 0 && combat.extraBaseDice === 0) {
+    return roll;
+  }
+  const m = roll.match(/^(\d+)d(\d+)([+-]\d+)?$/);
+  if (!m) return roll;
+  const count = Math.max(
+    1,
+    parseInt(m[1]) +
+      (forCrit ? combat.extraBaseDice : combat.extraDice + combat.extraBaseDice),
+  );
+  const sides = Math.max(1, parseInt(m[2]) + combat.extraDiceFaces);
+  return `${count}d${sides}${m[3] ?? ""}`;
+}
+
+/**
  * Apply ignore-clause semantics to a target's defensive stat (PD or MD).
  *
  * Order of precedence (deepest reduction wins):
@@ -889,11 +949,29 @@ function applyIgnoreToDefense(
 }
 
 /**
+ * Tag strings for active dice modifiers ("+2 dice" / "+1 base dice" /
+ * "+3 dice faces"). Returns [] when the roll formula can't be parsed --
+ * the modifiers can't be applied to an unparseable roll, so showing them
+ * next to the raw formula would be misleading.
+ */
+function diceModTags(combat: CombatMetadata, roll: string): string[] {
+  if (!/^\d+d\d+([+-]\d+)?$/.test(roll.trim())) return [];
+  const tags: string[] = [];
+  if (combat.extraDice !== 0)
+    tags.push(`${combat.extraDice > 0 ? "+" : ""}${combat.extraDice} dice`);
+  if (combat.extraBaseDice !== 0)
+    tags.push(`${combat.extraBaseDice > 0 ? "+" : ""}${combat.extraBaseDice} base dice`);
+  if (combat.extraDiceFaces !== 0)
+    tags.push(`${combat.extraDiceFaces > 0 ? "+" : ""}${combat.extraDiceFaces} dice faces`);
+  return tags;
+}
+
+/**
  * Build a short trace line that the **Damage** log can append after the
  * base = dice + OFF - DEF equation, so the player can see adjustments.
  * Returns "" when no modifier changed the math.
  */
-function formatDamageModsLine(combat: CombatMetadata): string {
+function formatDamageModsLine(combat: CombatMetadata, roll: string): string {
   const parts: string[] = [];
   if (combat.ignore.atkMag) parts.push("no OFF (Ignores ATK/MAG)");
   if (combat.ignore.def) parts.push("no DEF (Ignores DEF)");
@@ -909,6 +987,7 @@ function formatDamageModsLine(combat: CombatMetadata): string {
     const sign = combat.flatDamage > 0 ? "+" : "";
     parts.push(`${sign}${combat.flatDamage} flat`);
   }
+  parts.push(...diceModTags(combat, roll));
   if (parts.length === 0) return "";
   return ` [${parts.join(", ")}]`;
 }
@@ -923,19 +1002,8 @@ function emitDamageModTrail(
   log: string[],
   combat: CombatMetadata,
   finalDamage: number,
+  roll: string,
 ): void {
-  if (
-    combat.damagePercent === 0 &&
-    combat.flatDamage === 0 &&
-    !combat.ignore.atkMag &&
-    !combat.ignore.def &&
-    !combat.ignore.halfDef &&
-    !combat.ignore.quarterDef &&
-    combat.ignore.defReduction === 0 &&
-    combat.ignore.other.length === 0 &&
-    !combat.ignore.outsideFactors
-  )
-    return;
   const tags: string[] = [];
   if (combat.damagePercent !== 0) {
     const sign = combat.damagePercent > 0 ? "+" : "";
@@ -945,6 +1013,7 @@ function emitDamageModTrail(
     const sign = combat.flatDamage > 0 ? "+" : "";
     tags.push(`${sign}${combat.flatDamage} DMG`);
   }
+  tags.push(...diceModTags(combat, roll));
   if (combat.ignore.atkMag) tags.push("Ignores ATK/MAG");
   if (combat.ignore.def) tags.push("Ignores DEF");
   else if (combat.ignore.quarterDef) tags.push("Ignores 1/4 DEF");
@@ -953,6 +1022,7 @@ function emitDamageModTrail(
     tags.push(`Ignores ${combat.ignore.defReduction} DEF`);
   if (combat.ignore.outsideFactors) tags.push("Ignores outside damage factors");
   for (const o of combat.ignore.other) tags.push(`Ignores ${o}`);
+  if (tags.length === 0) return;
   log.push(
     `  *Damage Modifiers applied:* ${tags.join(", ")} -> **${finalDamage}**`,
   );
@@ -1098,8 +1168,9 @@ function resolveSplash(
   const names = splashTargets.map((t) => t.num).join(", ");
   result.messages.push(`  **Splash ${radius}**: hits ${names}`);
 
+  const effectiveRoll = effectiveRollFormula(ability.roll, combat);
   for (const target of splashTargets) {
-    const damageRoll = rollDice(ability.roll);
+    const damageRoll = rollDice(effectiveRoll);
     const half = (v: number) => Math.floor(v / 2);
     // Splash halves defense by default per the home page ("half target
     // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores
@@ -1119,10 +1190,11 @@ function resolveSplash(
     const bleed = hasStatus(user, "bleed") ? 5 : 0;
     finalDamage = Math.max(0, finalDamage - bleed);
     const dmgResult = dealDamage(target, finalDamage);
+    const rollShown = effectiveRoll;
     result.messages.push(
-      `  **Splash Damage**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - half DEF(${targetDef})${formatDamageModsLine(combat)} -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**${bleed > 0 ? ` (Bleed -${bleed})` : ""}`,
+      `  **Splash Damage**: ${rollShown}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - half DEF(${targetDef})${formatDamageModsLine(combat, ability.roll)} -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**${bleed > 0 ? ` (Bleed -${bleed})` : ""}`,
     );
-    emitDamageModTrail(result.messages, combat, finalDamage);
+    emitDamageModTrail(result.messages, combat, finalDamage, ability.roll);
 
     if (dmgResult.shieldAbsorbed > 0) {
       result.messages.push(
