@@ -46,8 +46,8 @@ import {
   isValidTarget,
   type AttackStep,
 } from "../game/resolve.js";
-import { requiredSubweapons } from "../game/effects.js";
-import { DIRECTION_LABELS } from "../game/state.js";
+import { normalizeSubweapon, requiredSubweapons } from "../game/effects.js";
+import { DIRECTION_LABELS, formatPhase } from "../game/state.js";
 import {    normalizeVoteMode,
     pendingVoterIds,
     runoffOptions,
@@ -421,7 +421,10 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   // Subweapon requirement check ("Requires Pilum"): the ability may only
   // be used while that subweapon is equipped.
   const requires = requiredSubweapons(ability.effect);
-  if (requires.length > 0 && !requires.includes(entity.subweapon ?? "")) {
+  if (
+    requires.length > 0 &&
+    !requires.includes(normalizeSubweapon(entity.subweapon) ?? "")
+  ) {
     const equipped =
       entity.subweapon
         ? ` (equipped: ${entity.subweapon.charAt(0).toUpperCase()}${entity.subweapon.slice(1)})`
@@ -1074,7 +1077,7 @@ function handleInfo(game: Game, user: User, args: string) {
   if (!ref) {
     // Show game info
     const lines = [
-      `Game: ${game.id} | Mode: ${game.mode} | Phase: ${game.phase}`,
+      `Game: ${game.id} | Mode: ${game.mode} | Phase: ${game.phase}${game.moonPhase ? ` | Moon: ${formatPhase(game.moonPhase)}` : ""}`,
       `Host: ${game.host} | Map: ${game.mapName || "(none)"}`,
       `Players: ${game.entities.length} | Round: ${game.round}`,
     ];

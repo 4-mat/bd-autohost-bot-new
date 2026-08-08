@@ -26,6 +26,7 @@ import {
   applyEffects,
   applyEffectStream,
   extractCombatMetadata,
+  normalizeSubweapon,
   requiredSubweapons,
   type CombatMetadata,
   type EffectChoosePrompt,
@@ -195,7 +196,7 @@ function* resolveAttackFlow(
   // requirement instead of a half-resolved action.
   const requires = requiredSubweapons(ability.effect);
   if (requires.length > 0) {
-    const equipped = user.subweapon;
+    const equipped = normalizeSubweapon(user.subweapon);
     if (!equipped || !requires.includes(equipped)) {
       result.messages.push(
         `${user.num} could not use ${ability.name}: requires the ${requires.map(capitalize).join(" or ")} subweapon${equipped ? ` (equipped: ${capitalize(equipped)})` : ""}.`,
@@ -296,7 +297,7 @@ function* resolveAttackFlow(
   // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
   // effect still rolls the highest of the two.
   const effects = parseEffects(ability.effect);
-  const combat = extractCombatMetadata(effects, user.subweapon);
+  const combat = extractCombatMetadata(effects, normalizeSubweapon(user.subweapon));
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   for (const target of targets) {

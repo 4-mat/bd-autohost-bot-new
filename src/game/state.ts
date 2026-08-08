@@ -206,6 +206,56 @@ export function startingSubweapon(weaponName: string): string | undefined {
   return weaponName === "Gladius" ? "gladius" : undefined;
 }
 
+// -- Moon phases (Lunar Rod / Dark-class mechanic) ------------------------------
+// Canonical cycle, in shift order. Values are the lowercase display names with
+// spaces ("new moon", ...) -- the exact forms the effect parser ("Phase: X",
+// "New Moon: EFFECT") and evaluateCondition ("phase is X") already use.
+export const MOON_PHASE_CYCLE = [
+  "new moon",
+  "waxing",
+  "full moon",
+  "waning",
+] as const;
+export type MoonPhase = (typeof MOON_PHASE_CYCLE)[number];
+
+/** True when `p` names one of the four moon phases (case/whitespace tolerant). */
+export function normalizePhase(
+  p: string | undefined | null,
+): MoonPhase | undefined {
+  const id = toId(p ?? "");
+  return MOON_PHASE_CYCLE.find((m) => toId(m) === id);
+}
+
+/** Title-case a phase id for display ("new moon" -> "New Moon"). */
+export function formatPhase(p: string | undefined): string {
+  const norm = normalizePhase(p);
+  if (!norm) return "";
+  return norm
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** The next phase in the cycle (Waning wraps back to New Moon). */
+export function shiftMoonPhase(phase: string | undefined): MoonPhase {
+  const cur = normalizePhase(phase);
+  if (!cur) return "new moon";
+  const idx = MOON_PHASE_CYCLE.indexOf(cur);
+  return MOON_PHASE_CYCLE[(idx + 1) % MOON_PHASE_CYCLE.length];
+}
+
+/**
+ * True when a living entity carries the Lunar Phase passive (the Lunar Rod
+ * weapon's signature ability). While one is in play, the moon phase advances
+ * at the start of every turn ("Start of each turn: shift Phase... Cycle
+ * repeats").
+ */
+export function hasMoonPhaseHolder(game: Game): boolean {
+  return game.entities.some(
+    (e) => e.curhp > 0 && e.abilities.some((a) => toId(a.name) === "lunarphase"),
+  );
+}
+
 export interface PendingAction {
   type: "move" | "dash" | "attack" | "ability" | "endturn";
   ability?: AbilityData;
@@ -341,6 +391,7 @@ function serializeState(game: Game): string {
     })),
     turnIndex: game.turnIndex,
     round: game.round,
+    moonPhase: game.moonPhase,
     log: game.log,
   });
 }
@@ -375,6 +426,7 @@ export function popSnapshot(game: Game): boolean {
   }
   game.turnIndex = data.turnIndex;
   game.round = data.round;
+  game.moonPhase = data.moonPhase;
   if (data.log) game.log = data.log;
   return true;
 }
@@ -1286,6 +1338,24 @@ export function nextTurn(game: Game): {
 
   const entity = getCurrentEntity(game);
   if (!entity) return { entity: null, messages, died };
+
+  // Moon phase: the Lunar Phase passive advances the phase at the start of
+  // every turn ("Start of each turn: shift Phase... Cycle repeats"). The
+  // first turn's phase is chosen at %start (or defaults to New Moon), so the
+  // first shift here lands at the start of turn 2.
+  if (hasMoonPhaseHolder(game)) {
+    if (!game.moonPhase) {
+      game.moonPhase = "new moon";
+      messages.push(
+        `  \u{1F319} Moon phase chosen: **${formatPhase(game.moonPhase)}**.`,
+      );
+    } else {
+      game.moonPhase = shiftMoonPhase(game.moonPhase);
+      messages.push(
+        `  \u{1F319} Phase shifts to **${formatPhase(game.moonPhase)}**.`,
+      );
+    }
+  }
 
   // Reset per-turn flags
   entity.dashUsed = false;
