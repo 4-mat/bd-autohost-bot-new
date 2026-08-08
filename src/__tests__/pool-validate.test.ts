@@ -59,4 +59,17 @@ describe("applyPoolChanges", () => {
     expect(unknown).toEqual(["ghostmap"]);
     expect(data.modes.ffa).toEqual(["arena", "battledome"]);
   });
+
+  test("mixed valid and unknown changes leave pool unchanged", () => {
+    const data = base();
+    const { applied, summary, unknown } = applyPoolChanges(
+      data,
+      ["ffa|+|northstar", "ffa|+|ghostmap"],
+      valid,
+    );
+    expect(applied).toBe(false);
+    expect(unknown).toEqual(["ghostmap"]);
+    expect(summary).toEqual([]);
+    expect(data.modes.ffa).toEqual(["arena", "battledome"]);
+  });
 });

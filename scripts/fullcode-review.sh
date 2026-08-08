@@ -29,14 +29,14 @@ BASE_SHA=$(git rev-parse origin/master)
 EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
 EMPTY_SHA=$(git commit-tree "$EMPTY_TREE" -p "$BASE_SHA" -m "empty-base: empty tree for full-codebase review diff")
 git branch -f empty-base "$EMPTY_SHA"
-git push -f origin empty-base --quiet
+git push --force-with-lease origin empty-base --quiet
 echo "empty-base updated to $EMPTY_SHA"
 
 # Build a fresh branch from empty-base and re-add the requested paths.
 BRANCH="full-review-${CHUNK}"
 git checkout -B "$BRANCH" "$EMPTY_SHA"
 
-if [ -n "$2" ]; then
+if [ $# -gt 0 ]; then
   # Chunked review: restore only the listed paths from master.
   # shellcheck disable=SC2086
   git checkout origin/master -- "$@"

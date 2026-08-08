@@ -5,16 +5,18 @@ function applyPoolChanges(data, changes, valid) {
   const before = JSON.stringify(data);
   const summary = [];
   const unknown = [];
+  const ops = [];
   for (const line of changes) {
     const m = line.match(/^(ffa|ntr|jugg|pvp|1v1)\|([+-])\|([A-Za-z0-9_-]+)$/);
     if (!m) continue;
     const mode = m[1],
       op = m[2],
       name = m[3];
-    if (!valid.has(name)) {
-      unknown.push(name);
-      continue;
-    }
+    ops.push({ mode, op, name });
+    if (!valid.has(name)) unknown.push(name);
+  }
+  if (unknown.length) return { applied: false, summary, unknown };
+  for (const { mode, op, name } of ops) {
     const list = data.modes[mode] || (data.modes[mode] = []);
     if (op === "+" && !list.includes(name)) {
       list.push(name);
@@ -24,7 +26,7 @@ function applyPoolChanges(data, changes, valid) {
       summary.push("remove " + name + " from " + mode);
     }
   }
-  const applied = JSON.stringify(data) !== before && unknown.length === 0;
+  const applied = JSON.stringify(data) !== before;
   return { applied, summary, unknown };
 }
 

@@ -53,6 +53,7 @@ const out = [];
 let checked = 0;
 let fixed = 0;
 const marginsAfter = [];
+const problems = [];
 
 while (i < lines.length) {
 	const m = lines[i].match(/^\s*MAPS\.set\(\s*"([^"]+)"/);
@@ -63,7 +64,11 @@ while (i < lines.length) {
 	const block = [lines[i]];
 	let j = i + 1;
 	while (j < lines.length && !/^\}\);\s*$/.test(lines[j])) { block.push(lines[j]); j++; }
-	block.push(lines[j]); // `});` (or last line if the file is malformed)
+	if (j >= lines.length) {
+		console.error('Missing closing `});` for map "' + name + '" in ' + MAPS_TS);
+		process.exit(1);
+	}
+	block.push(lines[j]); // `});`
 
 	// Locate the grid rows: from the `grid: [` line to the closing `  ],` line.
 	const gi = block.findIndex((l) => /grid:\s*\[/.test(l));
@@ -84,9 +89,19 @@ while (i < lines.length) {
 					});
 				}
 			}
-			if (rows.length === 10 && rows[0].nums.length === 10) {
+			let valid = rows.length === 10 && rows[0].nums.length === 10;
+			if (valid) {
+				for (const r of rows) {
+					if (r.nums.length !== 10) {
+						valid = false;
+						problems.push('map "' + name + '" has a row with ' + r.nums.length + ' cells (expected 10)');
+					}
+					for (const n of r.nums) if (!(n in numToTerrain)) problems.push('map "' + name + '" uses unknown terrain id ' + n);
+				}
+			}
+			if (valid) {
 				checked++;
-				const grid = rows.map((r) => r.nums.map((n) => numToTerrain[n] || 'normal'));
+				const grid = rows.map((r) => r.nums.map((n) => numToTerrain[n]));
 				const b = bbox(grid);
 				if (b && !(b.top === b.bottom && b.left === b.right)) {
 					const height = 10 - b.top - b.bottom;
@@ -109,7 +124,7 @@ while (i < lines.length) {
 					);
 					block.splice(gi + 1, close - gi - 1, ...newRows);
 
-					const nb = bbox(shifted.map((r) => r.map((n) => numToTerrain[n] || 'normal')));
+					const nb = bbox(shifted.map((r) => r.map((n) => numToTerrain[n])));
 					marginsAfter.push(nb);
 					fixed++;
 					console.log('  ~ ' + name + '  shifted r:' + (dr > 0 ? '+' + dr : dr) + ' c:' + (dc > 0 ? '+' + dc : dc) +
@@ -124,11 +139,20 @@ while (i < lines.length) {
 	i = j + 1;
 }
 
-const text = out.join(eol) + (raw.endsWith('\n') && out[out.length - 1] !== '' ? eol : '');
-fs.writeFileSync(MAPS_TS, text, 'utf8');
+if (problems.length) {
+	console.error('Not rewriting ' + MAPS_TS + ' — invalid maps found:');
+	for (const p of problems) console.error('  ! ' + p);
+	process.exit(1);
+}
 
 // Verification: every 10x10 map should now have margins differing by at most 1.
 const bad = marginsAfter.filter((x) => Math.abs(x.top - x.bottom) > 1 || Math.abs(x.left - x.right) > 1);
 console.log('\n10x10 maps checked: ' + checked + ' | fixed: ' + fixed + ' | still badly off-center: ' + bad.length);
-if (bad.length) { for (const b of bad) console.log('  ! ' + JSON.stringify(b)); process.exit(1); }
+if (bad.length) {
+	for (const b of bad) console.log('  ! ' + JSON.stringify(b));
+	process.exit(1);
+}
+
+const text = out.join(eol) + (raw.endsWith('\n') && out[out.length - 1] !== '' ? eol : '');
+fs.writeFileSync(MAPS_TS, text, 'utf8');
 console.log('All 10x10 maps now centered. ✓');
