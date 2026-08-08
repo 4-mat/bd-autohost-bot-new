@@ -87,7 +87,7 @@ function listMaps() {
 			if (f.endsWith('.txt')) {
 				try {
 					const m = MapCore.parseTxt(fs.readFileSync(file, 'utf8'), f);
-					maps.push({ name: m.name, display: m.displayName, format: 'txt', file: f, rows: m.rows, cols: m.cols });
+					maps.push({ name: m.name, display: m.displayName, format: 'txt', file: f, rows: m.rows, cols: m.cols, modes: m.modes || [] });
 				} catch (e) { /* skip invalid volunteer map */ }
 			} else if (f.endsWith('.json')) {
 				try {

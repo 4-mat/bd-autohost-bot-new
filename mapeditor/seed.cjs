@@ -60,7 +60,7 @@ if (fs.existsSync(MAPS_DIR)) {
 	for (const f of fs.readdirSync(MAPS_DIR).filter((x) => x.endsWith('.txt')).sort()) {
 		try {
 			const m = MapCore.parseTxt(fs.readFileSync(path.join(MAPS_DIR, f), 'utf8'), f);
-			volunteers.push({ name: m.name, display: m.displayName, format: 'txt', file: f, rows: m.rows, cols: m.cols });
+			volunteers.push({ name: m.name, display: m.displayName, format: 'txt', file: f, rows: m.rows, cols: m.cols, modes: m.modes || [] });
 			console.log('  volunteer  ' + f + '  (' + m.rows + 'x' + m.cols + ' — ' + m.displayName + ')');
 		} catch (e) {
 			errors.push(String(e.message));

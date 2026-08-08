@@ -1957,8 +1957,12 @@
         let name = MC.sanitizeName(
           $("mapName").value || map.name || "untitled",
         );
+        const modes = [];
+        for (const el of $("proposeModeList").querySelectorAll("input:checked"))
+          modes.push(el.value);
         const out = MC.toJSON(map);
         out.name = name;
+        out.modes = modes;
         let txt;
         try {
           txt = MC.toTxt(out);
@@ -1966,9 +1970,6 @@
           toast(e.message, "err");
           return;
         }
-        const modes = [];
-        for (const el of $("proposeModeList").querySelectorAll("input:checked"))
-          modes.push(el.value);
         download("maps/" + name + ".txt", txt);
         const title = "Map: " + name;
         const modeLine = modes.length

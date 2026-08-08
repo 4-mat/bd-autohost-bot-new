@@ -1,12 +1,24 @@
 {
   "maps": [
     {
+      "name": "example-ntr",
+      "display": "Example NTR",
+      "format": "txt",
+      "file": "example-ntr.txt",
+      "rows": 5,
+      "cols": 5,
+      "modes": [
+        "ntr"
+      ]
+    },
+    {
       "name": "example",
       "display": "Example",
       "format": "txt",
       "file": "example.txt",
       "rows": 9,
-      "cols": 9
+      "cols": 9,
+      "modes": []
     },
     {
       "name": "diodes",
@@ -1678,7 +1690,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 4,
-      "cols": 44
+      "cols": 43
     }
   ]
 }

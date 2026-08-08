@@ -66,6 +66,32 @@
 	const MIN_DIM = 7;
 	const MAX_DIM = 60;
 
+	// Smallest allowed dimension per game mode (mirrors src/data/gamemodes.ts).
+	const GAMEMODE_MIN_SIZE = { ffa: 7, ntr: 5, jugg: 7, pvp: 7, '1v1': 7 };
+
+	// Resolve a free-form mode string to a canonical mode id (mirrors modeIdFor
+	// in src/data/gamemodes.ts — aliases like duel or 2v2 map to a pool mode).
+	const MODE_ALIASES = {
+		ffa: 'ffa', ntr: 'ntr', jugg: 'jugg', juggernaut: 'jugg', pvp: 'pvp',
+		duel: '1v1', '1v1': '1v1', '2vj': 'jugg', '3vj': 'jugg', '4vj': 'jugg',
+		pvpj: 'pvp', 'pvp juggernaut': 'pvp', pvpntr: 'ntr', 'pvp ntr': 'ntr',
+		'2v2v2': 'pvp', '4v4': 'pvp', '2v2v2v2': 'pvp'
+	};
+
+	function modeIdFor(mode) {
+		const key = String(mode).trim().toLowerCase();
+		if (MODE_ALIASES[key]) return MODE_ALIASES[key];
+		if (/^\d+v\d+$/.test(key)) return 'pvp';
+		return undefined;
+	}
+
+	// Smallest allowed dimension for a map declaring the given modes (mirrors
+	// minDimFor in src/data/parse-map-file.ts — NTR maps may be 5x5, others 7x7).
+	function minDimFor(modes) {
+		if (!modes || !modes.length) return MIN_DIM;
+		return Math.max(...modes.map((m) => GAMEMODE_MIN_SIZE[m] || MIN_DIM));
+	}
+
 	function rowLabel(i) {
 		return String.fromCharCode(65 + i);
 	}
@@ -161,10 +187,14 @@
 			}
 		}
 		const name = sanitizeName(map.name);
+		const modes = Array.isArray(map.modes)
+			? map.modes.map(modeIdFor).filter(Boolean).filter((m, i, a) => a.indexOf(m) === i)
+			: [];
 		return {
 			name,
 			displayName: (map.displayName && String(map.displayName).trim()) || displayFromName(name),
-			rows, cols, tiles, tokens
+			rows, cols, tiles, tokens,
+			modes
 		};
 	}
 
@@ -273,6 +303,7 @@
 		if (!text) throw new Error(file + ':0: no content');
 		let name = '';
 		let disp;
+		const modes = [];
 		const rows = [];
 		let n = 0;
 
@@ -281,7 +312,7 @@
 			const line = raw.trim();
 			if (!line || line.startsWith('#')) continue;
 
-			const head = line.match(/^(name|display)\s*:\s*(.*)$/);
+			const head = line.match(/^(name|display|modes)\s*:\s*(.*)$/);
 			if (head) {
 				const val = head[2].trim();
 				if (head[1] === 'name') {
@@ -292,9 +323,16 @@
 					if (/^gen\d*$/.test(name)) {
 						throw new Error(file + ':' + n + ': "' + name + '" is reserved for %setmap gen (procedural maps)');
 					}
-				} else {
+				} else if (head[1] === 'display') {
 					disp = val;
 					if (!disp || disp.length > 60) throw new Error(file + ':' + n + ': display name must be 1-60 chars');
+				} else {
+					for (const raw of val.split(/[\s,]+/).filter(Boolean)) {
+						const id = modeIdFor(raw);
+						if (!id) throw new Error(file + ':' + n + ': unknown game mode "' + raw + '" — use ffa, ntr, jugg, pvp or 1v1');
+						if (modes.indexOf(id) === -1) modes.push(id);
+					}
+					if (!modes.length) throw new Error(file + ':' + n + ': modes list is empty');
 				}
 				continue;
 			}
@@ -303,13 +341,14 @@
 		}
 
 		if (!name) throw new Error(file + ':0: missing a `name: <id>` line');
-		if (rows.length < MIN_DIM || rows.length > MAX_DIM) {
-			throw new Error(file + ':0: map has ' + rows.length + ' row(s), need ' + MIN_DIM + '-' + MAX_DIM);
+		const minDim = minDimFor(modes);
+		if (rows.length < minDim || rows.length > MAX_DIM) {
+			throw new Error(file + ':0: map has ' + rows.length + ' row(s), need ' + minDim + '-' + MAX_DIM);
 		}
 
 		const cols = rows[0].text.length;
-		if (cols < MIN_DIM || cols > MAX_DIM) {
-			throw new Error(file + ':' + rows[0].line + ': map has ' + cols + ' columns, need ' + MIN_DIM + '-' + MAX_DIM);
+		if (cols < minDim || cols > MAX_DIM) {
+			throw new Error(file + ':' + rows[0].line + ': map has ' + cols + ' columns, need ' + minDim + '-' + MAX_DIM);
 		}
 
 		const tiles = rows.map(({ text, line }) => {
@@ -325,7 +364,7 @@
 			});
 		});
 
-		return normalizeMap({ name, displayName: disp || displayFromName(name), rows: tiles.length, cols, tiles, tokens: {} });
+		return normalizeMap({ name, displayName: disp || displayFromName(name), rows: tiles.length, cols, tiles, tokens: {}, modes });
 	}
 
 	// ------------------------------------------------------------------
@@ -401,8 +440,9 @@
 	 */
 	function toTxt(map) {
 		map = normalizeMap(map);
-		if (map.rows < MIN_DIM || map.cols < MIN_DIM) {
-			throw new Error('Volunteer maps must be at least ' + MIN_DIM + 'x' + MIN_DIM + ' — this map is ' + map.rows + 'x' + map.cols);
+		const minDim = minDimFor(map.modes);
+		if (map.rows < minDim || map.cols < minDim) {
+			throw new Error('Volunteer maps must be at least ' + minDim + 'x' + minDim + ' — this map is ' + map.rows + 'x' + map.cols);
 		}
 		const name = sanitizeName(map.name);
 		const display = (map.displayName && String(map.displayName).trim()) || displayFromName(name);
@@ -410,6 +450,7 @@
 		lines.push('# Battle Dome volunteer map — made with the map editor');
 		lines.push('name: ' + name);
 		lines.push('display: ' + String(display).slice(0, 60));
+		if (map.modes && map.modes.length) lines.push('modes: ' + map.modes.join(', '));
 		for (let r = 0; r < map.rows; r++) {
 			let row = '';
 			for (let c = 0; c < map.cols; c++) {
@@ -529,6 +570,9 @@ function esc(s) {
 		COLOR_TO_TERRAIN,
 		MIN_DIM,
 		MAX_DIM,
+		GAMEMODE_MIN_SIZE,
+		modeIdFor,
+		minDimFor,
 		rowLabel,
 		colLabel,
 		sanitizeName,
