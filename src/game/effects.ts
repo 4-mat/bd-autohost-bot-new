@@ -128,6 +128,29 @@ export interface ChoosePhaseEffect {
   type: "choosePhase";
 }
 
+/** "+N Range" (Lunar Phase New Moon) -- extends the user's ability ranges. */
+export interface RangeModEffect {
+  type: "rangeMod";
+  amount: number;
+}
+
+/** "-N dice on attacks targeting user" (Lunar Phase Full Moon) -- defender-side. */
+export interface TargetingDiceModEffect {
+  type: "targetingDiceMod";
+  amount: number;
+}
+
+/**
+ * "Two effects if user has 2 Phases" (Fatal Moonlight) -- marker. The actual
+ * double application is driven by evaluateCondition: while the user holds a
+ * chosen 2nd phase (entity.phaseChoice), every "phase is X" branch whose
+ * phase matches the current *or* chosen phase fires, so two phase effects
+ * land.
+ */
+export interface DoubleEffectsEffect {
+  type: "doubleEffects";
+}
+
 export interface DelayLandEffect {
   type: "delayLand";
 }
@@ -215,6 +238,9 @@ export type Effect =
   | PhaseEffect
   | SkipPhaseShiftEffect
   | ChoosePhaseEffect
+  | RangeModEffect
+  | TargetingDiceModEffect
+  | DoubleEffectsEffect
   | DelayLandEffect
   | MultiHitMod
   | TileEffect
@@ -645,6 +671,14 @@ function parseClause(clause: string): Effect[] {
     return effects;
   }
 
+  // "Two effects if user has 2 Phases" (Fatal Moonlight header) -- marker.
+  // The double-application itself is driven by evaluateCondition matching
+  // the user's chosen 2nd phase, so no runtime behavior lives here.
+  if (/^two effects? if (?:the )?user has (?:2|two) phases?$/.test(lower)) {
+    effects.push({ type: "doubleEffects" });
+    return effects;
+  }
+
   // Phase slash-combo: "New/Full Moon: EFFECT" / "Waxing/Waning: EFFECT" --
   // two phases share one branch; the other two are the implicit else. The
   // else can arrive either as an inline "... Otherwise: Y" (Harvest Moon's
@@ -760,6 +794,34 @@ function parseClause(clause: string): Effect[] {
   }
 
   // Crit threshold: "Crit on 18+" / "Crit on 14+" -- lowers the roll
+  // Range modifier: "+1 Range" (Lunar Phase New Moon). A standing passive
+  // bonus that extends every range by the given amount; consumed statically
+  // by getPassiveRangeBonus during targeting.
+  const rangeModMatch = lower.match(/^([+-])\s*(\d+)\s+range$/);
+  if (rangeModMatch) {
+    effects.push({
+      type: "rangeMod",
+      amount: (rangeModMatch[1] === "-" ? -1 : 1) * parseInt(rangeModMatch[2]),
+    });
+    return effects;
+  }
+
+  // Defender-side dice penalty: "-N dice on attacks targeting user" (Lunar
+  // Phase Full Moon). Applies to the ATTACKER's roll when this entity is the
+  // target; resolve.ts folds it into the per-target combat metadata.
+  const targetingDiceMatch = lower.match(
+    /^([+-])\s*(\d+(?:\.\d+)?)\s+dice\s+on\s+attacks?\s+targeting\s+(?:user|self)$/,
+  );
+  if (targetingDiceMatch) {
+    effects.push({
+      type: "targetingDiceMod",
+      amount:
+        (targetingDiceMatch[1] === "-" ? -1 : 1) *
+        parseFloat(targetingDiceMatch[2]),
+    });
+    return effects;
+  }
+
   // needed to crit from the engine default of 20.
   const critModMatch = lower.match(/^crit\s+on\s+(\d+)\+?$/);
   if (critModMatch) {
@@ -1366,7 +1428,16 @@ export function isApexActive(
   // inBeam helper, so beam is handled separately below (with its own
   // centerline LOS check). For all other range types, require the target
   // to be in range (handles LOS).
-  if (type !== "beam" && !inRange(game, user.pos, target.pos, ability.range)) {
+  if (
+    type !== "beam" &&
+    !inRange(
+      game,
+      user.pos,
+      target.pos,
+      ability.range,
+      getPassiveRangeBonus(user, game.moonPhase),
+    )
+  ) {
     return false;
   }
 
@@ -1492,7 +1563,15 @@ export function evaluateCondition(
   const phaseMatch = lower.match(/^phase is (new moon|waxing|full moon|waning)$/);
   if (phaseMatch) {
     const current = (moonPhase ?? "new moon").toLowerCase().trim();
-    return current === phaseMatch[1] ? "then" : "else";
+    const second = (user.phaseChoice ?? "").toLowerCase().trim();
+    // The user's chosen 2nd Phase also counts. General rule behind Fatal
+    // Moonlight's "Two effects if user has 2 Phases": while a 2nd phase is
+    // held, BOTH the active phase's branch and the chosen phase's branch
+    // fire for every phase-gated ability (the passive's own standing mods
+    // stay single-phase via extractCombatMetadata).
+    return current === phaseMatch[1] || second === phaseMatch[1]
+      ? "then"
+      : "else";
   }
 
   // Phase slash-combo condition ("phase is new moon or full moon"), generated
@@ -1503,7 +1582,11 @@ export function evaluateCondition(
   );
   if (phaseOrMatch) {
     const current = (moonPhase ?? "new moon").toLowerCase().trim();
-    return current === phaseOrMatch[1] || current === phaseOrMatch[2]
+    const second = (user.phaseChoice ?? "").toLowerCase().trim();
+    return current === phaseOrMatch[1] ||
+      current === phaseOrMatch[2] ||
+      second === phaseOrMatch[1] ||
+      second === phaseOrMatch[2]
       ? "then"
       : "else";
   }
@@ -1883,6 +1966,24 @@ export function* applyEffectStream(
         // turn boundary. nextTurn consumes (resets) the flag.
         game.skipMoonPhaseShift = true;
         messages.push(`  No Phase shift next turn.`);
+        break;
+      }
+
+      case "rangeMod": {
+        // Standing passive bonus ("+N Range") -- consumed statically by
+        // getPassiveRangeBonus during targeting; nothing to stream.
+        break;
+      }
+
+      case "targetingDiceMod": {
+        // Defender-side dice penalty -- consumed statically by
+        // getDefenderDiceMods when this entity is attacked.
+        break;
+      }
+
+      case "doubleEffects": {
+        // Fatal Moonlight marker: two effects fire while the user holds a
+        // 2nd Phase (evaluateCondition matches both phases). No-op here.
         break;
       }
 
@@ -2345,6 +2446,12 @@ function summariseEffect(eff: Effect): string {
       return "choose another phase";
     case "skipPhaseShift":
       return "no phase shift next turn";
+    case "rangeMod":
+      return `${eff.amount > 0 ? "+" : ""}${eff.amount} range`;
+    case "targetingDiceMod":
+      return `${eff.amount > 0 ? "+" : ""}${eff.amount} dice on attacks targeting user`;
+    case "doubleEffects":
+      return "two effects if user has 2 phases";
     case "multiHit":
       return `multi-hit ${eff.hits}`;
     case "apex":
@@ -2471,6 +2578,85 @@ export interface CombatIgnoreMetadata {
   outsideFactors: boolean;
   /** Anything else we don't model yet, surfaced to the log. */
   other: string[];
+}
+
+/**
+ * Walk an effect tree collecting standing-passive mods, descending only into
+ * branches that are knowable statically:
+ *  - "phase is X" / "phase is X or Y" conditionals: descend only if the
+ *    current moon phase matches (the else-branch is the complement, which is
+ *    out of scope for standing-passive scans)
+ *  - everything else that gates on runtime state (If/Apex/Thirst/Per/Trigger/
+ *    Choose) is skipped, matching mergeCombatMetadata's conservative rule so
+ *    gated mods never count as unconditional
+ */
+function walkPhaseAware(
+  effects: Effect[],
+  moonPhase: string | undefined,
+  visit: (e: Effect) => void,
+): void {
+  for (const e of effects) {
+    if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
+      const want = e.condition
+        .slice("phase is ".length)
+        .split(" or ")
+        .map((s) => s.trim());
+      if (moonPhase && want.includes(moonPhase)) {
+        walkPhaseAware(e.thenEffects, moonPhase, visit);
+      }
+      continue;
+    }
+    if (
+      e.type === "conditional" ||
+      e.type === "per" ||
+      e.type === "trigger" ||
+      e.type === "apex" ||
+      e.type === "thirst" ||
+      e.type === "choose"
+    ) {
+      continue;
+    }
+    visit(e);
+  }
+}
+
+/**
+ * Sum the "+N Range" standing bonus from the entity's Passive abilities,
+ * gated on the current moon phase (Lunar Phase's "New Moon: +1 Range").
+ * resolve.ts / pages.ts / %checkrange use this to extend targeting ranges.
+ */
+export function getPassiveRangeBonus(
+  user: Entity,
+  moonPhase?: string,
+): number {
+  let bonus = 0;
+  for (const a of user.abilities) {
+    if (a.actionType !== "Passive") continue;
+    walkPhaseAware(parseEffects(a.effect), moonPhase, (e) => {
+      if (e.type === "rangeMod") bonus += e.amount;
+    });
+  }
+  return bonus;
+}
+
+/**
+ * Sum the "-N dice on attacks targeting user" penalty from the entity's
+ * Passive abilities, gated on the current moon phase (Lunar Phase's "Full
+ * Moon: -1 dice on attacks targeting user"). resolveAttackFlow folds this
+ * into the attacker's roll for each target that carries it.
+ */
+export function getDefenderDiceMods(
+  entity: Entity,
+  moonPhase?: string,
+): number {
+  let mod = 0;
+  for (const a of entity.abilities) {
+    if (a.actionType !== "Passive") continue;
+    walkPhaseAware(parseEffects(a.effect), moonPhase, (e) => {
+      if (e.type === "targetingDiceMod") mod += e.amount;
+    });
+  }
+  return mod;
 }
 
 export function extractCombatMetadata(

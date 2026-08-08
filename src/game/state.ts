@@ -552,20 +552,24 @@ export function hasLineOfSight(
   return true;
 }
 
-// Check if target is in range of ability
+// Check if target is in range of ability. `bonus` extends the range by a
+// flat amount (e.g. Lunar Phase's "+1 Range" passive bonus); it is added to
+// the numeric range of every measured type and to melee (treated as range 1).
+// Global/Varies are unaffected.
 export function inRange(
   game: Game,
   from: [number, number],
   to: [number, number],
   range: string,
+  bonus = 0,
 ): boolean {
   const rangeStr = range.toLowerCase().trim();
 
   if (rangeStr === "" || rangeStr === "varies") return false;
 
-  // Melee: 8 adjacent tiles (Chebyshev distance 1)
+  // Melee: 8 adjacent tiles (Chebyshev distance 1 + bonus)
   if (rangeStr === "melee") {
-    return chebyshev(from, to) <= 1;
+    return chebyshev(from, to) <= 1 + bonus;
   }
 
   if (rangeStr === "global") return true;
@@ -573,56 +577,56 @@ export function inRange(
   // Burst X: square area, X tiles out from each side (Chebyshev <= X)
   const burstMatch = rangeStr.match(/^burst\s*(\d+)/);
   if (burstMatch) {
-    const r = parseInt(burstMatch[1]);
+    const r = parseInt(burstMatch[1]) + bonus;
     return chebyshev(from, to) <= r;
   }
 
   // Star X: all tiles of Range X (Manhattan <= X with LOS)
   const starMatch = rangeStr.match(/^star\s*(\d+)/);
   if (starMatch) {
-    const r = parseInt(starMatch[1]);
+    const r = parseInt(starMatch[1]) + bonus;
     return manhattan(from, to) <= r && hasLineOfSight(game, from, to);
   }
 
   // Range X: Manhattan distance with LOS
   const rangeMatch = rangeStr.match(/^range\s*(\d+)/);
   if (rangeMatch) {
-    const r = parseInt(rangeMatch[1]);
+    const r = parseInt(rangeMatch[1]) + bonus;
     return manhattan(from, to) <= r && hasLineOfSight(game, from, to);
   }
 
   // Homing X: Manhattan distance, no LOS needed (curves around)
   const homingMatch = rangeStr.match(/^homing\s*(\d+)/);
   if (homingMatch) {
-    const r = parseInt(homingMatch[1]);
+    const r = parseInt(homingMatch[1]) + bonus;
     return manhattan(from, to) <= r;
   }
 
   // Line X: cardinal line or diagonal (X/2 rounded up)
   const lineMatch = rangeStr.match(/^line\s*(\d+)/);
   if (lineMatch) {
-    const r = parseInt(lineMatch[1]);
+    const r = parseInt(lineMatch[1]) + bonus;
     return onLine(from, to, r) && hasLineOfSight(game, from, to);
   }
 
   // Pierce X: same as Line but AoE along the line
   const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
   if (pierceMatch) {
-    const r = parseInt(pierceMatch[1]);
+    const r = parseInt(pierceMatch[1]) + bonus;
     return onLine(from, to, r) && hasLineOfSight(game, from, to);
   }
 
   // Beam X: 3 tiles wide, X tiles deep
   const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
   if (beamMatch) {
-    const r = parseInt(beamMatch[1]);
+    const r = parseInt(beamMatch[1]) + bonus;
     return inBeam(game, from, to, r);
   }
 
   // Cone X: triangle area in front in a cardinal direction
   const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
   if (coneMatch) {
-    const r = parseInt(coneMatch[1]);
+    const r = parseInt(coneMatch[1]) + bonus;
     return inCone(from, to, r);
   }
 

@@ -15,6 +15,8 @@ import {
   isThirstActive,
   extractCombatMetadata,
   requiredSubweapons,
+  getPassiveRangeBonus,
+  getDefenderDiceMods,
 } from "../game/effects.js";
 
 // ---------------------------------------------------------------------------
@@ -1996,5 +1998,176 @@ describe("applyEffectStream: crit/dice/MR mods log naturally", () => {
     expect(messages.some((m) => m.toLowerCase().includes("miss rate -1"))).toBe(
       true,
     );
+  });
+});
+
+// =============================================================================
+// Lunar Phase: range / defender-dice / double-effects clauses
+// =============================================================================
+
+describe("Lunar Phase clause parsing", () => {
+  it("parses +N Range as a rangeMod", () => {
+    const effects = parseEffects("+1 Range");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("rangeMod");
+    if (effects[0].type === "rangeMod") expect(effects[0].amount).toBe(1);
+  });
+
+  it("parses a phase-gated +N Range inside New Moon", () => {
+    const effects = parseEffects("New Moon: +1 Range.");
+    expect(effects[0].type).toBe("conditional");
+    if (effects[0].type !== "conditional") return;
+    expect(effects[0].condition).toBe("phase is new moon");
+    expect(effects[0].thenEffects[0].type).toBe("rangeMod");
+  });
+
+  it("parses -N dice on attacks targeting user as a targetingDiceMod", () => {
+    const effects = parseEffects("-1 dice on attacks targeting user");
+    expect(effects[0].type).toBe("targetingDiceMod");
+    if (effects[0].type !== "targetingDiceMod") return;
+    expect(effects[0].amount).toBe(-1);
+  });
+
+  it("parses the Fatal Moonlight header as a doubleEffects marker", () => {
+    const effects = parseEffects("Two effects if user has 2 Phases");
+    expect(effects[0].type).toBe("doubleEffects");
+  });
+
+  it("parses the full real Lunar Phase passive without unknowns", () => {
+    const effects = parseEffects(
+      "New Moon: +1 Range. Waxing: +2 dice faces. Full Moon: -1 dice on attacks targeting user. Waning: +1 dice.",
+    );
+    expect(effects.some((e) => e.type === "unknown")).toBe(false);
+    expect(effects.map((e) => e.type)).toEqual([
+      "conditional",
+      "conditional",
+      "conditional",
+      "conditional",
+    ]);
+  });
+});
+
+describe("getPassiveRangeBonus", () => {
+  it("grants +1 Range while the phase is New Moon", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range.",
+      }),
+    ];
+    expect(getPassiveRangeBonus(e, "new moon")).toBe(1);
+    expect(getPassiveRangeBonus(e, "waning")).toBe(0);
+    expect(getPassiveRangeBonus(e)).toBe(0); // no phase -> branch not entered
+  });
+
+  it("sums across multiple passive abilities", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range.",
+      }),
+      makeAbility({ name: "Longer Reach", actionType: "Passive", effect: "+2 Range" }),
+    ];
+    expect(getPassiveRangeBonus(e, "new moon")).toBe(3);
+  });
+});
+
+describe("getDefenderDiceMods", () => {
+  it("penalizes dice while the phase is Full Moon", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Full Moon: -1 dice on attacks targeting user.",
+      }),
+    ];
+    expect(getDefenderDiceMods(e, "full moon")).toBe(-1);
+    expect(getDefenderDiceMods(e, "new moon")).toBe(0);
+  });
+});
+
+describe("evaluateCondition: chosen 2nd Phase (two effects)", () => {
+  it("matches the chosen 2nd phase alongside the active phase", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    user.phaseChoice = "waning";
+    expect(evaluateCondition("phase is waning", user, user, "new moon")).toBe(
+      "then",
+    );
+    expect(evaluateCondition("phase is new moon", user, user, "new moon")).toBe(
+      "then",
+    );
+    expect(evaluateCondition("phase is waning", user, user, "waning")).toBe(
+      "then",
+    );
+    expect(evaluateCondition("phase is waxing", user, user, "new moon")).toBe(
+      "else",
+    );
+  });
+
+  it("slash-combo conditions also accept the chosen 2nd phase", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    user.phaseChoice = "waning";
+    expect(
+      evaluateCondition("phase is new moon or waning", user, user, "new moon"),
+    ).toBe("then");
+    expect(
+      evaluateCondition("phase is waxing or waning", user, user, "new moon"),
+    ).toBe("then");
+    expect(
+      evaluateCondition("phase is waxing or full moon", user, user, "new moon"),
+    ).toBe("else");
+  });
+
+  it("does not match other phases without a 2nd phase", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    expect(evaluateCondition("phase is waning", user, user, "new moon")).toBe(
+      "else",
+    );
+  });
+
+  it("applyEffects fires both phase branches while a 2nd phase is held", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    user.phaseChoice = "waning";
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    const ability = makeAbility({
+      name: "Fatal Moonlight",
+      effect: "New Moon: +1 dice. Waning: +2 dice faces.",
+    });
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+    expect(messages.some((m) => m.includes("+1 dice"))).toBe(true);
+    expect(messages.some((m) => m.includes("+2 dice faces"))).toBe(true);
+  });
+
+  it("applyEffects fires only the active phase's branch without a 2nd phase", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    const ability = makeAbility({
+      name: "Fatal Moonlight",
+      effect: "New Moon: +1 dice. Waning: +2 dice faces.",
+    });
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+    expect(messages.some((m) => m.includes("+1 dice"))).toBe(true);
+    expect(messages.some((m) => m.includes("+2 dice faces"))).toBe(false);
   });
 });

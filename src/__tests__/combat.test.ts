@@ -710,6 +710,149 @@ describe("resolveAttackFlow: damage mods surface in the log", () => {
 });
 
 // ===========================================================================
+// Lunar Phase: range bonus (New Moon) and defender dice penalty (Full Moon)
+// ===========================================================================
+
+function driveAttack(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  targetNum: string,
+): string {
+  const step = startAttack(game, user, ability, targetNum);
+  const out: string[] = [];
+  if (step.done) out.push(...step.result.messages);
+  let lastStepDone = step.done;
+  let safety = 0;
+  while (user.pendingResolution && safety++ < 50) {
+    const flow = user.pendingResolution;
+    const step2 = flow.next("0");
+    if (step2.done) {
+      user.pendingResolution = undefined;
+      user.pendingPromptKind = undefined;
+      out.push(...step2.value.messages);
+      lastStepDone = true;
+      break;
+    }
+  }
+  expect(lastStepDone).toBe(true);
+  return out.join("\n");
+}
+
+describe("resolveAttackFlow: New Moon range bonus", () => {
+  function lunaRodUser(): Entity {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    user.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range.",
+      }),
+    ];
+    return user;
+  }
+
+  it("reaches one tile further with +1 Range during New Moon", () => {
+    const user = lunaRodUser();
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 7], // two tiles south -- out of plain melee reach
+      team: 1,
+      eva: 0,
+    });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    const ability = makeAbility({
+      name: "Strike",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    expect(log).toContain("**Accuracy**");
+  });
+
+  it("cannot reach two tiles away without the New Moon bonus", () => {
+    const user = lunaRodUser();
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 7],
+      team: 1,
+      eva: 0,
+    });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "waning"; // no range bonus
+    const ability = makeAbility({
+      name: "Strike",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    expect(log).not.toContain("**Accuracy**");
+    expect(log).not.toContain("**Damage**");
+  });
+});
+
+describe("resolveAttackFlow: defender Full Moon dice penalty", () => {
+  function lunaRodTarget(): Entity {
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    target.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Full Moon: -1 dice on attacks targeting user.",
+      }),
+    ];
+    return target;
+  }
+
+  it("rolls one fewer dice while the defender is under Full Moon", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = lunaRodTarget();
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "full moon";
+    user.abilities = [];
+    const ability = makeAbility({
+      name: "Strike",
+      range: "Melee",
+      mr: 0,
+      roll: "2d1+0",
+      effect: "",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    expect(log).toContain("1d1+0");
+  });
+
+  it("keeps the full dice pool when the phase is not Full Moon", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = lunaRodTarget();
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    user.abilities = [];
+    const ability = makeAbility({
+      name: "Strike",
+      range: "Melee",
+      mr: 0,
+      roll: "2d1+0",
+      effect: "",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    expect(log).toContain("2d1+0");
+  });
+});
+
+// ===========================================================================
 // Splash: integration of resolveSplash through resolveAttackFlow
 // ===========================================================================
 
