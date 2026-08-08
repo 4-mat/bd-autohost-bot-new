@@ -591,7 +591,7 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})${sub
 
   html += `
 <tr style="min-height:22px">
-<td colspan="10" style="text-align:center">
+<td colspan="11" style="text-align:center">
 <b>
 Turn Order: ${turnParts.map(esc).join(", ")}
 </b>
