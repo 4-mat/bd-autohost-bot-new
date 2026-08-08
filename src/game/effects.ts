@@ -31,6 +31,12 @@ export interface StatMod {
   amount: number;
   rounds?: number;
   percent?: number;
+  /**
+   * Who receives the stat mod: "self" (the ability user) or "target".
+   * Absent (legacy hand-built effects) means target, matching the old
+   * behaviour.
+   */
+  subject?: "self" | "target";
 }
 
 export interface Displacement {
@@ -538,6 +544,18 @@ function parseStatMods(lower: string): Effect[] {
   // Also: "+N STAT" without duration
   // Also: "gain +N STAT/M"
 
+  // Clause-level subject: a stat-mod clause is a self-buff ("gain +3 ATK/1"
+  // and the common bare "+3 ATK/1", e.g. Fantasia's Choose or "This turn:
+  // +2 MP") unless the clause opens with a target recipient marker
+  // ("inflict -3 DEF/1", "target -3 MP/1", "Targets: -25% damage", "Foes
+  // in Star 3: ..."). "target" inside a condition ("targets at full HP:
+  // +5 damage") stays a self-buff.
+  let subject: "self" | "target" = "self";
+  if (/\binflict/.test(lower)) subject = "target";
+  else if (/^targets?\s*:?\s*[-+]\s*\d/.test(lower)) subject = "target";
+  else if (/^targets?\s+[-+]\s*\d/.test(lower)) subject = "target";
+  else if (/^foes?\s+in\b/.test(lower)) subject = "target";
+
   const statRegex =
     /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range)\s*(?:\/\s*(\d+))?/g;
   let match;
@@ -561,6 +579,7 @@ function parseStatMods(lower: string): Effect[] {
         amount: 0,
         percent: sign * value,
         rounds,
+        subject,
       });
     } else {
       effects.push({
@@ -568,6 +587,7 @@ function parseStatMods(lower: string): Effect[] {
         stat,
         amount: sign * value,
         rounds,
+        subject,
       });
     }
   }
@@ -1799,8 +1819,10 @@ export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
       // because the regex matches "damage" / "dmg" as a stat name and
       // folds them onto the dmg alias. Those are damage modifiers, not
       // self-buffs, so the resolve layer reads them here. The
-      // buff/debuff still lands on `target.buffs` so legacy code that
-      // scans entity.buffs for damage modifiers keeps working too.
+      // buff/debuff still lands on entity.buffs (self-buffs on the
+      // user, target debuffs on the target via `subject`) so legacy
+      // code that scans entity.buffs for damage modifiers keeps
+      // working too.
       if (e.stat === "dmg") {
         // parseStatMods bakes the sign into percent / amount, so a
         // debuff for "-10% damage" arrives here with percent = -10.
