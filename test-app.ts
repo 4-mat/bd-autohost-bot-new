@@ -1294,6 +1294,42 @@ function showToast(text, tone) {
   setTimeout(() => t.remove(), 4000);
 }
 
+let audioCtx = null;
+
+function unlockAudio() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      return;
+    }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+window.addEventListener('pointerdown', unlockAudio, { once: true });
+window.addEventListener('keydown', unlockAudio, { once: true });
+
+function beep() {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  try {
+    const t = audioCtx.currentTime;
+    [660, 880].forEach((f, i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.type = 'sine';
+      o.frequency.value = f;
+      const s = t + i * 0.18;
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(0.25, s + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.15);
+      o.start(s);
+      o.stop(s + 0.18);
+    });
+  } catch (e) {}
+}
+
 function handleTurn(msg) {
   const e = msg.entity;
   const el = document.getElementById('turn-indicator');
@@ -1309,11 +1345,12 @@ function handleTurn(msg) {
     return;
   }
   lastTurn = key;
-  if (msg.yours && isMobile()) {
-    showToast('Your turn: ' + label, true);
-    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
-  }
   if (msg.yours) {
+    beep();
+    if (isMobile()) {
+      showToast('Your turn: ' + label, true);
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    }
     addLine('action', tabLink('player', 'Open your tab'), 'Your turn');
   }
 }
