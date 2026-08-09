@@ -46,6 +46,11 @@ export function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** Only run `new Function` on text that is clearly a plain object literal. */
+function looksLikeObjectLiteral(text: string): boolean {
+  return /^\{[\s\S]*\}$/.test(text.trim());
+}
+
 function primitive(v: unknown): string {
   if (typeof v === "string") return JSON.stringify(v);
   if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -118,7 +123,7 @@ export function serializeBlock(
   const body = serializeObject(entry, keys, 2);
   return [
     `  const ${varName}: ${type} = ${body};`,
-    `  ${setter}.set(toId("${entry.name}"), ${varName});`,
+    `  ${setter}.set(toId(${primitive(entry.name)}), ${varName});`,
   ].join("\n");
 }
 
@@ -169,7 +174,17 @@ export function findBlocks(text: string): Block[] {
         if (ch === inStr) inStr = null;
         continue;
       }
-      if (ch === "'" || ch === '"') { inStr = ch; continue; }
+      if (ch === "/" && text[i + 1] === "/") {
+        const nl = text.indexOf("\n", i);
+        i = nl === -1 ? text.length : nl;
+        continue;
+      }
+      if (ch === "/" && text[i + 1] === "*") {
+        const close = text.indexOf("*/", i + 2);
+        i = close === -1 ? text.length : close + 1;
+        continue;
+      }
+      if (ch === "'" || ch === '"' || ch === "`") { inStr = ch; continue; }
       if (ch === "{") depth++;
       else if (ch === "}") { depth--; if (depth === 0) break; }
     }
@@ -187,7 +202,7 @@ export function findBlocks(text: string): Block[] {
       chunkEnd += setMatch[0].length;
     }
     const literalText = text.slice(literalStart, literalEnd + 1);
-    if (!name) {
+    if (!name && looksLikeObjectLiteral(literalText)) {
       try {
         const parsed = new Function("return " + literalText)();
         name = parsed?.name ?? "";
@@ -234,9 +249,11 @@ export function regenerateSourceText(
     if (!block) block = blocks.find((b) => toId(b.name) === toId(e.name));
     if (block) {
       let parsed: Record<string, unknown> | null = null;
-      try {
-        parsed = new Function("return " + block.literalText)() as Record<string, unknown>;
-      } catch { /* fall through to rewrite */ }
+      if (looksLikeObjectLiteral(block.literalText)) {
+        try {
+          parsed = new Function("return " + block.literalText)() as Record<string, unknown>;
+        } catch { /* fall through to rewrite */ }
+      }
       if (parsed && deepEqual(parsed, e.entry)) continue;
       let varName = block.varName;
       if (toId(block.name) !== toId(e.name)) {
