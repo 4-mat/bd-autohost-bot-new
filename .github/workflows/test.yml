@@ -6,11 +6,16 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
       # bun install occasionally flakes on tarball extraction (e.g. "Fail
       # extracting tarball for xlsx"); retry a couple of times before giving up.
