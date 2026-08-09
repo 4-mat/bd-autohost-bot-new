@@ -1304,6 +1304,17 @@ function formatRangeList(list: Entity[]): string {
     .join(", ");
 }
 
+// True when an ability has a "Requires X" clause the entity's equipped
+// subweapon doesn't satisfy -- such abilities are excluded from %checkrange
+// results (and the GUI) exactly as execution rejects them.
+function subweaponGated(ab: { effect: string }, entity: Entity): boolean {
+  const requires = requiredSubweapons(ab.effect);
+  return (
+    requires.length > 0 &&
+    !requires.includes(normalizeSubweapon(entity.subweapon) ?? "")
+  );
+}
+
 /**
  * %checkrange / %cr -- inspect reachability from the current entity.
  *
@@ -1393,6 +1404,7 @@ function checkRangeToTarget(
   // Tile targets can't be group-filtered, so entity targets only.
   const hitAbilities = source.abilities.filter(
     (a) =>
+      !subweaponGated(a, source) &&
       inRangeInParts(
         game,
         source.pos,
@@ -1418,6 +1430,21 @@ function checkRangeByAbility(
 ): boolean {
   const ability = source.abilities.find((a) => toId(a.name) === toId(arg));
   if (!ability) return false;
+  // A "Requires X" ability the source can't actually use is reported as
+  // unusable rather than listing phantom reachable targets.
+  if (subweaponGated(ability, source)) {
+    const requires = requiredSubweapons(ability.effect);
+    const equipped = source.subweapon
+      ? ` (equipped: ${formatSubweapon(source.subweapon)})`
+      : "";
+    sendPm(
+      user.name,
+      `${source.num} cannot use ${ability.name}: requires the ${requires
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" or ")} subweapon${equipped}.`,
+    );
+    return true;
+  }
   // isValidTarget already rejects dead entities (curhp <= 0).
   const reachable = game.entities.filter(
     (e) =>
