@@ -11,7 +11,8 @@
 //
 //   - Edit any built-in class/weapon's stats or abilities → applied to the
 //     running Maps immediately and mirrored to abilityeditor/runtime-data.json
-//     so the test client (and the bot) can pick the edits up live.
+//     so the test client can pick the edits up live (the bot only picks them
+//     up permanently via "Save to Bot").
 //   - "Save to Bot" regenerates src/data/index.ts, rewriting ONLY the entries
 //     that actually changed (minimal-diff codegen), so the git diff in a PR
 //     shows exactly what was edited.
@@ -52,8 +53,22 @@ const CUSTOMS_PATH = path.join(import.meta.dirname, "customs.local.json");
 // Custom test class/weapon tracking (in-memory + gitignored local file)
 // ---------------------------------------------------------------------------
 
-const customNames = new Set<string>();
+// Custom status is tracked per kind: a custom class and a custom weapon may
+// share an id, and removing one must not un-custom the other.
+const customClassIds = new Set<string>();
+const customWeaponIds = new Set<string>();
 let pendingRegen = false;
+
+function customSetFor(kind: string): Set<string> | null {
+  if (kind === "class") return customClassIds;
+  if (kind === "weapon") return customWeaponIds;
+  return null;
+}
+
+function isCustom(kind: string, name: string): boolean {
+  const s = customSetFor(kind);
+  return !!s && s.has(toId(name));
+}
 
 function loadCustoms() {
   if (!fs.existsSync(CUSTOMS_PATH)) return;
@@ -62,13 +77,13 @@ function loadCustoms() {
     for (const c of data.classes ?? []) {
       if (c?.name) {
         classes.set(toId(c.name), c);
-        customNames.add(toId(c.name));
+        customClassIds.add(toId(c.name));
       }
     }
     for (const w of data.weapons ?? []) {
       if (w?.name) {
         weapons.set(toId(w.name), w);
-        customNames.add(toId(w.name));
+        customWeaponIds.add(toId(w.name));
       }
     }
   } catch (e) {
@@ -78,15 +93,16 @@ function loadCustoms() {
 
 function saveCustoms() {
   const data = {
-    classes: [...classes.values()].filter((c) => customNames.has(toId(c.name))),
-    weapons: [...weapons.values()].filter((w) => customNames.has(toId(w.name))),
+    classes: [...classes.values()].filter((c) => customClassIds.has(toId(c.name))),
+    weapons: [...weapons.values()].filter((w) => customWeaponIds.has(toId(w.name))),
   };
   fs.writeFileSync(CUSTOMS_PATH, JSON.stringify(data, null, 2) + "\n");
 }
 
-function isCustom(name: string): boolean {
-  return customNames.has(toId(name));
-}
+
+// Original src/data/index.ts name for entries renamed in the editor (id ->
+// source name). Lets regenerateSource find the right block after a rename.
+const sourceNames = new Map<string, string>();
 
 // ---------------------------------------------------------------------------
 // Codegen: rewrite src/data/index.ts with minimal diffs
@@ -96,13 +112,13 @@ function regenerateSource(): { changed: string[]; inserted: string[]; out: strin
   const text = readSourceText(SRC_PATH);
   const entries: EntryLike[] = [];
   for (const c of classes.values()) {
-    if (!isCustom(c.name)) {
-      entries.push({ name: c.name, type: "ClassData", entry: c as unknown as Record<string, unknown> });
+    if (!isCustom("class", c.name)) {
+      entries.push({ name: c.name, sourceName: sourceNames.get(toId(c.name)), type: "ClassData", entry: c as unknown as Record<string, unknown> });
     }
   }
   for (const w of weapons.values()) {
-    if (!isCustom(w.name)) {
-      entries.push({ name: w.name, type: "WeaponData", entry: w as unknown as Record<string, unknown> });
+    if (!isCustom("weapon", w.name)) {
+      entries.push({ name: w.name, sourceName: sourceNames.get(toId(w.name)), type: "WeaponData", entry: w as unknown as Record<string, unknown> });
     }
   }
   return regenerateSourceText(text, entries);
@@ -117,32 +133,32 @@ function touch() {
   writeEditorSnapshot();
 }
 
-function entryMap(kind: string): Map<string, any> | null {
-  if (kind === "class") return classes as Map<string, any>;
-  if (kind === "weapon") return weapons as Map<string, any>;
+function entryMap(kind: string): Map<string, ClassData | WeaponData> | null {
+  if (kind === "class") return classes;
+  if (kind === "weapon") return weapons;
   return null;
 }
 
-function defaultClass(name: string, item: any): ClassData {
-  const s = item?.stats ?? {};
+function defaultClass(name: string, item: Record<string, unknown>): ClassData {
+  const s = isPlainObject(item.stats) ? item.stats : {};
   const stats: ClassData["stats"] = { hp: "0", atk: "0", mag: "0", pd: "0", md: "0", eva: "0", mp: "0" };
   for (const k of STAT_KEYS) if (s[k] !== undefined) stats[k] = String(s[k]);
   return {
     name,
     stats,
-    abilities: (item?.abilities ?? []) as ClassData["abilities"],
-    description: item?.description ?? "",
+    abilities: (Array.isArray(item.abilities) ? item.abilities : []) as ClassData["abilities"],
+    description: String(item.description ?? ""),
   };
 }
 
-function defaultWeapon(name: string, item: any): WeaponData {
+function defaultWeapon(name: string, item: Record<string, unknown>): WeaponData {
   const w = defaultClass(name, item);
   return {
     name,
-    branch: item?.branch ?? "",
+    branch: String(item.branch ?? ""),
     stats: w.stats,
     abilities: w.abilities,
-    description: item?.description ?? "",
+    description: String(item.description ?? ""),
   };
 }
 
@@ -194,7 +210,7 @@ function snapshot() {
   return {
     classes: [...classes.values()],
     weapons: [...weapons.values()],
-    customs: [...customNames],
+    customs: [...customClassIds, ...customWeaponIds],
   };
 }
 
@@ -213,7 +229,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return;
   }
   if (p === "/api/status" && req.method === "GET") {
-    send(res, 200, { pendingRegen, customCount: customNames.size });
+    send(res, 200, { pendingRegen, customCount: customClassIds.size + customWeaponIds.size });
     return;
   }
 
@@ -255,13 +271,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
               send(res, 400, { error: `A ${kind} named '${newName}' already exists` });
               return;
             }
+            // Built-ins keep their original source name so the serializer can
+            // still find their block after the rename.
+            if (!isCustom(kind, name)) {
+              sourceNames.set(toId(newName), sourceNames.get(toId(name)) ?? name);
+            }
             map.delete(toId(name));
             entry.name = newName;
-            if (customNames.has(toId(name))) {
-              customNames.delete(toId(name));
-              customNames.add(toId(newName));
+            const cs = customSetFor(kind);
+            if (cs && cs.has(toId(name))) {
+              cs.delete(toId(name));
+              cs.add(toId(newName));
             }
             map.set(toId(newName), entry);
+          } else if (newName !== entry.name) {
+            // Case-only rename: same map key, just update the display name.
+            entry.name = newName;
           }
         }
         for (const [k, v] of Object.entries(patch)) {
@@ -271,9 +296,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
               if (v[sk] !== undefined) entry.stats[sk] = String(v[sk]);
             }
           } else if (k === "description" || k === "branch") {
-            entry[k] = String(v);
+            (entry as unknown as Record<string, unknown>)[k] = String(v);
           } else if (k === "abilities" && Array.isArray(v)) {
-            entry.abilities = v.map(sanitizeAbility);
+            entry.abilities = v.map(sanitizeAbility) as unknown as ClassData["abilities"];
           }
         }
       }
@@ -297,9 +322,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
           send(res, 400, { error: "ability needs a name" });
           return;
         }
-        abilities.push(a);
+        if (abilities.some((x) => toId(String(x.name)) === toId(String(a.name)))) {
+          send(res, 400, { error: `An ability named '${a.name}' already exists on ${owner}` });
+          return;
+        }
+        abilities.push(a as unknown as (typeof abilities)[number]);
       } else if (action === "remove") {
-        const idx = abilities.findIndex((x: any) => toId(x.name) === toId(name));
+        const idx = abilities.findIndex((x) => toId(String(x.name)) === toId(String(name)));
         if (idx === -1) {
           send(res, 404, { error: `ability '${name ?? "?"}' not found` });
           return;
@@ -307,12 +336,23 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         abilities.splice(idx, 1);
       } else if (action === "save") {
         const clean = sanitizeAbility(ability ?? {});
-        const idx = abilities.findIndex((x: any) => toId(x.name) === toId(name));
+        const idx = abilities.findIndex((x) => toId(String(x.name)) === toId(String(name)));
         if (idx === -1) {
           send(res, 404, { error: `ability '${name ?? "?"}' not found` });
           return;
         }
-        abilities[idx] = clean;
+        // Renaming into an id another ability already uses must be rejected.
+        if (
+          clean.name &&
+          toId(String(clean.name)) !== toId(String(abilities[idx].name)) &&
+          abilities.some(
+            (x, i) => i !== idx && toId(String(x.name)) === toId(String(clean.name)),
+          )
+        ) {
+          send(res, 400, { error: `An ability named '${clean.name}' already exists on ${owner}` });
+          return;
+        }
+        abilities[idx] = clean as unknown as (typeof abilities)[number];
       } else {
         send(res, 400, { error: "action must be add|save|remove" });
         return;
@@ -336,7 +376,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       }
       const built = kind === "class" ? defaultClass(nm, item) : defaultWeapon(nm, item);
       map.set(toId(nm), built);
-      customNames.add(toId(nm));
+      customSetFor(kind)!.add(toId(nm));
       saveCustoms();
       touch();
       send(res, 200, { ok: true, name: nm });
@@ -347,12 +387,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       const { kind, name } = body;
       const map = entryMap(kind);
       const key = toId(name);
-      if (!map || !customNames.has(key)) {
+      const cs = customSetFor(kind);
+      if (!map || !cs || !cs.has(key)) {
         send(res, 400, { error: `'${name ?? "?"}' is not a custom ${kind ?? "item"}` });
         return;
       }
       map.delete(key);
-      customNames.delete(key);
+      cs.delete(key);
       saveCustoms();
       touch();
       send(res, 200, { ok: true });
@@ -373,13 +414,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     }
 
     if (p === "/api/reset") {
-      for (const k of customNames) {
-        classes.delete(k);
-        weapons.delete(k);
-      }
+      // Full reload: clear the Maps first so stale renamed-away copies that
+      // loadGameData would otherwise leave behind are dropped too.
+      classes.clear();
+      weapons.clear();
       branches.clear();
+      sourceNames.clear();
       loadGameData();
-      customNames.clear();
+      customClassIds.clear();
+      customWeaponIds.clear();
       loadCustoms();
       pendingRegen = false;
       writeEditorSnapshot();
@@ -402,6 +445,6 @@ writeEditorSnapshot();
 http.createServer(handle).listen(PORT, process.env.HOST || "127.0.0.1", () => {
   console.log(`BD Ability Editor running on http://localhost:${PORT}`);
   console.log(
-    `Loaded ${classes.size} classes, ${weapons.size} weapons (${customNames.size} custom)`,
+    `Loaded ${classes.size} classes, ${weapons.size} weapons (${customClassIds.size + customWeaponIds.size} custom)`,
   );
 });

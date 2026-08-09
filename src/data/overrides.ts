@@ -16,9 +16,11 @@ import {
   existsSync,
   readFileSync,
   writeFileSync,
+  renameSync,
   mkdirSync,
 } from "fs";
 import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { classes, weapons, type ClassData, type WeaponData } from "./index.js";
 
 function toId(s: string): string {
@@ -26,8 +28,14 @@ function toId(s: string): string {
 }
 
 /** JSON file the editor server writes after every mutation. */
+// import.meta.dirname needs Node >= 20.11 / Bun 1.0 — fall back for older runtimes.
+const MODULE_DIR =
+  typeof import.meta.dirname === "string"
+    ? import.meta.dirname
+    : dirname(fileURLToPath(import.meta.url));
+
 export const RUNTIME_DATA_PATH = join(
-  import.meta.dirname,
+  MODULE_DIR,
   "../../abilityeditor/runtime-data.json",
 );
 
@@ -54,19 +62,29 @@ export function readEditorSnapshot(
  */
 export function applyEditorSnapshot(snap: EditorSnapshot | null): number {
   if (!snap) return 0;
+  const seenClasses = new Set<string>();
+  const seenWeapons = new Set<string>();
   let applied = 0;
   for (const c of snap.classes ?? []) {
     if (c?.name) {
-      classes.set(toId(c.name), c);
+      const id = toId(c.name);
+      classes.set(id, c);
+      seenClasses.add(id);
       applied++;
     }
   }
   for (const w of snap.weapons ?? []) {
     if (w?.name) {
-      weapons.set(toId(w.name), w);
+      const id = toId(w.name);
+      weapons.set(id, w);
+      seenWeapons.add(id);
       applied++;
     }
   }
+  // The snapshot is authoritative: drop entries the editor removed (deleted
+  // customs, renamed-away built-ins) so the running process mirrors it exactly.
+  for (const k of [...classes.keys()]) if (!seenClasses.has(k)) classes.delete(k);
+  for (const k of [...weapons.keys()]) if (!seenWeapons.has(k)) weapons.delete(k);
   return applied;
 }
 
@@ -77,5 +95,9 @@ export function writeEditorSnapshot(path: string = RUNTIME_DATA_PATH): void {
     weapons: [...weapons.values()],
   };
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(snap, null, 2) + "\n");
+  // Write atomically (temp + rename) so a reader polling the file never sees
+  // a truncated snapshot mid-write.
+  const tmp = path + ".tmp";
+  writeFileSync(tmp, JSON.stringify(snap, null, 2) + "\n");
+  renameSync(tmp, path);
 }

@@ -68,6 +68,15 @@ export function applyProposalText(text: string, raw: Proposal): RegenResult {
     throw new Error("payload must contain updates[] and adds[] arrays");
   }
 
+  // Bounded public surface: the workflow runs on any "Ability: ..." issue.
+  const rawSize = JSON.stringify(raw).length;
+  if (rawSize > 100_000) {
+    throw new Error("proposal payload too large — " + rawSize + " bytes (max 100 KB)");
+  }
+  if (raw.updates.length + raw.adds.length > 100) {
+    throw new Error("too many entries in the proposal (max 100)");
+  }
+
   const existing = new Set(findBlocks(text).map((b) => b.name));
   // Case-insensitive (toId) membership: catches duplicates like "Foo"/"foo"
   // and adds colliding with an existing entry regardless of case. Existing
