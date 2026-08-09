@@ -22,6 +22,8 @@ export interface EntryLike {
   name: string;
   type: EntryType;
   entry: Record<string, unknown>;
+  /** Original name in src/data/index.ts when the entry was renamed in the editor. */
+  sourceName?: string;
 }
 
 export function toId(s: string): string {
@@ -121,9 +123,12 @@ export function serializeBlock(
   const keys = type === "ClassData" ? CLASS_KEYS : WEAPON_KEYS;
   const setter = type === "ClassData" ? "classes" : "weapons";
   const body = serializeObject(entry, keys, 2);
+  // The name is emitted via JSON.stringify so quotes/backslashes can never
+  // break out of the string literal (arbitrary names must stay inert).
+  const nameLit = JSON.stringify(String(entry.name ?? ""));
   return [
     `  const ${varName}: ${type} = ${body};`,
-    `  ${setter}.set(toId(${primitive(entry.name)}), ${varName});`,
+    `  ${setter}.set(toId(${nameLit}), ${varName});`,
   ].join("\n");
 }
 
@@ -150,7 +155,13 @@ export function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
+function varNameFor(id: string): string {
+  if (!id) return "entry";
+  return /^\d/.test(id) ? "e" + id : id;
+}
+
 function uniqueVar(base: string, used: Set<string>): string {
+  base = varNameFor(base);
   if (!used.has(base)) return base;
   for (let i = 2; ; i++) if (!used.has(base + i)) return base + i;
 }
@@ -193,12 +204,12 @@ export function findBlocks(text: string): Block[] {
     if (text[chunkEnd] === ";") chunkEnd++;
     const rest = text.slice(chunkEnd);
     const setMatch = rest.match(
-      /^\n[ \t]*(?:classes|weapons)\.set\(toId\("[^"]*"\),[ \t]*\w+\);/,
+      /^\n[ \t]*(?:classes|weapons)\.set\(toId\("(?:[^"\\]|\\.)*"\),[ \t]*\w+\);/,
     );
     let name = "";
     if (setMatch) {
-      const nm = setMatch[0].match(/toId\("([^"]*)"\)/);
-      name = nm ? nm[1] : "";
+      const nm = setMatch[0].match(/toId\("((?:[^"\\]|\\.)*)"\)/);
+      name = nm ? JSON.parse('"' + nm[1] + '"') : "";
       chunkEnd += setMatch[0].length;
     }
     const literalText = text.slice(literalStart, literalEnd + 1);
@@ -245,7 +256,9 @@ export function regenerateSourceText(
   const appendTexts: string[] = [];
 
   for (const e of entries) {
-    let block = byName.get(e.name);
+    // A renamed built-in keeps its original source name for block lookup.
+    let block = e.sourceName ? byName.get(e.sourceName) : undefined;
+    if (!block) block = byName.get(e.name);
     if (!block) block = blocks.find((b) => toId(b.name) === toId(e.name));
     if (block) {
       let parsed: Record<string, unknown> | null = null;
@@ -322,7 +335,8 @@ export function normalizeLevel(v: unknown): number | "EX1" | "EX2" {
   return isNaN(n) ? 1 : Math.max(1, Math.min(10, n));
 }
 
-export function sanitizeAbility(raw: any): Record<string, unknown> {
+export function sanitizeAbility(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
   const clean: Record<string, unknown> = {};
   for (const k of ABILITY_KEYS) {
     let v = raw[k];

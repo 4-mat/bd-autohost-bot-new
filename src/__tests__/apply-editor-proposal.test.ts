@@ -304,3 +304,37 @@ describe("applyProposalText validation", () => {
     expect(() => applyProposalText(SRC, p)).toThrow(/name mismatch/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code-injection + identifier-safety regressions
+// ---------------------------------------------------------------------------
+
+describe("applyProposalText codegen safety", () => {
+  it("emits a name containing a quote/backtick break-out inertly", () => {
+    const evil = 'a"); console.log("PWN"); //';
+    const p: Proposal = {
+      updates: [],
+      adds: [{ kind: "class", entry: customClass(evil) }],
+    };
+    const r = applyProposalText(SRC, p);
+    // The escaped name must appear inside the toId() string literal...
+    expect(r.out).toContain('toId("a\\"); console.log(\\"PWN\\"); //")');
+    // ...and never as runnable statements.
+    expect(r.out).not.toContain('); console.log("PWN"); //")');
+    // The varName must be a valid identifier even for a hostile name.
+    expect(r.out).toMatch(/const [a-zA-Z_][a-zA-Z0-9_]*: ClassData = \{/);
+  });
+
+  it("generates a valid identifier for digit-leading and all-symbol names", () => {
+    const p: Proposal = {
+      updates: [],
+      adds: [
+        { kind: "class", entry: customClass("2Handed Sword") },
+        { kind: "class", entry: customClass("!!!") },
+      ],
+    };
+    const r = applyProposalText(SRC, p);
+    expect(r.out).toContain("const e2handedsword: ClassData = {");
+    expect(r.out).toContain("const entry: ClassData = {");
+  });
+});
