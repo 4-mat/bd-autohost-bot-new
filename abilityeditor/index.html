@@ -636,6 +636,8 @@
         const i = abilities.findIndex((x) => x.name === body.name);
         if (i >= 0) abilities.splice(i, 1);
       }
+      // Persist custom entries so their edits survive a reload in demo mode.
+      if (state.data.customs.includes(toId(item.name))) persistCustoms();
       return Promise.resolve({ ok: true });
     }
 
@@ -691,7 +693,7 @@
       return { updates, adds };
     }
 
-    function proposeToBot() {
+    async function proposeToBot() {
       const p = buildProposal();
       const total = p.updates.length + p.adds.length;
       if (total === 0) {
@@ -720,13 +722,35 @@
         (p.updates.length ? "Edit " + p.updates.map((u) => u.name).join(", ") : "") +
         (p.updates.length && p.adds.length ? " + " : "") +
         (p.adds.length ? "Add " + p.adds.map((a) => a.entry.name).join(", ") : "");
+      const body = lines.join("\n");
       const url =
         "https://github.com/" +
         REPO +
         "/issues/new?title=" +
         encodeURIComponent(title) +
         "&body=" +
-        encodeURIComponent(lines.join("\n"));
+        encodeURIComponent(body);
+      // GitHub rejects very long URLs — for big proposals open a blank issue
+      // and hand the body to the clipboard instead.
+      if (url.length > 6000) {
+        try {
+          await navigator.clipboard.writeText(body);
+          toast(
+            "Proposal is large — the issue body was copied to your clipboard. Paste it into the opened issue.",
+            "warn",
+          );
+        } catch {
+          toast(
+            "Proposal is too large for a URL. Open a blank issue and paste the payload manually.",
+            "warn",
+          );
+        }
+        window.open(
+          "https://github.com/" + REPO + "/issues/new?title=" + encodeURIComponent(title),
+          "_blank",
+        );
+        return;
+      }
       window.open(url, "_blank");
       toast("Proposal drafted — a GitHub issue should open in a new tab.", "ok");
     }
@@ -758,6 +782,8 @@
             (state.selected === x.name ? " active" : "") +
             '" data-name="' +
             esc(x.name) +
+            '" tabindex="0" role="button" aria-label="' +
+            esc("Select " + x.name) +
             '">' +
             (custom ? '<span class="badge">CUSTOM</span>' : "") +
             "<span>" +
@@ -1042,8 +1068,11 @@
         try {
           const parsed = JSON.parse(ch.value);
           if (Array.isArray(parsed)) a.choices = parsed.filter((x) => x && x.id && x.label);
+          else delete a.choices;
         } catch {
-          /* keep last good */
+          // Invalid JSON must not leak a raw string into the ability — drop it
+          // so the serializer never emits `choices: "not json",`.
+          delete a.choices;
         }
       } else {
         delete a.choices;
@@ -1074,7 +1103,8 @@
         card.dataset.lastname = ability.name;
         const i = item.abilities.findIndex((x) => x.name === lookupName);
         if (i >= 0) item.abilities[i] = ability;
-        state.dirty = false;
+        // Don't clear the dirty flag here: other cards/fields may still have
+        // pending edits — flushItems/saveToBot own the flag instead.
         refreshStatus();
       } catch (e) {
         toast(e.message, "err");
@@ -1084,8 +1114,13 @@
     async function addAbility() {
       const item = currentItem();
       if (!item) return;
+      const baseName = "New Ability";
+      let name = baseName;
+      for (let n = 2; (item.abilities || []).some((x) => x.name === name); n++) {
+        name = baseName + " " + n;
+      }
       const def = {
-        name: "New Ability",
+        name,
         level: 1,
         frequency: "Every Turn",
         mr: 0,
@@ -1104,7 +1139,7 @@
           action: "add",
           ability: def,
         });
-        state.openAbility = "New Ability";
+        state.openAbility = name;
         await fetchData();
         renderDetail();
       } catch (e) {
@@ -1162,6 +1197,8 @@
             state.selected = newName;
             renderList();
           }
+          // Keep custom edits persisted in demo mode (they live in localStorage).
+          if (STATIC && state.data.customs.includes(toId(newName))) persistCustoms();
         } catch (e) {
           toast(e.message, "err");
         }
@@ -1198,6 +1235,19 @@
       renderDetail();
     });
 
+    // Keyboard access to the sidebar (the rows are focusable now).
+    $("#item-list").addEventListener("keydown", (e) => {
+      const row = e.target.closest(".item-row");
+      if (!row) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        state.selected = row.dataset.name;
+        state.openAbility = null;
+        renderList();
+        renderDetail();
+      }
+    });
+
     document.querySelectorAll("#tabs button").forEach((b) =>
       b.addEventListener("click", () => {
         state.kind = b.dataset.kind;
@@ -1224,6 +1274,24 @@
       const card = t.closest(".ability-card");
       if (card) {
         onAbilityEdit(card);
+        if (t.dataset && t.dataset.f === "hasCost") {
+          // Cost sub-fields only render when a.cost exists: reflect the checkbox
+          // into the in-memory ability, re-render, and re-queue the debounced
+          // save on the fresh card so the new fields get collected.
+          const item = currentItem();
+          if (item) {
+            const ab = item.abilities[Number(card.dataset.idx)];
+            if (ab) {
+              if (t.checked && !ab.cost) ab.cost = { type: "HP", amount: 0, prompt: false };
+              else if (!t.checked) delete ab.cost;
+            }
+            state.openAbility = ab ? ab.name : null;
+            renderDetail();
+            const cards = document.querySelectorAll("#detail .ability-card");
+            const fresh = cards[Number(card.dataset.idx)];
+            if (fresh) onAbilityEdit(fresh);
+          }
+        }
         return;
       }
       if (t.dataset.stat) {
@@ -1262,6 +1330,17 @@
         return;
       }
       try {
+        // Let any debounced edits land before regenerating, so "Save to Bot"
+        // never misses the last 500ms of typing.
+        if (itemTimer2) {
+          clearTimeout(itemTimer2);
+          itemTimer2 = null;
+          await flushItems();
+        }
+        for (const [, t] of abilityTimers) clearTimeout(t);
+        abilityTimers.clear();
+        const cards = [...document.querySelectorAll("#detail .ability-card")];
+        await Promise.all(cards.map((card) => flushAbility(card)));
         const r = await api("/api/regenerate");
         if (r.noChanges) {
           toast("No changes to save — the source file already matches.", "ok");

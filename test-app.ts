@@ -26,16 +26,22 @@ loadGameData();
 // snapshot after every change. Apply it here so custom test classes/weapons
 // and live ability edits show up in the test client without a restart.
 
-function editorDataHash(): string {
-  const snap = readEditorSnapshot();
+function snapshotHash(snap: ReturnType<typeof readEditorSnapshot>): string {
   return snap
     ? createHash("sha256").update(JSON.stringify(snap)).digest("hex").slice(0, 16)
     : "";
 }
 
+function editorDataHash(): string {
+  return snapshotHash(readEditorSnapshot());
+}
+
 function reloadEditorData(announce = true): number {
-  const applied = applyEditorSnapshot(readEditorSnapshot());
-  lastEditorDataHash = editorDataHash();
+  // Read the file once and hash THAT read, so the recorded hash always
+  // matches what was actually applied (no dropped updates between reads).
+  const snap = readEditorSnapshot();
+  const applied = applyEditorSnapshot(snap);
+  lastEditorDataHash = snapshotHash(snap);
   if (applied > 0 && announce) {
     broadcast(
       JSON.stringify({
@@ -48,9 +54,10 @@ function reloadEditorData(announce = true): number {
   return applied;
 }
 
-let lastEditorDataHash = editorDataHash();
+const initialSnapshot = readEditorSnapshot();
+let lastEditorDataHash = snapshotHash(initialSnapshot);
 // Apply whatever the editor already has at startup (customs + live edits).
-if (lastEditorDataHash) applyEditorSnapshot(readEditorSnapshot());
+if (lastEditorDataHash) applyEditorSnapshot(initialSnapshot);
 // Pick up editor changes made while the test client is running.
 setInterval(() => {
   const h = editorDataHash();

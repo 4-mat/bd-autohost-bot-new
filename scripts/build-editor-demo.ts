@@ -37,13 +37,23 @@ const build = {
   source: "src/data/index.ts",
 };
 
+// JSON.stringify does not escape "</script>" — escape '<' (and the U+2028/9
+// line separators) so untrusted names/descriptions can never break out of the
+// embedded script tag on the public demo page.
+function safeJson(v: unknown): string {
+  return JSON.stringify(v)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 const injection =
   "<script>window.__BD_EDITOR_DATA__=" +
-  JSON.stringify(snapshot) +
+  safeJson(snapshot) +
   ";window.__BD_EDITOR_REPO__=" +
-  JSON.stringify(REPO) +
+  safeJson(REPO) +
   ";window.__BD_EDITOR_BUILD__=" +
-  JSON.stringify(build) +
+  safeJson(build) +
   ";</script>";
 
 let html = fs.readFileSync(GUI_PATH, "utf8");
