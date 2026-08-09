@@ -57,6 +57,39 @@ import {
 } from "./effects.js";
 import { rollDice, toId, posToStr, capitalize } from "../utils.js";
 
+// Merge two CombatMetadata results (passive standing mods + the ability's
+// own effects) into one. Numeric fields add; multi-hit and crit threshold
+// keep the walker's max / most-generous semantics; ignore flags OR.
+function combineCombatMetadata(
+  a: CombatMetadata,
+  b: CombatMetadata,
+): CombatMetadata {
+  return {
+    damagePercent: a.damagePercent + b.damagePercent,
+    flatDamage: a.flatDamage + b.flatDamage,
+    additionalHits: Math.max(a.additionalHits, b.additionalHits),
+    ignore: {
+      atkMag: a.ignore.atkMag || b.ignore.atkMag,
+      def: a.ignore.def || b.ignore.def,
+      halfDef: a.ignore.halfDef || b.ignore.halfDef,
+      quarterDef: a.ignore.quarterDef || b.ignore.quarterDef,
+      defReduction: a.ignore.defReduction + b.ignore.defReduction,
+      outsideFactors: a.ignore.outsideFactors || b.ignore.outsideFactors,
+      other: [...new Set([...a.ignore.other, ...b.ignore.other])],
+    },
+    critThreshold:
+      a.critThreshold === null
+        ? b.critThreshold
+        : b.critThreshold === null
+          ? a.critThreshold
+          : Math.min(a.critThreshold, b.critThreshold),
+    extraDice: a.extraDice + b.extraDice,
+    extraDiceFaces: a.extraDiceFaces + b.extraDiceFaces,
+    extraBaseDice: a.extraBaseDice + b.extraBaseDice,
+    mrMod: a.mrMod + b.mrMod,
+  };
+}
+
 export interface ResolutionResult {
   messages: string[];
   deaths: Entity[];
@@ -411,11 +444,25 @@ function* resolveAttackFlow(
   for (const a of user.abilities) {
     if (a.actionType === "Passive") passiveEffects.push(...parseEffects(a.effect));
   }
-  const combat = extractCombatMetadata(
-    [...passiveEffects, ...effects],
+  // Passive standing mods stay single-phase: their phase-gated branches
+  // resolve against the active moon phase only (CodeRabbit: keep passive
+  // metadata single-phase). The ability's OWN effects additionally fold in
+  // the user's chosen 2nd phase (Far Side of the Moon / Fatal Moonlight)
+  // -- evaluateCondition fires a "phase is X" branch when EITHER the
+  // active phase or the chosen phase matches, so the damage math must
+  // match what applyEffectStream actually applies.
+  const passiveCombat = extractCombatMetadata(
+    passiveEffects,
     normalizeSubweapon(user.subweapon),
     game.moonPhase,
   );
+  const abilityCombat = extractCombatMetadata(
+    effects,
+    normalizeSubweapon(user.subweapon),
+    game.moonPhase,
+    user.phaseChoice,
+  );
+  const combat = combineCombatMetadata(passiveCombat, abilityCombat);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   for (const target of targets) {
