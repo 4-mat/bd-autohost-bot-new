@@ -1,0 +1,53 @@
+name: Discord major-release notification
+
+on:
+  release:
+    types: [released]
+
+permissions: {}
+
+jobs:
+  notify:
+    if: >
+      endsWith(github.event.release.tag_name, '.0.0') ||
+      github.event.release.tag_name == '0.1.0' ||
+      github.event.release.tag_name == 'v0.1.0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG: ${{ github.event.release.tag_name }}
+          NAME: ${{ github.event.release.name }}
+          URL: ${{ github.event.release.html_url }}
+          BODY: ${{ github.event.release.body }}
+        run: |
+          body=$(jq -n \
+            --arg tag "$TAG" \
+            --arg name "$NAME" \
+            --arg url "$URL" \
+            --arg body "$BODY" \
+            'def utf16len: [explode[] | if . > 0xFFFF then 2 else 1 end] | add;
+             def utf16trunc($n):
+               reduce (explode | to_entries[]) as $e ({units: 0, chars: []};
+                 if .units + (if $e.value > 0xFFFF then 2 else 1 end) <= $n
+                 then .units += (if $e.value > 0xFFFF then 2 else 1 end) | .chars += [$e.value]
+                 else . end) | .chars | implode;
+             {
+               embeds: [{
+                 title: ("🚀 Battle Dome Autohost — " + $tag),
+                 description: (if ($name | length) > 0 then $name else $tag end),
+                 url: $url,
+                 color: 15548997,
+                 fields: [{
+                   name: "Release notes",
+                   value: (if ($body | length) > 0 then
+                            (if ($body | utf16len) > 1024 then ($body | utf16trunc(1021)) + "..." else $body end)
+                          else "See the release for details." end)
+                 }]
+               }]
+             }')
+          curl -sS --fail-with-body --connect-timeout 10 --max-time 30 \
+            -H "Content-Type: application/json" \
+            -d "$body" \
+            "$WEBHOOK_URL" || exit 1

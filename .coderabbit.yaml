@@ -13,9 +13,9 @@ reviews:
     base_branches:
       - "master"
       - "main"
-      - "feat/*"
-      - "fix/*"
-      - "feature/*"
+      - "feat/.*"
+      - "fix/.*"
+      - "feature/.*"
       - "empty-base"
     auto_incremental_review: true
     ignore_title_keywords:
