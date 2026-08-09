@@ -411,6 +411,13 @@ describe("extractCombatMetadata", () => {
     expect(meta.extraDiceFaces).toBe(0);
   });
 
+  it("matches phase names case-insensitively (formatted 'New Moon' still counts)", () => {
+    const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "New Moon");
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
   it("ignores phase branches that do NOT match the current moon phase", () => {
     const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
     const meta = extractCombatMetadata(effects, undefined, "full moon");
