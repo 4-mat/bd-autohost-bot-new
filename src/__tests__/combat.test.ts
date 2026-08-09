@@ -364,6 +364,27 @@ describe("extractCombatMetadata", () => {
     expect(extractCombatMetadata(effects, undefined, "waning").extraDice).toBe(0);
   });
 
+  it("folds BOTH phase branches when the user holds a chosen 2nd phase (phaseChoice)", () => {
+    // Far Side of the Moon / Fatal Moonlight: the user chose "waning" as a
+    // 2nd phase while the active phase is "new moon". evaluateCondition fires
+    // a "phase is X" branch when EITHER matches, so ability metadata must
+    // count both branches mods -- matching what applyEffectStream applies.
+    const effects = parseEffects("New Moon: +1 dice. Waning: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "new moon", "waning");
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(2);
+  });
+
+  it("keeps passive standing mods single-phase even with a chosen 2nd phase", () => {
+    // Passives stay single-phase (CodeRabbit): their phase-gated branches
+    // resolve against the active moon phase only, even when the user holds a
+    // chosen 2nd phase -- extractCombatMetadata is called without phaseChoice.
+    const effects = parseEffects("New Moon: +1 dice. Waning: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "new moon");
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
   it("leaves phase branches unmerged when no moon phase is active", () => {
     const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
     const meta = extractCombatMetadata(effects);
@@ -396,6 +417,29 @@ describe("extractCombatMetadata", () => {
     // 1d6 + 1 extra dice => the Damage line shows a 2d6 roll.
     expect(log).toContain("2d6");
     expect(log).toMatch(/\+1 dice/);
+  });
+
+  it("rolls BOTH phase branches when the user holds a chosen 2nd phase", () => {
+    // Far Side of the Moon: active phase "new moon", user chose "waning".
+    // The ability's "New Moon: +1 dice. Waning: +2 dice faces." fires both
+    // branches (evaluateCondition), so the damage math must too: 1d6 + 1
+    // extra dice + 2 faces per die => 2d8.
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6], team: 1 });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    user.phaseChoice = "waning";
+    user.abilities = [
+      makeAbility({
+        name: "Moonlight",
+        damageType: "Physical",
+        roll: "1d6",
+        effect: "New Moon: +1 dice. Waning: +2 dice faces.",
+      }),
+    ];
+    const step = startAttack(game, user, user.abilities[0], target.num);
+    const log = (step.done ? step.result.messages : []).join("\n");
+    expect(log).toContain("2d8");
   });
 
   it("does NOT merge a subweapon branch nested under an If-gate", () => {

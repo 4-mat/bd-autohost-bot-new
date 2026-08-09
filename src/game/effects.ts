@@ -2675,6 +2675,7 @@ export function extractCombatMetadata(
   effects: Effect[],
   subweapon?: string,
   moonPhase?: string,
+  phaseChoice?: string,
 ): CombatMetadata {
   const out: CombatMetadata = {
     damagePercent: 0,
@@ -2688,7 +2689,7 @@ export function extractCombatMetadata(
     mrMod: 0,
   };
 
-  mergeCombatMetadata(out, effects, subweapon, moonPhase);
+  mergeCombatMetadata(out, effects, subweapon, moonPhase, phaseChoice);
   return out;
 }
 
@@ -2710,15 +2711,17 @@ function mergeCombatMetadata(
   effects: Effect[],
   subweapon?: string,
   moonPhase?: string,
+  phaseChoice?: string,
 ): void {
   const phase = moonPhase?.toLowerCase().trim();
+  const choice = phaseChoice?.toLowerCase().trim();
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("subweapon is ")) {
       // Only the matching branch's sub-effects count; the non-matching
       // branches are dead code for this user's equipped subweapon.
       const want = e.condition.slice("subweapon is ".length);
       if (subweapon && subweapon === want) {
-        mergeCombatMetadata(out, e.thenEffects, subweapon, phase);
+        mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
       }
       continue;
     }
@@ -2731,8 +2734,15 @@ function mergeCombatMetadata(
         .slice("phase is ".length)
         .split(" or ")
         .map((s) => s.trim());
-      if (phase && want.includes(phase)) {
-        mergeCombatMetadata(out, e.thenEffects, subweapon, phase);
+      // The user's chosen 2nd phase (Far Side of the Moon / Fatal
+      // Moonlight) counts too: evaluateCondition fires a "phase is X"
+      // branch when EITHER the active phase or the chosen phase matches,
+      // so ability metadata must fold both in for the damage math.
+      if (
+        (phase && want.includes(phase)) ||
+        (choice && want.includes(choice))
+      ) {
+        mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
       }
       continue;
     }
