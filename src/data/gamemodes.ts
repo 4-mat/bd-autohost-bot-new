@@ -38,14 +38,15 @@ export const GAMEMODE_MAPS: Record<GameModeId, string[]> = {
   // NTR (hold the centre): maps with strong central features / rings.
   ntr: [
     "ntr",
-    "realntr",
-    "fusioncore",
-    "clover",
-    "donut",
-    "ringoffire",
-    "miniring",
-    "pinering",
-    "combatring",
+    "bifurcation",
+    "nyoom",
+    "pond",
+    "duelingground",
+    "sprint",
+    "unabletorun",
+    "minicrossroads",
+    "vortex",
+    "weave",
   ],
   // Juggernaut: mid-size maps with cover so the field can hide from the jugg.
   jugg: [
