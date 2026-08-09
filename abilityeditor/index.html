@@ -506,6 +506,12 @@
       dirty: false,
     };
 
+    // ---- public demo (static) mode ----
+    const STATIC = !!(window.__BD_EDITOR_DATA__);
+    const REPO = window.__BD_EDITOR_REPO__ || "";
+    const LS_KEY = "bd-editor-demo:v1";
+    const toId = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
     const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, "EX1", "EX2"];
     const ACTIONS = [
       "Standard", "Full", "Movement", "Swift", "Free", "Trigger", "Reaction", "Passive", "",
@@ -534,6 +540,7 @@
 
     // ---------- api ----------
     async function api(path, body) {
+      if (STATIC) return staticApi(path, body);
       const res = await fetch(path, {
         method: body === undefined ? "GET" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -544,8 +551,188 @@
       return data;
     }
 
+    // ---------- public demo (static) mode ----------
+    // The demo build injects window.__BD_EDITOR_DATA__ (a snapshot of the bot's
+    // data). In static mode there is no server: edits live in this page's
+    // memory, custom test classes/weapons persist in localStorage, and
+    // "Propose to Bot" drafts a GitHub issue that a workflow turns into a PR.
+
+    function seedStatic() {
+      const base = window.__BD_EDITOR_DATA__ || { classes: [], weapons: [] };
+      const data = {
+        classes: (base.classes || []).map((c) => JSON.parse(JSON.stringify(c))),
+        weapons: (base.weapons || []).map((w) => JSON.parse(JSON.stringify(w))),
+        customs: [],
+      };
+      try {
+        const saved = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+        for (const c of saved) {
+          if (!c || !c.entry || !c.entry.name) continue;
+          // Skip stale customs whose name now belongs to a built-in entry
+          // (e.g. the demo was rebuilt and it became a real class).
+          if (c.kind === "class" && data.classes.some((x) => x.name === c.entry.name)) continue;
+          if (c.kind === "weapon" && data.weapons.some((x) => x.name === c.entry.name)) continue;
+          if (c.kind === "class") data.classes.push(c.entry);
+          else if (c.kind === "weapon") data.weapons.push(c.entry);
+          data.customs.push(toId(c.entry.name));
+        }
+      } catch (e) {
+        /* corrupt storage — start fresh */
+      }
+      state.data = data;
+    }
+
+    function persistCustoms() {
+      try {
+        const out = [];
+        for (const kind of ["class", "weapon"]) {
+          const arr = state.data[kind === "class" ? "classes" : "weapons"];
+          for (const item of arr) {
+            if (state.data.customs.includes(toId(item.name))) {
+              out.push({ kind, entry: item });
+            }
+          }
+        }
+        localStorage.setItem(LS_KEY, JSON.stringify(out));
+      } catch (e) {
+        toast("Could not save customs to this browser: " + e.message, "warn");
+      }
+    }
+
+    function staticApi(path, body) {
+      switch (path) {
+        case "/api/data":
+          return Promise.resolve(state.data);
+        case "/api/status":
+          return Promise.resolve({ pendingRegen: false, customCount: state.data.customs.length });
+        case "/api/update":
+          return Promise.resolve({ ok: true }); // GUI applies the patch locally
+        case "/api/ability":
+          return staticAbility(body);
+        case "/api/custom":
+          return staticAddCustom(body);
+        case "/api/custom/remove":
+          return staticRemoveCustom(body);
+        case "/api/reset":
+          seedStatic();
+          return Promise.resolve({ ok: true });
+        default:
+          return Promise.reject(new Error("Unknown endpoint in demo mode: " + path));
+      }
+    }
+
+    function staticAbility(body) {
+      const arr = state.data[body.kind === "class" ? "classes" : "weapons"];
+      const item = arr.find((x) => x.name === body.owner);
+      if (!item) return Promise.reject(new Error("Item not found: " + body.owner));
+      const abilities = item.abilities || (item.abilities = []);
+      if (body.action === "save") {
+        const i = abilities.findIndex((x) => x.name === body.name);
+        if (i >= 0) abilities[i] = body.ability;
+        else abilities.push(body.ability);
+      } else if (body.action === "add") {
+        abilities.push(body.ability);
+      } else if (body.action === "remove") {
+        const i = abilities.findIndex((x) => x.name === body.name);
+        if (i >= 0) abilities.splice(i, 1);
+      }
+      return Promise.resolve({ ok: true });
+    }
+
+    function staticAddCustom(body) {
+      const kind = body.kind === "weapon" ? "weapon" : "class";
+      const arr = state.data[kind === "class" ? "classes" : "weapons"];
+      const name = String((body.item && body.item.name) || "").trim();
+      if (!name) return Promise.reject(new Error("Name is required."));
+      if (arr.some((x) => x.name === name)) {
+        return Promise.reject(new Error('An entry named "' + name + '" already exists.'));
+      }
+      const entry = { name };
+      if (kind === "weapon") entry.branch = "Bow";
+      entry.stats = {};
+      for (const st of STATS) entry.stats[st] = "0";
+      entry.description = "";
+      entry.abilities = [];
+      arr.push(entry);
+      const id = toId(name);
+      if (!state.data.customs.includes(id)) state.data.customs.push(id);
+      persistCustoms();
+      return Promise.resolve({ ok: true });
+    }
+
+    function staticRemoveCustom(body) {
+      const kind = body.kind === "weapon" ? "weapon" : "class";
+      const arr = state.data[kind === "class" ? "classes" : "weapons"];
+      const i = arr.findIndex((x) => x.name === body.name);
+      if (i >= 0) arr.splice(i, 1);
+      state.data.customs = state.data.customs.filter((id) => id !== toId(body.name));
+      persistCustoms();
+      return Promise.resolve({ ok: true });
+    }
+
+    function buildProposal() {
+      const base = window.__BD_EDITOR_DATA__ || { classes: [], weapons: [] };
+      const updates = [];
+      const adds = [];
+      for (const kind of ["class", "weapon"]) {
+        const cur = state.data[kind === "class" ? "classes" : "weapons"];
+        const baseList = base[kind === "class" ? "classes" : "weapons"];
+        for (const item of cur) {
+          if (isCustomName(item.name)) {
+            adds.push({ kind, entry: item });
+          } else {
+            const b = baseList.find((x) => x.name === item.name);
+            if (b && JSON.stringify(b) !== JSON.stringify(item)) {
+              updates.push({ kind, name: item.name, entry: item });
+            }
+          }
+        }
+      }
+      return { updates, adds };
+    }
+
+    function proposeToBot() {
+      const p = buildProposal();
+      const total = p.updates.length + p.adds.length;
+      if (total === 0) {
+        toast("Nothing to propose — your edits match the bot's current data.", "ok");
+        return;
+      }
+      const lines = ["## Ability Editor proposal", ""];
+      lines.push("Proposed from the public Ability Editor demo.");
+      lines.push("");
+      lines.push("### Summary");
+      lines.push("");
+      if (p.updates.length) {
+        lines.push("- " + p.updates.length + " edit(s): " + p.updates.map((u) => u.name).join(", "));
+      }
+      if (p.adds.length) {
+        lines.push("- " + p.adds.length + " new: " + p.adds.map((a) => a.entry.name).join(", "));
+      }
+      lines.push("");
+      lines.push("### Payload");
+      lines.push("");
+      lines.push("```json");
+      lines.push(JSON.stringify(p));
+      lines.push("```");
+      const title =
+        "Ability: " +
+        (p.updates.length ? "Edit " + p.updates.map((u) => u.name).join(", ") : "") +
+        (p.updates.length && p.adds.length ? " + " : "") +
+        (p.adds.length ? "Add " + p.adds.map((a) => a.entry.name).join(", ") : "");
+      const url =
+        "https://github.com/" +
+        REPO +
+        "/issues/new?title=" +
+        encodeURIComponent(title) +
+        "&body=" +
+        encodeURIComponent(lines.join("\n"));
+      window.open(url, "_blank");
+      toast("Proposal drafted — a GitHub issue should open in a new tab.", "ok");
+    }
+
     async function fetchData() {
-      const d = await api("/api/data");
+      const d = STATIC ? state.data : await api("/api/data");
       state.data = d;
       renderList();
       if (state.selected) {
@@ -593,13 +780,26 @@
 
     // ---------- status ----------
     async function refreshStatus() {
+      if (STATIC) {
+        state.pending = false;
+        $("#dirty-chip").classList.toggle("show", state.pending || state.dirty);
+        $("#dot").className = "dot on";
+        $("#status-text").textContent =
+          "demo mode · " +
+          list().length +
+          " " +
+          state.kind +
+          (state.kind === "class" ? "es" : "s") +
+          (state.data.customs.length ? " · " + state.data.customs.length + " custom" : "");
+        return;
+      }
       try {
         const s = await api("/api/status");
         state.pending = !!s.pendingRegen;
         $("#dirty-chip").classList.toggle("show", state.pending || state.dirty);
         $("#dot").className = "dot on";
         $("#status-text").textContent =
-          "connected · " + list().length + " " + state.kind + "s" +
+          "connected · " + list().length + " " + state.kind + (state.kind === "class" ? "es" : "s") +
           (s.customCount ? " · " + s.customCount + " custom" : "");
       } catch (e) {
         $("#dot").className = "dot err";
@@ -1057,6 +1257,10 @@
 
     // ---------- global actions ----------
     async function saveToBot() {
+      if (STATIC) {
+        proposeToBot();
+        return;
+      }
       try {
         const r = await api("/api/regenerate");
         if (r.noChanges) {
@@ -1079,6 +1283,20 @@
     }
 
     async function revertAll() {
+      if (STATIC) {
+        if (
+          !confirm(
+            "Discard all unsaved edits and reload the bundled data? Custom test classes/weapons are kept.",
+          )
+        )
+          return;
+        seedStatic();
+        await fetchData();
+        renderDetail();
+        refreshStatus();
+        toast("Reverted — data reloaded from the bundled snapshot.", "ok");
+        return;
+      }
       if (
         !confirm(
           "Discard ALL unsaved edits? In-memory data will be reloaded from src/data/index.ts. Custom test classes/weapons are kept.",
@@ -1109,9 +1327,13 @@
             await fetchData();
             renderDetail();
             toast(
-              'Custom "' +
-                name +
-                '" created — available in the test client, never written to src/data/index.ts.',
+              STATIC
+                ? 'Custom "' +
+                  name +
+                  '" created — saved in this browser. Use Propose to Bot to suggest adding it to the bot.'
+                : 'Custom "' +
+                  name +
+                  '" created — available in the test client, never written to src/data/index.ts.',
               "ok",
             );
           } catch (e) {
@@ -1126,7 +1348,9 @@
       if (!item) return;
       if (
         !confirm(
-          'Delete custom "' + item.name + '"? It will be removed from memory and the test client.',
+          STATIC
+            ? 'Delete custom "' + item.name + '"? It will be removed from this browser.'
+            : 'Delete custom "' + item.name + '"? It will be removed from memory and the test client.',
         )
       )
         return;
@@ -1148,6 +1372,21 @@
 
     // ---------- init ----------
     (async function init() {
+      if (STATIC) {
+        seedStatic();
+        renderList();
+        $("#btn-save").textContent = "Propose to Bot";
+        $("#btn-save").title =
+          "Draft a GitHub issue proposing these changes to the bot. A maintainer workflow turns approved issues into PRs (custom test entries are included as additions).";
+        $("#btn-revert").title =
+          "Discard all unsaved edits and reload the bundled data. Custom test classes/weapons are kept.";
+        const hint = document.querySelector("#empty-state .hint");
+        if (hint)
+          hint.innerHTML =
+            "Public demo: edits and custom test classes/weapons stay in this browser (localStorage). Propose to Bot opens a GitHub issue that maintainers can turn into a PR.";
+        refreshStatus();
+        return;
+      }
       try {
         await fetchData();
       } catch (e) {
