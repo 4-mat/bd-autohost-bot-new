@@ -2586,14 +2586,15 @@ function walkPhaseAware(
   moonPhase: string | undefined,
   visit: (e: Effect) => void,
 ): void {
+  const phase = moonPhase?.toLowerCase().trim();
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
       const want = e.condition
         .slice("phase is ".length)
         .split(" or ")
         .map((s) => s.trim());
-      if (moonPhase && want.includes(moonPhase)) {
-        walkPhaseAware(e.thenEffects, moonPhase, visit);
+      if (phase && want.includes(phase)) {
+        walkPhaseAware(e.thenEffects, phase, visit);
       }
       continue;
     }
@@ -2690,13 +2691,14 @@ function mergeCombatMetadata(
   subweapon?: string,
   moonPhase?: string,
 ): void {
+  const phase = moonPhase?.toLowerCase().trim();
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("subweapon is ")) {
       // Only the matching branch's sub-effects count; the non-matching
       // branches are dead code for this user's equipped subweapon.
       const want = e.condition.slice("subweapon is ".length);
       if (subweapon && subweapon === want) {
-        mergeCombatMetadata(out, e.thenEffects, subweapon, moonPhase);
+        mergeCombatMetadata(out, e.thenEffects, subweapon, phase);
       }
       continue;
     }
@@ -2709,8 +2711,8 @@ function mergeCombatMetadata(
         .slice("phase is ".length)
         .split(" or ")
         .map((s) => s.trim());
-      if (moonPhase && want.includes(moonPhase)) {
-        mergeCombatMetadata(out, e.thenEffects, subweapon, moonPhase);
+      if (phase && want.includes(phase)) {
+        mergeCombatMetadata(out, e.thenEffects, subweapon, phase);
       }
       continue;
     }

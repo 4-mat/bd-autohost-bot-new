@@ -2063,6 +2063,19 @@ describe("getPassiveRangeBonus", () => {
     expect(getPassiveRangeBonus(e)).toBe(0); // no phase -> branch not entered
   });
 
+  it("is case/whitespace-insensitive to the phase value ('New Moon' still counts)", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range.",
+      }),
+    ];
+    expect(getPassiveRangeBonus(e, "New Moon")).toBe(1);
+    expect(getPassiveRangeBonus(e, "  waning  ")).toBe(0);
+  });
+
   it("formatSubweapon canonicalizes aliases for display", () => {
     expect(formatSubweapon("PILUM")).toBe("Pilum");
     expect(formatSubweapon("pi-lum")).toBe("Pilum");
