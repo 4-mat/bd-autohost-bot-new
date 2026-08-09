@@ -5,7 +5,10 @@
 ## What this is
 
 A planned consolidation of related per-combat toggle mechanics into a single
-"Stance" structure owned by each entity. Currently these features exist as
+"Stance" structure. Ownership today is mixed: subweapons are entity-level
+(`Entity.subweapon`), moon phases are game-level (`Game.moonPhase`) -- whether
+the unified stance lives on the entity, the game, or both is an open design
+decision (see Goal / Migration plan). Currently these features exist as
 separate, loosely-related pieces of state and syntax:
 
 - **Moon phases** — `Game.moonPhase`, set by `"Phase: X"` effects, read by
