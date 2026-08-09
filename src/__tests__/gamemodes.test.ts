@@ -45,6 +45,15 @@ describe("GAMEMODE_MAPS", () => {
       if (mode !== "ntr") expect(min).toBeGreaterThanOrEqual(7);
     }
   });
+
+  test("ntr pool contains only exactly 5x5 maps", () => {
+    for (const name of GAMEMODE_MAPS.ntr) {
+      const m = getMapByName(name);
+      expect(m, `ntr pool: "${name}" is not a curated map`).toBeDefined();
+      expect(m!.rows, `${name} must be exactly 5 rows for ntr`).toBe(5);
+      expect(m!.cols, `${name} must be exactly 5 cols for ntr`).toBe(5);
+    }
+  });
 });
 
 describe("mapsForMode", () => {
