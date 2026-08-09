@@ -70,7 +70,7 @@ Normalizes `cmd` via `toId`, then dispatches to one of four sub-routers:
 | --------------------------------------------- | ----------------- | ------------------ |
 | `ping` / `help`                               | inline            | `%ping`, `%help`   |
 | `wt` / `rf` / `wtm`                           | `infoCommand()`   | reference lookups  |
-| `vs`, `vl`, `vi`, `loot`, `xp`, `gold`, `sco` | `playerCommand()` | character stats    |
+| `vs`, `vl`, `vi`, `loot`, `xp`, `gold`, `score` | `playerCommand()` | character stats    |
 | host commands (see below)                     | `hostCommand()`   | game setup         |
 | game commands (see below)                     | `gameCommand()`   | in-play actions    |
 | `sheets`                                      | `sheetsCommand()` | Google Sheets sync |
@@ -89,6 +89,10 @@ All game setup commands, routed by `hostCommand()`:
 | `%remp`              | `handleRemPlayer`    | Removes an entity                                                                                                                        |
 | `%sc`                | `handleSwitchClass`  | Changes YOUR class (`%sc <class>`), recalculates stats + abilities; until the game starts             |
 | `%sw`                | `handleSwitchWeapon` | Changes YOUR weapon (`%sw <weapon>`), recalculates stats + abilities; until the game starts             |
+| `%sco`               | `handleSelfLoadout`     | Sets YOUR class AND weapon (`%sco <class>, <weapon>`) in one go; until the game starts              |
+| `%setclass`          | `handleSetClass`        | Sets YOUR class (`%setclass <class>`), recalculates stats + abilities; until the game starts        |
+| `%setweapon`         | `handleSetWeapon`       | Sets YOUR weapon (`%setweapon <weapon>`), recalculates stats + abilities; until the game starts      |
+| `%setloadout`        | `handleSetEntityLoadout` | Sets YOUR class AND weapon (`%setloadout <class>, <weapon>`) in one go; until the game starts       |
 | `%setlevel` / `%sl`  | `handleSetLevel`     | Sets class/weapon level 1-10, unlocks abilities by level; `all` levels every player at once                                                                  |
 | `%setteam`           | `handleSetTeam`      | Changes an entity's team number                                                                                                          |
 | `%setmap`            | `handleSetMap`       | Sets a curated map by name, a random map from a gamemode pool (`%setmap pvp`), or `%setmap gen` for a procedural map (host starts with no map; %start requires one)                                                                             |
@@ -169,10 +173,6 @@ Character viewer commands routed by `playerCommand()`:
 | `%vs` / `%viewstats`  | HP bar, stats, position, statuses, buffs, cooldowns                  |
 | `%vl` / `%viewlevels` | Class/weapon levels, all abilities with remaining uses and cooldowns |
 | `%vi` / `%viewitems`  | Stub                                                                 |
-| `%sco`               | Combined loadout setter: `%sco <class>, <weapon>` (your own, until start) |
-| `%setclass`          | `%setclass <class>` — set YOUR class until the game starts |
-| `%setweapon`         | `%setweapon <weapon>` — set YOUR weapon until the game starts |
-| `%setloadout`        | `%setloadout <class>, <weapon>` — set YOUR class AND weapon until the game starts |
 | `%score`             | Score display: HP + ability usage counts                            |
 
 Uses `findEntityInGames()` to locate the calling user's entity across
