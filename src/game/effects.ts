@@ -369,6 +369,33 @@ function canonicalResource(name: string): string | null {
   return null;
 }
 
+/**
+ * Memoization for parseEffects. Ability effect strings are static game
+ * data, so the same normalized text always parses to the same Effect[].
+ * Targeting/UI hot paths (getPassiveRangeBonus / getDefenderDiceMods via
+ * inRange, plus every resolveAttackFlow attack) re-parse the same passive
+ * and ability strings repeatedly -- caching avoids that work. Effect trees
+ * are treated as immutable by every caller (they only read / fold / apply
+ * them), so sharing the cached array is safe.
+ */
+// Assumes ability effect text is static game data (abilities.json / glossary
+// CSVs), so a bounded process-lifetime cache is safe and never needs clearing.
+const PARSE_EFFECTS_CACHE = new Map<string, Effect[]>();
+const PARSE_EFFECTS_CACHE_MAX = 2048;
+
+function cachedParseEffects(normalized: string): Effect[] {
+  const hit = PARSE_EFFECTS_CACHE.get(normalized);
+  if (hit) return hit;
+  const parsed = parseEffectsUncached(normalized);
+  if (PARSE_EFFECTS_CACHE.size >= PARSE_EFFECTS_CACHE_MAX) {
+    // Bounded cache: drop the oldest entry (Map preserves insertion order).
+    const oldest = PARSE_EFFECTS_CACHE.keys().next().value;
+    if (oldest !== undefined) PARSE_EFFECTS_CACHE.delete(oldest);
+  }
+  PARSE_EFFECTS_CACHE.set(normalized, parsed);
+  return parsed;
+}
+
 export function parseEffects(text: string): Effect[] {
   if (!text || !text.trim()) return [];
 
@@ -379,6 +406,10 @@ export function parseEffects(text: string): Effect[] {
     .replace(/\s+/g, " ")
     .trim();
 
+  return cachedParseEffects(normalized);
+}
+
+function parseEffectsUncached(normalized: string): Effect[] {
   // Conditional statements span multiple splitClauses pieces, so try the
   // whole normalized text as a single conditional effect first. If the WHOLE
   // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return
