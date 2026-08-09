@@ -116,6 +116,20 @@ function makeAbility(
 // =============================================================================
 
 describe("parseEffects", () => {
+  it("memoizes: the same normalized text returns the identical array (cache hit)", () => {
+    // Ability effect strings are static game data re-parsed on hot paths
+    // (getPassiveRangeBonus / getDefenderDiceMods via inRange); the cache
+    // must return the SAME array for the same normalized text so repeated
+    // parses are O(1) lookups, and the tree stays immutable across callers.
+    const a = parseEffects("+1 dice. +2 dice faces.");
+    const b = parseEffects("+1 dice. +2 dice faces.");
+    expect(a).toBe(b);
+    // Whitespace-only / newline variants normalize to the same key.
+    expect(parseEffects("\n  +1 dice.\n +2 dice faces. ")).toBe(a);
+    // Different text is a different entry.
+    expect(parseEffects("+1 dice.")).not.toBe(a);
+  });
+
   it("recognises 'Apex: ...' as an apex clause", () => {
     const effects = parseEffects("Apex: Pull 3");
     expect(effects).toHaveLength(1);
