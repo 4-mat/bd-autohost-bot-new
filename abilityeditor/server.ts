@@ -31,27 +31,22 @@ import {
   type WeaponData,
 } from "../src/data/index.js";
 import { writeEditorSnapshot } from "../src/data/overrides.js";
+import {
+  readSourceText,
+  writeSourceText,
+  regenerateSourceText,
+  normalizeLevel,
+  sanitizeAbility,
+  toId,
+  STAT_KEYS,
+  isPlainObject,
+  type EntryLike,
+} from "./serializer.js";
 
 const PORT = Number(process.env.PORT) || 4700;
 const ROOT = path.join(import.meta.dirname, "..");
 const SRC_PATH = path.join(ROOT, "src", "data", "index.ts");
 const CUSTOMS_PATH = path.join(import.meta.dirname, "customs.local.json");
-
-// The source file uses CRLF line endings; preserve whatever the file already
-// uses so a regenerate keeps the git diff minimal on any machine.
-function detectSourceEol(): "\r\n" | "\n" {
-  try {
-    const head = fs.readFileSync(SRC_PATH, "utf8").slice(0, 1 << 16);
-    return head.includes("\r\n") ? "\r\n" : "\n";
-  } catch {
-    return "\n";
-  }
-}
-const SOURCE_EOL = detectSourceEol();
-
-function toId(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
 
 // ---------------------------------------------------------------------------
 // Custom test class/weapon tracking (in-memory + gitignored local file)
@@ -97,207 +92,9 @@ function isCustom(name: string): boolean {
 // Codegen: rewrite src/data/index.ts with minimal diffs
 // ---------------------------------------------------------------------------
 
-interface Block {
-  varName: string;
-  type: "ClassData" | "WeaponData";
-  name: string;
-  chunkStart: number;
-  chunkEnd: number;
-  literalText: string;
-}
-
-/** Locate every `const x: ClassData = { ... }; classes.set(...)` chunk. */
-function findBlocks(text: string): Block[] {
-  const blocks: Block[] = [];
-  const re = /\n  const ([A-Za-z0-9_]+): (ClassData|WeaponData) = \{/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const varName = m[1];
-    const type = m[2] as Block["type"];
-    const literalStart = m.index + m[0].length - 1; // the '{'
-    let i = literalStart;
-    let depth = 0;
-    let inStr: string | null = null;
-    for (; i < text.length; i++) {
-      const ch = text[i];
-      if (inStr) {
-        if (ch === "\\") { i++; continue; }
-        if (ch === inStr) inStr = null;
-        continue;
-      }
-      if (ch === "'" || ch === '"') { inStr = ch; continue; }
-      if (ch === "{") depth++;
-      else if (ch === "}") { depth--; if (depth === 0) break; }
-    }
-    const literalEnd = i;
-    let chunkEnd = literalEnd + 1;
-    if (text[chunkEnd] === ";") chunkEnd++;
-    const rest = text.slice(chunkEnd);
-    const setMatch = rest.match(
-      /^\n[ \t]*(?:classes|weapons)\.set\(toId\("[^"]*"\),[ \t]*\w+\);/,
-    );
-    let name = "";
-    if (setMatch) {
-      const nm = setMatch[0].match(/toId\("([^"]*)"\)/);
-      name = nm ? nm[1] : "";
-      chunkEnd += setMatch[0].length;
-    }
-    const literalText = text.slice(literalStart, literalEnd + 1);
-    if (!name) {
-      try {
-        const parsed = new Function("return " + literalText)();
-        name = parsed?.name ?? "";
-      } catch { /* leave empty */ }
-    }
-    blocks.push({ varName, type, name, chunkStart: m.index + 1, chunkEnd, literalText });
-  }
-  return blocks;
-}
-
-const CLASS_KEYS = ["name", "stats", "description", "abilities"];
-const WEAPON_KEYS = ["name", "branch", "stats", "description", "abilities"];
-const STAT_KEYS = ["hp", "atk", "mag", "pd", "md", "eva", "mp"];
-const ABILITY_KEYS = [
-  "name", "level", "frequency", "mr", "roll", "damageType", "actionType",
-  "targetAmount", "targetGroup", "range", "effect", "maxUses", "cost", "choices",
-];
-const COST_KEYS = ["type", "resource", "amount", "prompt"];
-const CHOICE_KEYS = ["id", "label"];
-
-function indentStr(n: number): string {
-  return " ".repeat(n);
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function primitive(v: unknown): string {
-  if (typeof v === "string") return JSON.stringify(v);
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
-  return JSON.stringify(v);
-}
-
-function inlineObj(o: Record<string, unknown>, keys: string[]): string {
-  const parts = keys
-    .filter((k) => o[k] !== undefined)
-    .map((k) => `${k}: ${primitive(o[k])}`);
-  return `{ ${parts.join(", ")} }`;
-}
-
-function fieldValue(key: string, v: unknown, indent: number): string {
-  if (key === "cost" && isPlainObject(v)) return inlineObj(v, COST_KEYS);
-  if (key === "choices" && Array.isArray(v)) {
-    const items = v.map(
-      (c) => `${indentStr(indent + 2)}${inlineObj(c, CHOICE_KEYS)},`,
-    );
-    return `[\n${items.join("\n")}\n${indentStr(indent)}]`;
-  }
-  if (Array.isArray(v)) return serializeArray(v, indent);
-  if (isPlainObject(v)) return serializeObject(v, STAT_KEYS, indent);
-  return primitive(v);
-}
-
-function serializeObject(
-  obj: Record<string, unknown>,
-  keys: string[],
-  indent: number,
-): string {
-  // Matches the file's existing style: `effect`/`description` strings that
-  // are non-empty go on their own (deeper-indented) line, everything else
-  // stays inline; `cost` is a single-line object and `choices` a multi-line
-  // array of single-line objects.
-  const lines: string[] = ["{"];
-  for (const k of keys) {
-    const v = obj[k];
-    if (v === undefined) continue;
-    if (
-      (k === "effect" || k === "description") &&
-      typeof v === "string" &&
-      v !== ""
-    ) {
-      lines.push(
-        `${indentStr(indent + 2)}${k}:\n${indentStr(indent + 4)}${primitive(v)},`,
-      );
-    } else {
-      lines.push(`${indentStr(indent + 2)}${k}: ${fieldValue(k, v, indent + 2)},`);
-    }
-  }
-  lines.push(`${indentStr(indent)}}`);
-  return lines.join("\n");
-}
-
-function serializeArray(arr: unknown[], indent: number): string {
-  if (arr.length === 0) return "[]";
-  const items = arr.map((it) =>
-    indentStr(indent + 2) +
-      serializeObject(it as Record<string, unknown>, ABILITY_KEYS, indent + 2) +
-      ",",
-  );
-  return `[\n${items.join("\n")}\n${indentStr(indent)}]`;
-}
-
-function serializeBlock(
-  entry: Record<string, unknown>,
-  type: "ClassData" | "WeaponData",
-  varName: string,
-): string {
-  const keys = type === "ClassData" ? CLASS_KEYS : WEAPON_KEYS;
-  const setter = type === "ClassData" ? "classes" : "weapons";
-  const body = serializeObject(entry, keys, 2);
-  return [
-    `  const ${varName}: ${type} = ${body};`,
-    `  ${setter}.set(toId("${entry.name}"), ${varName});`,
-  ].join("\n");
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== typeof b) return false;
-  if (a === null || b === null) return a === b;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    return a.every((x, i) => deepEqual(x, b[i]));
-  }
-  if (isPlainObject(a) && isPlainObject(b)) {
-    const ka = Object.keys(a);
-    const kb = Object.keys(b);
-    return (
-      ka
-        .filter((k) => a[k] !== undefined)
-        .every((k) => deepEqual(a[k], b[k])) &&
-      kb
-        .filter((k) => b[k] !== undefined)
-        .every((k) => deepEqual(b[k], a[k]))
-    );
-  }
-  return false;
-}
-
-function uniqueVar(base: string, used: Set<string>): string {
-  if (!used.has(base)) return base;
-  for (let i = 2; ; i++) if (!used.has(base + i)) return base + i;
-}
-
 function regenerateSource(): { changed: string[]; inserted: string[]; out: string } {
-  // Normalize to LF: the working copy may be CRLF (core.autocrlf), which
-  // would break the set-call scan and produce mixed line endings on write.
-  const text = fs.readFileSync(SRC_PATH, "utf8").replace(/\r\n/g, "\n");
-  const blocks = findBlocks(text);
-  const byName = new Map<string, Block>();
-  for (const b of blocks) byName.set(b.name, b);
-  const usedVars = new Set(blocks.map((b) => b.varName));
-
-  const changed: string[] = [];
-  const inserted: string[] = [];
-  const edits: Array<{ start: number; end: number; text: string }> = [];
-  const appendTexts: string[] = [];
-
-  const entries: Array<{
-    name: string;
-    type: "ClassData" | "WeaponData";
-    entry: Record<string, unknown>;
-  }> = [];
+  const text = readSourceText(SRC_PATH);
+  const entries: EntryLike[] = [];
   for (const c of classes.values()) {
     if (!isCustom(c.name)) {
       entries.push({ name: c.name, type: "ClassData", entry: c as unknown as Record<string, unknown> });
@@ -308,53 +105,7 @@ function regenerateSource(): { changed: string[]; inserted: string[]; out: strin
       entries.push({ name: w.name, type: "WeaponData", entry: w as unknown as Record<string, unknown> });
     }
   }
-
-  for (const e of entries) {
-    let block = byName.get(e.name);
-    if (!block) {
-      block = blocks.find((b) => toId(b.name) === toId(e.name));
-    }
-    if (block) {
-      let parsed: Record<string, unknown> | null = null;
-      try {
-        parsed = new Function("return " + block.literalText)() as Record<string, unknown>;
-      } catch { /* fall through to rewrite */ }
-      if (parsed && deepEqual(parsed, e.entry)) continue;
-      let varName = block.varName;
-      if (toId(block.name) !== toId(e.name)) {
-        varName = uniqueVar(toId(e.name), usedVars);
-        usedVars.add(varName);
-      }
-      edits.push({
-        start: block.chunkStart,
-        end: block.chunkEnd,
-        text: serializeBlock(e.entry, e.type, varName),
-      });
-      changed.push(e.name);
-    } else {
-      const varName = uniqueVar(toId(e.name), usedVars);
-      usedVars.add(varName);
-      appendTexts.push(serializeBlock(e.entry, e.type, varName));
-      inserted.push(e.name);
-    }
-  }
-
-  edits.sort((a, b) => b.start - a.start);
-  let out = text;
-  for (const ed of edits) {
-    out = out.slice(0, ed.start) + ed.text + out.slice(ed.end);
-  }
-
-  if (appendTexts.length) {
-    const marker = "  // Build branches";
-    const idx = out.indexOf(marker);
-    if (idx === -1) {
-      throw new Error("Could not find insertion point in src/data/index.ts");
-    }
-    out = out.slice(0, idx) + appendTexts.join("\n\n") + "\n\n" + out.slice(idx);
-  }
-
-  return { changed, inserted, out };
+  return regenerateSourceText(text, entries);
 }
 
 // ---------------------------------------------------------------------------
@@ -370,44 +121,6 @@ function entryMap(kind: string): Map<string, any> | null {
   if (kind === "class") return classes as Map<string, any>;
   if (kind === "weapon") return weapons as Map<string, any>;
   return null;
-}
-
-function normalizeLevel(v: unknown): number | "EX1" | "EX2" {
-  const s = String(v ?? "1").trim().toUpperCase();
-  if (s === "EX1" || s === "EX2") return s as "EX1" | "EX2";
-  const n = parseInt(s, 10);
-  return isNaN(n) ? 1 : Math.max(1, Math.min(10, n));
-}
-
-function sanitizeAbility(raw: any): Record<string, unknown> {
-  const clean: Record<string, unknown> = {};
-  for (const k of ABILITY_KEYS) {
-    let v = raw[k];
-    if (v === undefined || v === null || v === "") {
-      if (k === "name") continue;
-      if (k === "cost" || k === "choices") continue;
-      if (k === "maxUses") continue;
-    }
-    if (k === "level") v = normalizeLevel(v);
-    else if (k === "mr") v = Number(v) || 0;
-    else if (k === "maxUses") v = Number(v) || 1;
-    else if (k === "targetAmount") {
-      v = typeof v === "string" && isNaN(Number(v)) ? v : Number(v);
-    } else if (k === "cost" && isPlainObject(v)) {
-      const cost: Record<string, unknown> = {};
-      for (const ck of COST_KEYS) if (v[ck] !== undefined) cost[ck] = v[ck];
-      if (Object.keys(cost).length) v = cost;
-      else continue;
-    } else if (k === "choices" && Array.isArray(v)) {
-      const ch = v
-        .filter((c) => c?.id && c?.label)
-        .map((c) => ({ id: String(c.id), label: String(c.label) }));
-      if (!ch.length) continue;
-      v = ch;
-    }
-    clean[k] = v;
-  }
-  return clean;
 }
 
 function defaultClass(name: string, item: any): ClassData {
@@ -653,7 +366,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         send(res, 200, { ok: true, noChanges: true, changed: [], inserted: [] });
         return;
       }
-      fs.writeFileSync(SRC_PATH, SOURCE_EOL === "\r\n" ? out.replace(/\n/g, "\r\n") : out);
+      writeSourceText(SRC_PATH, out);
       pendingRegen = false;
       send(res, 200, { ok: true, changed, inserted });
       return;
