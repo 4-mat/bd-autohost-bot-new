@@ -351,8 +351,10 @@ export function normalizeProposalEntry(
   if (type === "WeaponData") entry.branch = String(raw.branch ?? "");
   const stats: Record<string, string> = {};
   const rawStats = isPlainObject(raw.stats) ? raw.stats : {};
+  // Fill every stat key (default "0") so the regenerated source always
+  // satisfies the ClassData/WeaponData types even for partial payloads.
   for (const k of STAT_KEYS) {
-    if (rawStats[k] !== undefined) stats[k] = String(rawStats[k]);
+    stats[k] = rawStats[k] !== undefined ? String(rawStats[k]) : "0";
   }
   entry.stats = stats;
   entry.abilities = Array.isArray(raw.abilities)
