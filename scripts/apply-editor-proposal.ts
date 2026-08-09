@@ -15,42 +15,42 @@
 // Entries are sanitized (normalizeProposalEntry) and applied via the shared
 // serializer, which rewrites only the changed blocks (minimal diff). Prints a
 // one-line summary on success; exits non-zero with a reason on rejection.
+// The core logic is exported for unit tests
+// (src/__tests__/apply-editor-proposal.test.ts).
 
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import {
   readSourceText,
   writeSourceText,
   regenerateSourceText,
   normalizeProposalEntry,
   findBlocks,
+  toId,
+  type EntryLike,
   type EntryType,
+  type RegenResult,
 } from "../abilityeditor/serializer.js";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC_PATH = path.join(ROOT, "src", "data", "index.ts");
 
-interface ProposalOp {
+export interface ProposalOp {
   kind?: unknown;
   name?: unknown;
   entry?: unknown;
 }
 
-interface Proposal {
+export interface Proposal {
   updates?: ProposalOp[];
   adds?: ProposalOp[];
-}
-
-function fail(msg: string): never {
-  console.error("PROPOSAL REJECTED: " + msg);
-  process.exit(1);
 }
 
 function typeOf(kind: unknown, ctx: string): EntryType {
   if (kind === "class") return "ClassData";
   if (kind === "weapon") return "WeaponData";
-  fail(ctx + " has invalid kind (use class or weapon)");
+  throw new Error(ctx + " has invalid kind (use class or weapon)");
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -59,83 +59,123 @@ function asRecord(v: unknown): Record<string, unknown> {
     : {};
 }
 
-function main(): void {
-  const arg = process.argv[2];
-  if (!arg) fail("usage: bun scripts/apply-editor-proposal.ts <proposal.json>");
-
-  let raw: Proposal;
-  try {
-    raw = JSON.parse(fs.readFileSync(arg, "utf8")) as Proposal;
-  } catch (e) {
-    fail("could not parse proposal payload: " + (e as Error).message);
-  }
+/**
+ * Validate a proposal and produce the regenerated source text. Pure — no file
+ * I/O, so it is unit-testable. Throws an Error on any validation failure.
+ */
+export function applyProposalText(text: string, raw: Proposal): RegenResult {
   if (!raw || !Array.isArray(raw.updates) || !Array.isArray(raw.adds)) {
-    fail("payload must contain updates[] and adds[] arrays");
+    throw new Error("payload must contain updates[] and adds[] arrays");
   }
 
-  const text = readSourceText(SRC_PATH);
   const existing = new Set(findBlocks(text).map((b) => b.name));
-  // Names already claimed: existing source entries + anything accepted earlier
-  // in this payload. Guards against duplicate adds, duplicate updates, and
-  // update/add collisions, which would otherwise produce broken output.
-  const seen = new Set(existing);
+  // Case-insensitive (toId) membership: catches duplicates like "Foo"/"foo"
+  // and adds colliding with an existing entry regardless of case. Existing
+  // name targeting stays exact, matching regenerateSourceText's block lookup.
+  const existingIds = new Set([...existing].map(toId));
+  const seen = new Set<string>(); // toId of names accepted earlier in this payload
 
-  const entries: { name: string; type: EntryType; entry: Record<string, unknown> }[] = [];
+  const entries: EntryLike[] = [];
 
   for (const u of raw.updates) {
     const type = typeOf(u.kind, "an update");
     const name = String(u.name ?? "").trim();
-    if (!name) fail("an update is missing a name");
-    if (seen.has(name)) {
-      fail("duplicate name '" + name + "' in the proposal — each entry may appear once");
+    if (!name) throw new Error("an update is missing a name");
+    if (seen.has(toId(name))) {
+      throw new Error(
+        "duplicate name '" + name + "' in the proposal — each entry may appear once",
+      );
     }
     const entry = normalizeProposalEntry(asRecord(u.entry), type);
     if (entry.name !== name) {
-      fail(
-        "update name mismatch: payload says '" + name + "' but the entry is named '" + entry.name + "'",
+      throw new Error(
+        "update name mismatch: payload says '" +
+          name +
+          "' but the entry is named '" +
+          entry.name +
+          "'",
       );
     }
     if (!existing.has(name)) {
-      fail("update targets '" + name + "' which does not exist in src/data/index.ts");
+      throw new Error("update targets '" + name + "' which does not exist in src/data/index.ts");
     }
-    seen.add(name);
+    seen.add(toId(name));
     entries.push({ name, type, entry });
   }
 
   for (const a of raw.adds) {
     const type = typeOf(a.kind, "an add");
     const entry = normalizeProposalEntry(asRecord(a.entry), type);
-    if (!entry.name) fail("an add is missing a name");
-    if (seen.has(entry.name)) {
-      if (existing.has(entry.name)) {
-        fail(
-          "add '" + entry.name + "' already exists in src/data/index.ts — propose an edit instead",
-        );
-      }
-      fail("duplicate name '" + entry.name + "' in the proposal — each entry may appear once");
+    if (!entry.name) throw new Error("an add is missing a name");
+    const id = toId(entry.name);
+    if (seen.has(id)) {
+      throw new Error(
+        "duplicate name '" + entry.name + "' in the proposal — each entry may appear once",
+      );
     }
-    seen.add(entry.name);
+    if (existingIds.has(id)) {
+      throw new Error(
+        "add '" + entry.name + "' already exists in src/data/index.ts — propose an edit instead",
+      );
+    }
+    seen.add(id);
     entries.push({ name: entry.name, type, entry });
   }
 
-  if (entries.length === 0) fail("no changes to apply");
+  if (entries.length === 0) throw new Error("no changes to apply");
 
-  const result = regenerateSourceText(text, entries);
-  if (result.changed.length === 0 && result.inserted.length === 0) {
-    console.log("no changes needed — the data already matches");
-    return;
-  }
-
-  writeSourceText(SRC_PATH, result.out);
-
-  const parts: string[] = [];
-  if (result.changed.length) {
-    parts.push("updated " + result.changed.length + ": " + result.changed.join(", "));
-  }
-  if (result.inserted.length) {
-    parts.push("added " + result.inserted.length + ": " + result.inserted.join(", "));
-  }
-  console.log(parts.join("; "));
+  return regenerateSourceText(text, entries);
 }
 
-main();
+/**
+ * Read a proposal file and apply it to srcPath, writing only when something
+ * actually changed. Returns the changed/inserted names.
+ */
+export function applyProposalFile(
+  proposalPath: string,
+  srcPath: string,
+): { changed: string[]; inserted: string[] } {
+  let raw: Proposal;
+  try {
+    raw = JSON.parse(fs.readFileSync(proposalPath, "utf8")) as Proposal;
+  } catch (e) {
+    throw new Error("could not parse proposal payload: " + (e as Error).message);
+  }
+  const text = readSourceText(srcPath);
+  const result = applyProposalText(text, raw);
+  if (result.changed.length === 0 && result.inserted.length === 0) {
+    return { changed: [], inserted: [] };
+  }
+  writeSourceText(srcPath, result.out);
+  return { changed: result.changed, inserted: result.inserted };
+}
+
+function main(): void {
+  try {
+    const arg = process.argv[2];
+    if (!arg) throw new Error("usage: bun scripts/apply-editor-proposal.ts <proposal.json>");
+    const res = applyProposalFile(arg, SRC_PATH);
+    if (res.changed.length === 0 && res.inserted.length === 0) {
+      console.log("no changes needed — the data already matches");
+      return;
+    }
+    const parts: string[] = [];
+    if (res.changed.length) {
+      parts.push("updated " + res.changed.length + ": " + res.changed.join(", "));
+    }
+    if (res.inserted.length) {
+      parts.push("added " + res.inserted.length + ": " + res.inserted.join(", "));
+    }
+    console.log(parts.join("; "));
+  } catch (e) {
+    console.error("PROPOSAL REJECTED: " + (e as Error).message);
+    process.exit(1);
+  }
+}
+
+// Run as a CLI only when executed directly (not when imported by tests).
+const IS_MAIN =
+  !!process.argv[1] &&
+  (import.meta.url === pathToFileURL(process.argv[1]).href ||
+    process.argv[1].endsWith("apply-editor-proposal.ts"));
+if (IS_MAIN) main();
