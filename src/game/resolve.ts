@@ -19,6 +19,7 @@ import {
   DIRECTION_LABELS,
   placeTerrain,
   TERRAIN_NAMES,
+  Terrain,
 } from "./state.js";
 import {
   parseEffects,
@@ -49,6 +50,27 @@ function defensiveStat(entity: Entity, damageType: string): number {
   return getEffectiveStat(entity, damageType === "Physical" ? "pd" : "md");
 }
 
+// Per the BD 4.4 Map glossary (src/README.md terrain table), terrain affects
+// a defending entity on its tile, keyed by the attacker's damage type:
+//   Forest: +5 PD, -1 EVA vs Physical attacks
+//   Water:  +5 MD, -1 EVA vs Magical attacks
+export function terrainStatBonus(
+  game: Game,
+  entity: Entity,
+  stat: string,
+  damageType: string,
+): number {
+  const tile = game.map[entity.pos[0]]?.[entity.pos[1]];
+  if (tile === Terrain.Forest) {
+    if (stat === "pd") return 5;
+    if (stat === "eva" && damageType === "Physical") return -1;
+  }
+  if (tile === Terrain.Water) {
+    if (stat === "md") return 5;
+    if (stat === "eva" && damageType === "Magical") return -1;
+  }
+  return 0;
+}
 export function getEffectiveStat(entity: Entity, stat: string): number {
   let base = 0;
   switch (stat) {
@@ -666,7 +688,9 @@ function* resolveSingleTarget(
   const result = newResult();
 
   const userAccBonus = getStatBonus(user, "acc");
-  const targetEva = getEffectiveStat(target, "eva");
+  const targetEva =
+    getEffectiveStat(target, "eva") +
+    terrainStatBonus(game, target, "eva", ability.damageType);
   const {
     hit,
     roll: accRoll,
@@ -684,7 +708,13 @@ function* resolveSingleTarget(
       ? 0
       : offensiveStat(user, ability.damageType);
     const targetDef = applyIgnoreToDefense(
-      defensiveStat(target, ability.damageType),
+      defensiveStat(target, ability.damageType) +
+        terrainStatBonus(
+          game,
+          target,
+          ability.damageType === "Physical" ? "pd" : "md",
+          ability.damageType,
+        ),
       combat.ignore,
     );
 
@@ -1041,7 +1071,15 @@ function resolveSplash(
     // Splash halves defense by default per the home page ("half target
     // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores
     // DEF" on the parent ability should still wipe the remaining half.
-    const rawDef = half(defensiveStat(target, ability.damageType));
+    const rawDef = half(
+      defensiveStat(target, ability.damageType) +
+        terrainStatBonus(
+          game,
+          target,
+          ability.damageType === "Physical" ? "pd" : "md",
+          ability.damageType,
+        ),
+    );
     const targetDef = applyIgnoreToDefense(rawDef, combat.ignore);
     const userOff = combat.ignore.atkMag
       ? 0

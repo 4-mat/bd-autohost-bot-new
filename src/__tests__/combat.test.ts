@@ -6,10 +6,7 @@ import {
   type AbilityData,
   Terrain,
 } from "../game/state.js";
-import {
-  parseEffects,
-  extractCombatMetadata,
-} from "../game/effects.js";
+import { parseEffects, extractCombatMetadata } from "../game/effects.js";
 import { startAttack } from "../game/resolve.js";
 
 setWs({ send() {} });
@@ -55,11 +52,13 @@ function makeEntity(
   };
 }
 
-function makeGame(opts: { entities?: Entity[]; size?: number } = {}): Game {
+function makeGame(
+  opts: { entities?: Entity[]; size?: number; map?: Terrain[][] } = {},
+): Game {
   const size = opts.size ?? 10;
-  const map = Array.from({ length: size }, () =>
-    Array(size).fill(Terrain.Normal),
-  );
+  const map =
+    opts.map ??
+    Array.from({ length: size }, () => Array(size).fill(Terrain.Normal));
   const entities = opts.entities ?? [
     makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 }),
     makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1 }),
@@ -230,9 +229,7 @@ describe("extractCombatMetadata", () => {
   });
 
   it("does NOT descend into Thirst sub-effects (would over-apply when blood < threshold)", () => {
-    const meta = extractCombatMetadata(
-      parseEffects("Thirst 4: Multi-Hit: 3"),
-    );
+    const meta = extractCombatMetadata(parseEffects("Thirst 4: Multi-Hit: 3"));
     expect(meta.additionalHits).toBe(0);
   });
 
@@ -242,18 +239,14 @@ describe("extractCombatMetadata", () => {
     // at runtime. resolve.ts handles per-branch metadata through the
     // legacy buff pipeline; metadata here is top-level only.
     const meta = extractCombatMetadata(
-      parseEffects(
-        "If target is alive, +30% damage. Otherwise, +10% damage.",
-      ),
+      parseEffects("If target is alive, +30% damage. Otherwise, +10% damage."),
     );
     expect(meta.damagePercent).toBe(0);
   });
 
   it("does NOT descend into Choose option sub-effects at extract time", () => {
     const meta = extractCombatMetadata(
-      parseEffects(
-        "Choose: Multi-Hit: 2 or +30% damage or Ignores DEF.",
-      ),
+      parseEffects("Choose: Multi-Hit: 2 or +30% damage or Ignores DEF."),
     );
     // All clauses are inside the Choose gate, so the metadata extractor
     // treats them as gated and leaves the top-level metadata at zero.
@@ -292,8 +285,9 @@ function driveResolveAgainst(
   user: Entity,
   ability: AbilityData,
   target: Entity,
+  map?: Terrain[][],
 ): string {
-  const game = makeGame({ entities: [user, target] });
+  const game = makeGame({ entities: [user, target], map });
   user.abilities = [ability];
   const step = startAttack(game, user, ability, target.num);
   let safety = 0;
@@ -438,9 +432,7 @@ describe("resolveAttackFlow: damage mods surface in the log", () => {
     // extracted metadata must not report a damage percent that was
     // nested inside an Apex clause, otherwise the resolve math treats
     // it as always-on.
-    const meta = extractCombatMetadata(
-      parseEffects("Apex: +50% damage"),
-    );
+    const meta = extractCombatMetadata(parseEffects("Apex: +50% damage"));
     expect(meta.damagePercent).toBe(0);
   });
 });
@@ -502,14 +494,175 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
     // Both P2 and P3 damage lines should carry the +50% mod tag.
     expect(log).toContain("P2");
     expect(log).toContain("P3");
-    const p2Trail = log.split("\n").find((line) =>
-      line.includes("Damage Modifiers applied") && line.includes("P2"),
-    );
-    const p3Trail = log.split("\n").find((line) =>
-      line.includes("Damage Modifiers applied") && line.includes("P3"),
-    );
+    const p2Trail = log
+      .split("\n")
+      .find(
+        (line) =>
+          line.includes("Damage Modifiers applied") && line.includes("P2"),
+      );
+    const p3Trail = log
+      .split("\n")
+      .find(
+        (line) =>
+          line.includes("Damage Modifiers applied") && line.includes("P3"),
+      );
     // The mod trails reference just the damageValue; for each target we
     // confirm at least one line contains the +50% tag.
     expect(log).toMatch(/\+50% damage/);
+  });
+});
+
+// ===========================================================================
+// Terrain stat bonuses: Forest +5 PD / -1 EVA vs Physical; Water +5 MD /
+// -1 EVA vs Magical (BD 4.4 Map glossary).
+// ===========================================================================
+
+describe("resolveAttackFlow: terrain stat bonuses", () => {
+  // Place a terrain tile under the target (default P2 pos [5, 6]).
+  function terrainMap(tile: Terrain): Terrain[][] {
+    const map = Array.from({ length: 10 }, () =>
+      Array(10).fill(Terrain.Normal),
+    );
+    map[5][6] = tile;
+    return map;
+  }
+
+  it("Forest grants +5 PD and -1 EVA vs a Physical attack", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      pd: 5,
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Sword Swing",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      damageType: "Physical",
+    });
+    const log = driveResolveAgainst(
+      user,
+      ability,
+      target,
+      terrainMap(Terrain.Forest),
+    );
+    // EVA shown in the accuracy line is base 0 - 1 = -1.
+    expect(log).toMatch(/EVA -1 =/);
+    // PD shown in the damage line is base 5 + 5 = 10.
+    expect(log).toMatch(/PD\(10\)/);
+  });
+
+  it("Forest does NOT grant EVA penalty vs a Magical attack (only PD applies)", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      pd: 5,
+      md: 5,
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Fireball",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      damageType: "Magical",
+    });
+    const log = driveResolveAgainst(
+      user,
+      ability,
+      target,
+      terrainMap(Terrain.Forest),
+    );
+    // Magical attack uses MD, not PD, so no +5 and no EVA change.
+    expect(log).toMatch(/EVA 0 =/);
+    expect(log).toMatch(/MD\(5\)/);
+  });
+
+  it("Water grants +5 MD and -1 EVA vs a Magical attack", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      md: 5,
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Fireball",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      damageType: "Magical",
+    });
+    const log = driveResolveAgainst(
+      user,
+      ability,
+      target,
+      terrainMap(Terrain.Water),
+    );
+    expect(log).toMatch(/EVA -1 =/);
+    expect(log).toMatch(/MD\(10\)/);
+  });
+
+  it("Water does NOT grant EVA penalty vs a Physical attack", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      pd: 5,
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Sword Swing",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      damageType: "Physical",
+    });
+    const log = driveResolveAgainst(
+      user,
+      ability,
+      target,
+      terrainMap(Terrain.Water),
+    );
+    expect(log).toMatch(/EVA 0 =/);
+    expect(log).toMatch(/PD\(5\)/);
+  });
+
+  it("Normal terrain grants no bonus", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      pd: 5,
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Sword Swing",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      damageType: "Physical",
+    });
+    const log = driveResolveAgainst(
+      user,
+      ability,
+      target,
+      terrainMap(Terrain.Normal),
+    );
+    expect(log).toMatch(/EVA 0 =/);
+    expect(log).toMatch(/PD\(5\)/);
   });
 });

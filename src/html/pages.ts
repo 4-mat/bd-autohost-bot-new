@@ -1,6 +1,7 @@
 import {
   TERRAIN_COLORS,
   TERRAIN_NAMES,
+  Terrain,
   getReachableTiles,
   getEffectiveMp,
   hasLineOfSight,
@@ -15,7 +16,11 @@ import {
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
 import { classes, weapons } from "../data/index.js";
-import { runoffOptions, tallyVotes, voteOptionsFor } from "../data/gamemodes.js";
+import {
+  runoffOptions,
+  tallyVotes,
+  voteOptionsFor,
+} from "../data/gamemodes.js";
 
 // -- Premove Mode Tracking -----------------------------------------------------
 
@@ -73,7 +78,9 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
   const players = game.entities.filter((e) => !e.isMonster);
   // During a runoff only the tied modes are shown/votable.
   const runoff = game.voteRunoff;
-  const options = runoff ? runoffOptions(runoff) : voteOptionsFor(players.length);
+  const options = runoff
+    ? runoffOptions(runoff)
+    : voteOptionsFor(players.length);
   const tally = new Map(tallyVotes(game.votes).map((t) => [t.mode, t.count]));
   const voted = Object.keys(game.votes).length;
 
@@ -86,7 +93,8 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
   html += `<span style="color:#888;font-size:10px">New to a mode? Hover the buttons, or use %wt modes to learn them all.</span><br>`;
 
   if (options.length === 0) {
-    html += '<span style="color:#888"><i>No valid modes for this lobby size (modes are defined for up to 8 players).</i></span>';
+    html +=
+      '<span style="color:#888"><i>No valid modes for this lobby size (modes are defined for up to 8 players).</i></span>';
   }
 
   if (entity !== null) {
@@ -115,7 +123,9 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
     // Host view: per-mode tally summary.
     const tallySummary =
       tally.size > 0
-        ? [...tally.entries()].map(([m, c]) => `${esc(m)}: ${c}`).join(" &nbsp;|")
+        ? [...tally.entries()]
+            .map(([m, c]) => `${esc(m)}: ${c}`)
+            .join(" &nbsp;|")
         : "no votes yet";
     html += `<div style="margin:4px 0"><b>Tally:</b> ${tallySummary}</div>`;
 
@@ -399,6 +409,30 @@ function buildStatCell(entity: Entity, stat: string, base: number): string {
   return `<td style="padding:0px 8px"><i style="color:${color}">${value}</i></td>`;
 }
 
+// Tile column: name + terrain stat bonus summary (BD 4.4 Map glossary).
+function buildTileCell(game: Game, entity: Entity): string {
+  const tile = game.map[entity.pos[0]]?.[entity.pos[1]];
+  const name = TERRAIN_NAMES[tile] ?? "Normal";
+  let note = "";
+  if (tile === Terrain.Forest) note = " +5 PD / -1 EVA vs Phys";
+  else if (tile === Terrain.Water) note = " +5 MD / -1 EVA vs Mag";
+  else if (tile === Terrain.Lava) note = " 30 dmg end turn";
+  else if (tile === Terrain.Air) note = " -1 range through";
+  else if (tile === Terrain.Sticky) note = " +1 MP to enter";
+  else if (tile === Terrain.Boost) note = " -1 MP to enter";
+  const color = TERRAIN_COLORS[tile];
+  // Forest (#226622) and Water (#454FDF) backgrounds are dark; use light
+  // text there so the bonus note stays readable.
+  const fg =
+    tile === Terrain.Forest || tile === Terrain.Water ? "color:#fff" : "";
+  const style = color
+    ? `style="background:${color};${fg};padding:0px 8px"`
+    : "padding:0px 8px";
+  const title = note.trim();
+  const noteStyle = fg ? "color:#ccc" : "color:#888";
+  return `<td ${style} title="${esc(title)}">${esc(name)}${note ? ` <i style="color:${noteStyle};font-size:10px">${esc(note)}</i>` : ""}</td>`;
+}
+
 function buildBuffSuffix(entity: Entity): string {
   const parts: string[] = [];
   for (const b of entity.buffs) {
@@ -436,6 +470,8 @@ function buildPlayerDataTable(game: Game): string {
 <col width="22">
 <col width="22">
 <col width="22">
+<col width="22">
+<col width="22">
 </colgroup>
 <tbody>
 `;
@@ -454,6 +490,7 @@ function buildPlayerDataTable(game: Game): string {
     "MD",
     "EVA",
     "MP",
+    "Tile",
   ];
 
   for (const h of headers) {
@@ -494,6 +531,7 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
     html += buildStatCell(e, "md", e.md);
     html += buildStatCell(e, "eva", e.eva);
     html += buildStatCell(e, "mp", e.mp);
+    html += buildTileCell(game, e);
 
     html += `</tr>`;
   }
@@ -509,7 +547,7 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
 
   html += `
 <tr style="min-height:22px">
-<td colspan="10" style="text-align:center">
+<td colspan="11" style="text-align:center">
 <b>
 Turn Order: ${turnParts.map(esc).join(", ")}
 </b>
