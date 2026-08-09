@@ -791,6 +791,11 @@
       .draft-banner button {
         margin-left: 2px;
       }
+      /* display:flex above would override the hidden attribute, which made the
+         banner show up as an empty yellow pill whenever no draft existed. */
+      .draft-banner[hidden] {
+        display: none;
+      }
     </style>
   </head>
   <body>
