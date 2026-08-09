@@ -2595,6 +2595,11 @@
         toast('Restored draft "' + (draft.name || "untitled") + '"', "ok");
       }
       function discardDraft() {
+        // Cancel any pending autosave so it can't re-create the draft right
+        // after the user discards it (the 700ms timer would otherwise fire
+        // and bring the "Draft of ..." banner back on the next reload).
+        clearTimeout(draftTimer);
+        draftUserEdit = false;
         try {
           localStorage.removeItem("bd-editor-draft");
         } catch (e) {
