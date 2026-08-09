@@ -3,12 +3,14 @@ name: Discord major-release notification
 on:
   release:
     types: [released]
+  workflow_dispatch:
 
 permissions: {}
 
 jobs:
   notify:
     if: >-
+      github.event_name == 'workflow_dispatch' ||
       endsWith(github.event.release.tag_name, '.0.0') ||
       github.event.release.tag_name == '0.1.0' ||
       github.event.release.tag_name == 'v0.1.0'
@@ -17,10 +19,10 @@ jobs:
       - name: Send Discord webhook
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          TAG: ${{ github.event.release.tag_name }}
-          NAME: ${{ github.event.release.name }}
-          URL: ${{ github.event.release.html_url }}
-          BODY: ${{ github.event.release.body }}
+          TAG: ${{ github.event.release.tag_name || 'v1.0.0' }}
+          NAME: ${{ github.event.release.name || 'Battle Dome Autohost v1.0.0' }}
+          URL: ${{ github.event.release.html_url || 'https://github.com/4-mat/bd-autohost-bot-new/releases/tag/v1.0.0' }}
+          BODY: ${{ github.event.release.body || 'Release notification (manual re-send).' }}
         run: |
           # NOTE: the jq program is intentionally a single line — multi-line
           # single-quoted jq breaks when this file is checked out with CRLF.
