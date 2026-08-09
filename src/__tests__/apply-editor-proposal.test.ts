@@ -168,6 +168,65 @@ describe("applyProposalText", () => {
   });
 });
 
+  it("escapes names containing quotes in the generated setter line", () => {
+    const p: Proposal = {
+      updates: [],
+      adds: [{ kind: "class", entry: customClass('Test"Class') }],
+    };
+    const r = applyProposalText(SRC, p);
+    expect(r.inserted).toEqual(['Test"Class']);
+    expect(r.out).toContain('classes.set(toId("Test\\"Class"), testclass);');
+    // Round-trip: the regenerated source parses back to the same entry.
+    const r2 = applyProposalText(r.out, {
+      updates: [{ kind: "class", name: 'Test"Class', entry: customClass('Test"Class') }],
+      adds: [],
+    } as Proposal);
+    expect(r2.changed).toEqual([]);
+    expect(r2.inserted).toEqual([]);
+    expect(r2.out).toBe(r.out);
+  });
+
+  it("scans blocks containing comments and template literals with braces", () => {
+    const srcWithComments = [
+      "",
+      "  const bard: ClassData = {",
+      '    name: "Bard",',
+      "    // } inside a comment must not end the block",
+      "    /* neither should this } */",
+      "    stats: {",
+      '      hp: "80",',
+      '      atk: "7",',
+      '      mag: "7",',
+      '      pd: "0",',
+      '      md: "0",',
+      '      eva: "1.7",',
+      '      mp: "3",',
+      "    },",
+      "    description:",
+      "      `desc with } brace`,",
+      "    abilities: [],",
+      "  };",
+      '  classes.set(toId("Bard"), bard);',
+      "",
+      "  // Build branches",
+      "",
+    ].join("\n");
+    const p: Proposal = {
+      updates: [
+        {
+          kind: "class",
+          name: "Bard",
+          entry: { ...bardEntry("80"), description: "desc with } brace" },
+        },
+      ],
+      adds: [],
+    };
+    const r = applyProposalText(srcWithComments, p);
+    expect(r.changed).toEqual([]);
+    expect(r.inserted).toEqual([]);
+    expect(r.out).toBe(srcWithComments);
+  });
+
 // ---------------------------------------------------------------------------
 // Rejection cases
 // ---------------------------------------------------------------------------
