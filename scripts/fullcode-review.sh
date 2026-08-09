@@ -49,7 +49,9 @@ fi
 
 git -c user.name="4-mat" -c user.email="4-mat@users.noreply.github.com" \
   commit -m "review: ${CHUNK} (full-codebase chunk)" --quiet
-git push -u origin "$BRANCH" --quiet
+# Repeat runs recreate $BRANCH from empty-base, so a plain push would be
+# rejected as non-fast-forward — use a lease-protected force push.
+git push -u origin "$BRANCH" --force-with-lease --quiet
 
 TITLE="review: ${CHUNK} (full-codebase chunk)"
 gh pr create --base empty-base --head "$BRANCH" \
