@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Discord Issue Bot — Oracle Cloud Deploy Guide (Free 24/7)</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #171a23;
+    --border: #262b3a;
+    --text: #e6e9f0;
+    --muted: #9aa3b5;
+    --accent: #5865f2;
+    --accent2: #6e56cf;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  header {
+    padding: 48px 24px 32px;
+    text-align: center;
+    background: linear-gradient(180deg, #131722 0%, var(--bg) 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -0.5px; }
+  header h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  header p { margin: 0; color: var(--muted); max-width: 680px; margin-inline: auto; }
+  header .badges { margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .badge {
+    font-size: 13px; font-weight: 600;
+    padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: var(--card);
+  }
+  .badge.green { color: var(--green); border-color: rgba(63,185,80,.4); }
+  main { max-width: 780px; margin: 0 auto; padding: 32px 24px 80px; }
+  .step {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    position: relative;
+  }
+  .step-number {
+    position: absolute;
+    top: -14px;
+    left: 20px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(88,101,242,.4);
+  }
+  .step h2 { margin: 4px 0 12px; font-size: 19px; }
+  .step ul { margin: 0 0 14px; padding-left: 20px; }
+  .step li { margin-bottom: 8px; }
+  .step li::marker { color: var(--accent); }
+  .step p { margin: 0 0 12px; }
+  a {
+    color: #8b95ff;
+    text-decoration: none;
+    border-bottom: 1px dashed rgba(139,149,255,.4);
+    transition: color .15s, border-color .15s;
+  }
+  a:hover { color: #aeb6ff; border-bottom-color: #aeb6ff; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: #0c0e14;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 6px;
+    color: #c9d1ff;
+    word-break: break-all;
+  }
+  .code {
+    position: relative;
+    background: #0c0e14;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    margin: 12px 0;
+  }
+  .code pre {
+    margin: 0;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--green);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.55;
+  }
+  .copy {
+    position: absolute;
+    top: 8px; right: 8px;
+    background: #262b3a;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .copy:hover { background: #313850; }
+  .note {
+    background: rgba(210,153,34,.08);
+    border: 1px solid rgba(210,153,34,.3);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    color: #e8c97a;
+    margin: 10px 0;
+  }
+  .danger {
+    background: rgba(248,81,73,.08);
+    border: 1px solid rgba(248,81,73,.3);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    color: #f0a09b;
+    margin: 10px 0;
+  }
+  .btn {
+    display: inline-block;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    color: #fff !important;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: transform .12s, filter .12s;
+    margin: 4px 6px 4px 0;
+  }
+  .btn:hover { filter: brightness(1.1); transform: translateY(-1px); border-bottom: none; }
+  .btn.secondary {
+    background: #262b3a;
+    color: var(--text) !important;
+    border: 1px solid var(--border);
+  }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+  th { background: #1b1f2c; color: var(--muted); font-weight: 600; }
+  .checklist { list-style: none; padding-left: 0 !important; }
+  .checklist li { padding-left: 28px; position: relative; }
+  .checklist li::before {
+    content: "☐";
+    position: absolute; left: 0; color: var(--accent);
+    font-size: 16px; top: 1px;
+  }
+  .checklist li.done::before { content: "☑"; color: var(--green); }
+  footer { text-align: center; color: var(--muted); font-size: 13px; padding: 24px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Discord Issue Bot — <span>Oracle Cloud Deploy Guide</span></h1>
+  <p>Host the bot <strong>24/7 for $0</strong> on Oracle Cloud's Always Free tier. It keeps every command — all 5 slash commands <em>and</em> the <code>!issue</code> / <code>!ability</code> text commands — because it runs as a real always-on Linux process, not a serverless function.</p>
+  <div class="badges">
+    <span class="badge green">$0 forever</span>
+    <span class="badge">Needs a card for signup verification only (no charge)</span>
+    <span class="badge">~30 minutes</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-number">1</div>
+    <h2>Create the Oracle Cloud account</h2>
+    <ul>
+      <li>Go to <a href="https://signup.cloud.oracle.com" target="_blank" rel="noopener">signup.cloud.oracle.com</a> and click <strong>Start for free</strong>.</li>
+      <li>Use a <strong>real email and phone number</strong> — Oracle's fraud checks are strict, and new accounts sometimes go through a manual review (usually a few hours, sometimes a day).</li>
+      <li>Enter a <strong>credit/debit card</strong> when asked. It's used for <em>verification only</em> — a temporary authorization hold, nothing is charged.</li>
+      <li>Pick your <strong>home region</strong> carefully — it can't be changed after signup. Any region with Ampere capacity works for this bot.</li>
+    </ul>
+    <div class="danger">⚠️ <strong>Do not click "Upgrade to Pay As You Go"</strong> — that's optional and removes the $0 guarantee (you'd be billed if you exceed free limits). The free tier is enough for this bot.</div>
+    <div class="note">📌 See Oracle's official <a href="https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm" target="_blank" rel="noopener">Always Free resources</a> doc for the exact allowances (currently 2 OCPU / 12 GB compute + 200 GB storage).</div>
+    <p>
+      <a class="btn" href="https://signup.cloud.oracle.com" target="_blank" rel="noopener">Start Oracle signup →</a>
+    </p>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-number">2</div>
+    <h2>Create the VM (instance)</h2>
+    <ul>
+      <li>Open the <a href="https://cloud.oracle.com" target="_blank" rel="noopener">Oracle Cloud Console</a> → menu → <strong>Compute → Instances → Create instance</strong>.</li>
+      <li><strong>Name:</strong> <code>bd-discord-bot</code> (anything).</li>
+      <li><strong>Image:</strong> <strong>Ubuntu 24.04</strong> (login user will be <code>ubuntu</code>).</li>
+      <li><strong>Shape:</strong> <strong>Ampere (A1 Flex)</strong> — pick <strong>1 OCPU / 6 GB RAM</strong>. See <a href="https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm" target="_blank" rel="noopener">the shape docs</a> if you want to browse options.</li>
+      <li><strong>Boot volume:</strong> 50 GB (fits inside the 200 GB free allowance).</li>
+      <li><strong>SSH keys:</strong> generate a new key pair and <strong>download the private key now</strong> (or paste your existing public key). You'll need it to log in.</li>
+      <li>Click <strong>Create</strong>. If you get <em>"out of host capacity"</em>, retry in a different availability domain or drop to a smaller shape — it usually succeeds on a second try.</li>
+    </ul>
+    <p>
+      <a class="btn" href="https://cloud.oracle.com" target="_blank" rel="noopener">Open Oracle Cloud Console →</a>
+      <a class="btn secondary" href="https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm" target="_blank" rel="noopener">Oracle docs: creating an instance →</a>
+    </p>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-number">3</div>
+    <h2>SSH into the VM</h2>
+    <p>The bot only makes <strong>outbound</strong> connections (Discord + GitHub), so no inbound ports are needed besides SSH (port 22, already open by default). Open a terminal on your machine and run:</p>
+    <div class="code"><pre>ssh -i ~/.ssh/oci_key ubuntu@&lt;PUBLIC_IP&gt;</pre><button class="copy">Copy</button></div>
+    <div class="note">📌 Replace <code>&lt;PUBLIC_IP&gt;</code> with the IP shown on your instance page. On Ubuntu images the user is <code>ubuntu</code>; on Oracle Linux it's <code>opc</code>. See <a href="https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/accessinginstance.htm" target="_blank" rel="noopener">Oracle's SSH docs</a> if you're on Windows.</div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step">
+    <div class="step-number">4</div>
+    <h2>Run the one-shot bootstrap</h2>
+    <p>Inside the VM, clone the repo and run the bootstrap script. It installs Node 20 + pm2, asks you for the env values (secrets typed invisibly), starts the bot, makes it survive reboots, and installs the Oracle idle-keepalive task.</p>
+    <div class="code"><pre>git clone -b feat/discord-issue-bot-v2 https://github.com/4-mat/bd-autohost-bot-new.git
+cd bd-autohost-bot-new/discord-issue-bot
+bash deploy/oci-bootstrap.sh</pre><button class="copy">Copy</button></div>
+    <p>Have these ready — the script will prompt for them (same values as in <a href="SETUP.html">the token setup guide</a>):</p>
+    <table>
+      <tr><th>Prompt</th><th>Value</th></tr>
+      <tr><td><code>DISCORD_TOKEN</code></td><td>Discord bot token (<a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Developer Portal → Bot</a>)</td></tr>
+      <tr><td><code>CLIENT_ID</code></td><td>Discord application Client ID (Developer Portal → OAuth2)</td></tr>
+      <tr><td><code>GUILD_ID</code></td><td>Your server's ID (blank = global registration)</td></tr>
+      <tr><td><code>GITHUB_TOKEN</code></td><td>GitHub token with <code>issues: write</code></td></tr>
+      <tr><td><code>GITHUB_REPO</code></td><td>default <code>4-mat/bd-autohost-bot-new</code></td></tr>
+      <tr><td><code>ROLE_ID</code> / <code>ROLE_NAME</code></td><td>role gate (default role name <code>super turbo</code>)</td></tr>
+    </table>
+    <p>
+      <a class="btn" href="SETUP.html" target="_blank" rel="noopener">How to get the tokens →</a>
+      <a class="btn secondary" href="https://github.com/4-mat/bd-autohost-bot-new" target="_blank" rel="noopener">The repo →</a>
+    </p>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step">
+    <div class="step-number">5</div>
+    <h2>Verify it's online</h2>
+    <p>Check the bot is running and connected to Discord:</p>
+    <div class="code"><pre>pm2 status
+pm2 logs bd-discord-issue-bot</pre><button class="copy">Copy</button></div>
+    <p>You should see <code>[bot] logged in as ...</code> followed by the command registration line. Then test <code>/bug</code>, <code>/map</code>, <code>/ability</code>, and <code>!issue</code> in your server.</p>
+    <ul class="checklist">
+      <li>Account created (free tier, card only verified)</li>
+      <li>VM created — Ubuntu 24.04, Ampere 1 OCPU / 6 GB, 50 GB disk</li>
+      <li>SSH login works</li>
+      <li>Bootstrap ran and env values filled in</li>
+      <li>Log shows the bot logged in</li>
+      <li>Commands work in Discord</li>
+    </ul>
+  </div>
+
+  <!-- STEP 6 -->
+  <div class="step">
+    <div class="step-number">6</div>
+    <h2>Keeping it alive (updates &amp; gotchas)</h2>
+    <ul>
+      <li><strong>Update the bot:</strong></li>
+    </ul>
+    <div class="code"><pre>cd ~/bd-autohost-bot-new
+git pull
+cd discord-issue-bot
+npm install
+pm2 restart bd-discord-issue-bot</pre><button class="copy">Copy</button></div>
+    <ul>
+      <li><strong>Cost check:</strong> this should stay at exactly $0. Verify under <strong>Billing → Usage</strong> — the instance fits inside the free allowances.</li>
+      <li><strong>Idle reclamation:</strong> Oracle reserves the right to reclaim Always Free instances that sit below 20% CPU/network/memory (95th percentile) for 7 days. A quiet bot can look idle, so the bootstrap installs <code>oci-keepalive.sh</code> (10 min of low-priority activity every 2 hours) as insurance — it never affects the bot (<code>nice -n 19</code>). Remove it anytime with <code>crontab -e</code>; Oracle emails you before any termination regardless.</li>
+      <li><strong>Commands missing in Discord?</strong> Re-register: <code>cd ~/bd-autohost-bot-new/discord-issue-bot && npm run register</code> — and make sure <strong>Message Content</strong> is enabled in the Developer Portal (Bot → Privileged Gateway Intents), or the <code>!</code> text commands can't see messages.</li>
+      <li><strong>pm2 crashed/stopped after reboot?</strong> Re-run <code>pm2 save</code> and <code>sudo env PATH="$PATH:/usr/bin" pm2 startup systemd -u ubuntu --hp /home/ubuntu</code>.</li>
+    </ul>
+    <div class="note">📌 The full written guide with every troubleshooting detail lives at <a href="DEPLOY_ORACLE.md" target="_blank" rel="noopener">DEPLOY_ORACLE.md</a>; the bootstrap script is <a href="deploy/oci-bootstrap.sh" target="_blank" rel="noopener">deploy/oci-bootstrap.sh</a>.</div>
+  </div>
+
+  <!-- DONE -->
+  <div class="step" style="text-align:center; border-color: rgba(63,185,80,.35);">
+    <div class="step-number" style="background: linear-gradient(90deg, var(--green), #2ea043);">✓</div>
+    <h2>You're live — 24/7, $0</h2>
+    <p>The bot now runs on its own always-on VM, restarts itself on crashes and reboots, and keeps every command. Check the issues it creates at <a href="https://github.com/4-mat/bd-autohost-bot-new/issues" target="_blank" rel="noopener">github.com/4-mat/bd-autohost-bot-new/issues</a>.</p>
+  </div>
+
+</main>
+
+<footer>
+  discord-issue-bot · Oracle Cloud Always Free · secrets live only in <code>.env</code> on the VM — never in git
+</footer>
+
+<script>
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.closest('.code').querySelector('pre').innerText.trim();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          btn.textContent = 'Copied ✓';
+          setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+        });
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        btn.textContent = 'Copied ✓';
+        setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+      }
+    });
+  });
+</script>
+
+</body>
+</html>
