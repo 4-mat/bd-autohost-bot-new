@@ -1,0 +1,4 @@
+[config]
+model = "gemini/gemini-3.6-flash"
+fallback_models = ["gemini/gemini-3-flash-preview"]
+max_model_tokens = 32000
