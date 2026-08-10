@@ -72,6 +72,17 @@ describe("mapsForMode", () => {
     expect(mapsForMode("ffa")).not.toContain("example-ntr");
   });
 
+  test("mapsForMode never lists a map twice", () => {
+    for (const mode of ["ffa", "ntr", "jugg", "pvp", "1v1"]) {
+      const pool = mapsForMode(mode);
+      expect(new Set(pool).size, `${mode} pool has a duplicate`).toBe(pool.length);
+    }
+  });
+
+  test("sprint volunteer map is in the ntr pool exactly once", () => {
+    expect(mapsForMode("ntr").filter((m) => m === "sprint")).toHaveLength(1);
+  });
+
   test("returns empty for unknown modes", () => {
     expect(mapsForMode("solo")).toEqual([]);
   });
