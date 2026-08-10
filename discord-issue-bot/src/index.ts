@@ -324,7 +324,15 @@ async function handleButton(interaction: ButtonInteraction): Promise<void> {
 async function handleMessage(message: Message): Promise<void> {
   if (message.author.bot) return;
   const content = message.content.trim();
-  if (!content.startsWith("!issue") && !content.startsWith("!ability")) return;
+  if (!content.startsWith("!")) return;
+
+  // Unknown ! command — never leave the user without an answer.
+  if (!content.startsWith("!issue") && !content.startsWith("!ability")) {
+    await message.reply(
+      "🤖 I handle: `!issue <title> | <details>`, `!ability <Name> | <entry JSON> | add|update | class|weapon`, and the slash commands `/issue`, `/bug`, `/feature`, `/map`, `/ability`.",
+    );
+    return;
+  }
 
   const member = message.member;
   if (!hasAccessRole(cfg, member)) {
@@ -350,7 +358,7 @@ async function handleMessage(message: Message): Promise<void> {
       const url = await createPlainIssue(title, details ?? "", []);
       await message.reply(`✅ Created issue **${title}**\n${url}`);
     } catch (e) {
-      await message.reply(`❌ Could not create issue: ${(e as Error).message}`);
+      await message.reply(`❌ Could not create issue: ${friendlyError(e)}`);
     }
     return;
   }
@@ -372,7 +380,7 @@ async function handleMessage(message: Message): Promise<void> {
         `✅ Proposed **${name}** — this opens an issue that the workflow turns into a PR.\n${url}`,
       );
     } catch (e) {
-      await message.reply(`❌ Could not create proposal: ${(e as Error).message}`);
+      await message.reply(`❌ Could not create proposal: ${friendlyError(e)}`);
     }
   }
 }
@@ -399,10 +407,17 @@ client.on("interactionCreate", async (interaction) => {
     }
   } catch (e) {
     console.error("[bot] interaction handler error:", (e as Error).message);
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-      await interaction
-        .reply({ content: "❌ Something went wrong.", ephemeral: true })
-        .catch(() => {});
+    // Always tell the user the outcome — including when the handler threw
+    // after deferring (otherwise the interaction just hangs silently).
+    if (interaction.isRepliable()) {
+      const content = `❌ Something went wrong: ${friendlyError(e)}`;
+      if (interaction.deferred) {
+        await interaction.editReply({ content }).catch(() => {});
+      } else if (!interaction.replied) {
+        await interaction
+          .reply({ content, ephemeral: true })
+          .catch(() => {});
+      }
     }
   }
 });
