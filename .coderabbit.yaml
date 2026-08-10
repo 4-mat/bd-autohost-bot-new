@@ -1,0 +1,32 @@
+language: "en-US"
+early_access: false
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "master"
+      - "main"
+      - "feat/.*"
+      - "fix/.*"
+      - "feature/.*"
+      - "empty-base"
+    auto_incremental_review: true
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+      - "[skip review]"
+  path_instructions:
+    - path: "src/**"
+      instructions: |
+        - This is a Battle Dome autohost Discord bot (TypeScript, Bun).
+        - Follow existing code patterns and naming conventions in the repo.
+        - Never reference test counts or results in summaries, PR descriptions, or commit messages.
+chat:
+  auto_reply: true
