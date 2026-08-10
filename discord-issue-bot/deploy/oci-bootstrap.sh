@@ -44,7 +44,9 @@ ask() {
 
 has() { command -v "$1" >/dev/null 2>&1; }
 
-[ -f package.json ] || die "run this from the discord-issue-bot/ directory"
+# Run from the bot directory regardless of where the script was invoked from
+cd "$BOT_DIR"
+[ -f package.json ] || die "discord-issue-bot/ not found next to $0"
 
 # --- 1. Node 20 ---------------------------------------------------------------
 if ! has node || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 20 ]; then
