@@ -61,6 +61,28 @@ if the buttons stop responding.
 | `ROLE_ID` | Role ID allowed to use the bot (takes precedence) |
 | `ROLE_NAME` | Role name allowed to use the bot, default `super turbo` |
 
+## Deploying 24/7 for free (Oracle Cloud)
+
+See **`DEPLOY_ORACLE.md`** — the only genuinely free, reliable 24/7
+option that keeps the `!` text commands (Render's free tier sleeps after
+15 minutes idle and its always-on worker plan costs $7/mo). After cloning
+the repo onto an Oracle Always Free Ubuntu VM, run:
+
+```bash
+bash deploy/oci-bootstrap.sh
+```
+
+## Deploying 24/7 for free (Oracle Cloud)
+
+See **`DEPLOY_ORACLE.md`** — the only genuinely free, reliable 24/7
+option that keeps the `!` text commands (Render's free tier sleeps after
+15 minutes idle and its always-on worker plan costs $7/mo). After cloning
+the repo onto an Oracle Always Free Ubuntu VM, run:
+
+```bash
+bash deploy/oci-bootstrap.sh
+```
+
 ## Deploying to Render
 
 `render.yaml` already includes a **worker** service (`bd-discord-issue-bot`):
