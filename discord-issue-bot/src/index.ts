@@ -56,14 +56,17 @@ function rateLimited(userId: string): boolean {
 // Pending confirmations (preview embed + Confirm/Cancel buttons)
 // ---------------------------------------------------------------------------
 
-type PendingAction = () => Promise<string>; // returns the created issue URL
+interface PendingAction {
+  ownerId: string; // Discord user id of the command invoker
+  run: () => Promise<string>; // returns the created issue URL
+}
 
 const PENDING_TTL_MS = 2 * 60_000;
 const pendingActions = new Map<string, PendingAction>();
 
-function stagePending(action: PendingAction): string {
+function stagePending(ownerId: string, action: () => Promise<string>): string {
   const nonce = randomUUID();
-  pendingActions.set(nonce, action);
+  pendingActions.set(nonce, { ownerId, run: action });
   setTimeout(() => pendingActions.delete(nonce), PENDING_TTL_MS);
   return nonce;
 }
@@ -196,7 +199,7 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
     }
 
     await interaction.deferReply({ ephemeral: false });
-    const nonce = stagePending(() =>
+    const nonce = stagePending(userId, () =>
       createProposalIssue(name, kind, mode, entryRaw),
     );
     const embed = new EmbedBuilder()
@@ -234,7 +237,7 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
     }
 
     await interaction.deferReply({ ephemeral: false });
-    const nonce = stagePending(async () => {
+    const nonce = stagePending(userId, async () => {
       const issue = await github.createIssue({
         title: proposal.title,
         body: proposal.body,
@@ -264,15 +267,33 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
 
 async function handleButton(interaction: ButtonInteraction): Promise<void> {
   const [action, nonce] = interaction.customId.split(":");
-  const run = pendingActions.get(nonce);
-  if (!run) {
+  const pending = pendingActions.get(nonce);
+  if (!pending) {
     await interaction.reply({
       content: "This confirmation expired (2 minutes). Please run the command again.",
       ephemeral: true,
     });
     return;
   }
+  // Only the invoker may confirm/cancel their own proposal; also enforce the
+  // role gate so a roleless bystander can't click Confirm on a public preview.
+  if (interaction.user.id !== pending.ownerId) {
+    await interaction.reply({
+      content: "Only the person who ran the command can confirm or cancel this.",
+      ephemeral: true,
+    });
+    return;
+  }
+  const member = interaction.member;
+  if (!hasAccessRole(cfg, member as never)) {
+    await interaction.reply({
+      content: unauthorizedReplyText(),
+      ephemeral: true,
+    });
+    return;
+  }
   pendingActions.delete(nonce);
+  const { run } = pending;
 
   if (action === "cancel") {
     await interaction.update({ content: "❌ Cancelled.", embeds: [], components: [] });
