@@ -381,7 +381,7 @@ async function handleMessage(message: Message): Promise<void> {
 // Boot
 // ---------------------------------------------------------------------------
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`[bot] logged in as ${client.user?.tag}`);
   try {
     await registerCommands(cfg);
