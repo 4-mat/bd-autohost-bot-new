@@ -227,7 +227,26 @@ function canonicalResource(name: string): string | null {
   return null;
 }
 
+/**
+ * Parse-once cache. `parseEffects` is a pure function of the effect text
+ * (the string never changes at runtime), but the attack pipeline calls it
+ * up to 3-4 times per ability use (resolveAttackFlow, resolveSingleTarget,
+ * resolveNonDamaging). Memoising by the input string turns every call after
+ * the first into an O(1) lookup. Sub-clauses (If/Thirst/Apex/Choose) recurse
+ * through the same wrapper, so shared clause text is cached too.
+ */
+const parseEffectsCache = new Map<string, Effect[]>();
+
 export function parseEffects(text: string): Effect[] {
+  if (!text || !text.trim()) return [];
+  const hit = parseEffectsCache.get(text);
+  if (hit) return hit;
+  const parsed = parseEffectsUncached(text);
+  parseEffectsCache.set(text, parsed);
+  return parsed;
+}
+
+function parseEffectsUncached(text: string): Effect[] {
   if (!text || !text.trim()) return [];
 
   const normalized = text
@@ -1766,6 +1785,28 @@ export interface CombatIgnoreMetadata {
   outsideFactors: boolean;
   /** Anything else we don't model yet, surfaced to the log. */
   other: string[];
+}
+
+/**
+ * Parse-once cache for combat metadata. `extractCombatMetadata` is a pure
+ * function of the (already parsed) effect tree, and the tree is a pure
+ * function of the immutable effect string — so the whole damage-modifier
+ * summary is computed once per distinct ability text and reused across
+ * every use of that ability.
+ */
+const combatMetadataCache = new Map<string, CombatMetadata>();
+
+/**
+ * Parse (once) + extract (once) the combat-relevant metadata for an
+ * ability's effect text. Prefer this over calling `parseEffects` +
+ * `extractCombatMetadata` separately in hot paths.
+ */
+export function getCombatMetadataForEffect(effectText: string): CombatMetadata {
+  const cached = combatMetadataCache.get(effectText);
+  if (cached) return cached;
+  const meta = extractCombatMetadata(parseEffects(effectText));
+  combatMetadataCache.set(effectText, meta);
+  return meta;
 }
 
 export function extractCombatMetadata(effects: Effect[]): CombatMetadata {

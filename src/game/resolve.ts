@@ -45,6 +45,7 @@ import {
   applyEffects,
   applyEffectStream,
   extractCombatMetadata,
+  getCombatMetadataForEffect,
   type CombatMetadata,
   type EffectChoosePrompt,
 } from "./effects.js";
@@ -370,8 +371,11 @@ function* resolveAttackFlow(
   // parseMultiHit(); meta.additionalHits adds the effect-driven extra hits
   // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
   // effect still rolls the highest of the two.
+  // parseEffects / getCombatMetadataForEffect are memoised by effect text, so
+  // this is a cache hit after the first use of the ability — no re-parse and
+  // no repeated tree walk per attack.
   const effects = parseEffects(active.effect);
-  const combat = extractCombatMetadata(effects);
+  const combat = getCombatMetadataForEffect(active.effect);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   for (const target of targets) {

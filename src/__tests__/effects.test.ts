@@ -8,6 +8,7 @@ import {
 } from "../game/state.js";
 import {
   parseEffects,
+  getCombatMetadataForEffect,
   applyEffects,
   applyEffectStream,
   evaluateCondition,
@@ -1307,5 +1308,31 @@ describe("applyEffects: regressions for non-apex effects", () => {
     const bleed = target.statuses.find((s) => s.name === "Bleed");
     expect(bleed?.damage).toBe(5);
     expect(bleed?.rounds).toBe(3);
+  });
+});
+
+describe("parse-once caching", () => {
+  it("parseEffects returns the same instance for the same text", () => {
+    const txt = "inflict 3 Bleed/1. +2 ATK/1. Multi-Hit: 2. Ignores half DEF.";
+    const a = parseEffects(txt);
+    const b = parseEffects(txt);
+    expect(a).toBe(b);
+  });
+
+  it("getCombatMetadataForEffect is cached per effect text", () => {
+    const txt = "Multi-Hit: 3. +50% damage. Ignores half DEF.";
+    const a = getCombatMetadataForEffect(txt);
+    const b = getCombatMetadataForEffect(txt);
+    expect(a).toBe(b);
+    expect(a.additionalHits).toBe(2);
+    expect(a.damagePercent).toBe(50);
+  });
+
+  it("different effect text produces a different (correct) parse", () => {
+    const a = parseEffects("inflict 3 Bleed/1");
+    const b = parseEffects("inflict 5 Cripple/1");
+    expect(a).not.toBe(b);
+    expect(a[0]).toMatchObject({ type: "status", name: "Bleed", damage: 3 });
+    expect(b[0]).toMatchObject({ type: "status", name: "Cripple", damage: 5 });
   });
 });
