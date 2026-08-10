@@ -1,0 +1,10 @@
+# Modes: ntr
+# Battle Dome volunteer map — made with the map editor
+name: fireplace-ntr
+display: Example NTR
+modes: ntr
+.sss.
+s...s
+s.h.s
+s...s
+.sss.
