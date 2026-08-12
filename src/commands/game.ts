@@ -845,11 +845,6 @@ function handleAdvanceTurn(game: Game, user: User) {
   const entity = getCurrentEntity(game);
   if (!entity) return;
 
-  // Any in-progress movement path/reach preview ends with the turn.
-  for (const e of game.entities) {
-    clearMovementState(game, e);
-  }
-
   pushSnapshot(game);
 
   let acted = "";
@@ -896,6 +891,12 @@ function handleAdvanceTurn(game: Game, user: User) {
       entity,
       acted || `${entity.num} (${entity.name}) -- turn passed`,
     );
+  }
+
+  // Any in-progress movement path/reach preview ends only once the turn
+  // actually advances (not when a pending action still needs input).
+  for (const e of game.entities) {
+    clearMovementState(game, e);
   }
 
   const result = nextTurn(game);
