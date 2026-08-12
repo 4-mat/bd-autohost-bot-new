@@ -57,10 +57,16 @@ function isRateLimited(userId: string): boolean {
   return now - (lastCommandAt.get(userId) ?? 0) < RATE_LIMIT_MS;
 }
 
-/** Record that a command reached the issue-creating path (right before the
- *  GitHub write), so the cooldown bounds real GitHub writes, not parsing. */
-function recordIssue(userId: string): void {
+/** Atomic check-and-record at the GitHub write boundary. Runs in the same
+ *  synchronous section as the map access: returns true when the user
+ *  acquired the cooldown (may write now - the timestamp is recorded), or
+ *  false when they're still inside the window (caller must NOT write).
+ *  Two concurrent commands from one user can't both slip past: the first
+ *  records, the second is rejected. */
+function acquireRateLimit(userId: string): boolean {
+  if (isRateLimited(userId)) return false;
   lastCommandAt.set(userId, Date.now());
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +111,6 @@ async function createPlainIssue(
   body: string,
   labels: string[],
 ): Promise<string> {
-  recordIssue(userId);
   const issue = await github.createIssue({
     title,
     body: body || undefined,
@@ -136,7 +141,6 @@ async function createProposalIssue(
   }
   const proposal = { mode, kind, name, entry };
   const payload = buildProposalPayload(proposal);
-  recordIssue(userId);
   const issue = await github.createIssue({
     title: proposalTitle(name),
     body: proposalIssueBody(proposal, payload),
@@ -191,6 +195,10 @@ async function handleSlash(
           : ["enhancement"];
 
     await interaction.deferReply({ ephemeral: false });
+    if (!acquireRateLimit(userId)) {
+      await interaction.editReply("⏳ Please wait a few seconds between commands.");
+      return;
+    }
     try {
       const url = await createPlainIssue(userId, title, body, labels);
       await interaction.editReply(`✅ Created issue **${title}**\n${url}`);
@@ -276,7 +284,6 @@ async function handleSlash(
 
     await interaction.deferReply({ ephemeral: false });
     const nonce = stagePending(userId, async () => {
-      recordIssue(userId);
       const issue = await github.createIssue({
         title: proposal.title,
         body: proposal.body,
@@ -359,6 +366,10 @@ async function handleButton(interaction: ButtonInteraction): Promise<void> {
   }
 
   await interaction.deferUpdate();
+  if (!acquireRateLimit(interaction.user.id)) {
+    await interaction.editReply("⏳ Please wait a few seconds between commands.");
+    return;
+  }
   try {
     const url = await run();
     await interaction.editReply({
@@ -423,6 +434,10 @@ async function handleMessage(message: Message): Promise<void> {
     try {
       const reporter = `**Reported by:** @${message.author.username} on Discord`;
       const body = [reporter, details].filter(Boolean).join("\n\n");
+      if (!acquireRateLimit(message.author.id)) {
+        await message.reply("⏳ Please wait a few seconds between commands.");
+        return;
+      }
       const url = await createPlainIssue(message.author.id, title, body, []);
       await message.reply(`✅ Created issue **${title}**\n${url}`);
     } catch (e) {
@@ -450,6 +465,10 @@ async function handleMessage(message: Message): Promise<void> {
       return;
     }
     try {
+      if (!acquireRateLimit(message.author.id)) {
+        await message.reply("⏳ Please wait a few seconds between commands.");
+        return;
+      }
       const url = await createProposalIssue(
         message.author.id,
         name,
