@@ -68,6 +68,7 @@ Last updated by tenzhii (with help from SaltiestCactus43) on 2/1/2021
 | `%host`                                    | Create a new game in the current room. |
 | `%dehost`                                  | Close and remove the game.             |
 | `%setgame [mode]`                          | Set mode AND complete setup: random map from the mode's pool (if none set), teams (NvM), positions, turn order — then %start. |
+| `%ffabtn`                                   | Toggle the Setup panel's always-available `%setgame ffa` shortcut (hide it when you never run FFA, or show it again). Hosts only. |
 | `%addp [name], [class], [weapon], [level]` | Add a player to the game.              |
 | `%remp [name]`                             | Remove a player from the game.         |
 | `%setmap [name\|gamemode\|gen [12\|16\|20]]` | Set a curated map, a random map from a gamemode pool (pvp, 1v1...), or generate a procedural map (gen). `%start` requires a map. |
