@@ -1,8 +1,10 @@
 import { describe, it, expect } from "bun:test";
 import {
   buildProposalPayload,
+  isObjectEntry,
   normalizeKind,
   normalizeMode,
+  parseEntryJson,
   proposalIssueBody,
   proposalTitle,
 } from "../proposal.js";
@@ -101,5 +103,41 @@ describe("proposalIssueBody / proposalTitle", () => {
 
   it("title starts with 'Ability: ' (workflow trigger)", () => {
     expect(proposalTitle("Bard")).toBe("Ability: Bard");
+  });
+});
+
+describe("parseEntryJson / isObjectEntry", () => {
+  it("accepts a JSON object", () => {
+    expect(parseEntryJson('{"stats":{"hp":"80"}}')).toEqual({
+      stats: { hp: "80" },
+    });
+    expect(isObjectEntry({ a: 1 })).toBe(true);
+  });
+
+  it("rejects invalid JSON", () => {
+    expect(() => parseEntryJson("{not json")).toThrow(
+      /didn't parse/,
+    );
+  });
+
+  it("rejects null, arrays, and scalars as entry", () => {
+    expect(() => parseEntryJson("null")).toThrow(/must be an object/);
+    expect(() => parseEntryJson("[1,2]")).toThrow(/must be an object/);
+    expect(() => parseEntryJson("\"hi\"")).toThrow(/must be an object/);
+    expect(() => parseEntryJson("42")).toThrow(/must be an object/);
+    expect(isObjectEntry(null)).toBe(false);
+    expect(isObjectEntry([])).toBe(false);
+    expect(isObjectEntry("x")).toBe(false);
+  });
+
+  it("buildProposalPayload rejects a non-object entry", () => {
+    expect(() =>
+      buildProposalPayload({
+        mode: "add",
+        kind: "class",
+        name: "Bard",
+        entry: null as unknown as Record<string, unknown>,
+      }),
+    ).toThrow(/must be a JSON object/);
   });
 });

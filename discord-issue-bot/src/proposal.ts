@@ -56,6 +56,33 @@ export function normalizeMode(
   return null; // unrecognized → caller reports the typo instead of coercing
 }
 
+/** True only for plain JSON objects: rejects null, arrays, and scalars. */
+export function isObjectEntry(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Parse the `entry` JSON option into an object. Throws a friendly error for
+ * invalid JSON or a non-object shape (null, array, scalar) - the editor
+ * workflow would otherwise reject the malformed payload later.
+ */
+export function parseEntryJson(raw: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      'The `entry` JSON didn\'t parse. Use valid JSON, e.g. {"stats":{"hp":"80"},"abilities":[]}',
+    );
+  }
+  if (!isObjectEntry(parsed)) {
+    throw new Error(
+      'The `entry` JSON must be an object, e.g. {"stats":{"hp":"80"},"abilities":[]}',
+    );
+  }
+  return parsed;
+}
+
 /**
  * Build the JSON payload for apply-editor-proposal.ts.
  * - update: must target an existing entry (name must match an existing block)
@@ -65,6 +92,9 @@ export function normalizeMode(
 export function buildProposalPayload(
   proposal: AbilityProposal,
 ): ProposalPayload {
+  if (!isObjectEntry(proposal.entry)) {
+    throw new Error("`entry` must be a JSON object.");
+  }
   const entry: Record<string, unknown> = {
     ...proposal.entry,
     name: proposal.name,

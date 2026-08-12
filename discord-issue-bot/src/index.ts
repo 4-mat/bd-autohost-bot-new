@@ -19,6 +19,7 @@ import {
   buildProposalPayload,
   normalizeKind,
   normalizeMode,
+  parseEntryJson,
   proposalIssueBody,
   proposalTitle,
 } from "./proposal.js";
@@ -127,10 +128,10 @@ async function createProposalIssue(
 
   let entry: Record<string, unknown>;
   try {
-    entry = JSON.parse(entryRaw) as Record<string, unknown>;
+    entry = parseEntryJson(entryRaw);
   } catch {
     throw new Error(
-      'The `entry` JSON didn\'t parse. Use valid JSON, e.g. {"stats":{"hp":"80"},"abilities":[]}',
+      'The `entry` JSON didn\'t parse or isn\'t an object. Use valid JSON, e.g. {"stats":{"hp":"80"},"abilities":[]}',
     );
   }
   const proposal = { mode, kind, name, entry };
@@ -225,11 +226,11 @@ async function handleSlash(
 
     let entry: Record<string, unknown>;
     try {
-      entry = JSON.parse(entryRaw) as Record<string, unknown>;
+      entry = parseEntryJson(entryRaw);
     } catch {
       await interaction.reply({
         content:
-          '❌ The `entry` JSON didn\'t parse. Use valid JSON, e.g. {"stats":{"hp":"80"},"abilities":[]}',
+          '❌ The `entry` JSON didn\'t parse or isn\'t an object. Use valid JSON, e.g. {"stats":{"hp":"80"},"abilities":[]}',
         ephemeral: true,
       });
       return;

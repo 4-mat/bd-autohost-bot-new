@@ -63,11 +63,19 @@ if the buttons stop responding.
 
 ## Deploying 24/7 for free (Oracle Cloud)
 
-See **`DEPLOY_GUIDE.html`** (local, not committed) for the full interactive
-walkthrough — or follow the short version here. Oracle Cloud is the only
+See **`DEPLOY_GUIDE.html`** for the full interactive walkthrough — or follow the
+short version here. Oracle Cloud is the only
 genuinely free, reliable 24/7 option that keeps the `!` text commands
 (Render's free tier sleeps after 15 minutes idle and its always-on worker
 plan costs $7/mo). On an Oracle Always Free Ubuntu VM:
+
+> **Where the deploy kit lives:** `DEPLOY_GUIDE.html` and the `deploy/`
+> scripts are kept out of git by design (repo policy — they contain no
+> secrets; the bootstrap prompts for env values and never echoes them).
+> They ship with the maintainer's checkout of this branch (same files used
+> to set up the live bot). On a fresh clone, copy them from the machine
+> that originally ran the setup, or ask the maintainer for the current
+> kit (matching this commit). Step 2's `scp` expects them locally.
 
 1. On the VM, clone the branch (it includes the `mapeditor/` folder the bot
    needs at runtime for map validation):
