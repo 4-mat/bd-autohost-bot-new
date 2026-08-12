@@ -1,62 +1,139 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Battle Dome Tools</title>
-<style>
-  :root {
-    --bg: #0f1117;
-    --text: #e6e9f0;
-    --muted: #9aa3b5;
-    --link: #8b95ff;
-  }
+<html lang="en-US">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>bd-autohost-bot-new</title>
+    <style>
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    min-height: 100vh;
-    background: linear-gradient(180deg, #131722 0%, var(--bg) 100%);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 72px 20px 48px;
+    background: #ffffff;
+    color: #1f2328;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Helvetica, Arial, sans-serif, "Apple Color Emoji",
+      "Segoe UI Emoji", "Segoe UI Symbol";
+    font-size: 16px;
+    line-height: 1.5;
+    word-wrap: break-word;
   }
-  .wrap { width: min(680px, 100%); }
-  h1 { font-size: 38px; margin: 0; letter-spacing: -1px; }
-  h1 span { background: linear-gradient(90deg, #8b95ff, #6e56cf); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .sub { color: var(--muted); margin: 10px 0 40px; font-size: 16px; }
-  ul { list-style: none; margin: 0; padding: 0; }
-  li { margin-bottom: 28px; }
-  li b a { font-size: 19px; color: var(--link); text-decoration: none; }
-  li b a:hover { text-decoration: underline; }
-  li p { margin: 6px 0 0; color: var(--muted); font-size: 14.5px; line-height: 1.55; max-width: 560px; }
-  footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
-  footer a { color: var(--link); text-decoration: none; }
+  .container-lg {
+    max-width: 1012px;
+    margin: 0 auto;
+    padding: 24px 16px 32px;
+  }
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3 {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .markdown-body h1 {
+    font-size: 2em;
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid #d8dee4;
+  }
+  .markdown-body h1 a {
+    color: #1f2328;
+    text-decoration: none;
+  }
+  .markdown-body h2 {
+    font-size: 1.5em;
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid #d8dee4;
+  }
+  .markdown-body h3 { font-size: 1.25em; }
+  .markdown-body p { margin-top: 0; margin-bottom: 16px; }
+  .markdown-body ul { padding-left: 2em; margin-top: 0; margin-bottom: 16px; }
+  .markdown-body li { margin-top: 0.25em; }
+  .markdown-body li + li { margin-top: 0.25em; }
+  .markdown-body a {
+    color: #0969da;
+    text-decoration: none;
+  }
+  .markdown-body a:hover { text-decoration: underline; }
+  .markdown-body code {
+    padding: 0.2em 0.4em;
+    margin: 0;
+    font-size: 85%;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+      Consolas, "Liberation Mono", monospace;
+    background-color: #eff1f3;
+    border-radius: 6px;
+    color: #1f2328;
+  }
+  .markdown-body pre {
+    padding: 16px;
+    overflow: auto;
+    font-size: 85%;
+    line-height: 1.45;
+    background-color: #f6f8fa;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    margin-top: 0;
+  }
+  .markdown-body pre code {
+    display: inline;
+    padding: 0;
+    margin: 0;
+    font-size: 100%;
+    line-height: inherit;
+    background-color: transparent;
+    border-radius: 0;
+    overflow-wrap: normal;
+  }
+  .markdown-body hr {
+    height: 0.25em;
+    padding: 0;
+    margin: 24px 0;
+    background-color: #d8dee4;
+    border: 0;
+  }
+  .markdown-body strong { font-weight: 600; }
 </style>
-</head>
-<body>
-<div class="wrap">
-  <h1>Battle Dome <span>Tools</span></h1>
-  <p class="sub">Editors and tools for the bd-autohost-bot-new project</p>
-
-  <ul>
-    <li>
-      <b><a href="mapeditor/">Map Editor</a></b>
-      <p>View and edit Battle Dome maps — the curated database plus volunteer maps from maps/*.txt. Save downloads a volunteer .txt you can drop into the repo.</p>
-    </li>
-    <li>
-      <b><a href="mapeditor/gallery/">Map Gallery</a></b>
-      <p>Browse every map as a thumbnail wall — searchable by name and filterable by game mode.</p>
-    </li>
-    <li>
-      <b><a href="mapeditor/pools/">Game Mode Pools</a></b>
-      <p>See which maps are recommended for each game mode — FFA, NTR, Juggernaut, PvP and 1v1.</p>
-    </li>
-  </ul>
-
-  <footer>Part of <a href="https://github.com/4-mat/bd-autohost-bot-new">4-mat/bd-autohost-bot-new</a></footer>
-</div>
-</body>
+  </head>
+  <body>
+    <div class="container-lg my-5 markdown-body">
+      <h1 dir="auto">bd-autohost-bot-new</h1>
+<p dir="auto">A Pokémon Showdown–based Battle Dome autohost bot (TypeScript + Bun).</p>
+<h2 dir="auto">Map Editor &amp; Browser (GitHub Pages)</h2>
+<ul dir="auto">
+<li><strong>Editor</strong> — <a href="https://4-mat.github.io/bd-autohost-bot-new/mapeditor/" rel="nofollow">https://4-mat.github.io/bd-autohost-bot-new/mapeditor/</a></li>
+<li><strong>Browser</strong> — <a href="https://4-mat.github.io/bd-autohost-bot-new/mapeditor/gallery/" rel="nofollow">https://4-mat.github.io/bd-autohost-bot-new/mapeditor/gallery/</a></li>
+<li><strong>Pools</strong> — <a href="https://4-mat.github.io/bd-autohost-bot-new/mapeditor/pools/" rel="nofollow">https://4-mat.github.io/bd-autohost-bot-new/mapeditor/pools/</a></li>
+</ul>
+<p dir="auto"><strong>Editor</strong></p>
+<ul dir="auto">
+<li>Pokémon Showdown light theme, game-style grid (square cells, 5×5–60×60, 5×5 minimum for NTR maps).</li>
+<li>Zoom 50–400% (default 150%) — footer buttons, Ctrl+wheel, Ctrl+= / Ctrl+− / Ctrl+0; remembers your zoom.</li>
+<li>Paint 13 terrains, place players P1–P8, flood fill, eyedropper, erase, undo/redo, select &amp; move boxes.</li>
+<li><strong>Transform</strong> the whole map — rotate 90° clockwise, 90° counter-clockwise, or 180°, and flip horizontally or vertically.</li>
+<li>Drafts auto-save to your browser — refresh-safe, with a Restore/Discard banner.</li>
+<li><strong>Copy .txt</strong> copies the volunteer format; <strong>Share</strong> copies a link that works even for unsaved maps.</li>
+<li><strong>I/O:</strong> Export → Volunteer .txt / game HTML / JSON; import .txt, HTML, or .json; Save downloads a .txt.</li>
+<li>"🗺 Maps" button jumps to the browser.</li>
+</ul>
+<p dir="auto"><strong>Browser</strong></p>
+<ul dir="auto">
+<li>Index grouped by gamemode (FFA/NTR/JUGG/PvP/1v1) with per-map links and sizes.</li>
+<li><strong>View all maps</strong> wall — every map as a thumbnail; <strong>search</strong>, <strong>mode filter</strong>, grouped sections, click to open full size (prev/next nav).</li>
+<li><strong>Map Pools</strong> editor (link on the index) — toggle which gamemode each map belongs to; propose changes → a bot opens the PR.</li>
+</ul>
+<h3 dir="auto">Local mode (optional, extra features)</h3>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate">npm run maps:seed     <span class="pl-c"><span class="pl-c">#</span> regenerate maps/index.json + maps/curated.json</span>
+npm run maps:editor   <span class="pl-c"><span class="pl-c">#</span> local server → http://localhost:4777</span></pre></div>
+<p dir="auto">Local mode can <strong>save</strong> maps back to <code class="notranslate">maps/</code> directly (as JSON) and always lists the freshest volunteer/curated maps.</p>
+<hr>
+<h2 dir="auto">Ability Editor (GitHub Pages)</h2>
+<p dir="auto">The ability editor is a browser GUI for editing classes, weapons, and abilities. It also supports temporary custom test classes and weapons. Custom data is stored in the browser and is not written to the bot.</p>
+<p dir="auto">Two modes are available:</p>
+<ul dir="auto">
+<li><strong>Public demo</strong> (<a href="https://4-mat.github.io/bd-autohost-bot-new/ability-editor/" rel="nofollow">https://4-mat.github.io/bd-autohost-bot-new/ability-editor/</a>): edits stay in the browser. <strong>Propose to Bot</strong> creates a GitHub issue that a bot converts into a reviewed pull request.</li>
+<li><strong>Local mode</strong> (<code class="notranslate">npm run editor</code>, <a href="http://localhost:4700" rel="nofollow">http://localhost:4700</a>): edits are mirrored to the test client. <strong>Save to Bot</strong> writes changes to <code class="notranslate">src/data/index.ts</code> with a minimal diff.</li>
+</ul>
+<p dir="auto">For the full workflow, see <a href="abilityeditor/README.md"><code class="notranslate">abilityeditor/README.md</code></a>.</p>
+    </div>
+  </body>
 </html>
