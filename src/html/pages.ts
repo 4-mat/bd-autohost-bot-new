@@ -14,8 +14,13 @@ import {
   type AbilityData,
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
-import { classes, weapons } from "../data/index.js";
-import { runoffOptions, tallyVotes, voteOptionsFor } from "../data/gamemodes.js";
+import { eva43 } from "../game/resolve.js";
+import { getVersionData } from "../data/version43.js";
+import {
+  runoffOptions,
+  tallyVotes,
+  voteOptionsFor,
+} from "../data/gamemodes.js";
 
 // -- Premove Mode Tracking -----------------------------------------------------
 
@@ -73,7 +78,9 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
   const players = game.entities.filter((e) => !e.isMonster);
   // During a runoff only the tied modes are shown/votable.
   const runoff = game.voteRunoff;
-  const options = runoff ? runoffOptions(runoff) : voteOptionsFor(players.length);
+  const options = runoff
+    ? runoffOptions(runoff)
+    : voteOptionsFor(players.length);
   const tally = new Map(tallyVotes(game.votes).map((t) => [t.mode, t.count]));
   const voted = Object.keys(game.votes).length;
 
@@ -86,7 +93,8 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
   html += `<span style="color:#888;font-size:10px">New to a mode? Hover the buttons, or use %wt modes to learn them all.</span><br>`;
 
   if (options.length === 0) {
-    html += '<span style="color:#888"><i>No valid modes for this lobby size (modes are defined for up to 8 players).</i></span>';
+    html +=
+      '<span style="color:#888"><i>No valid modes for this lobby size (modes are defined for up to 8 players).</i></span>';
   }
 
   if (entity !== null) {
@@ -115,7 +123,9 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
     // Host view: per-mode tally summary.
     const tallySummary =
       tally.size > 0
-        ? [...tally.entries()].map(([m, c]) => `${esc(m)}: ${c}`).join(" &nbsp;|")
+        ? [...tally.entries()]
+            .map(([m, c]) => `${esc(m)}: ${c}`)
+            .join(" &nbsp;|")
         : "no votes yet";
     html += `<div style="margin:4px 0"><b>Tally:</b> ${tallySummary}</div>`;
 
@@ -271,13 +281,14 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   // (e.g. after the gamemode vote decides the mode, before the map is set).
   let loadout = "";
   if (!game.started) {
-    const classOpts = [...classes.values()]
+    const data = getVersionData(game.version);
+    const classOpts = [...data.classes.values()]
       .map(
         (c) =>
           `<option value="${esc(c.name)}"${c.name === entity.className ? " selected" : ""}>${esc(c.name)}</option>`,
       )
       .join("");
-    const weaponOpts = [...weapons.values()]
+    const weaponOpts = [...data.weapons.values()]
       .map(
         (w) =>
           `<option value="${esc(w.name)}"${w.name === entity.weaponName ? " selected" : ""}>${esc(w.name)}</option>`,
@@ -445,6 +456,7 @@ function buildPlayerDataTable(game: Game): string {
   // Header
   html += `<tr style="height:22px">`;
 
+  const is43 = game.version === "4.3";
   const headers = [
     "#",
     "Name",
@@ -454,7 +466,7 @@ function buildPlayerDataTable(game: Game): string {
     "M",
     "PD",
     "MD",
-    "EVA",
+    is43 ? "PE/ME" : "EVA",
     "MP",
   ];
 
@@ -494,7 +506,13 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
     html += buildStatCell(e, "mag", e.mag);
     html += buildStatCell(e, "pd", e.pd);
     html += buildStatCell(e, "md", e.md);
-    html += buildStatCell(e, "eva", e.eva);
+    if (is43) {
+      const pe = eva43(e, "Physical");
+      const me = eva43(e, "Magical");
+      html += `<td style="padding:0px 8px">${pe}/${me}</td>`;
+    } else {
+      html += buildStatCell(e, "eva", e.eva);
+    }
     html += buildStatCell(e, "mp", e.mp);
 
     html += `</tr>`;
