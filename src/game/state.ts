@@ -1,6 +1,7 @@
 import { rollDice, posToStr, toId } from "../utils.js";
 import { send, sendPm } from "../utils.js";
 import { rooms } from "../rooms.js";
+import type { GameVersion } from "../data/index.js";
 import type {
   AttackPrompt,
   ResolutionResult,
@@ -110,7 +111,7 @@ export interface AbilityData {
   frequency: string;
   mr: number;
   roll: string;
-  damageType: "Physical" | "Magical" | "";
+  damageType: "Physical" | "Magical" | "Varies" | "";
   actionType:
     | "Standard"
     | "Full"
@@ -127,6 +128,13 @@ export interface AbilityData {
   maxUses?: number;
   cost?: AbilityCost;
   choices?: AbilityChoice[];
+  variants?: {
+    id: string;
+    label: string;
+    damageType: "Physical" | "Magical";
+    range?: string;
+    effect?: string;
+  }[];
 }
 
 // Parse an ability frequency into a per-battle use limit and a cooldown in turns.
@@ -148,9 +156,18 @@ export function parseFrequency(frequency: string) {
     uses = 3;
   }
 
+  // BD frequency semantics (do not "fix" E2T to 2):
+  // "EoT" = every other turn (cooldown 2). In BD 4.3, "E2T" is equivalent to
+  // BD 4.4's "E3T" (every 3rd turn) and shares the cooldown of 3, despite the
+  // abbreviation. "every two turns" likewise maps to 3.
   if (f.includes("every other turn") || f.includes("eot")) {
     cooldown = 2;
-  } else if (f.includes("every third turn") || f.includes("e3t")) {
+  } else if (
+    f.includes("every third turn") ||
+    f.includes("every two turns") ||
+    f.includes("e3t") ||
+    f.includes("e2t")
+  ) {
     cooldown = 3;
   }
 
@@ -267,6 +284,7 @@ export interface Game {
   id: string;
   room: string;
   host: string;
+  version: GameVersion;
   entities: Entity[];
   map: Terrain[][];
   mapName: string;

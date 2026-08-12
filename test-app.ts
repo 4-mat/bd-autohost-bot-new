@@ -1,6 +1,7 @@
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { loadGameData, classes, weapons } from "./src/data/index.js";
+import { loadGameData43, getVersionData } from "./src/data/version43.js";
 import {
   readEditorSnapshot,
   applyEditorSnapshot,
@@ -20,6 +21,7 @@ import {
 import { broadcastPages } from "./src/commands/game.js";
 
 loadGameData();
+loadGameData43();
 
 // -- Ability Editor live data ------------------------------------------------
 // The ability editor (abilityeditor/, npm run editor) writes a runtime-data
@@ -260,12 +262,13 @@ function buildSigninPage(game: Game): string {
     ? `<b style="color:#0f0">OPEN</b>`
     : `<b style="color:#f66">CLOSED</b>`;
 
-  const classOpts = [...classes.values()]
+  const data = getVersionData(game.version);
+  const classOpts = [...data.classes.values()]
     .map(
       (c) => `<option value="${escHtml(c.name)}">${escHtml(c.name)}</option>`,
     )
     .join("");
-  const weaponOpts = [...weapons.values()]
+  const weaponOpts = [...data.weapons.values()]
     .map(
       (w) => `<option value="${escHtml(w.name)}">${escHtml(w.name)}</option>`,
     )
@@ -284,7 +287,7 @@ function buildSigninPage(game: Game): string {
     .join(", ");
 
   return `<div style="padding:12px;background:#16213e;border:1px solid #333;border-radius:4px">
-<b style="color:#00aaff">Battle Sign-up</b> <span style="color:#888">(signups: ${status})</span><br>
+<b style="color:#00aaff">Battle Sign-up (BD ${escHtml(game.version)})</b> <span style="color:#888">(signups: ${status})</span><br>
 <span style="color:#888">Signed in:</span> ${signedIn || `<span style="color:#888">none yet</span>`}<br><br>
 Class:<br>
 <select id="signin-class" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${classOpts}</select><br><br>
