@@ -22,3 +22,8 @@ jobs:
         env:
           GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
+          # Re-review on every push (synchronize), not just on open. Without
+          # handle_push_trigger PR-Agent logs "Skipping action: synchronize"
+          # and never re-reviews a branch after its first review.
+          github_action_config.handle_push_trigger: "true"
+          github_action_config.push_commands: '["/review", "/improve"]'
