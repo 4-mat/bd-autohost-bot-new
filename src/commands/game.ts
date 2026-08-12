@@ -790,8 +790,9 @@ function handleAdvanceTurn(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
   const isSelf = toId(entity.name) === toId(user.name);
 
-  if (!isHost && !isSelf) {
-    return sendPm(user.name, "Only the host or current player can advance turns.");
+  if (!isHost) {
+    if (!isSelf) return sendPm(user.name, "It's not your turn.");
+    if (!game.playersIdle) return sendPm(user.name, "The host hasn't enabled this option");
   }
 
   pushSnapshot(game);

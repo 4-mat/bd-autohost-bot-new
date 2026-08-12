@@ -99,13 +99,13 @@ function recalcEntityStats(
   entity.abilities = [
     ...(classData
       ? classData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
+        hasAbility(a, lvl, !!entity.isJuggernaut),
+      )
       : []),
     ...(weaponData
       ? weaponData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
+        hasAbility(a, lvl, !!entity.isJuggernaut),
+      )
       : []),
   ] as any[];
   return newMaxhp;
@@ -247,6 +247,7 @@ function handleHost(room: Room, user: User, args: string) {
     voteOpen: false,
     voteRunoff: null,
     timer: null,
+    playersIdle: false,
   };
 
   games.set(id, game);
@@ -892,9 +893,9 @@ export function placeTeamPlayers(
   teamB: Entity[],
 ):
   | [
-      placedA: [Entity, [number, number]][],
-      placedB: [Entity, [number, number]][],
-    ]
+    placedA: [Entity, [number, number]][],
+    placedB: [Entity, [number, number]][],
+  ]
   | null {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
@@ -1421,13 +1422,13 @@ function applyEntityLevel(
   entity.abilities = [
     ...(classData
       ? classData.abilities.filter((a) =>
-          hasAbility(a, level, !!entity.isJuggernaut),
-        )
+        hasAbility(a, level, !!entity.isJuggernaut),
+      )
       : []),
     ...(weaponData
       ? weaponData.abilities.filter((a) =>
-          hasAbility(a, level, !!entity.isJuggernaut),
-        )
+        hasAbility(a, level, !!entity.isJuggernaut),
+      )
       : []),
   ] as any[];
   return oldLvl;
@@ -1818,6 +1819,18 @@ function handleStart(room: Room, user: User) {
   }
 
   broadcastPages(game);
+}
+
+// -- .toggleidle - Toggle players idle ---------------------------------------------------
+
+function handleToggleIdle(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %toggleidle.");
+  }
+  game.playersIdle = !game.playersIdle;
+  send(room.id, `**Players Idle**: ${game.playersIdle ? "Enabled" : "Disabled"}`);
 }
 
 // -- Map generators ------------------------------------------------------------
