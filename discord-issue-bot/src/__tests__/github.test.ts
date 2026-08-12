@@ -84,6 +84,35 @@ describe("createGithubClient", () => {
     expect((e as GithubError).status).toBe(0);
     expect((e as GithubError).message).toContain("timed out");
   });
+  it("translates a timeout while decoding the response body", async () => {
+    const client = createGithubClient({
+      token: "tok",
+      repo: "o/r",
+      fetchImpl: mockFetchImpl(() => {
+        // Headers resolve (ok), but the body stalls and the abort signal
+        // fires while res.json() is reading it.
+        return new Response("", { status: 200 });
+      }),
+    });
+    // Override json() on the resolved response to reject with a timeout.
+    const origJson = Response.prototype.json;
+    Response.prototype.json = async function () {
+      const err = new Error("The operation was aborted due to timeout");
+      err.name = "TimeoutError";
+      throw err;
+    };
+    try {
+      const e = await client.createIssue({ title: "t" }).then(
+        () => null,
+        (err: unknown) => err,
+      );
+      expect(e).toBeInstanceOf(GithubError);
+      expect((e as GithubError).status).toBe(0);
+      expect((e as GithubError).message).toContain("timed out");
+    } finally {
+      Response.prototype.json = origJson;
+    }
+  });
 
   it("sends auth + version headers", async () => {
     let headers: Headers | undefined;

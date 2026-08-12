@@ -5,6 +5,21 @@
 // Discord interaction hanging in the "thinking" state until its token expires.
 const REQUEST_TIMEOUT_MS = 15_000;
 
+function isTimeoutError(e: unknown): boolean {
+  return (
+    (e as Error).name === "TimeoutError" ||
+    (e as Error).name === "AbortError"
+  );
+}
+
+function timeoutError(method: string, path: string): GithubError {
+  return new GithubError(
+    `GitHub API ${method} ${path} timed out after ${REQUEST_TIMEOUT_MS}ms`,
+    0,
+    "The GitHub API request timed out.",
+  );
+}
+
 export interface NewIssue {
   title: string;
   body?: string;
@@ -57,27 +72,27 @@ export function createGithubClient(opts: GithubClientOptions) {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (e) {
-      if (
-        (e as Error).name === "TimeoutError" ||
-        (e as Error).name === "AbortError"
-      ) {
-        throw new GithubError(
-          `GitHub API ${method} ${path} timed out after ${REQUEST_TIMEOUT_MS}ms`,
-          0,
-          "The GitHub API request timed out.",
-        );
-      }
+      if (isTimeoutError(e)) throw timeoutError(method, path);
       throw e;
     }
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new GithubError(
-        `GitHub API ${method} ${path} failed (${res.status})`,
-        res.status,
-        detail.slice(0, 500),
-      );
+    try {
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new GithubError(
+          `GitHub API ${method} ${path} failed (${res.status})`,
+          res.status,
+          detail.slice(0, 500),
+        );
+      }
+      return (await res.json()) as T;
+    } catch (e) {
+      // Body decoding can also hit the abort signal when the response
+      // stalls after headers arrive — translate it like a fetch timeout,
+      // and pass already-typed GithubErrors through unchanged.
+      if (e instanceof GithubError) throw e;
+      if (isTimeoutError(e)) throw timeoutError(method, path);
+      throw e;
     }
-    return (await res.json()) as T;
   }
 
   return {
