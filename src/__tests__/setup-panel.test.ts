@@ -159,12 +159,38 @@ describe("host setup panel", () => {
     expect(html).toContain("Start Game");
   });
 
+  it("renders the main setup buttons visible (no collapsed Setup wrapper)", () => {
+    const game = makeGame({ votes: {}, voteOpen: false, modeChosen: false });
+    const html = buildHostPage(game);
+    // The Setup header is a plain label, not a collapsible summary (no
+    // outer <details> wrapper around the whole panel).
+    expect(html).not.toContain(">Setup</summary>");
+    // The Set Game button comes BEFORE the FFA details arrow, proving the
+    // main buttons are not tucked behind any collapse.
+    const setGameIdx = html.indexOf('value="%setgame FFA"');
+    const ffaArrowIdx = html.indexOf("▸ FFA</summary>");
+    expect(setGameIdx).toBeGreaterThan(-1);
+    expect(ffaArrowIdx).toBeGreaterThan(-1);
+    expect(setGameIdx).toBeLessThan(ffaArrowIdx);
+    // Main buttons are present without needing to expand anything.
+    expect(html).toContain('value="%setgame FFA"');
+    expect(html).toContain('value="%setlevel all, 10"');
+  });
+
+  it("tucks the Set FFA shortcut behind a small arrow instead of hiding the panel", () => {
+    const game = makeGame({ votes: {}, voteOpen: false, modeChosen: false });
+    const html = buildHostPage(game);
+    expect(html).toContain("▸ FFA</summary>");
+    expect(html).toContain('value="%setgame ffa"');
+  });
+
   it("hides the whole setup panel once the game has started", () => {
     const game = makeGame({ voteOpen: false, modeChosen: true });
     game.started = true;
     game.phase = "playing";
     const html = buildHostPage(game);
-    expect(html).not.toContain(">Setup</summary>");
+    expect(html).not.toContain("▸ FFA");
     expect(html).not.toContain("%setgame");
+    expect(html).not.toContain("Level All");
   });
 });
