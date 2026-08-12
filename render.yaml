@@ -14,6 +14,7 @@ services:
     name: bd-discord-issue-bot
     env: node
     plan: free
+    autoDeploy: true
     buildCommand: cd discord-issue-bot && npm install
     startCommand: cd discord-issue-bot && npx tsx src/index.ts
     envVars:
