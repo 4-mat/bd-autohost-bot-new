@@ -1,0 +1,65 @@
+name: Review checklist
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  checklist:
+    runs-on: ubuntu-latest
+    if: github.event.sender.type != 'Bot'
+    steps:
+      - name: Post data-structure review checklist
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Draft PRs post on ready_for_review instead, so each PR gets
+            // exactly one checklist comment (opened-draft + ready would
+            // otherwise double-post).
+            if (context.payload.pull_request?.draft) {
+              return;
+            }
+            const body = [
+              "## 🔍 Pre-review checklist (auto-posted)",
+              "",
+              "A reviewer will deep-dive this PR on request. Before that happens, work through the items below — each question below caught a real bug in PR #188.",
+              "",
+              "**Run the checks**",
+              "- [ ] `bun run typecheck` passes (the branch must compile)",
+              "- [ ] `bun test` passes",
+              "- [ ] New behavior has a test — assert an *invariant* (what must always be true), not just a happy path",
+              "",
+              "**1 · Ownership — who owns this data?**",
+              "- [ ] Every new piece of state has exactly one owner that creates *and* destroys it",
+              "",
+              "**2 · Lifetime — when does this die?**",
+              "- [ ] No state needs manual cleanup from scattered call sites",
+              "- [ ] Nothing survives game end / dehost / cancel",
+              "",
+              "**3 · Identity — what is it keyed by?**",
+              "- [ ] No state keyed by `entity.num` (numbers are recycled across games → leaks)",
+              "- [ ] Host-built paths can be confirmed for the *target* entity, not just the current one",
+              "",
+              "**4 · Duplication — how many places compute this value?**",
+              "- [ ] Each value is computed in exactly one place (MP budget, reachability, damage types…)",
+              "- [ ] No hand-synced duplicate types or constants — import, don't copy",
+              "",
+              "**Known failure modes in this repo** (all found in PR #188)",
+              "- Shared `parseFrequency` — new frequency strings must not change other versions' combat math",
+              "- View/HTML layers doing gameplay math (paths, MP, reachability)",
+              "- 'Varies' / delayed effects that silently resolve to nothing instead of failing loudly",
+              "- Imports of functions that don't exist yet (the branch did not compile)",
+              "",
+              "Want a deep review? Link this PR in a chat and ask — comments get posted straight back here."
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body,
+            });

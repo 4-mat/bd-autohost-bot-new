@@ -1,5 +1,21 @@
 import type { SheetRow, FetchResult } from "./scraper.js";
 
+const NAME_KEYS = [
+  "Name Basic Abilities",
+  "58 Items",
+  "Name",
+  "name",
+  "Ability Name",
+];
+
+export function rowName(row: SheetRow): string {
+  for (const k of NAME_KEYS) {
+    const v = row[k];
+    if (v && v.trim()) return v.trim();
+  }
+  return "";
+}
+
 interface Violation {
   rule: string;
   found: string;
@@ -253,7 +269,7 @@ export function checkAbility(row: SheetRow): {
   name: string;
   violations: Violation[];
 } {
-  const name = row.Name || row.name || row["Ability Name"] || "";
+  const name = rowName(row);
   const effect = row.Effect || row.effect || "";
   const action = row.Action || row.action || "";
   return { name, violations: checkEffect(effect, name, action) };
