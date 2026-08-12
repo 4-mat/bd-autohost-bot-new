@@ -30,7 +30,11 @@ import {
   tieModes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
-import { buildHostPage, buildPlayerPage } from "../html/pages.js";
+import {
+  buildHostPage,
+  buildPlayerPage,
+  clearGameMovementState,
+} from "../html/pages.js";
 import { broadcastPages } from "./game.js";
 import type { AbilityData } from "../data/index.js";
 
@@ -304,6 +308,7 @@ function handleDehost(room: Room, user: User) {
     return sendPm(user.name, "Only the host can use %dehost.");
   }
 
+  clearGameMovementState(game);
   games.delete(game.id);
   send(room.id, `**${user.name}** has closed the game.`);
 }

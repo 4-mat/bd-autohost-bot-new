@@ -835,6 +835,7 @@ function handleCancel(game: Game, user: User) {
   entity.pendingAction = null;
   entity.pendingResolution = undefined;
   entity.pendingPromptKind = undefined;
+  clearMovementState(game, entity);
   send(game.room, `/me ${entity.num} cancels ${ability.name}`);
   broadcastPages(game);
 }
@@ -909,6 +910,7 @@ function handleAdvanceTurn(game: Game, user: User) {
   if (result.died || !result.entity) {
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
+      clearGameMovementState(game);
       announceGameOver(game, winner);
       return;
     }
@@ -920,6 +922,7 @@ function handleAdvanceTurn(game: Game, user: User) {
       }
       if (!retry.entity) {
         const winner = checkGameOver(game);
+        clearGameMovementState(game);
         announceGameOver(game, winner);
         return;
       }
@@ -1469,6 +1472,7 @@ function handleHp(game: Game, user: User, args: string) {
 
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
+      clearGameMovementState(game);
       announceGameOver(game, winner);
       return;
     }
