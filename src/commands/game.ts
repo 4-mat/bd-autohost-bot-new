@@ -527,6 +527,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (ability.actionType === "Full") {
     entity.standardUsed = true;
     entity.movementUsed = true;
+    premoveSet.delete(movementKey(game, entity));
     clearMovementState(game, entity);
   }
   if (ability.actionType === "Trigger") entity.triggered = true;
@@ -845,7 +846,9 @@ function handleAdvanceTurn(game: Game, user: User) {
   if (!entity) return;
 
   // Any in-progress movement path/reach preview ends with the turn.
-  clearMovementState(game, entity);
+  for (const e of game.entities) {
+    clearMovementState(game, e);
+  }
 
   pushSnapshot(game);
 
@@ -1174,15 +1177,17 @@ function handlePathStep(game: Game, user: User, args: string) {
   );
   if (occupied) return sendPm(user.name, "That tile is occupied.");
 
-  const path = pathState.get(movementKey(game, entity)) ?? [];
+  const mk = movementKey(game, entity);
+  const path = pathState.get(mk) ?? [];
   const key = posToStr(pos[0], pos[1]);
   const idx = path.findIndex(([r, c]) => posToStr(r, c) === key);
-  // Clicking a tile already in the path truncates the path there (lets the
-  // player shorten it) regardless of adjacency. Otherwise it must be adjacent
-  // to the current tip to be appended as the next step.
+  // Clicking a tile already in the path truncates the path there, keeping the
+  // clicked tile as the new end (lets the player shorten it) regardless of
+  // adjacency. Otherwise it must be adjacent to the current tip to be appended
+  // as the next step.
   if (idx >= 0) {
-    const candidate = path.slice(0, idx);
-    pathState.set(movementKey(game, entity), candidate);
+    const candidate = path.slice(0, idx + 1);
+    pathState.set(mk, candidate);
     broadcastPages(game);
     return;
   }
@@ -1192,11 +1197,14 @@ function handlePathStep(game: Game, user: User, args: string) {
   }
   const candidate = [...path, pos];
 
-  if (pathCost(game, candidate) > getEffectiveMp(entity)) {
+  const movementMp = dashMode.has(mk)
+    ? Math.floor(getEffectiveMp(entity) * 1.5)
+    : getEffectiveMp(entity);
+  if (pathCost(game, candidate) > movementMp) {
     return sendPm(user.name, "That tile costs too much MP.");
   }
 
-  pathState.set(movementKey(game, entity), candidate);
+  pathState.set(mk, candidate);
   broadcastPages(game);
 }
 
@@ -1225,28 +1233,50 @@ function handleConfirmMove(game: Game, user: User, args: string) {
     return sendPm(user.name, `${entity.num} already moved this turn.`);
   }
 
-  const path = pathState.get(movementKey(game, entity));
+  const mk = movementKey(game, entity);
+  const path = pathState.get(mk);
   if (!path || path.length === 0) {
     return sendPm(
       user.name,
       "No path to confirm. Click tiles on the map first.",
     );
   }
-  if (pathCost(game, path) > getEffectiveMp(entity)) {
+  const isDash = dashMode.has(mk);
+  if (isDash && entity.standardUsed) {
+    return sendPm(
+      user.name,
+      `${entity.num} already used their Standard — Dash is a Full action.`,
+    );
+  }
+  if (isDash && entity.dashUsed) {
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
+  const movementMp = isDash
+    ? Math.floor(getEffectiveMp(entity) * 1.5)
+    : getEffectiveMp(entity);
+  if (pathCost(game, path) > movementMp) {
     return sendPm(user.name, "That path costs more MP than you have.");
   }
 
-  const target = path[path.length - 1];
-  const occupied = game.entities.some(
-    (e) => e.curhp > 0 && e.pos[0] === target[0] && e.pos[1] === target[1],
+  const occupied = path.some(([row, col]) =>
+    game.entities.some(
+      (e) =>
+        e !== entity && e.curhp > 0 && e.pos[0] === row && e.pos[1] === col,
+    ),
   );
   if (occupied) {
-    return sendPm(user.name, "The end tile is occupied.");
+    return sendPm(user.name, "The path crosses an occupied tile.");
   }
 
+  const target = path[path.length - 1];
   pushSnapshot(game);
   entity.pos = target;
   entity.movementUsed = true;
+  if (isDash) {
+    entity.dashUsed = true;
+    entity.standardUsed = true;
+  }
+  premoveSet.delete(mk);
   clearMovementState(game, entity);
 
   const key = posToStr(target[0], target[1]);

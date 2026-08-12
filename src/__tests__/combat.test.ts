@@ -7,7 +7,8 @@ import {
   Terrain,
 } from "../game/state.js";
 import { parseEffects, extractCombatMetadata } from "../game/effects.js";
-import { startAttack } from "../game/resolve.js";
+import { startAttack, eva43 } from "../game/resolve.js";
+import type { GameVersion } from "../data/index.js";
 
 setWs({ send() {} });
 
@@ -52,7 +53,9 @@ function makeEntity(
   };
 }
 
-function makeGame(opts: { entities?: Entity[]; size?: number } = {}): Game {
+function makeGame(
+  opts: { entities?: Entity[]; size?: number; version?: GameVersion } = {},
+): Game {
   const size = opts.size ?? 10;
   const map = Array.from({ length: size }, () =>
     Array(size).fill(Terrain.Normal),
@@ -65,7 +68,7 @@ function makeGame(opts: { entities?: Entity[]; size?: number } = {}): Game {
     id: "test",
     room: "battledome",
     host: "Host",
-    version: "4.4",
+    version: opts.version ?? "4.4",
     entities,
     map,
     mapName: "test",
@@ -284,8 +287,9 @@ function driveResolveAgainst(
   user: Entity,
   ability: AbilityData,
   target: Entity,
+  version: GameVersion = "4.4",
 ): string {
-  const game = makeGame({ entities: [user, target] });
+  const game = makeGame({ entities: [user, target], version });
   user.abilities = [ability];
   const step = startAttack(game, user, ability, target.num);
   let safety = 0;
@@ -507,5 +511,53 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
     // The mod trails reference just the damageValue; for each target we
     // confirm at least one line contains the +50% tag.
     expect(log).toMatch(/\+50% damage/);
+  });
+});
+
+// ===========================================================================
+// eva43 — BD 4.3 evasion uses PE/ME from PD/MD instead of raw EVA
+// ===========================================================================
+
+describe("eva43 — BD 4.3 evasion", () => {
+  it("uses PE (PD/10) for physical and ME (MD/10) for magical", () => {
+    const monk = makeEntity({ num: "P1", name: "Alice", pd: 42, md: 25 });
+    expect(eva43(monk, "Physical")).toBe(4);
+    expect(eva43(monk, "Magical")).toBe(2);
+  });
+
+  it("clamps PE/ME to 9 and applies -2 when poisoned", () => {
+    const tank = makeEntity({ num: "P1", name: "Alice", pd: 120 });
+    expect(eva43(tank, "Physical")).toBe(9);
+    const poisoned = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pd: 42,
+      statuses: [
+        { name: "Poison", damage: 0, rounds: 1, maxRounds: 1, removable: true },
+      ],
+    });
+    expect(eva43(poisoned, "Physical")).toBe(2);
+  });
+
+  it("resolves a 4.3 physical attack against PE instead of raw EVA", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      pd: 45,
+      eva: 99,
+    });
+    const ability = makeAbility({
+      name: "Punch",
+      range: "Melee",
+      mr: 0,
+      roll: "1d6+0",
+      damageType: "Physical",
+    });
+    const log = driveResolveAgainst(user, ability, target, "4.3");
+    expect(log).toContain("EVA 4");
+    expect(log).not.toContain("EVA 99");
   });
 });

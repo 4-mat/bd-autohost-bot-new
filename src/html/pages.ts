@@ -458,7 +458,7 @@ function buildMapTable(
       const terrain = game.map[r][c];
       const color = TERRAIN_COLORS[terrain] ?? "#99E599";
       const entity = game.entities.find(
-        (e) => e.pos[0] === r && e.pos[1] === c,
+        (e) => e.curhp > 0 && e.pos[0] === r && e.pos[1] === c,
       );
       const key = posKey([r, c]);
       const tileStr = posToStr(r, c);

@@ -158,9 +158,12 @@ describe("interactive movement pathing", () => {
     gameCommand(room, alice, "pathstep", "b", "2,P1");
     gameCommand(room, alice, "pathstep", "c", "2,P1");
     expect(pathState.get(key1(game))?.length).toBe(3);
-    // Clicking the middle tile (index 1) drops it and everything after.
+    // Clicking the middle tile (index 1) keeps it as the new end.
     gameCommand(room, alice, "pathstep", "b", "2,P1");
-    expect(pathState.get(key1(game))).toEqual([[0, 1]]);
+    expect(pathState.get(key1(game))).toEqual([
+      [0, 1],
+      [1, 1],
+    ]);
   });
 
   it("clicking a tile two steps back truncates even though not adjacent to tip", () => {
@@ -170,9 +173,9 @@ describe("interactive movement pathing", () => {
     gameCommand(room, alice, "pathstep", "b", "2,P1");
     gameCommand(room, alice, "pathstep", "c", "2,P1");
     expect(pathState.get(key1(game))?.length).toBe(3);
-    // Tip is [2,1], clicking [0,1] (manhattan 2) shortens the whole path.
+    // Tip is [2,1], clicking [0,1] (manhattan 2) shortens the path to end there.
     gameCommand(room, alice, "pathstep", "a", "2,P1");
-    expect(pathState.get(key1(game))).toEqual([]);
+    expect(pathState.get(key1(game))).toEqual([[0, 1]]);
   });
 
   it("%cancelpath clears the path", () => {
