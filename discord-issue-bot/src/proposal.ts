@@ -23,17 +23,37 @@ export interface AbilityProposal {
   entry: Record<string, unknown>;
 }
 
-export function normalizeKind(kind: string | null | undefined): ProposalKind {
-  const k = (kind ?? "").toLowerCase().trim();
-  if (k === "weapon" || k === "w") return "weapon";
-  return "class"; // default + anything unrecognized → class
+/** One entry in the payload consumed by scripts/apply-editor-proposal.ts. */
+export interface ProposalChange {
+  kind: ProposalKind;
+  /** Set for updates (the target); absent for adds (name lives inside entry). */
+  name?: string;
+  entry: Record<string, unknown>;
 }
 
-export function normalizeMode(mode: string | null | undefined): ProposalMode {
+/** Shape of the ```json payload embedded in the proposal issue body. */
+export interface ProposalPayload {
+  updates: ProposalChange[];
+  adds: ProposalChange[];
+}
+
+export function normalizeKind(
+  kind: string | null | undefined,
+): ProposalKind | null {
+  const k = (kind ?? "").toLowerCase().trim();
+  if (!k || k === "class") return "class"; // default for empty/missing
+  if (k === "weapon" || k === "w") return "weapon";
+  return null; // unrecognized → caller reports the typo instead of coercing
+}
+
+export function normalizeMode(
+  mode: string | null | undefined,
+): ProposalMode | null {
   const m = (mode ?? "").toLowerCase().trim();
+  if (!m || m === "add") return "add"; // default for empty/missing
   if (m === "update" || m === "upd" || m === "u" || m === "edit" || m === "e")
     return "update";
-  return "add"; // default
+  return null; // unrecognized → caller reports the typo instead of coercing
 }
 
 /**
@@ -44,7 +64,7 @@ export function normalizeMode(mode: string | null | undefined): ProposalMode {
  */
 export function buildProposalPayload(
   proposal: AbilityProposal,
-): Record<string, unknown> {
+): ProposalPayload {
   const entry: Record<string, unknown> = {
     ...proposal.entry,
     name: proposal.name,
@@ -69,7 +89,7 @@ export function buildProposalPayload(
  */
 export function proposalIssueBody(
   proposal: AbilityProposal,
-  payload: Record<string, unknown>,
+  payload: ProposalPayload,
 ): string {
   const action =
     proposal.mode === "update"

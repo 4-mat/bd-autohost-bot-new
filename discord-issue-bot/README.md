@@ -63,25 +63,36 @@ if the buttons stop responding.
 
 ## Deploying 24/7 for free (Oracle Cloud)
 
-See **`DEPLOY_ORACLE.md`** — the only genuinely free, reliable 24/7
-option that keeps the `!` text commands (Render's free tier sleeps after
-15 minutes idle and its always-on worker plan costs $7/mo). After cloning
-the repo onto an Oracle Always Free Ubuntu VM, run:
+See **`DEPLOY_GUIDE.html`** (local, not committed) for the full interactive
+walkthrough — or follow the short version here. Oracle Cloud is the only
+genuinely free, reliable 24/7 option that keeps the `!` text commands
+(Render's free tier sleeps after 15 minutes idle and its always-on worker
+plan costs $7/mo). On an Oracle Always Free Ubuntu VM:
 
-```bash
-bash deploy/oci-bootstrap.sh
-```
+1. On the VM, clone the branch (it includes the `mapeditor/` folder the bot
+   needs at runtime for map validation):
 
-## Deploying 24/7 for free (Oracle Cloud)
+   ```bash
+   git clone -b feat/discord-issue-bot-v2 https://github.com/4-mat/bd-autohost-bot-new.git
+   cd bd-autohost-bot-new/discord-issue-bot
+   ```
 
-See **`DEPLOY_ORACLE.md`** — the only genuinely free, reliable 24/7
-option that keeps the `!` text commands (Render's free tier sleeps after
-15 minutes idle and its always-on worker plan costs $7/mo). After cloning
-the repo onto an Oracle Always Free Ubuntu VM, run:
+2. Once the clone finishes, from the `discord-issue-bot/` folder on your
+   machine copy the local deploy kit into the clone — the `deploy/` scripts
+   are kept out of git, they live next to the deploy guide:
 
-```bash
-bash deploy/oci-bootstrap.sh
-```
+   ```bash
+   scp -i ~/.ssh/oci_key -r deploy ubuntu@<PUBLIC_IP>:~/bd-autohost-bot-new/discord-issue-bot/
+   ```
+
+3. Back in the VM, run the one-shot bootstrap (installs Node 20 + pm2,
+   prompts for the env values with secrets un-echoed, starts the bot with
+   auto-restart, enables boot persistence, and installs the OCI
+   idle-keepalive cron):
+
+   ```bash
+   bash deploy/oci-bootstrap.sh
+   ```
 
 ## Deploying to Render
 

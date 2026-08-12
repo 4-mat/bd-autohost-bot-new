@@ -1,6 +1,10 @@
 // Thin GitHub REST client for creating issues. Uses global fetch (Node 20+ /
 // Bun) so no extra dependency. The `fetchImpl` param exists only for tests.
 
+// Bound every request: a stalled GitHub API call must not leave a deferred
+// Discord interaction hanging in the "thinking" state until its token expires.
+const REQUEST_TIMEOUT_MS = 15_000;
+
 export interface NewIssue {
   title: string;
   body?: string;
@@ -38,17 +42,33 @@ export function createGithubClient(opts: GithubClientOptions) {
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const res = await doFetch(`${base}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${opts.token}`,
-        Accept: "application/vnd.github+json",
-        "Content-Type": "application/json",
-        "User-Agent": "bd-discord-issue-bot",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await doFetch(`${base}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${opts.token}`,
+          Accept: "application/vnd.github+json",
+          "Content-Type": "application/json",
+          "User-Agent": "bd-discord-issue-bot",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (e) {
+      if (
+        (e as Error).name === "TimeoutError" ||
+        (e as Error).name === "AbortError"
+      ) {
+        throw new GithubError(
+          `GitHub API ${method} ${path} timed out after ${REQUEST_TIMEOUT_MS}ms`,
+          0,
+          "The GitHub API request timed out.",
+        );
+      }
+      throw e;
+    }
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       throw new GithubError(
