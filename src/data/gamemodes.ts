@@ -295,9 +295,11 @@ export function modeDescription(arg: string): string | undefined {
  * `%wt modes` so players can learn what they are voting on.
  */
 export function describeModes(): string {
-  return VOTE_OPTIONS.map((o) => `**${o.id}** (${o.label}) — ${o.description}`).join(
-    "\n",
-  );
+  return VOTE_OPTIONS.map((o) => `
+  <details>
+    <summary><b>${o.id}</b> (${o.label})</summary>
+    <p>${o.description}</p>
+  </details>`.trim()).join("\n\n");
 }
 
 const VOTE_ALIASES: Record<string, string> = {

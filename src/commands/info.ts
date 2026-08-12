@@ -1,6 +1,7 @@
 import { send, sendPm, toId } from "../utils.js";
 import type { User } from "../users.js";
 import {
+  abilities,
   classes,
   weapons,
   branches,
@@ -42,7 +43,7 @@ export function infoCommand(user: User, cmd: string, args: string) {
     if (weapon) {
       const lines = [`**${weapon.name}** (${weapon.branch})`];
       for (const ab of weapon.abilities) {
-        lines.push(buildAbilityLine(ab));
+        lines.push(buildAbilityDropdown(ab));
       }
       sendPm(target, lines.join("\n"));
       return;
@@ -53,13 +54,20 @@ export function infoCommand(user: User, cmd: string, args: string) {
     if (cls) {
       const lines = [`**${cls.name}**`];
       for (const ab of cls.abilities) {
-        lines.push(buildAbilityLine(ab));
+        lines.push(buildAbilityDropdown(ab));
       }
       sendPm(target, lines.join("\n"));
       return;
     }
 
-    sendPm(target, `No data found for "${args}".`);
+    // Check specific abilities
+    const ab = abilities.get(id);
+    if (ab) {
+      sendPm(target, buildAbilityDropdown(ab.ability));
+      return;
+    }
+
+    sendPm(target, `No data for "${args}".`);
     return;
   }
 
@@ -75,7 +83,7 @@ export function infoCommand(user: User, cmd: string, args: string) {
   }
 }
 
-function buildAbilityLine(ab: {
+function buildAbilityDropdown(ab: {
   name: string;
   level: number | "EX1" | "EX2";
   frequency: string;
@@ -86,5 +94,19 @@ function buildAbilityLine(ab: {
   range: string;
   effect: string;
 }): string {
-  return `  **${ab.name}** (Lv.${ab.level}) - ${ab.frequency}, MR ${ab.mr}, ${ab.roll}, ${ab.damageType} ${ab.actionType}, ${ab.range}: ${ab.effect}`;
+  const levelDisplay = typeof ab.level === "string"
+    ? `${ab.level}`
+    : `Lv.${ab.level}`;
+
+  return `
+  <details>
+    <summary><b>${ab.name}</b> (${levelDisplay})</summary>
+    <b>- Action Type:</b> ${ab.actionType}<br>
+    <b>- Frequency:</b> ${ab.frequency}<br>
+    <b>- MR:</b> ${ab.mr}<br>
+    <b>- Roll:</b> ${ab.roll}<br>
+    <b>- Damage Type:</b> ${ab.damageType}<br>
+    <b>- Range:</b> ${ab.range}<br>
+    <b>- Effect:</b> ${ab.effect}
+  </details>`.trim();
 }

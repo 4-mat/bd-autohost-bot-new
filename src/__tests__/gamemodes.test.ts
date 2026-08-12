@@ -247,7 +247,7 @@ describe("describeModes", () => {
   test("lists every vote option with its label and description", () => {
     const text = describeModes();
     for (const opt of VOTE_OPTIONS) {
-      expect(text).toContain(`**${opt.id}**`);
+      expect(text).toContain(`<b>${opt.id}</b>`);
       expect(text).toContain(opt.label);
       expect(text).toContain(opt.description);
     }
