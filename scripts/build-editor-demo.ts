@@ -5,11 +5,11 @@
 //   npm run editor:demo:build
 //
 // Reads the same data the bot uses (src/data/index.ts), then produces
-// dist-editor/index.html — a fully self-contained copy of the editor GUI with
-// the current class/weapon data embedded. The GUI detects the embedded data
-// and runs in "static demo" mode: edits + custom test classes/weapons live in
-// each visitor's browser (localStorage), and "Propose to Bot" opens a GitHub
-// issue that a workflow turns into a PR.
+// dist-editor/ability-editor/index.html — a fully self-contained copy of the
+// editor GUI with the current class/weapon data embedded. The GUI detects the
+// embedded data and runs in "static demo" mode: edits + custom test
+// classes/weapons live in each visitor's browser (localStorage), and "Propose
+// to Bot" opens a GitHub issue that a workflow turns into a PR.
 
 import fs from "fs";
 import path from "path";
@@ -18,7 +18,7 @@ import { loadGameData, classes, weapons } from "../src/data/index.js";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const GUI_PATH = path.join(ROOT, "abilityeditor", "index.html");
-const OUT_DIR = path.join(ROOT, "dist-editor");
+const OUT_DIR = path.join(ROOT, "dist-editor", "ability-editor");
 const OUT_PATH = path.join(OUT_DIR, "index.html");
 
 // Owner/repo for the pre-filled proposal issues. Override with EDITOR_REPO

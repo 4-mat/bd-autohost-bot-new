@@ -9,6 +9,11 @@ on:
       - "scripts/render-readme.ts"
       - "mapeditor/**"
       - "maps/**"
+      - "abilityeditor/**"
+      - "scripts/build-editor-demo.ts"
+      - "scripts/apply-editor-proposal.ts"
+      - "src/data/index.ts"
+      - "src/data/overrides.ts"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -38,8 +43,14 @@ jobs:
       - name: Render README homepage
         run: bun scripts/render-readme.ts || true
 
+      # Build the self-contained Ability Editor demo. It embeds the current
+      # class/weapon data and runs fully in the browser (static mode).
+      - name: Build ability editor demo
+        run: bun scripts/build-editor-demo.ts
+
       # Assemble the site: the repo-root index.html is the homepage at /,
-      # and the map editor/browser/pools keep their /mapeditor/ and /maps/ URLs.
+      # the map editor/browser/pools keep their /mapeditor/ and /maps/ URLs,
+      # and the ability editor demo lives at /ability-editor/.
       - name: Assemble static site
         run: |
           mkdir -p dist-editor

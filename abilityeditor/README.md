@@ -60,16 +60,16 @@ abilityeditor/
 
 ## API
 
-| Endpoint | Method | Purpose |
-| --- | --- | --- |
-| `/api/data` | GET | full class/weapon snapshot + custom name list |
-| `/api/status` | GET | pending-regen flag, custom count |
-| `/api/update` | POST | patch a class/weapon (name, stats, description, branch) |
-| `/api/ability` | POST | add / save / remove an ability |
-| `/api/custom` | POST | add a custom class/weapon |
-| `/api/custom/remove` | POST | remove a custom class/weapon |
-| `/api/regenerate` | POST | rewrite `src/data/index.ts` (minimal diff) |
-| `/api/reset` | POST | reload data from `src/data/index.ts` (keeps customs) |
+| Endpoint             | Method | Purpose                                                 |
+| -------------------- | ------ | ------------------------------------------------------- |
+| `/api/data`          | GET    | full class/weapon snapshot + custom name list           |
+| `/api/status`        | GET    | pending-regen flag, custom count                        |
+| `/api/update`        | POST   | patch a class/weapon (name, stats, description, branch) |
+| `/api/ability`       | POST   | add / save / remove an ability                          |
+| `/api/custom`        | POST   | add a custom class/weapon                               |
+| `/api/custom/remove` | POST   | remove a custom class/weapon                            |
+| `/api/regenerate`    | POST   | rewrite `src/data/index.ts` (minimal diff)              |
+| `/api/reset`         | POST   | reload data from `src/data/index.ts` (keeps customs)    |
 
 Mutations are only accepted from a `localhost` origin matching the server port.
 
@@ -80,7 +80,7 @@ Mutations are only accepted from a `localhost` origin matching the server port.
   `AoE`), target group, range, effect (BD Lang), optional max uses, cost and
   choices.
 - `cost` is serialized inline (`cost: { type: "Resource", resource: "Qi",
-  amount: 2, prompt: true }`) and `choices` as a multi-line array, matching
+amount: 2, prompt: true }`) and `choices` as a multi-line array, matching
   the existing file style.
 
 ## Public demo (GitHub Pages)
@@ -89,7 +89,7 @@ The same GUI is published as a **static demo** — no server needed — so anyon
 can try the editor without touching the repo:
 
 ```bash
-bun run editor:demo:build   # → dist-editor/index.html
+bun run editor:demo:build   # → dist-editor/ability-editor/index.html
 ```
 
 The build (`scripts/build-editor-demo.ts`) embeds the current class/weapon
