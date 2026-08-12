@@ -126,8 +126,8 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
     const tallySummary =
       tally.size > 0
         ? [...tally.entries()]
-            .map(([m, c]) => `${esc(m)}: ${c}`)
-            .join(" &nbsp;|")
+          .map(([m, c]) => `${esc(m)}: ${c}`)
+          .join(" &nbsp;|")
         : "no votes yet";
     html += `<div style="margin:4px 0"><b>Tally:</b> ${tallySummary}</div>`;
 
@@ -489,8 +489,8 @@ function buildPlayerDataTable(game: Game): string {
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
-          .map((n) => game.entities.find((e) => e.num === n))
-          .filter((e): e is Entity => !!e)
+        .map((n) => game.entities.find((e) => e.num === n))
+        .filter((e): e is Entity => !!e)
       : game.entities;
   for (const e of ordered) {
     html += `<tr style="height:22px">`;
@@ -562,14 +562,14 @@ function buildActionLog(game: Game, collapsed = false): string {
     game.log.length === 0
       ? `<div style="color:#888"><i>(empty)</i></div>`
       : `<table class="log" align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">` +
-        game.log
-          .slice(-15)
-          .map(
-            (entry) =>
-              `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
-          )
-          .join("") +
-        `</table>`;
+      game.log
+        .slice(-15)
+        .map(
+          (entry) =>
+            `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
+        )
+        .join("") +
+      `</table>`;
 
   if (collapsed) {
     return `<details style="margin:4px 0"><summary style="cursor:pointer"><b>Action Log</b></summary>${body}</details>`;
@@ -622,10 +622,13 @@ function buildSetupPanel(game: Game): string {
   return `<div style="margin-top:4px"><b>Setup</b><div style="margin-top:4px">
   ${setBtn}
   ${btn("%setlevel all, 10", "Level All \u2192 10")}
+  ${btn("%toggleidle", "Toggle Player's Idle")}
   ${startBtn}
   ${ffaShortcut}
   <span style="color:#888;font-size:10px">${ffaToggle}</span>
 </div></div>`;
+
+
 }
 // -- Controls (Host) ----------------------------------------------------------
 

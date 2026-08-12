@@ -127,14 +127,14 @@ export interface AbilityData {
   roll: string;
   damageType: "Physical" | "Magical" | "Varies" | "";
   actionType:
-    | "Standard"
-    | "Full"
-    | "Movement"
-    | "Swift"
-    | "Free"
-    | "Trigger"
-    | "Reaction"
-    | "Passive";
+  | "Standard"
+  | "Full"
+  | "Movement"
+  | "Swift"
+  | "Free"
+  | "Trigger"
+  | "Reaction"
+  | "Passive";
   targetAmount: number | "AoE";
   targetGroup: string;
   range: string;
