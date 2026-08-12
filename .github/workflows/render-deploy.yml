@@ -42,23 +42,3 @@ jobs:
           fi
           echo "Deploying web service (bd-autohost-test) to Render..."
           curl -fsS -X POST "$URL"
-
-  deploy-worker:
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip render]')"
-    steps:
-      - name: Trigger Render worker deploy hook
-        env:
-          HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL_WORKER }}
-        run: |
-          if [ -z "$HOOK_URL" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK_URL_WORKER secret is not set."
-            echo "::error::Render Dashboard -> bd-discord-issue-bot -> Settings -> Deploy Hook"
-            exit 1
-          fi
-          URL="$HOOK_URL"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.ref }}" ]; then
-            URL="${URL}&ref=${{ inputs.ref }}"
-          fi
-          echo "Deploying worker (bd-discord-issue-bot) to Render..."
-          curl -fsS -X POST "$URL"
