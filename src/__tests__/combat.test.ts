@@ -83,6 +83,7 @@ function makeGame(opts: { entities?: Entity[]; size?: number } = {}): Game {
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 

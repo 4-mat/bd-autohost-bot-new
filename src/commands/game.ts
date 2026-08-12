@@ -786,7 +786,9 @@ function handleCancel(game: Game, user: User) {
 
 function handleAdvanceTurn(game: Game, user: User) {
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  const phase = game.phase;
+  if (!entity || phase !== "playing")
+    return sendPm(user.name, "No active turn.");
   const isHost = toId(user.name) === toId(game.host);
   const isSelf = toId(entity.name) === toId(user.name);
 

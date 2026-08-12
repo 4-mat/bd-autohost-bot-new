@@ -72,6 +72,7 @@ function makeGame(entities: Entity[], terrain = Terrain.Normal): Game {
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
