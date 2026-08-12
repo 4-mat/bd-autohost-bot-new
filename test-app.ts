@@ -1,6 +1,12 @@
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { loadGameData, classes, weapons } from "./src/data/index.js";
+import { loadGameData43, getVersionData } from "./src/data/version43.js";
+import {
+  readEditorSnapshot,
+  applyEditorSnapshot,
+} from "./src/data/overrides.js";
+import { createHash } from "crypto";
 import { rooms, type Room } from "./src/rooms.js";
 import { users } from "./src/users.js";
 import { handleCommand } from "./src/commands/index.js";
@@ -15,6 +21,50 @@ import {
 import { broadcastPages } from "./src/commands/game.js";
 
 loadGameData();
+loadGameData43();
+
+// -- Ability Editor live data ------------------------------------------------
+// The ability editor (abilityeditor/, npm run editor) writes a runtime-data
+// snapshot after every change. Apply it here so custom test classes/weapons
+// and live ability edits show up in the test client without a restart.
+
+function snapshotHash(snap: ReturnType<typeof readEditorSnapshot>): string {
+  return snap
+    ? createHash("sha256").update(JSON.stringify(snap)).digest("hex").slice(0, 16)
+    : "";
+}
+
+function editorDataHash(): string {
+  return snapshotHash(readEditorSnapshot());
+}
+
+function reloadEditorData(announce = true): number {
+  // Read the file once and hash THAT read, so the recorded hash always
+  // matches what was actually applied (no dropped updates between reads).
+  const snap = readEditorSnapshot();
+  const applied = applyEditorSnapshot(snap);
+  lastEditorDataHash = snapshotHash(snap);
+  if (applied > 0 && announce) {
+    broadcast(
+      JSON.stringify({
+        type: "system",
+        text: "Ability data updated from the Ability Editor (live reload).",
+      }),
+    );
+  }
+  refreshAllTabs();
+  return applied;
+}
+
+const initialSnapshot = readEditorSnapshot();
+let lastEditorDataHash = snapshotHash(initialSnapshot);
+// Apply whatever the editor already has at startup (customs + live edits).
+if (lastEditorDataHash) applyEditorSnapshot(initialSnapshot);
+// Pick up editor changes made while the test client is running.
+setInterval(() => {
+  const h = editorDataHash();
+  if (h && h !== lastEditorDataHash) reloadEditorData();
+}, 2000);
 
 const PORT = Number(process.env.PORT) || 4000;
 const PREFIX = "%";
@@ -212,12 +262,13 @@ function buildSigninPage(game: Game): string {
     ? `<b style="color:#0f0">OPEN</b>`
     : `<b style="color:#f66">CLOSED</b>`;
 
-  const classOpts = [...classes.values()]
+  const data = getVersionData(game.version);
+  const classOpts = [...data.classes.values()]
     .map(
       (c) => `<option value="${escHtml(c.name)}">${escHtml(c.name)}</option>`,
     )
     .join("");
-  const weaponOpts = [...weapons.values()]
+  const weaponOpts = [...data.weapons.values()]
     .map(
       (w) => `<option value="${escHtml(w.name)}">${escHtml(w.name)}</option>`,
     )
@@ -236,7 +287,7 @@ function buildSigninPage(game: Game): string {
     .join(", ");
 
   return `<div style="padding:12px;background:#16213e;border:1px solid #333;border-radius:4px">
-<b style="color:#00aaff">Battle Sign-up</b> <span style="color:#888">(signups: ${status})</span><br>
+<b style="color:#00aaff">Battle Sign-up (BD ${escHtml(game.version)})</b> <span style="color:#888">(signups: ${status})</span><br>
 <span style="color:#888">Signed in:</span> ${signedIn || `<span style="color:#888">none yet</span>`}<br><br>
 Class:<br>
 <select id="signin-class" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${classOpts}</select><br><br>
@@ -923,6 +974,17 @@ wss.on("connection", (ws) => {
           );
           refreshPlayerList();
           sendSpectatorGui(session.username);
+          return;
+        }
+
+        if (cmd === "reloaddata") {
+          const applied = reloadEditorData();
+          sendToUser(session.username, {
+            type: "system",
+            text: applied
+              ? `Reloaded ${applied} class/weapon entries from the ability editor.`
+              : "No ability-editor data found (start the editor with: npm run editor).",
+          });
           return;
         }
 
