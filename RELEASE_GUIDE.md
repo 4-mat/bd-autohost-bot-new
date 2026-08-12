@@ -53,7 +53,10 @@ default above when the secret is unset.
 ## Manual re-send (no new release needed)
 
 1. Open **Actions** → **Discord major-release notification**.
-2. Click **Run workflow** (the `workflow_dispatch` trigger).
+2. Click **Run workflow** (the `workflow_dispatch` trigger) and enter the
+   release tag to announce in the required **`release_tag`** input (e.g.
+   `v2.0.0`) — the workflow fetches that release's real name, URL, and notes
+   from the GitHub API, so the tag must exist as a published release.
 3. Optionally update the `DISCORD_ROLE_ID` secret first if the ping target
    changed.
 
@@ -63,7 +66,7 @@ default above when the secret is unset.
 - [ ] Release is published as **Released** (not draft/pre-release).
 - [ ] `DISCORD_ROLE_ID` secret is set if the ping target differs from the
       default `super turbo` role.
-- [ ] The `super turbo` role is **mentionable** in the target Discord server
+- [ ] The configured role is **mentionable** in the target Discord server
       (Role settings → "Allow anyone to @mention this role"), otherwise the
       webhook's mention renders as plain text and does not ping.
 - [ ] `DISCORD_WEBHOOK_URL` secret is set to the target channel's webhook.
@@ -74,5 +77,5 @@ default above when the secret is unset.
   for a green run (the job uses `--fail-with-body`, so Discord HTTP errors
   fail the run).
 - In the Discord channel, you should see the embed **and** a separate
-  highlighted `@super turbo` line. If the role doesn't ping but the embed
-  arrives, the role is not mentionable (see checklist).
+  highlighted mention for the configured role. If the role doesn't ping but
+  the embed arrives, the role is not mentionable (see checklist).
