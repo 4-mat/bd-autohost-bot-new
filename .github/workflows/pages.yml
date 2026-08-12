@@ -1,14 +1,13 @@
-name: Deploy Ability Editor demo
+name: Deploy GitHub Pages site
 
 on:
   push:
     branches: [master]
     paths:
-      - "abilityeditor/**"
-      - "scripts/build-editor-demo.ts"
-      - "scripts/apply-editor-proposal.ts"
-      - "src/data/index.ts"
-      - "src/data/overrides.ts"
+      - "index.html"
+      - "mapeditor/**"
+      - "maps/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -29,18 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
-      - name: Build demo
-        run: bun scripts/build-editor-demo.ts
-
-      # Keep the existing GitHub Pages site intact: the ability editor demo
-      # lives at /ability-editor/ and the map editor/browser/pools keep their
-      # current /mapeditor/ and /maps/ URLs (never clobber the root).
+      # Assemble the site: the repo-root index.html is the homepage at /,
+      # and the map editor/browser/pools keep their /mapeditor/ and /maps/ URLs.
       - name: Assemble static site
         run: |
-          mkdir -p dist-editor/ability-editor
-          mv dist-editor/index.html dist-editor/ability-editor/index.html
+          mkdir -p dist-editor
+          cp index.html dist-editor/index.html
           cp -r mapeditor dist-editor/mapeditor
           cp -r maps dist-editor/maps
 

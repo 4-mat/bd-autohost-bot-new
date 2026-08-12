@@ -1,3 +1,5 @@
+export type GameVersion = "4.3" | "4.4";
+
 export interface AbilityCost {
   type: "HP" | "MP" | "Resource";
   amount: number;
@@ -16,7 +18,7 @@ export interface AbilityData {
   frequency: string;
   mr: number;
   roll: string;
-  damageType: "Physical" | "Magical" | "";
+  damageType: "Physical" | "Magical" | "Varies" | "";
   actionType:
     | "Standard"
     | "Full"
@@ -34,6 +36,13 @@ export interface AbilityData {
   maxUses?: number;
   cost?: AbilityCost;
   choices?: AbilityChoice[];
+  variants?: {
+    id: string;
+    label: string;
+    damageType: "Physical" | "Magical";
+    range?: string;
+    effect?: string;
+  }[];
 }
 
 export interface ClassData {
