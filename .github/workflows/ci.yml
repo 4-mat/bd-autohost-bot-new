@@ -38,9 +38,6 @@ jobs:
   bot:
     name: Discord bot (typecheck + tests)
     runs-on: ubuntu-latest
-    # Skip until the discord-issue-bot package exists on the base branch
-    # (it lands with PR #199) — a missing working-directory would fail the job.
-    if: hashFiles('discord-issue-bot/package.json') != ''
     defaults:
       run:
         working-directory: discord-issue-bot
@@ -49,11 +46,23 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      # Skip until the discord-issue-bot package exists on the base branch
+      # (it lands with PR #199). This must be a step-level check: a job-level
+      # hashFiles() is evaluated before checkout (workspace is empty), so it
+      # would always skip the job.
+      - name: Check for bot package
+        id: check_bot
+        working-directory: .
+        run: echo "exists=$([ -f discord-issue-bot/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
+        if: steps.check_bot.outputs.exists == 'true'
         run: bun install --frozen-lockfile 2>/dev/null || bun install
 
       - name: Typecheck
+        if: steps.check_bot.outputs.exists == 'true'
         run: bun run typecheck
 
       - name: Test
+        if: steps.check_bot.outputs.exists == 'true'
         run: bun test
