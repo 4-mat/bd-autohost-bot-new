@@ -1,0 +1,45 @@
+name: Deploy to Render
+
+# Deploys the web service (bd-autohost-test) to Render whenever a PR is
+# merged to master. Requires the RENDER_DEPLOY_HOOK_URL secret:
+#   Render Dashboard -> bd-autohost-test -> Settings -> Deploy Hook
+#   https://api.render.com/deploy/srv-...?key=...
+# To skip a deploy, include [skip render] in the commit message.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA or branch to deploy (default: master head)"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip render]')"
+    steps:
+      - name: Trigger Render deploy hook
+        env:
+          HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK_URL" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set. Add it in"
+            echo "::error::Settings -> Secrets and variables -> Actions:"
+            echo "::error::Render Dashboard -> bd-autohost-test -> Settings -> Deploy Hook"
+            exit 1
+          fi
+          URL="$HOOK_URL"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.ref }}" ]; then
+            URL="${URL}&ref=${{ inputs.ref }}"
+          fi
+          echo "Deploying to Render..."
+          curl -fsS -X POST "$URL"
