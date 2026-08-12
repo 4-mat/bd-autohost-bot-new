@@ -1,5 +1,11 @@
 import { SHEETS } from "./sources.js";
-import { loadState, savePending, loadPending, approvePending } from "./state.js";
+import {
+  loadState,
+  savePending,
+  loadPending,
+  approvePending,
+} from "./state.js";
+import { rowName } from "./spec-checker.js";
 
 interface SheetRow {
   [key: string]: string;
@@ -66,7 +72,7 @@ function parseCsvLine(line: string): string[] {
 }
 
 function rowKey(row: SheetRow): string {
-  return row.Name || row.name || row["Ability Name"] || JSON.stringify(row);
+  return rowName(row) || JSON.stringify(row);
 }
 
 function diffRows(

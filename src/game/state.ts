@@ -38,7 +38,7 @@ export const TERRAIN_COLORS: Record<number, string> = {
   [Terrain.Bone]: "#CCCCAA",
   [Terrain.Stone]: "#888888",
   [Terrain.Hearth]: "#FF6633",
-  [Terrain.Boost]: "#AAFFAA",
+  [Terrain.Boost]: "#A855F7",
 };
 
 export const TERRAIN_NAMES: Record<number, string> = {
@@ -156,14 +156,18 @@ export function parseFrequency(frequency: string) {
     uses = 3;
   }
 
-  if (
-    f.includes("every other turn") ||
+  // BD frequency semantics (do not "fix" E2T to 2):
+  // "EoT" = every other turn (cooldown 2). In BD 4.3, "E2T" is equivalent to
+  // BD 4.4's "E3T" (every 3rd turn) and shares the cooldown of 3, despite the
+  // abbreviation. "every two turns" likewise maps to 3.
+  if (f.includes("every other turn") || f.includes("eot")) {
+    cooldown = 2;
+  } else if (
+    f.includes("every third turn") ||
     f.includes("every two turns") ||
-    f.includes("eot") ||
+    f.includes("e3t") ||
     f.includes("e2t")
   ) {
-    cooldown = 2;
-  } else if (f.includes("every third turn") || f.includes("e3t")) {
     cooldown = 3;
   }
 
@@ -314,6 +318,8 @@ export interface Game {
   mode: string;
   /** Whether the gamemode was explicitly chosen (%setgame, the vote, or %genpos). */
   modeChosen?: boolean;
+  /** Host toggle: hide the Setup panel's always-available %setgame ffa shortcut. */
+  hideFfaShortcut?: boolean;
   phase: "setup" | "playing" | "ended";
   started: boolean;
   kills: Record<string, number>; // entity num -> kill count

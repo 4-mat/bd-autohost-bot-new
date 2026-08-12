@@ -1,0 +1,39 @@
+language: "en-US"
+early_access: false
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    # Only auto-review PRs that target mainline. Feature-branch WIP and
+    # long-running branch PRs were draining the free review quota and
+    # triggering "Review limit reached" comments. For reviews on any other
+    # branch, comment "@coderabbitai review" on the PR (or
+    # "@coderabbitai full review" to force re-analysis of already-reviewed
+    # commits).
+    base_branches:
+      - "master"
+      - "main"
+    auto_incremental_review: true
+    # Pause incremental reviews after 1 reviewed commit so small pushes to an
+    # already-reviewed PR don't keep consuming quota (default was 5).
+    auto_pause_after_reviewed_commits: 1
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+      - "[skip review]"
+      - "Add map"
+      - "Update map pools"
+  path_instructions:
+    - path: "src/**"
+      instructions: |
+        - This is a Battle Dome autohost Discord bot (TypeScript, Bun).
+        - Follow existing code patterns and naming conventions in the repo.
+        - Never reference test counts or results in summaries, PR descriptions, or commit messages.
+chat:
+  auto_reply: true
