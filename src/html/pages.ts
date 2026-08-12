@@ -596,29 +596,29 @@ function buildSetupPanel(game: Game): string {
     setBtn = btn(`%setgame ${targetMode}`, `Set Game: ${targetMode}`);
   }
 
-  // Always-available %setgame ffa escape hatch (CodeRabbit): even mid-vote
-  // the host can force FFA. Hideable per game with %ffabtn for hosts who
-  // never run FFA.
-  const ffaBtn = game.hideFfaShortcut
+  // The Set FFA escape hatch (even mid-vote the host can force FFA) is the
+  // only control tucked behind a small arrow — the main buttons (Set Game,
+  // Level All, Start) stay visible without opening anything. %ffabtn hides
+  // the arrow entirely for hosts who never run FFA.
+  const ffaShortcut = game.hideFfaShortcut
     ? ""
-    : btn("%setgame ffa", "Set FFA", "background:#433;");
+    : `<details style="display:inline-block;vertical-align:middle"><summary style="cursor:pointer;user-select:none;display:inline-block;color:#888;font-size:10px;padding:1px 6px;margin:2px;border:1px solid #555;border-radius:3px;background:#222">▸ FFA</summary>
+<div style="margin-top:4px">${btn("%setgame ffa", "Set FFA", "background:#433;")}</div>
+</details>`;
   const ffaToggle = btn(
     "%ffabtn",
     game.hideFfaShortcut ? "Show FFA shortcut" : "Hide FFA shortcut",
     "font-size:10px;padding:1px 6px;color:#888;background:#222;",
   );
 
-  return `<details style="margin-top:4px"><summary style="cursor:pointer;user-select:none"><b>Setup</b></summary>
-<div style="margin-top:4px">
+  return `<div style="margin-top:4px"><b>Setup</b><div style="margin-top:4px">
   ${setBtn}
-  ${ffaBtn}
   ${btn("%setlevel all, 10", "Level All \u2192 10")}
   ${startBtn}
-  <br><span style="color:#888;font-size:10px">${ffaToggle}</span>
-</div>
-</details>`;
+  ${ffaShortcut}
+  <span style="color:#888;font-size:10px">${ffaToggle}</span>
+</div></div>`;
 }
-
 // -- Controls (Host) ----------------------------------------------------------
 
 function buildControls(game: Game): string {
