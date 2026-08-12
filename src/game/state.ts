@@ -218,17 +218,25 @@ export interface PendingAction {
 
 export const DIRECTION_LABELS: Record<string, string> = {
   up: "\u2191 Up",
-  down: "\u2193 Down",
-  left: "\u2190 Left",
+  "up-right": "\u2197 Up-Right",
   right: "\u2192 Right",
+  "down-right": "\u2198 Down-Right",
+  down: "\u2193 Down",
+  "down-left": "\u2199 Down-Left",
+  left: "\u2190 Left",
+  "up-left": "\u2196 Up-Left",
 };
 
 // Row/col deltas for each direction label (row, col).
 const DIRECTION_DELTAS: Record<string, [number, number]> = {
   up: [-1, 0],
-  down: [1, 0],
-  left: [0, -1],
+  "up-right": [-1, 1],
   right: [0, 1],
+  "down-right": [1, 1],
+  down: [1, 0],
+  "down-left": [1, -1],
+  left: [0, -1],
+  "up-left": [-1, -1],
 };
 
 export function needsDirection(ability: AbilityData): boolean {
@@ -236,8 +244,15 @@ export function needsDirection(ability: AbilityData): boolean {
   return /^(cone|line|beam|pierce)\b/.test(r);
 }
 
-export function getDirectionCandidates(): string[] {
-  return ["up", "down", "left", "right"];
+// Line/Pierce can fire diagonally (X/2 rounded up); Cone/Beam are cardinal-only.
+export function getDirectionCandidates(ability?: AbilityData): string[] {
+  const dirs = ["up", "right", "down", "left"];
+  if (!ability) return dirs;
+  const r = ability.range.toLowerCase().trim();
+  if (/^(line|pierce)\b/.test(r)) {
+    return [...dirs, "up-right", "down-right", "down-left", "up-left"];
+  }
+  return dirs;
 }
 
 export function placeTerrain(
@@ -706,7 +721,9 @@ export function getConeTiles(
   range: number,
   dir = "right",
 ): [number, number][] {
-  const [dr, dc] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
+  // Diagonals are invalid for cones (candidates are cardinal-only); fall back.
+  const [dr0, dc0] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
+  const [dr, dc] = dr0 !== 0 && dc0 !== 0 ? DIRECTION_DELTAS.right : [dr0, dc0];
   const tiles: [number, number][] = [];
   for (let d = 1; d <= range; d++) {
     // At distance d, width extends d tiles perpendicular
@@ -760,7 +777,9 @@ export function getBeamTiles(
   range: number,
   dir = "right",
 ): [number, number][] {
-  const [dr, dc] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
+  // Diagonals are invalid for beams (candidates are cardinal-only); fall back.
+  const [dr0, dc0] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
+  const [dr, dc] = dr0 !== 0 && dc0 !== 0 ? DIRECTION_DELTAS.right : [dr0, dc0];
   const tiles: [number, number][] = [];
   for (let d = 1; d <= range; d++) {
     // 3 wide perpendicular

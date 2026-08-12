@@ -17,6 +17,8 @@ import {
   getLineTiles,
   getPierceTiles,
   getBeamTiles,
+  getDirectionCandidates,
+  needsDirection,
   getAoETargets,
   getSplashTargets,
   pushEntity,
@@ -443,6 +445,14 @@ describe("getConeTiles", () => {
     const tiles = getConeTiles([5, 5], 3);
     expect(tiles.some(([r, c]) => r === 5 && c === 5)).toBe(false);
   });
+
+  it("cone falls back to right on an invalid diagonal dir", () => {
+    // Diagonal dirs are not candidates for cones; treat as right.
+    const tiles = getConeTiles([5, 5], 1, "up-right");
+    expect(tiles).toContainEqual([4, 6]);
+    expect(tiles).toContainEqual([5, 6]);
+    expect(tiles).toContainEqual([6, 6]);
+  });
 });
 
 describe("getLineTiles", () => {
@@ -457,6 +467,18 @@ describe("getLineTiles", () => {
     expect(getLineTiles([5, 5], 3, "up")).toContainEqual([2, 5]);
     expect(getLineTiles([5, 5], 3, "down")).toContainEqual([8, 5]);
     expect(getLineTiles([5, 5], 3, "left")).toContainEqual([5, 2]);
+  });
+
+  it("line honors diagonal directions with half range", () => {
+    // Diagonal: max distance is ceil(range/2)
+    expect(getLineTiles([5, 5], 4, "down-right")).toEqual([
+      [6, 6],
+      [7, 7],
+    ]);
+    expect(getLineTiles([5, 5], 3, "up-left")).toEqual([
+      [4, 4],
+      [3, 3],
+    ]);
   });
 
   it("does not include origin", () => {
@@ -487,6 +509,36 @@ describe("getBeamTiles", () => {
     expect(getBeamTiles([5, 5], 1, "up")).toContainEqual([4, 4]);
     expect(getBeamTiles([5, 5], 1, "down")).toContainEqual([6, 6]);
     expect(getBeamTiles([5, 5], 1, "left")).toContainEqual([4, 4]);
+  });
+
+  it("beam falls back to right on an invalid diagonal dir", () => {
+    const tiles = getBeamTiles([5, 5], 1, "down-right");
+    expect(tiles).toContainEqual([4, 6]);
+    expect(tiles).toContainEqual([5, 6]);
+    expect(tiles).toContainEqual([6, 6]);
+  });
+});
+
+describe("getDirectionCandidates", () => {
+  const ability = (range: string): AbilityData =>
+    ({ range, name: "A", cooldown: 1 }) as unknown as AbilityData;
+
+  it("line and pierce offer diagonals", () => {
+    const dirs = getDirectionCandidates(ability("Line 4"));
+    expect(dirs).toContain("up-right");
+    expect(dirs).toContain("down-left");
+    expect(dirs.length).toBe(8);
+    expect(getDirectionCandidates(ability("Pierce 3"))).toContain("up-left");
+  });
+
+  it("cone and beam stay cardinal-only", () => {
+    const dirs = getDirectionCandidates(ability("Cone 2"));
+    expect(dirs).toEqual(["up", "right", "down", "left"]);
+    expect(getDirectionCandidates(ability("Beam 3"))).toEqual(dirs);
+  });
+
+  it("defaults to cardinal without an ability", () => {
+    expect(getDirectionCandidates()).toEqual(["up", "right", "down", "left"]);
   });
 });
 

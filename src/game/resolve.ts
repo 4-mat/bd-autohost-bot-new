@@ -243,7 +243,7 @@ function* resolveAttackFlow(
   const needsDir = needsDirection(active);
   let dir = user.pendingAction?.direction;
   if (needsDir && !dir) {
-    const dirs = getDirectionCandidates();
+    const dirs = getDirectionCandidates(active);
     dir = yield {
       kind: "direction",
       message: `Choose a direction for ${ability.name}`,
