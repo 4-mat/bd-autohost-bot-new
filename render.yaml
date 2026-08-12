@@ -3,6 +3,7 @@ services:
     name: bd-autohost-test
     env: node
     plan: free
+    autoDeploy: true
     buildCommand: npm install && npm run build
     startCommand: node dist/test-app.js
     envVars:
