@@ -879,6 +879,7 @@ function isValidGroupTarget(
   // Normalize plural/legacy spellings so the checks below match the data as
   // written ("Foe(s)", "Self, Foes, Allies", "Allies and Self", ...).
   const g = group
+    .toLowerCase()
     .replace(/foes/, "foe")
     .replace(/allies/, "ally")
     .replace(/foe\(s\)/, "foe")
