@@ -596,11 +596,25 @@ function buildSetupPanel(game: Game): string {
     setBtn = btn(`%setgame ${targetMode}`, `Set Game: ${targetMode}`);
   }
 
+  // Always-available %setgame ffa escape hatch (CodeRabbit): even mid-vote
+  // the host can force FFA. Hideable per game with %ffabtn for hosts who
+  // never run FFA.
+  const ffaBtn = game.hideFfaShortcut
+    ? ""
+    : btn("%setgame ffa", "Set FFA", "background:#433;");
+  const ffaToggle = btn(
+    "%ffabtn",
+    game.hideFfaShortcut ? "Show FFA shortcut" : "Hide FFA shortcut",
+    "font-size:10px;padding:1px 6px;color:#888;background:#222;",
+  );
+
   return `<details style="margin-top:4px"><summary style="cursor:pointer;user-select:none"><b>Setup</b></summary>
 <div style="margin-top:4px">
   ${setBtn}
+  ${ffaBtn}
   ${btn("%setlevel all, 10", "Level All \u2192 10")}
   ${startBtn}
+  <br><span style="color:#888;font-size:10px">${ffaToggle}</span>
 </div>
 </details>`;
 }

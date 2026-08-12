@@ -94,6 +94,7 @@ export function handleCommand(
     id === "openbsu" ||
     id === "close" ||
     id === "endvote" ||
+    id === "ffabtn" ||
     id === "nudge" ||
     id === "join" ||
     id === "genpos"
