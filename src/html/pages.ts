@@ -572,24 +572,33 @@ function buildActionLog(game: Game, collapsed = false): string {
 // -- Setup (Host, pre-start) --------------------------------------------------
 
 function buildSetupPanel(game: Game): string {
-  // The mode the Set Game button applies: the current vote leader when voting
-  // is open, otherwise the already-chosen mode, otherwise FFA as a fallback.
-  const tally = tallyVotes(game.votes);
-  const tied = tieModes(tally);
-  const voteWinner =
-    !tied && tally.length > 0 ? tally[0].mode.toUpperCase() : null;
-  const targetMode = voteWinner ?? (game.modeChosen ? game.mode : "FFA");
-  const winnerTag = voteWinner ? " (vote winner)" : "";
-
   // %start only makes sense once the mode is set (%setgame, the vote, or
   // %genpos) — i.e. right after the Set Game button has done its job.
   const startBtn = game.modeChosen
     ? ` <span style="color:#888;margin:0 4px">|</span> ${btn("%start", "Start Game")}`
     : "";
 
+  // While voting is open, the Set Game button ENDS the vote so the winning
+  // mode is applied properly — a tie starts a runoff instead of being
+  // silently cancelled by %setgame.
+  let setBtn: string;
+  if (game.voteOpen) {
+    const tally = tallyVotes(game.votes);
+    const tied = tieModes(tally);
+    const leader =
+      !tied && tally.length > 0 ? tally[0].mode.toUpperCase() : null;
+    setBtn = btn(
+      "%endvote",
+      leader ? `End Vote: Set ${leader}` : "End Vote & Apply Winner",
+    );
+  } else {
+    const targetMode = game.modeChosen ? game.mode : "FFA";
+    setBtn = btn(`%setgame ${targetMode}`, `Set Game: ${targetMode}`);
+  }
+
   return `<details style="margin-top:4px"><summary style="cursor:pointer;user-select:none"><b>Setup</b></summary>
 <div style="margin-top:4px">
-  ${btn(`%setgame ${targetMode}`, `Set Game: ${targetMode}${winnerTag}`)}
+  ${setBtn}
   ${btn("%setlevel all, 10", "Level All \u2192 10")}
   ${startBtn}
 </div>
