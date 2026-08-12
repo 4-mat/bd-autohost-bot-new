@@ -46,6 +46,7 @@ function makeGame(opts: {
   voteOpen?: boolean;
   mode?: string;
   modeChosen?: boolean;
+  hideFfaShortcut?: boolean;
 } = {}): Game {
   const size = 4;
   const map = Array.from({ length: size }, () =>
@@ -79,6 +80,7 @@ function makeGame(opts: {
     votes: opts.votes ?? {},
     voteOpen: opts.voteOpen ?? false,
     voteRunoff: null,
+    hideFfaShortcut: opts.hideFfaShortcut ?? false,
   };
 }
 
@@ -91,8 +93,6 @@ describe("host setup panel", () => {
     // The button should end the vote and label the winning leader.
     expect(html).toContain('value="%endvote"');
     expect(html).toContain("End Vote: Set 2V2");
-    // No plain %setgame button while a vote is in progress.
-    expect(html).not.toContain('value="%setgame');
   });
 
   it("ends the vote without claiming a leader when tied", () => {
@@ -104,6 +104,29 @@ describe("host setup panel", () => {
     expect(html).toContain('value="%endvote"');
     // Button label is HTML-escaped (& -> &amp;) by the page renderer.
     expect(html).toContain("End Vote &amp; Apply Winner");
+  });
+
+  it("always renders the %setgame ffa shortcut, even mid-vote with a non-FFA leader", () => {
+    const game = makeGame({ votes: { p1: "2v2", p2: "2v2" }, voteOpen: true });
+    const html = buildHostPage(game);
+    expect(html).toContain('value="%setgame ffa"');
+    expect(html).toContain("Set FFA");
+  });
+
+  it("hides the %setgame ffa shortcut when hideFfaShortcut is set, showing the toggle", () => {
+    const game = makeGame({ voteOpen: true, hideFfaShortcut: true });
+    const html = buildHostPage(game);
+    expect(html).not.toContain('value="%setgame ffa"');
+    // Toggle is still there to bring it back.
+    expect(html).toContain('value="%ffabtn"');
+    expect(html).toContain("Show FFA shortcut");
+  });
+
+  it("shows the hide toggle when the ffa shortcut is visible", () => {
+    const game = makeGame({ voteOpen: true, hideFfaShortcut: false });
+    const html = buildHostPage(game);
+    expect(html).toContain('value="%ffabtn"');
+    expect(html).toContain("Hide FFA shortcut");
   });
 
   it("falls back to %setgame FFA when no vote is open and no mode chosen", () => {
