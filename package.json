@@ -12,6 +12,7 @@
     "testapp": "tsx watch test-app.ts",
     "editor": "tsx abilityeditor/server.ts",
     "editor:demo:build": "bun scripts/build-editor-demo.ts",
+    "render:readme": "tsx scripts/render-readme.ts",
     "bot": "bun src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
