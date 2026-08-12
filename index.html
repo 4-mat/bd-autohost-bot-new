@@ -1,211 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Battle Dome Tools</title>
 <style>
   :root {
-    --bg: #0b0e14;
-    --bg-2: #12161f;
-    --card: #171c28;
-    --card-hover: #1d2433;
-    --border: #262e40;
+    --bg: #0f1117;
     --text: #e6e9f0;
-    --muted: #8b94a7;
-    --accent: #f0b429;
-    --accent-2: #f77f00;
-    --ok: #4ade80;
+    --muted: #9aa3b5;
+    --link: #8b95ff;
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { box-sizing: border-box; }
   body {
-    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-    background:
-      radial-gradient(1000px 500px at 85% -10%, rgba(240, 180, 41, 0.10), transparent 60%),
-      radial-gradient(800px 400px at -10% 110%, rgba(247, 127, 0, 0.08), transparent 60%),
-      var(--bg);
-    color: var(--text);
+    margin: 0;
     min-height: 100vh;
+    background: linear-gradient(180deg, #131722 0%, var(--bg) 100%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     display: flex;
     flex-direction: column;
-  }
-  .wrap { width: min(960px, 92vw); margin: 0 auto; flex: 1; }
-
-  header { padding: 72px 0 40px; }
-  .logo {
-    font-family: "Consolas", "Menlo", monospace;
-    font-size: 14px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 14px;
-  }
-  h1 {
-    font-size: clamp(34px, 6vw, 56px);
-    font-weight: 800;
-    letter-spacing: -0.5px;
-    line-height: 1.05;
-    margin-bottom: 14px;
-  }
-  h1 em {
-    font-style: normal;
-    background: linear-gradient(90deg, var(--accent), var(--accent-2));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .tagline {
-    color: var(--muted);
-    font-size: 17px;
-    max-width: 560px;
-    line-height: 1.55;
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 20px;
-    padding: 20px 0 56px;
-  }
-  .card {
-    position: relative;
-    background: linear-gradient(180deg, var(--card), var(--bg-2));
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 26px 24px;
-    text-decoration: none;
-    color: var(--text);
-    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-    overflow: hidden;
-  }
-  .card:hover, .card:focus-visible {
-    transform: translateY(-4px);
-    border-color: var(--accent);
-    box-shadow: 0 14px 40px -12px rgba(240, 180, 41, 0.25);
-    outline: none;
-  }
-  .card .icon {
-    font-size: 30px;
-    margin-bottom: 14px;
-    display: inline-block;
-  }
-  .card h2 {
-    font-size: 20px;
-    font-weight: 700;
-    margin-bottom: 8px;
-    display: flex;
     align-items: center;
-    gap: 8px;
+    padding: 72px 20px 48px;
   }
-  .card h2 .arrow {
-    color: var(--accent);
-    opacity: 0;
-    transform: translateX(-4px);
-    transition: opacity 0.15s ease, transform 0.15s ease;
-  }
-  .card:hover h2 .arrow { opacity: 1; transform: translateX(0); }
-  .card p {
-    color: var(--muted);
-    font-size: 14px;
-    line-height: 1.55;
-    margin-bottom: 16px;
-  }
-  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
-  .badge {
-    font-family: "Consolas", "Menlo", monospace;
-    font-size: 11px;
-    color: var(--text);
-    background: rgba(240, 180, 41, 0.12);
-    border: 1px solid rgba(240, 180, 41, 0.25);
-    padding: 4px 9px;
-    border-radius: 999px;
-  }
-  .badge.green {
-    color: var(--ok);
-    background: rgba(74, 222, 128, 0.10);
-    border-color: rgba(74, 222, 128, 0.25);
-  }
-
-  footer {
-    border-top: 1px solid var(--border);
-    padding: 22px 0 28px;
-    color: var(--muted);
-    font-size: 13px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-  footer a { color: var(--accent); text-decoration: none; }
-  footer a:hover { text-decoration: underline; }
-  footer .mono { font-family: "Consolas", "Menlo", monospace; font-size: 12px; }
+  .wrap { width: min(680px, 100%); }
+  h1 { font-size: 38px; margin: 0; letter-spacing: -1px; }
+  h1 span { background: linear-gradient(90deg, #8b95ff, #6e56cf); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--muted); margin: 10px 0 40px; font-size: 16px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { margin-bottom: 28px; }
+  li b a { font-size: 19px; color: var(--link); text-decoration: none; }
+  li b a:hover { text-decoration: underline; }
+  li p { margin: 6px 0 0; color: var(--muted); font-size: 14.5px; line-height: 1.55; max-width: 560px; }
+  footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
+  footer a { color: var(--link); text-decoration: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <div class="logo">BD Tools // 4-mat</div>
-    <h1>Battle Dome<br><em>Tools &amp; Map Editor</em></h1>
-    <p class="tagline">
-      The companion toolkit for the Battle Dome autohost bot. Edit arenas with
-      the full map editor, browse every map in the gallery, or check which maps
-      fit your favorite game mode — each tool on its own page.
-    </p>
-  </header>
+  <h1>Battle Dome <span>Tools</span></h1>
+  <p class="sub">Editors and tools for the bd-autohost-bot-new project</p>
 
-  <div class="grid">
-    <a class="card" href="./mapeditor/">
-      <span class="icon">🗺️</span>
-      <h2>Map Editor <span class="arrow">→</span></h2>
-      <p>
-        Paint tiles, rotate &amp; flip the whole grid, autosave drafts, and share
-        maps as links or text. The full editing toolbox.
-      </p>
-      <div class="badges">
-        <span class="badge green">paint / fill</span>
-        <span class="badge">rotate / flip</span>
-        <span class="badge">drafts</span>
-        <span class="badge">share</span>
-      </div>
-    </a>
+  <ul>
+    <li>
+      <b><a href="mapeditor/">Map Editor</a></b>
+      <p>View and edit Battle Dome maps — the curated database plus volunteer maps from maps/*.txt. Save downloads a volunteer .txt you can drop into the repo.</p>
+    </li>
+    <li>
+      <b><a href="mapeditor/gallery/">Map Gallery</a></b>
+      <p>Browse every map as a thumbnail wall — searchable by name and filterable by game mode.</p>
+    </li>
+    <li>
+      <b><a href="mapeditor/pools/">Game Mode Pools</a></b>
+      <p>See which maps are recommended for each game mode — FFA, NTR, Juggernaut, PvP and 1v1.</p>
+    </li>
+  </ul>
 
-    <a class="card" href="./mapeditor/gallery/">
-      <span class="icon">🖼️</span>
-      <h2>Map Gallery <span class="arrow">→</span></h2>
-      <p>
-        Browse every map as a thumbnail wall — 200+ curated and volunteer
-        arenas, searchable by name and filterable by game mode. Purely for
-        viewing.
-      </p>
-      <div class="badges">
-        <span class="badge green">200+ maps</span>
-        <span class="badge">search</span>
-        <span class="badge">mode filter</span>
-      </div>
-    </a>
-
-    <a class="card" href="./mapeditor/pools/">
-      <span class="icon">🎯</span>
-      <h2>Game Mode Pools <span class="arrow">→</span></h2>
-      <p>
-        See which maps are recommended for each game mode — FFA, NTR, Juggernaut,
-        PvP and 1v1 — straight from the bot's mode pools.
-      </p>
-      <div class="badges">
-        <span class="badge">ffa</span>
-        <span class="badge">ntr</span>
-        <span class="badge">jugg</span>
-        <span class="badge">pvp</span>
-        <span class="badge">1v1</span>
-      </div>
-    </a>
-  </div>
+  <footer>Part of <a href="https://github.com/4-mat/bd-autohost-bot-new">4-mat/bd-autohost-bot-new</a></footer>
 </div>
-
-<footer>
-  <span>Battle Dome autohost bot companion site</span>
-  <span class="mono"><a href="https://github.com/4-mat/bd-autohost-bot-new">github.com/4-mat/bd-autohost-bot-new</a></span>
-</footer>
 </body>
 </html>
