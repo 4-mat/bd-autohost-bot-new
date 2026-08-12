@@ -296,6 +296,8 @@ export interface Game {
   mode: string;
   /** Whether the gamemode was explicitly chosen (%setgame, the vote, or %genpos). */
   modeChosen?: boolean;
+  /** Host toggle: hide the Setup panel's always-available %setgame ffa shortcut. */
+  hideFfaShortcut?: boolean;
   phase: "setup" | "playing" | "ended";
   started: boolean;
   kills: Record<string, number>; // entity num -> kill count
