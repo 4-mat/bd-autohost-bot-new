@@ -218,7 +218,13 @@ function* resolveAttackFlow(
 
   // --- Variant choice for damageType "Varies" ---
   let active = ability;
-  if (ability.damageType === "Varies" && ability.variants?.length) {
+  if (ability.damageType === "Varies") {
+    if (!ability.variants?.length) {
+      result.messages.push(
+        `${user.num} cannot use ${ability.name}: no damage-type variants defined.`,
+      );
+      return result;
+    }
     const variantId = yield {
       kind: "selection",
       message: `Choose the type of ${ability.name}`,

@@ -124,6 +124,11 @@ function parseAbility(r: Row): AbilityData {
     effect: stripQuotes(r[10]),
   };
   const variants = VARIANTS[r[0]];
+  if (damageType === "Varies" && !variants) {
+    throw new Error(
+      `Ability "${r[0]}" has damageType "Varies" but no VARIANTS entry`,
+    );
+  }
   if (variants) ability.variants = variants;
   return ability;
 }
