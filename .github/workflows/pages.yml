@@ -4,11 +4,13 @@ on:
   push:
     branches: [master]
     paths:
+      - "index.html"
       - "abilityeditor/**"
       - "scripts/build-editor-demo.ts"
       - "scripts/apply-editor-proposal.ts"
       - "src/data/index.ts"
       - "src/data/overrides.ts"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -34,13 +36,14 @@ jobs:
       - name: Build demo
         run: bun scripts/build-editor-demo.ts
 
-      # Keep the existing GitHub Pages site intact: the ability editor demo
-      # lives at /ability-editor/ and the map editor/browser/pools keep their
-      # current /mapeditor/ and /maps/ URLs (never clobber the root).
+      # Assemble the site: the ability editor demo lives at /ability-editor/,
+      # the map editor/browser/pools keep their /mapeditor/ and /maps/ URLs,
+      # and the repo-root index.html is the homepage at /.
       - name: Assemble static site
         run: |
           mkdir -p dist-editor/ability-editor
           mv dist-editor/index.html dist-editor/ability-editor/index.html
+          cp index.html dist-editor/index.html
           cp -r mapeditor dist-editor/mapeditor
           cp -r maps dist-editor/maps
 
