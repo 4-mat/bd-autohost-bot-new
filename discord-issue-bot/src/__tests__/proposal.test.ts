@@ -8,12 +8,16 @@ import {
 } from "../proposal.js";
 
 describe("normalizeKind", () => {
-  it("defaults to class", () => {
+  it("defaults to class for empty input", () => {
     expect(normalizeKind(undefined)).toBe("class");
     expect(normalizeKind("")).toBe("class");
-    expect(normalizeKind("bogus")).toBe("class");
   });
-  it("accepts weapon and shorthand", () => {
+  it("rejects unrecognized kinds instead of coercing", () => {
+    expect(normalizeKind("bogus")).toBeNull();
+    expect(normalizeKind("wepon")).toBeNull();
+  });
+  it("accepts class, weapon and shorthand", () => {
+    expect(normalizeKind("class")).toBe("class");
     expect(normalizeKind("weapon")).toBe("weapon");
     expect(normalizeKind("Weapon")).toBe("weapon");
     expect(normalizeKind("w")).toBe("weapon");
@@ -21,11 +25,16 @@ describe("normalizeKind", () => {
 });
 
 describe("normalizeMode", () => {
-  it("defaults to add", () => {
+  it("defaults to add for empty input", () => {
     expect(normalizeMode(undefined)).toBe("add");
-    expect(normalizeMode("bogus")).toBe("add");
+    expect(normalizeMode("")).toBe("add");
   });
-  it("accepts update and shorthands", () => {
+  it("rejects unrecognized modes instead of coercing", () => {
+    expect(normalizeMode("bogus")).toBeNull();
+    expect(normalizeMode("remov")).toBeNull();
+  });
+  it("accepts add, update and shorthands", () => {
+    expect(normalizeMode("add")).toBe("add");
     expect(normalizeMode("update")).toBe("update");
     expect(normalizeMode("upd")).toBe("update");
     expect(normalizeMode("u")).toBe("update");

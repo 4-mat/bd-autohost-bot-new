@@ -57,14 +57,32 @@ describe("createGithubClient", () => {
       repo: "o/r",
       fetchImpl: mockFetchImpl(() => new Response("rate limited", { status: 403 })),
     });
-    try {
-      await client.createIssue({ title: "t" });
-      expect.unreachable();
-    } catch (e) {
-      expect(e).toBeInstanceOf(GithubError);
-      expect((e as GithubError).status).toBe(403);
-      expect((e as GithubError).detail).toContain("rate limited");
-    }
+    const e = await client.createIssue({ title: "t" }).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(e).toBeInstanceOf(GithubError);
+    expect((e as GithubError).status).toBe(403);
+    expect((e as GithubError).detail).toContain("rate limited");
+  });
+
+  it("translates a timed-out request into a GithubError", async () => {
+    const client = createGithubClient({
+      token: "tok",
+      repo: "o/r",
+      fetchImpl: mockFetchImpl(() => {
+        const err = new Error("The operation was aborted due to timeout");
+        err.name = "TimeoutError";
+        throw err;
+      }),
+    });
+    const e = await client.createIssue({ title: "t" }).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(e).toBeInstanceOf(GithubError);
+    expect((e as GithubError).status).toBe(0);
+    expect((e as GithubError).message).toContain("timed out");
   });
 
   it("sends auth + version headers", async () => {

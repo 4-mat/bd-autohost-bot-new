@@ -1,5 +1,6 @@
 import {
   Client,
+  Events,
   GatewayIntentBits,
   ActionRowBuilder,
   ButtonBuilder,
@@ -44,12 +45,21 @@ const client = new Client({
 const RATE_LIMIT_MS = 10_000;
 const lastCommandAt = new Map<string, number>();
 
-function rateLimited(userId: string): boolean {
+/** True while the user is inside the cooldown window. Check only — it never
+ *  records a timestamp, so failed input parsing doesn't start a cooldown. */
+function isRateLimited(userId: string): boolean {
   const now = Date.now();
-  const last = lastCommandAt.get(userId) ?? 0;
-  if (now - last < RATE_LIMIT_MS) return true;
-  lastCommandAt.set(userId, now);
-  return false;
+  // Prune stale entries so the map can't grow for the worker's lifetime.
+  for (const [id, ts] of lastCommandAt) {
+    if (now - ts >= RATE_LIMIT_MS) lastCommandAt.delete(id);
+  }
+  return now - (lastCommandAt.get(userId) ?? 0) < RATE_LIMIT_MS;
+}
+
+/** Record that a command reached the issue-creating path (right before the
+ *  GitHub write), so the cooldown bounds real GitHub writes, not parsing. */
+function recordIssue(userId: string): void {
+  lastCommandAt.set(userId, Date.now());
 }
 
 // ---------------------------------------------------------------------------
@@ -89,10 +99,12 @@ function confirmRow(nonce: string) {
 // ---------------------------------------------------------------------------
 
 async function createPlainIssue(
+  userId: string,
   title: string,
   body: string,
   labels: string[],
 ): Promise<string> {
+  recordIssue(userId);
   const issue = await github.createIssue({
     title,
     body: body || undefined,
@@ -102,23 +114,28 @@ async function createPlainIssue(
 }
 
 async function createProposalIssue(
+  userId: string,
   name: string,
   kindRaw: string,
   modeRaw: string,
   entryRaw: string,
 ): Promise<string> {
+  const kind = normalizeKind(kindRaw);
+  if (!kind) throw new Error("`kind` must be class or weapon.");
+  const mode = normalizeMode(modeRaw);
+  if (!mode) throw new Error("`mode` must be add or update.");
+
   let entry: Record<string, unknown>;
   try {
     entry = JSON.parse(entryRaw) as Record<string, unknown>;
   } catch {
     throw new Error(
-      "The `entry` JSON didn't parse. Use valid JSON, e.g. {\"stats\":{\"hp\":\"80\"},\"abilities\":[]}",
+      'The `entry` JSON didn\'t parse. Use valid JSON, e.g. {"stats":{"hp":"80"},"abilities":[]}',
     );
   }
-  const kind = normalizeKind(kindRaw);
-  const mode = normalizeMode(modeRaw);
   const proposal = { mode, kind, name, entry };
   const payload = buildProposalPayload(proposal);
+  recordIssue(userId);
   const issue = await github.createIssue({
     title: proposalTitle(name),
     body: proposalIssueBody(proposal, payload),
@@ -135,9 +152,11 @@ function friendlyError(e: unknown): string {
 // Slash commands
 // ---------------------------------------------------------------------------
 
-async function handleSlash(interaction: ChatInputCommandInteraction): Promise<void> {
+async function handleSlash(
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
   const member = interaction.member;
-  if (!hasAccessRole(cfg, member as never)) {
+  if (!hasAccessRole(cfg, member)) {
     await interaction.reply({
       content: unauthorizedReplyText(),
       ephemeral: true,
@@ -146,7 +165,7 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
   }
 
   const userId = interaction.user.id;
-  if (rateLimited(userId)) {
+  if (isRateLimited(userId)) {
     await interaction.reply({
       content: "⏳ Please wait a few seconds between commands.",
       ephemeral: true,
@@ -160,21 +179,31 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
   if (cmd === "issue" || cmd === "bug" || cmd === "feature") {
     const title = interaction.options.getString("title", true);
     const body = interaction.options.getString("body") ?? "";
-    const labels = cmd === "issue"
-      ? (interaction.options.getString("labels") ?? "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : cmd === "bug"
-        ? ["bug"]
-        : ["enhancement"];
+    const labels =
+      cmd === "issue"
+        ? (interaction.options.getString("labels") ?? "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : cmd === "bug"
+          ? ["bug"]
+          : ["enhancement"];
 
     await interaction.deferReply({ ephemeral: false });
     try {
-      const url = await createPlainIssue(title, body, labels);
+      const url = await createPlainIssue(userId, title, body, labels);
       await interaction.editReply(`✅ Created issue **${title}**\n${url}`);
     } catch (e) {
-      await interaction.editReply(`❌ Could not create issue: ${friendlyError(e)}`);
+      console.error("[bot] create issue failed:", friendlyError(e));
+      await interaction.editReply(
+        "❌ Could not create the issue. The error was logged; a private follow-up has the details.",
+      );
+      await interaction
+        .followUp({
+          content: `Details: ${friendlyError(e).slice(0, 500)}`,
+          ephemeral: true,
+        })
+        .catch(() => {});
     }
     return;
   }
@@ -184,6 +213,14 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
     const name = interaction.options.getString("name", true);
     const kind = normalizeKind(interaction.options.getString("kind"));
     const mode = normalizeMode(interaction.options.getString("mode"));
+    if (!kind || !mode) {
+      await interaction.reply({
+        content:
+          "❌ `kind` must be class or weapon; `mode` must be add or update.",
+        ephemeral: true,
+      });
+      return;
+    }
     const entryRaw = interaction.options.getString("entry", true);
 
     let entry: Record<string, unknown>;
@@ -192,7 +229,7 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
     } catch {
       await interaction.reply({
         content:
-          "❌ The `entry` JSON didn't parse. Use valid JSON, e.g. {\"stats\":{\"hp\":\"80\"},\"abilities\":[]}",
+          '❌ The `entry` JSON didn\'t parse. Use valid JSON, e.g. {"stats":{"hp":"80"},"abilities":[]}',
         ephemeral: true,
       });
       return;
@@ -200,7 +237,7 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
 
     await interaction.deferReply({ ephemeral: false });
     const nonce = stagePending(userId, () =>
-      createProposalIssue(name, kind, mode, entryRaw),
+      createProposalIssue(userId, name, kind, mode, entryRaw),
     );
     const embed = new EmbedBuilder()
       .setTitle("Confirm ability proposal")
@@ -238,6 +275,7 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
 
     await interaction.deferReply({ ephemeral: false });
     const nonce = stagePending(userId, async () => {
+      recordIssue(userId);
       const issue = await github.createIssue({
         title: proposal.title,
         body: proposal.body,
@@ -251,7 +289,10 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
           proposal.modes.length ? ` · modes: ${proposal.modes.join(", ")}` : ""
         }\n\nThis opens an issue the map workflow turns into a PR.`,
       )
-      .addFields({ name: "Map", value: `\`\`\`txt\n${grid.slice(0, 1024)}\n\`\`\`` })
+      .addFields({
+        name: "Map",
+        value: `\`\`\`txt\n${grid.slice(0, 1024)}\n\`\`\``,
+      })
       .setColor(0x38a169);
     await interaction.editReply({
       embeds: [embed],
@@ -270,7 +311,8 @@ async function handleButton(interaction: ButtonInteraction): Promise<void> {
   const pending = pendingActions.get(nonce);
   if (!pending) {
     await interaction.reply({
-      content: "This confirmation expired (2 minutes). Please run the command again.",
+      content:
+        "This confirmation expired (2 minutes). Please run the command again.",
       ephemeral: true,
     });
     return;
@@ -279,15 +321,26 @@ async function handleButton(interaction: ButtonInteraction): Promise<void> {
   // role gate so a roleless bystander can't click Confirm on a public preview.
   if (interaction.user.id !== pending.ownerId) {
     await interaction.reply({
-      content: "Only the person who ran the command can confirm or cancel this.",
+      content:
+        "Only the person who ran the command can confirm or cancel this.",
       ephemeral: true,
     });
     return;
   }
   const member = interaction.member;
-  if (!hasAccessRole(cfg, member as never)) {
+  if (!hasAccessRole(cfg, member)) {
     await interaction.reply({
       content: unauthorizedReplyText(),
+      ephemeral: true,
+    });
+    return;
+  }
+  // Enforce the same cooldown here: the command-time check happens before the
+  // write is staged, so without this a user could confirm two staged previews
+  // back-to-back (two GitHub writes inside the cooldown window).
+  if (isRateLimited(interaction.user.id)) {
+    await interaction.reply({
+      content: "⏳ Please wait a few seconds between commands.",
       ephemeral: true,
     });
     return;
@@ -296,7 +349,11 @@ async function handleButton(interaction: ButtonInteraction): Promise<void> {
   const { run } = pending;
 
   if (action === "cancel") {
-    await interaction.update({ content: "❌ Cancelled.", embeds: [], components: [] });
+    await interaction.update({
+      content: "❌ Cancelled.",
+      embeds: [],
+      components: [],
+    });
     return;
   }
 
@@ -309,11 +366,19 @@ async function handleButton(interaction: ButtonInteraction): Promise<void> {
       components: [],
     });
   } catch (e) {
+    console.error("[bot] confirm failed:", friendlyError(e));
     await interaction.editReply({
-      content: `❌ Could not create: ${friendlyError(e)}`,
+      content:
+        "❌ Could not create the proposal. The error was logged; a private follow-up has the details.",
       embeds: [],
       components: [],
     });
+    await interaction
+      .followUp({
+        content: `Details: ${friendlyError(e).slice(0, 500)}`,
+        ephemeral: true,
+      })
+      .catch(() => {});
   }
 }
 
@@ -340,7 +405,7 @@ async function handleMessage(message: Message): Promise<void> {
     return;
   }
 
-  if (rateLimited(message.author.id)) {
+  if (isRateLimited(message.author.id)) {
     await message.reply("⏳ Please wait a few seconds between commands.");
     return;
   }
@@ -355,10 +420,19 @@ async function handleMessage(message: Message): Promise<void> {
       return;
     }
     try {
-      const url = await createPlainIssue(title, details ?? "", []);
+      const reporter = `**Reported by:** @${message.author.username} on Discord`;
+      const body = [reporter, details].filter(Boolean).join("\n\n");
+      const url = await createPlainIssue(message.author.id, title, body, []);
       await message.reply(`✅ Created issue **${title}**\n${url}`);
     } catch (e) {
-      await message.reply(`❌ Could not create issue: ${friendlyError(e)}`);
+      if (e instanceof GithubError) {
+        console.error("[bot] create issue failed:", friendlyError(e));
+        await message.reply(
+          "❌ Could not create the issue — details logged server-side.",
+        );
+      } else {
+        await message.reply(`❌ ${friendlyError(e)}`);
+      }
     }
     return;
   }
@@ -375,12 +449,25 @@ async function handleMessage(message: Message): Promise<void> {
       return;
     }
     try {
-      const url = await createProposalIssue(name, kind, mode, entryRaw);
+      const url = await createProposalIssue(
+        message.author.id,
+        name,
+        kind,
+        mode,
+        entryRaw,
+      );
       await message.reply(
         `✅ Proposed **${name}** — this opens an issue that the workflow turns into a PR.\n${url}`,
       );
     } catch (e) {
-      await message.reply(`❌ Could not create proposal: ${friendlyError(e)}`);
+      if (e instanceof GithubError) {
+        console.error("[bot] create proposal failed:", friendlyError(e));
+        await message.reply(
+          "❌ Could not create the proposal — details logged server-side.",
+        );
+      } else {
+        await message.reply(`❌ ${friendlyError(e)}`);
+      }
     }
   }
 }
@@ -389,7 +476,7 @@ async function handleMessage(message: Message): Promise<void> {
 // Boot
 // ---------------------------------------------------------------------------
 
-client.once("clientReady", async () => {
+client.once(Events.ClientReady, async () => {
   console.log(`[bot] logged in as ${client.user?.tag}`);
   try {
     await registerCommands(cfg);
@@ -408,16 +495,20 @@ client.on("interactionCreate", async (interaction) => {
   } catch (e) {
     console.error("[bot] interaction handler error:", (e as Error).message);
     // Always tell the user the outcome — including when the handler threw
-    // after deferring (otherwise the interaction just hangs silently).
-    if (interaction.isRepliable()) {
-      const content = `❌ Something went wrong: ${friendlyError(e)}`;
-      if (interaction.deferred) {
-        await interaction.editReply({ content }).catch(() => {});
-      } else if (!interaction.replied) {
-        await interaction
-          .reply({ content, ephemeral: true })
-          .catch(() => {});
-      }
+    // after deferring (otherwise the interaction just hangs silently). The
+    // public response stays generic; error details go to the invoker only.
+    if (!interaction.isRepliable()) return;
+    const content = "❌ Something went wrong.";
+    if (interaction.deferred) {
+      await interaction.editReply({ content }).catch(() => {});
+      await interaction
+        .followUp({
+          content: `Details: ${friendlyError(e).slice(0, 500)}`,
+          ephemeral: true,
+        })
+        .catch(() => {});
+    } else if (!interaction.replied) {
+      await interaction.reply({ content, ephemeral: true }).catch(() => {});
     }
   }
 });

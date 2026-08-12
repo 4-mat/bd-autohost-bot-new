@@ -19,7 +19,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     githubToken: env.GITHUB_TOKEN ?? "",
     githubRepo: env.GITHUB_REPO || "4-mat/bd-autohost-bot-new",
     roleId: env.ROLE_ID || undefined,
-    roleName: env.ROLE_NAME || "super turbo",
+    roleName: env.ROLE_NAME?.trim() || "super turbo",
   };
 }
 
@@ -30,6 +30,9 @@ export function assertConfig(cfg: Config): Config {
   if (!cfg.githubToken) missing.push("GITHUB_TOKEN");
   if (missing.length) {
     throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+  }
+  if (!/^[\w.-]+\/[\w.-]+$/.test(cfg.githubRepo)) {
+    throw new Error(`GITHUB_REPO must be "owner/repo", got: ${cfg.githubRepo}`);
   }
   return cfg;
 }

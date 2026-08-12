@@ -2,11 +2,11 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
-  type RESTPostAPIContextMenuApplicationCommandsJSONBody,
+  type RESTPostAPIChatInputApplicationCommandsJSONBody,
 } from "discord.js";
 import type { Config } from "./config.js";
 
-export type CommandJSON = RESTPostAPIContextMenuApplicationCommandsJSONBody;
+export type CommandJSON = RESTPostAPIChatInputApplicationCommandsJSONBody;
 
 export const commandDefs = [
   new SlashCommandBuilder()
