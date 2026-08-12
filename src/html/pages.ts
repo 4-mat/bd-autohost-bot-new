@@ -19,6 +19,7 @@ import { getVersionData } from "../data/version43.js";
 import {
   runoffOptions,
   tallyVotes,
+  tieModes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
 
@@ -190,7 +191,7 @@ export function buildHostPage(game: Game): string {
   // Controls (Next Turn / Undo / d20) only matter once the battle is running.
   const controls = game.started ? buildControls(game) : "";
   // Setup shortcuts (%setgame ffa / %setlevel all) only matter pre-start.
-  const setup = game.started ? "" : buildSetupPanel();
+  const setup = game.started ? "" : buildSetupPanel(game);
   // "FFA" is just the placeholder until a mode is actually chosen (%setgame, the
   // vote, or %genpos) — don't claim a mode in the header before then.
   const modeSeg =
@@ -570,11 +571,27 @@ function buildActionLog(game: Game, collapsed = false): string {
 
 // -- Setup (Host, pre-start) --------------------------------------------------
 
-function buildSetupPanel(): string {
+function buildSetupPanel(game: Game): string {
+  // The mode the Set Game button applies: the current vote leader when voting
+  // is open, otherwise the already-chosen mode, otherwise FFA as a fallback.
+  const tally = tallyVotes(game.votes);
+  const tied = tieModes(tally);
+  const voteWinner =
+    !tied && tally.length > 0 ? tally[0].mode.toUpperCase() : null;
+  const targetMode = voteWinner ?? (game.modeChosen ? game.mode : "FFA");
+  const winnerTag = voteWinner ? " (vote winner)" : "";
+
+  // %start only makes sense once the mode is set (%setgame, the vote, or
+  // %genpos) — i.e. right after the Set Game button has done its job.
+  const startBtn = game.modeChosen
+    ? ` <span style="color:#888;margin:0 4px">|</span> ${btn("%start", "Start Game")}`
+    : "";
+
   return `<details style="margin-top:4px"><summary style="cursor:pointer;user-select:none"><b>Setup</b></summary>
 <div style="margin-top:4px">
-  ${btn("%setgame ffa", "Set FFA")}
+  ${btn(`%setgame ${targetMode}`, `Set Game: ${targetMode}${winnerTag}`)}
   ${btn("%setlevel all, 10", "Level All \u2192 10")}
+  ${startBtn}
 </div>
 </details>`;
 }
