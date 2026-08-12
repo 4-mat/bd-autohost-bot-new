@@ -19,6 +19,8 @@ jobs:
       - name: Send Discord webhook
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # Fallback is the default `super turbo` role; set the
+          # DISCORD_ROLE_ID secret to override (see RELEASE_GUIDE.md).
           ROLE_ID: ${{ secrets.DISCORD_ROLE_ID || '1535455535896334467' }}
           TAG: ${{ github.event.release.tag_name || 'v1.0.0' }}
           NAME: ${{ github.event.release.name || 'Battle Dome Autohost v1.0.0' }}
