@@ -170,6 +170,13 @@ describe("isValidTarget", () => {
       isValidTarget(user(), makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }), "Foe"),
     ).toBe(false);
   });
+
+  it("rejects unrecognized target groups (matches the AoE path)", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Bogus")).toBe(false);
+    expect(isValidTarget(u, foe(), "Self, Allies")).toBe(false);
+    expect(isValidTarget(u, u, "Everyone")).toBe(false);
+  });
 });
 
 // ===========================================================================

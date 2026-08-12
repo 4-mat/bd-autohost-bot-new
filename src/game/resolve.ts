@@ -374,16 +374,19 @@ function* resolveAttackFlow(
   // Bug fix carried over: check win condition once after all deaths this
   // action, not once per death (was producing duplicate "Game over!" lines
   // on multi-kill splash/AoE).
-  if (result.deaths.length > 0 && checkGameOver(game)) {
-    result.gameOver = true;
-    const winner = game.winner
-      ? game.entities.find((e) => e.num === game.winner) ?? null
-      : game.entities[0] ?? null;
-    result.messages.push(
-      winner
-        ? `**Game over! ${winner.num} (${winner.name}) wins!**`
-        : "**Game over! No survivors!**",
-    );
+  if (result.deaths.length > 0) {
+    // checkGameOver() sets game.phase = "ended" and returns null when no
+    // entity survives (a draw), so gate on the phase flag rather than the
+    // returned winner to mark zero-survivor games as game over too.
+    const winner = checkGameOver(game);
+    if (game.phase === "ended") {
+      result.gameOver = true;
+      result.messages.push(
+        winner
+          ? `**Game over! ${winner.num} (${winner.name}) wins!**`
+          : "**Game over! No survivors!**",
+      );
+    }
   }
 
   return result;
@@ -705,7 +708,10 @@ export function isValidTarget(
   if (g === "any") return true;
   if (g === "tile") return false;
 
-  return true;
+  // Unknown group: reject, matching isValidGroupTarget in state.ts, so a
+  // malformed targetGroup cannot select arbitrary living entities here
+  // while selecting nothing in the AoE path.
+  return false;
 }
 
 function* resolveSingleTarget(

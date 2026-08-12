@@ -730,6 +730,16 @@ describe("checkGameOver", () => {
     expect(game.phase).toBe("ended");
   });
 
+  it("zero survivors: phase ends with null winner (a draw)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 0 });
+    const game = makeGame({ entities: [p1, p2] });
+    const winner = checkGameOver(game);
+    expect(winner).toBeNull();
+    expect(game.phase).toBe("ended");
+    expect(game.winner).toBeNull();
+  });
+
   it("returns null in team mode when both teams alive", () => {
     const game = makeGame({
       mode: "2v2",
