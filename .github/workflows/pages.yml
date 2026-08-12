@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - "index.html"
+      - "README.md"
+      - "scripts/render-readme.ts"
       - "mapeditor/**"
       - "maps/**"
       - ".github/workflows/pages.yml"
@@ -27,6 +29,14 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      # Auto-render the homepage from README.md (Primer style), like the
+      # original Jekyll site did. Falls back to the committed index.html if
+      # the render fails so deploys never break.
+      - name: Render README homepage
+        run: bun scripts/render-readme.ts || true
 
       # Assemble the site: the repo-root index.html is the homepage at /,
       # and the map editor/browser/pools keep their /mapeditor/ and /maps/ URLs.
