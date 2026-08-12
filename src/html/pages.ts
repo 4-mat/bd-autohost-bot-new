@@ -56,6 +56,21 @@ export function clearMovementState(game: Game, entity: Entity) {
   dashMode.delete(key);
 }
 
+// Clear path/reach/dash for every entity of a game, including ones removed
+// during resolution (iterate store keys, not game.entities).
+export function clearGameMovementState(game: Game) {
+  const prefix = `${game.id}:`;
+  for (const k of [...pathState.keys()]) {
+    if (k.startsWith(prefix)) pathState.delete(k);
+  }
+  for (const k of [...reachPreview.keys()]) {
+    if (k.startsWith(prefix)) reachPreview.delete(k);
+  }
+  for (const k of [...dashMode]) {
+    if (k.startsWith(prefix)) dashMode.delete(k);
+  }
+}
+
 // -- Toast CSS -----------------------------------------------------------------
 
 const TCSS = `.tw{position:fixed;bottom:0;left:0;right:0;padding:8px;padding-bottom:calc(env(safe-area-inset-bottom,0px)+60px);pointer-events:none;z-index:1000}

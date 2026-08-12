@@ -44,6 +44,7 @@ import {
   reachPreview,
   dashMode,
   clearMovementState,
+  clearGameMovementState,
   movementKey,
   pathCost,
 } from "../html/pages.js";
@@ -804,6 +805,7 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
+    clearGameMovementState(game);
     announceGameOver(game, winner);
     return;
   }
@@ -877,6 +879,7 @@ function handleAdvanceTurn(game: Game, user: User) {
 
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
+      clearGameMovementState(game);
       announceGameOver(game, winner);
       return;
     }
@@ -894,10 +897,9 @@ function handleAdvanceTurn(game: Game, user: User) {
   }
 
   // Any in-progress movement path/reach preview ends only once the turn
-  // actually advances (not when a pending action still needs input).
-  for (const e of game.entities) {
-    clearMovementState(game, e);
-  }
+  // actually advances (not when a pending action still needs input). Iterates
+  // store keys so entities removed during resolution are cleared too.
+  clearGameMovementState(game);
 
   const result = nextTurn(game);
   for (const msg of result.messages) {

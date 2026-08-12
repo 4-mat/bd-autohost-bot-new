@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { gameCommand } from "../commands/game.js";
-import { games, type Game, type Entity, Terrain } from "../game/state.js";
+import {
+  games,
+  type Game,
+  type Entity,
+  type AbilityData,
+  Terrain,
+} from "../game/state.js";
 import {
   buildHostPage,
   buildPlayerPage,
@@ -227,5 +233,55 @@ describe("interactive movement pathing", () => {
     expect(html).toContain("border:1px solid #888");
     expect(html).not.toContain("%pathstep");
     expect(html).toContain("width:34px");
+  });
+
+  it("clears all movement state when an attack ends the game", () => {
+    const p2 = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [0, 1],
+      team: 1,
+      curhp: 1,
+    });
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        p2,
+      ],
+    });
+    games.set(game.id, game);
+    const p1 = game.entities[0];
+
+    // Seed movement UI state for P1 and the soon-to-die P2 (which gets removed
+    // from game.entities during resolution, so a per-entity loop would leak it).
+    pathState.set(key1(game), [[0, 1]]);
+    dashMode.add(key1(game));
+    reachPreview.set(key1(game), "P2");
+    const k2 = movementKey(game, p2);
+    pathState.set(k2, [[1, 1]]);
+
+    const ability: AbilityData = {
+      name: "Punch",
+      level: 1,
+      frequency: "Every Turn",
+      mr: 0,
+      roll: "2d6+3",
+      damageType: "Physical",
+      actionType: "Standard",
+      targetAmount: 1,
+      targetGroup: "Foe",
+      range: "Melee",
+      effect: "",
+    };
+    p1.pendingAction = { type: "attack", ability, target: "P2" };
+
+    gameCommand(room, alice, "confirm", "", "");
+
+    expect(game.phase).toBe("ended");
+    expect(game.entities).not.toContain(p2);
+    expect(pathState.get(key1(game))).toBeUndefined();
+    expect(dashMode.has(key1(game))).toBe(false);
+    expect(reachPreview.get(key1(game))).toBeUndefined();
+    expect(pathState.get(k2)).toBeUndefined();
   });
 });
