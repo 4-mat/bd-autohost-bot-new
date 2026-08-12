@@ -6,10 +6,7 @@ import {
   type AbilityData,
   Terrain,
 } from "../game/state.js";
-import {
-  parseEffects,
-  extractCombatMetadata,
-} from "../game/effects.js";
+import { parseEffects, extractCombatMetadata } from "../game/effects.js";
 import { startAttack } from "../game/resolve.js";
 
 setWs({ send() {} });
@@ -68,6 +65,7 @@ function makeGame(opts: { entities?: Entity[]; size?: number } = {}): Game {
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map,
     mapName: "test",
@@ -230,9 +228,7 @@ describe("extractCombatMetadata", () => {
   });
 
   it("does NOT descend into Thirst sub-effects (would over-apply when blood < threshold)", () => {
-    const meta = extractCombatMetadata(
-      parseEffects("Thirst 4: Multi-Hit: 3"),
-    );
+    const meta = extractCombatMetadata(parseEffects("Thirst 4: Multi-Hit: 3"));
     expect(meta.additionalHits).toBe(0);
   });
 
@@ -242,18 +238,14 @@ describe("extractCombatMetadata", () => {
     // at runtime. resolve.ts handles per-branch metadata through the
     // legacy buff pipeline; metadata here is top-level only.
     const meta = extractCombatMetadata(
-      parseEffects(
-        "If target is alive, +30% damage. Otherwise, +10% damage.",
-      ),
+      parseEffects("If target is alive, +30% damage. Otherwise, +10% damage."),
     );
     expect(meta.damagePercent).toBe(0);
   });
 
   it("does NOT descend into Choose option sub-effects at extract time", () => {
     const meta = extractCombatMetadata(
-      parseEffects(
-        "Choose: Multi-Hit: 2 or +30% damage or Ignores DEF.",
-      ),
+      parseEffects("Choose: Multi-Hit: 2 or +30% damage or Ignores DEF."),
     );
     // All clauses are inside the Choose gate, so the metadata extractor
     // treats them as gated and leaves the top-level metadata at zero.
@@ -438,9 +430,7 @@ describe("resolveAttackFlow: damage mods surface in the log", () => {
     // extracted metadata must not report a damage percent that was
     // nested inside an Apex clause, otherwise the resolve math treats
     // it as always-on.
-    const meta = extractCombatMetadata(
-      parseEffects("Apex: +50% damage"),
-    );
+    const meta = extractCombatMetadata(parseEffects("Apex: +50% damage"));
     expect(meta.damagePercent).toBe(0);
   });
 });
@@ -502,12 +492,18 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
     // Both P2 and P3 damage lines should carry the +50% mod tag.
     expect(log).toContain("P2");
     expect(log).toContain("P3");
-    const p2Trail = log.split("\n").find((line) =>
-      line.includes("Damage Modifiers applied") && line.includes("P2"),
-    );
-    const p3Trail = log.split("\n").find((line) =>
-      line.includes("Damage Modifiers applied") && line.includes("P3"),
-    );
+    const p2Trail = log
+      .split("\n")
+      .find(
+        (line) =>
+          line.includes("Damage Modifiers applied") && line.includes("P2"),
+      );
+    const p3Trail = log
+      .split("\n")
+      .find(
+        (line) =>
+          line.includes("Damage Modifiers applied") && line.includes("P3"),
+      );
     // The mod trails reference just the damageValue; for each target we
     // confirm at least one line contains the +50% tag.
     expect(log).toMatch(/\+50% damage/);

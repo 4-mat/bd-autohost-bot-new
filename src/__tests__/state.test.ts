@@ -100,6 +100,7 @@ function makeGame(
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map,
     mapName: "test",
@@ -417,15 +418,25 @@ describe("getStarTiles", () => {
 });
 
 describe("getConeTiles", () => {
-  it("cone generates tiles in all 4 cardinal directions", () => {
-    const tiles = getConeTiles([5, 5], 1);
-    // Cone 1: 3 tiles forward in each direction (1 forward + 1 to each side)
-    // Up: [4,4], [4,5], [4,6]
-    // Down: [6,4], [6,5], [6,6]
-    // Left: [4,4], [5,4], [6,4]
-    // Right: [4,6], [5,6], [6,6]
-    // Total = 12 (with some overlap at corners)
-    expect(tiles.length).toBe(12);
+  it("cone range 1 covers 3 tiles forward in the chosen direction", () => {
+    const tiles = getConeTiles([5, 5], 1, "right");
+    // Right: 1 forward + 1 to each side = [4,6], [5,6], [6,6]
+    expect(tiles.length).toBe(3);
+    expect(tiles).toContainEqual([4, 6]);
+    expect(tiles).toContainEqual([5, 6]);
+    expect(tiles).toContainEqual([6, 6]);
+  });
+
+  it("cone honors each cardinal direction", () => {
+    expect(getConeTiles([5, 5], 1, "up")).toContainEqual([4, 5]);
+    expect(getConeTiles([5, 5], 1, "down")).toContainEqual([6, 5]);
+    expect(getConeTiles([5, 5], 1, "left")).toContainEqual([5, 4]);
+  });
+
+  it("cone range 2 grows wider with depth", () => {
+    const tiles = getConeTiles([5, 5], 2, "right");
+    // d=1: 3 tiles, d=2: 5 tiles = 8
+    expect(tiles.length).toBe(8);
   });
 
   it("cone does not include origin", () => {
@@ -435,10 +446,17 @@ describe("getConeTiles", () => {
 });
 
 describe("getLineTiles", () => {
-  it("generates tiles in all 8 directions", () => {
-    const tiles = getLineTiles([5, 5], 3);
-    // 4 cardinal * 3 + 4 diagonal * ceil(3/2) = 12 + 8 = 20
-    expect(tiles.length).toBe(20);
+  it("generates range tiles in the chosen direction", () => {
+    const tiles = getLineTiles([5, 5], 3, "right");
+    expect(tiles.length).toBe(3);
+    expect(tiles).toContainEqual([5, 6]);
+    expect(tiles).toContainEqual([5, 8]);
+  });
+
+  it("line honors each cardinal direction", () => {
+    expect(getLineTiles([5, 5], 3, "up")).toContainEqual([2, 5]);
+    expect(getLineTiles([5, 5], 3, "down")).toContainEqual([8, 5]);
+    expect(getLineTiles([5, 5], 3, "left")).toContainEqual([5, 2]);
   });
 
   it("does not include origin", () => {
@@ -448,18 +466,27 @@ describe("getLineTiles", () => {
 });
 
 describe("getPierceTiles", () => {
-  it("same as getLineTiles", () => {
-    const line = getLineTiles([5, 5], 3);
-    const pierce = getPierceTiles([5, 5], 3);
-    expect(pierce.length).toBe(line.length);
+  it("same as getLineTiles in the chosen direction", () => {
+    const line = getLineTiles([5, 5], 3, "left");
+    const pierce = getPierceTiles([5, 5], 3, "left");
+    expect(pierce).toEqual(line);
   });
 });
 
 describe("getBeamTiles", () => {
-  it("generates 3-wide tiles in 4 cardinal directions", () => {
-    const tiles = getBeamTiles([5, 5], 2);
-    // 4 directions * 2 depth * 3 width = 24
-    expect(tiles.length).toBe(24);
+  it("generates 3-wide tiles in the chosen direction", () => {
+    const tiles = getBeamTiles([5, 5], 2, "right");
+    // 2 depth * 3 width = 6
+    expect(tiles.length).toBe(6);
+    expect(tiles).toContainEqual([4, 6]);
+    expect(tiles).toContainEqual([5, 7]);
+    expect(tiles).toContainEqual([6, 6]);
+  });
+
+  it("beam honors each cardinal direction", () => {
+    expect(getBeamTiles([5, 5], 1, "up")).toContainEqual([4, 4]);
+    expect(getBeamTiles([5, 5], 1, "down")).toContainEqual([6, 6]);
+    expect(getBeamTiles([5, 5], 1, "left")).toContainEqual([4, 4]);
   });
 });
 

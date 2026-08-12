@@ -29,24 +29,31 @@ import {
 export const premoveSet = new Set<string>();
 
 // -- Movement Path / Reach Preview / Dash Mode Tracking ------------------------
-// Keyed by entity.num. Server-side state, same pattern as premoveSet -- it
-// survives across page re-renders since this module stays loaded.
+// Keyed by `${game.id}:${entity.id}` so concurrent games can't collide. Server-
+// side state, same pattern as premoveSet -- it survives across page re-renders
+// since this module stays loaded.
 
 // The path a player is building this movement phase, as an ordered list of
 // tiles clicked so far (not including their starting position).
 export const pathState = new Map<string, Array<[number, number]>>();
 
-// viewer entity.num -> the entity.num whose reachable tiles they're
-// currently previewing in red (set by clicking another character on the map).
+// viewer entity key -> the entity.num whose reachable tiles they're currently
+// previewing in red (set by clicking another character on the map).
 export const reachPreview = new Map<string, string>();
 
-// entity.num -> currently in dash mode (map shows dash-reachable tiles).
+// entity key -> currently in dash mode (map shows dash-reachable tiles).
 export const dashMode = new Set<string>();
 
-export function clearMovementState(entityNum: string) {
-  pathState.delete(entityNum);
-  reachPreview.delete(entityNum);
-  dashMode.delete(entityNum);
+// Composite key scoping movement UI state to one entity in one game.
+export function movementKey(game: Game, entity: Entity): string {
+  return `${game.id}:${entity.id}`;
+}
+
+export function clearMovementState(game: Game, entity: Entity) {
+  const key = movementKey(game, entity);
+  pathState.delete(key);
+  reachPreview.delete(key);
+  dashMode.delete(key);
 }
 
 // -- Toast CSS -----------------------------------------------------------------
@@ -261,7 +268,9 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 
   // The map is interactive only during this entity's movement phase.
   const interactive =
-    isTurn && !entity.movementUsed && !premoveSet.has(entity.num);
+    isTurn &&
+    !entity.movementUsed &&
+    !premoveSet.has(movementKey(game, entity));
 
   const map = buildMiniMap(game, entity, interactive);
   const stats = buildEntityStats(entity);
@@ -288,7 +297,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   }
 
   if (isTurn) {
-    const inPremove = premoveSet.has(entity.num);
+    const inPremove = premoveSet.has(movementKey(game, entity));
 
     if (!entity.movementUsed && inPremove) {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #00cc00;background:rgba(0,204,0,0.10)"><b style="color:#00cc00">PRE-MOVE ABILITIES</b> <span style="color:#888">Free / Swift / Trigger before movement</span></div>`;
@@ -401,30 +410,31 @@ function buildMapTable(
   const previewSet = new Set<string>();
 
   if (interactive && self) {
-    const path = pathState.get(self.num) ?? [];
+    const key = movementKey(game, self);
+    const path = pathState.get(key) ?? [];
     for (const p of path) pathSet.add(posKey(p));
 
-    if (dashMode.has(self.num)) {
+    if (dashMode.has(key)) {
       const dashMp = Math.floor(getEffectiveMp(self) * 1.5);
       const reachable = getReachableTiles(game, self.pos, dashMp);
-      for (const key of reachable.keys()) dashSet.add(key);
+      for (const tile of reachable.keys()) dashSet.add(tile);
     } else {
-      const remaining = self.mp - pathCost(game, path);
+      const remaining = getEffectiveMp(self) - pathCost(game, path);
       if (remaining > 0) {
         const tip = path.length > 0 ? path[path.length - 1] : self.pos;
         // getReachableTiles returns Map<string, number> keyed by posToStr
         // tiles -- we only need the keys.
         const reachable = getReachableTiles(game, tip, remaining, self);
-        for (const key of reachable.keys()) reachableSet.add(key);
+        for (const tile of reachable.keys()) reachableSet.add(tile);
       }
     }
 
-    const previewNum = reachPreview.get(self.num);
+    const previewNum = reachPreview.get(key);
     if (previewNum) {
       const target = game.entities.find((e) => e.num === previewNum);
       if (target) {
-        const reach = getReachableTiles(game, target.pos, target.mp);
-        for (const key of reach.keys()) previewSet.add(key);
+        const reach = getReachableTiles(game, target.pos, target.mp, target);
+        for (const tile of reach.keys()) previewSet.add(tile);
       }
     }
   }
@@ -500,14 +510,14 @@ function buildMapTable(
       } else if (
         interactive &&
         self &&
-        dashMode.has(self.num) &&
+        dashMode.has(movementKey(game, self)) &&
         dashSet.has(key)
       ) {
         inner = cellBtn(`%dash ${tileStr},${self.name}`, "", "z-index:1");
       } else if (
         interactive &&
         self &&
-        !dashMode.has(self.num) &&
+        !dashMode.has(movementKey(game, self)) &&
         reachableSet.has(key)
       ) {
         // Empty, in range, not yet pressed into the path -- clickable.
@@ -750,9 +760,10 @@ function buildEntityStats(entity: Entity): string {
 // -- Movement Controls (Player, movement phase) --------------------------------
 
 function buildMovementControls(game: Game, entity: Entity): string {
-  const path = pathState.get(entity.num) ?? [];
+  const key = movementKey(game, entity);
+  const path = pathState.get(key) ?? [];
 
-  if (dashMode.has(entity.num)) {
+  if (dashMode.has(key)) {
     return `<div style="margin:4px 0;color:#c60"><b>DASH MODE</b> <span style="color:#888">Click an orange-highlighted tile to dash (1.5x MP, Full action)</span></div>`;
   }
 
@@ -761,7 +772,7 @@ function buildMovementControls(game: Game, entity: Entity): string {
   }
 
   const cost = pathCost(game, path);
-  const remaining = entity.mp - cost;
+  const remaining = getEffectiveMp(entity) - cost;
   let html = `<div style="margin:4px 0">Path: ${path.length} tile${path.length > 1 ? "s" : ""} (${remaining} MP left)</div>`;
   html += `<div style="margin-top:4px">${btn(`%confirmmove ${entity.name}`, "Confirm Move")} ${btn(`%cancelpath ${entity.name}`, "Cancel Path")}</div>`;
   return html;
@@ -775,7 +786,7 @@ function buildDashModeButton(game: Game, entity: Entity): string {
   const reachable = getReachableTiles(game, entity.pos, dashMp);
   if (reachable.size === 0) return "";
 
-  const inDash = dashMode.has(entity.num);
+  const inDash = dashMode.has(movementKey(game, entity));
   const label = inDash ? "Back to Move" : "Dash (1.5x MP)";
   return `<div style="margin:2px 0">${btn(`%dashmode ${entity.name}`, label)}</div>`;
 }

@@ -8,6 +8,7 @@ import {
   reachPreview,
   dashMode,
   premoveSet,
+  movementKey,
 } from "../html/pages.js";
 import { setWs } from "../utils.js";
 import type { Room } from "../rooms.js";
@@ -66,6 +67,7 @@ function makeGame(opts: { entities?: Entity[] } = {}): Game {
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map: Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal)),
     mapName: "test",
@@ -97,6 +99,11 @@ function freshGame(): Game {
   return g;
 }
 
+// Composite key for the first entity (P1) of a fresh game.
+function key1(game: Game): string {
+  return movementKey(game, game.entities[0]);
+}
+
 describe("interactive movement pathing", () => {
   it("builds a path with %pathstep and confirms it with %confirmmove", () => {
     const game = freshGame();
@@ -105,7 +112,7 @@ describe("interactive movement pathing", () => {
     gameCommand(room, alice, "pathstep", "a", "2,P1");
     gameCommand(room, alice, "pathstep", "b", "2,P1");
 
-    expect(pathState.get("P1")).toEqual([
+    expect(pathState.get(key1(game))).toEqual([
       [0, 1],
       [1, 1],
     ]);
@@ -114,7 +121,7 @@ describe("interactive movement pathing", () => {
     gameCommand(room, alice, "confirmmove", "P1", "");
     expect(p1.pos).toEqual([1, 1]);
     expect(p1.movementUsed).toBe(true);
-    expect(pathState.get("P1")).toBeUndefined();
+    expect(pathState.get(key1(game))).toBeUndefined();
   });
 
   it("rejects non-adjacent, occupied, and over-MP steps", () => {
@@ -122,14 +129,14 @@ describe("interactive movement pathing", () => {
 
     // [2,2] is far away -- must step adjacent tiles only.
     gameCommand(room, alice, "pathstep", "c", "3,P1");
-    expect(pathState.get("P1")).toBeUndefined();
+    expect(pathState.get(key1(game))).toBeUndefined();
 
     // P2 occupies [2,2] ("c,3").
     gameCommand(room, alice, "pathstep", "a", "2,P1");
     gameCommand(room, alice, "pathstep", "b", "2,P1"); // [1,1], ok (2 MP)
-    expect(pathState.get("P1")?.length).toBe(2);
+    expect(pathState.get(key1(game))?.length).toBe(2);
     gameCommand(room, alice, "pathstep", "c", "3,P1"); // occupied
-    expect(pathState.get("P1")?.length).toBe(2);
+    expect(pathState.get(key1(game))?.length).toBe(2);
   });
 
   it("over-MP step is rejected and truncates back", () => {
@@ -141,7 +148,7 @@ describe("interactive movement pathing", () => {
     gameCommand(room, alice, "pathstep", "c", "2,P1");
     // mp=3, path [0,1],[1,1],[2,1] costs 3 -- the 4th would exceed budget
     gameCommand(room, alice, "pathstep", "d", "2,P1");
-    expect(pathState.get("P1")?.length).toBe(3);
+    expect(pathState.get(key1(game))?.length).toBe(3);
   });
 
   it("clicking a tile already in the path truncates it there", () => {
@@ -150,37 +157,37 @@ describe("interactive movement pathing", () => {
     gameCommand(room, alice, "pathstep", "a", "2,P1");
     gameCommand(room, alice, "pathstep", "b", "2,P1");
     gameCommand(room, alice, "pathstep", "c", "2,P1");
-    expect(pathState.get("P1")?.length).toBe(3);
+    expect(pathState.get(key1(game))?.length).toBe(3);
     // Clicking the middle tile (index 1) drops it and everything after.
     gameCommand(room, alice, "pathstep", "b", "2,P1");
-    expect(pathState.get("P1")).toEqual([[0, 1]]);
+    expect(pathState.get(key1(game))).toEqual([[0, 1]]);
   });
 
   it("%cancelpath clears the path", () => {
     const game = freshGame();
 
     gameCommand(room, alice, "pathstep", "a", "2,P1");
-    expect(pathState.get("P1")?.length).toBe(1);
+    expect(pathState.get(key1(game))?.length).toBe(1);
     gameCommand(room, alice, "cancelpath", "P1", "");
-    expect(pathState.get("P1")).toBeUndefined();
+    expect(pathState.get(key1(game))).toBeUndefined();
   });
 
   it("%dashmode toggles dash mode", () => {
     const game = freshGame();
 
     gameCommand(room, alice, "dashmode", "P1", "");
-    expect(dashMode.has("P1")).toBe(true);
+    expect(dashMode.has(key1(game))).toBe(true);
     gameCommand(room, alice, "dashmode", "P1", "");
-    expect(dashMode.has("P1")).toBe(false);
+    expect(dashMode.has(key1(game))).toBe(false);
   });
 
   it("%viewreach previews another character's reach", () => {
     const game = freshGame();
 
     gameCommand(room, alice, "viewreach", "P2", "P1");
-    expect(reachPreview.get("P1")).toBe("P2");
+    expect(reachPreview.get(key1(game))).toBe("P2");
     gameCommand(room, alice, "viewreach", "P2", "P1");
-    expect(reachPreview.get("P1")).toBeUndefined();
+    expect(reachPreview.get(key1(game))).toBeUndefined();
   });
 
   it("renders gridlines and interactive overlays on the player page", () => {

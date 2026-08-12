@@ -156,14 +156,14 @@ export function parseFrequency(frequency: string) {
     uses = 3;
   }
 
-  if (f.includes("every other turn") || f.includes("eot")) {
-    cooldown = 2;
-  } else if (
-    f.includes("every third turn") ||
+  if (
+    f.includes("every other turn") ||
     f.includes("every two turns") ||
-    f.includes("e3t") ||
+    f.includes("eot") ||
     f.includes("e2t")
   ) {
+    cooldown = 2;
+  } else if (f.includes("every third turn") || f.includes("e3t")) {
     cooldown = 3;
   }
 
@@ -223,10 +223,17 @@ export const DIRECTION_LABELS: Record<string, string> = {
   right: "\u2192 Right",
 };
 
+// Row/col deltas for each direction label (row, col).
+const DIRECTION_DELTAS: Record<string, [number, number]> = {
+  up: [-1, 0],
+  down: [1, 0],
+  left: [0, -1],
+  right: [0, 1],
+};
+
 export function needsDirection(ability: AbilityData): boolean {
   const r = ability.range.toLowerCase().trim();
-  return false;
-  // return /^(cone|line|beam|pierce)\b/.test(r);
+  return /^(cone|line|beam|pierce)\b/.test(r);
 }
 
 export function getDirectionCandidates(): string[] {
@@ -697,59 +704,43 @@ export function getStarTiles(
 export function getConeTiles(
   from: [number, number],
   range: number,
+  dir = "right",
 ): [number, number][] {
+  const [dr, dc] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-  ];
-  for (const [dr, dc] of dirs) {
-    for (let d = 1; d <= range; d++) {
-      // At distance d, width extends d tiles perpendicular
-      for (let w = -d; w <= d; w++) {
-        let tr: number, tc: number;
-        if (dr !== 0) {
-          // Vertical cone
-          tr = from[0] + dr * d;
-          tc = from[1] + w;
-        } else {
-          // Horizontal cone
-          tr = from[0] + w;
-          tc = from[1] + dc * d;
-        }
-        tiles.push([tr, tc]);
+  for (let d = 1; d <= range; d++) {
+    // At distance d, width extends d tiles perpendicular
+    for (let w = -d; w <= d; w++) {
+      let tr: number, tc: number;
+      if (dr !== 0) {
+        // Vertical cone
+        tr = from[0] + dr * d;
+        tc = from[1] + w;
+      } else {
+        // Horizontal cone
+        tr = from[0] + w;
+        tc = from[1] + dc * d;
       }
+      tiles.push([tr, tc]);
     }
   }
   return tiles;
 }
 
-// Get all tiles in a Line from user in the closest matching direction
+// Get all tiles in a Line from user in the given direction
 export function getLineTiles(
   from: [number, number],
   range: number,
+  dir = "right",
 ): [number, number][] {
+  const [dr, dc] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-    [1, 1],
-    [1, -1],
-    [-1, 1],
-    [-1, -1],
-  ];
-  for (const [dr, dc] of dirs) {
-    for (let d = 1; d <= range; d++) {
-      if (dr !== 0 && dc !== 0) {
-        // Diagonal: max distance is ceil(range/2)
-        if (d > Math.ceil(range / 2)) break;
-      }
-      tiles.push([from[0] + dr * d, from[1] + dc * d]);
+  for (let d = 1; d <= range; d++) {
+    if (dr !== 0 && dc !== 0) {
+      // Diagonal: max distance is ceil(range/2)
+      if (d > Math.ceil(range / 2)) break;
     }
+    tiles.push([from[0] + dr * d, from[1] + dc * d]);
   }
   return tiles;
 }
@@ -758,36 +749,31 @@ export function getLineTiles(
 export function getPierceTiles(
   from: [number, number],
   range: number,
+  dir = "right",
 ): [number, number][] {
-  return getLineTiles(from, range);
+  return getLineTiles(from, range, dir);
 }
 
-// Get all tiles in a Beam (3 wide, X deep in each cardinal direction)
+// Get all tiles in a Beam (3 wide, X deep in the chosen cardinal direction)
 export function getBeamTiles(
   from: [number, number],
   range: number,
+  dir = "right",
 ): [number, number][] {
+  const [dr, dc] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-  ];
-  for (const [dr, dc] of dirs) {
-    for (let d = 1; d <= range; d++) {
-      // 3 wide perpendicular
-      for (let w = -1; w <= 1; w++) {
-        let tr: number, tc: number;
-        if (dr !== 0) {
-          tr = from[0] + dr * d;
-          tc = from[1] + w;
-        } else {
-          tr = from[0] + w;
-          tc = from[1] + dc * d;
-        }
-        tiles.push([tr, tc]);
+  for (let d = 1; d <= range; d++) {
+    // 3 wide perpendicular
+    for (let w = -1; w <= 1; w++) {
+      let tr: number, tc: number;
+      if (dr !== 0) {
+        tr = from[0] + dr * d;
+        tc = from[1] + w;
+      } else {
+        tr = from[0] + w;
+        tc = from[1] + dc * d;
       }
+      tiles.push([tr, tc]);
     }
   }
   return tiles;
@@ -799,6 +785,7 @@ export function getAoETargets(
   user: Entity,
   range: string,
   group: string,
+  dir?: string,
 ): Entity[] {
   const rangeStr = range.toLowerCase().trim();
   let tiles: [number, number][] = [];
@@ -815,22 +802,22 @@ export function getAoETargets(
 
   const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
   if (coneMatch) {
-    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]));
+    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]), dir);
   }
 
   const lineMatch = rangeStr.match(/^line\s*(\d+)/);
   if (lineMatch) {
-    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]));
+    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]), dir);
   }
 
   const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
   if (pierceMatch) {
-    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]));
+    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]), dir);
   }
 
   const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
   if (beamMatch) {
-    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]));
+    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]), dir);
   }
 
   if (tiles.length === 0) return [];

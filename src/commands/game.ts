@@ -44,6 +44,7 @@ import {
   reachPreview,
   dashMode,
   clearMovementState,
+  movementKey,
   pathCost,
 } from "../html/pages.js";
 import {
@@ -53,7 +54,6 @@ import {
   respondToDir,
   respondToTile,
   startAttack,
-  landDelayedAttacks,
   isValidTarget,
   type AttackStep,
 } from "../game/resolve.js";
@@ -181,12 +181,12 @@ export function gameCommand(
 
     case "confirmmove":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handleConfirmMove(game, user);
+      handleConfirmMove(game, user, full);
       break;
 
     case "cancelpath":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCancelPath(game, user);
+      handleCancelPath(game, user, full);
       break;
 
     case "viewreach":
@@ -366,6 +366,14 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
     return sendPm(user.name, "That tile is not reachable with remaining MP.");
   }
 
+  const occupied = game.entities.some(
+    (e) => e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
+  );
+  if (occupied) {
+    failAct(game, entity, "tile occupied");
+    return sendPm(user.name, "That tile is occupied.");
+  }
+
   pushSnapshot(game);
   entity.pos = pos;
   entity.movementUsed = true;
@@ -373,8 +381,8 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
     entity.dashUsed = true;
     entity.standardUsed = true;
   }
-  premoveSet.delete(entity.num);
-  clearMovementState(entity.num);
+  premoveSet.delete(movementKey(game, entity));
+  clearMovementState(game, entity);
 
   logEntry(
     game,
@@ -519,7 +527,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (ability.actionType === "Full") {
     entity.standardUsed = true;
     entity.movementUsed = true;
-    clearMovementState(entity.num);
+    clearMovementState(game, entity);
   }
   if (ability.actionType === "Trigger") entity.triggered = true;
   entity.pendingAction = {
@@ -828,26 +836,6 @@ function handleCancel(game: Game, user: User) {
   broadcastPages(game);
 }
 
-/**
- * Land any delayed attacks (queued by Delay-N clauses) that are due for the
- * entity whose turn is starting, broadcasting the landing messages. Returns
- * true when the game ended as a result so the caller can bail out.
- */
-function landQueuedDelays(game: Game, entity: Entity | null): boolean {
-  if (!entity) return false;
-  const delayMsgs = landDelayedAttacks(game, entity);
-  if (delayMsgs.length === 0) return false;
-  for (const msg of delayMsgs) {
-    send(game.room, msg);
-  }
-  const winner = checkGameOver(game);
-  if (game.phase === "ended") {
-    announceGameOver(game, winner);
-    return true;
-  }
-  return false;
-}
-
 function handleAdvanceTurn(game: Game, user: User) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can advance turns.");
@@ -857,7 +845,7 @@ function handleAdvanceTurn(game: Game, user: User) {
   if (!entity) return;
 
   // Any in-progress movement path/reach preview ends with the turn.
-  clearMovementState(entity.num);
+  clearMovementState(game, entity);
 
   pushSnapshot(game);
 
@@ -912,9 +900,6 @@ function handleAdvanceTurn(game: Game, user: User) {
     send(game.room, msg);
   }
 
-  // Delayed attacks (Delay-N) land at the start of the new turn's entity.
-  if (!result.died && landQueuedDelays(game, result.entity)) return;
-
   if (result.died || !result.entity) {
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
@@ -927,8 +912,6 @@ function handleAdvanceTurn(game: Game, user: User) {
       for (const msg of retry.messages) {
         send(game.room, msg);
       }
-      // Delayed attacks also land for the entity picked up by the retry.
-      if (!retry.died && landQueuedDelays(game, retry.entity)) return;
       if (!retry.entity) {
         const winner = checkGameOver(game);
         announceGameOver(game, winner);
@@ -1055,11 +1038,12 @@ function handlePremove(game: Game, user: User) {
     return sendPm(user.name, "You already moved this turn.");
   }
 
-  if (premoveSet.has(entity.num)) {
-    premoveSet.delete(entity.num);
+  const key = movementKey(game, entity);
+  if (premoveSet.has(key)) {
+    premoveSet.delete(key);
     send(game.room, `/me ${entity.num} back to movement view`);
   } else {
-    premoveSet.add(entity.num);
+    premoveSet.add(key);
     send(game.room, `/me ${entity.num} viewing pre-move abilities`);
   }
   broadcastPages(game);
@@ -1123,8 +1107,8 @@ function handlePassMove(game: Game, user: User) {
 
   pushSnapshot(game);
   entity.movementUsed = true;
-  premoveSet.delete(entity.num);
-  clearMovementState(entity.num);
+  premoveSet.delete(movementKey(game, entity));
+  clearMovementState(game, entity);
   logEntry(game, entity, `${entity.num} (${entity.name}) passes movement`);
   send(game.room, `/me ${entity.num} passes movement`);
   broadcastPages(game);
@@ -1139,7 +1123,11 @@ function handlePathStep(game: Game, user: User, args: string) {
   let posStr = args;
 
   const parts = args.split(",").map((s) => s.trim());
-  if (parts.length >= 2) {
+  if (
+    parts.length >= 3 ||
+    (parts.length === 2 &&
+      (isNaN(parseInt(parts[1])) || getEntity(game, parts[1])))
+  ) {
     entityName = parts[parts.length - 1];
     posStr = parts.slice(0, -1).join(",");
   }
@@ -1182,11 +1170,11 @@ function handlePathStep(game: Game, user: User, args: string) {
     return sendPm(user.name, "That tile cannot be moved onto.");
   }
   const occupied = game.entities.some(
-    (e) => e.pos[0] === pos[0] && e.pos[1] === pos[1],
+    (e) => e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
   );
   if (occupied) return sendPm(user.name, "That tile is occupied.");
 
-  const path = pathState.get(entity.num) ?? [];
+  const path = pathState.get(movementKey(game, entity)) ?? [];
   const tip = path.length > 0 ? path[path.length - 1] : entity.pos;
   if (manhattan(tip, pos) !== 1) {
     return sendPm(user.name, "You can only step to an adjacent tile.");
@@ -1202,13 +1190,20 @@ function handlePathStep(game: Game, user: User, args: string) {
     return sendPm(user.name, "That tile costs too much MP.");
   }
 
-  pathState.set(entity.num, candidate);
+  pathState.set(movementKey(game, entity), candidate);
   broadcastPages(game);
 }
 
-function handleConfirmMove(game: Game, user: User) {
+function handleConfirmMove(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
-  const entity = getCurrentEntity(game);
+
+  let entity = getCurrentEntity(game);
+  const name = args.trim();
+  if (isHost && name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    entity = named;
+  }
 
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -1224,7 +1219,7 @@ function handleConfirmMove(game: Game, user: User) {
     return sendPm(user.name, `${entity.num} already moved this turn.`);
   }
 
-  const path = pathState.get(entity.num);
+  const path = pathState.get(movementKey(game, entity));
   if (!path || path.length === 0) {
     return sendPm(
       user.name,
@@ -1237,7 +1232,7 @@ function handleConfirmMove(game: Game, user: User) {
 
   const target = path[path.length - 1];
   const occupied = game.entities.some(
-    (e) => e.pos[0] === target[0] && e.pos[1] === target[1],
+    (e) => e.curhp > 0 && e.pos[0] === target[0] && e.pos[1] === target[1],
   );
   if (occupied) {
     return sendPm(user.name, "The end tile is occupied.");
@@ -1246,7 +1241,7 @@ function handleConfirmMove(game: Game, user: User) {
   pushSnapshot(game);
   entity.pos = target;
   entity.movementUsed = true;
-  clearMovementState(entity.num);
+  clearMovementState(game, entity);
 
   const key = posToStr(target[0], target[1]);
   logEntry(game, entity, `${entity.num} (${entity.name}) moves to ${key}`);
@@ -1254,17 +1249,25 @@ function handleConfirmMove(game: Game, user: User) {
   broadcastPages(game);
 }
 
-function handleCancelPath(game: Game, user: User) {
+function handleCancelPath(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
-  const entity = getCurrentEntity(game);
+
+  let entity = getCurrentEntity(game);
+  const name = args.trim();
+  if (isHost && name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    entity = named;
+  }
 
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
     return sendPm(user.name, "It's not your turn.");
   }
 
-  pathState.delete(entity.num);
-  dashMode.delete(entity.num);
+  const key = movementKey(game, entity);
+  pathState.delete(key);
+  dashMode.delete(key);
   broadcastPages(game);
 }
 
@@ -1298,10 +1301,11 @@ function handleViewReach(game: Game, user: User, args: string) {
     );
   }
 
-  if (reachPreview.get(viewer.num) === target.num) {
-    reachPreview.delete(viewer.num);
+  const viewerKey = movementKey(game, viewer);
+  if (reachPreview.get(viewerKey) === target.num) {
+    reachPreview.delete(viewerKey);
   } else {
-    reachPreview.set(viewer.num, target.num);
+    reachPreview.set(viewerKey, target.num);
   }
   broadcastPages(game);
 }
@@ -1327,12 +1331,13 @@ function handleDashMode(game: Game, user: User) {
     );
   }
 
-  if (dashMode.has(entity.num)) {
-    dashMode.delete(entity.num);
+  const key = movementKey(game, entity);
+  if (dashMode.has(key)) {
+    dashMode.delete(key);
     send(game.room, `/me ${entity.num} back to normal movement`);
   } else {
-    pathState.delete(entity.num);
-    dashMode.add(entity.num);
+    pathState.delete(key);
+    dashMode.add(key);
     send(game.room, `/me ${entity.num} entering dash mode`);
   }
   broadcastPages(game);

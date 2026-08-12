@@ -62,6 +62,7 @@ function makeGame(opts: { entities?: Entity[]; mode?: string } = {}): Game {
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map,
     mapName: "test",

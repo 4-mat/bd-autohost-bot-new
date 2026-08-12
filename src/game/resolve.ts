@@ -256,7 +256,7 @@ function* resolveAttackFlow(
     hits: hitCount,
     isAoE,
     targets: autoTargets,
-  } = prepareTargeting(game, user, active);
+  } = prepareTargeting(game, user, active, dir);
   let targets = autoTargets;
   if (targets.length === 0) {
     const candidates = getTargetCandidates(game, user, active);
@@ -608,6 +608,7 @@ function prepareTargeting(
   game: Game,
   user: Entity,
   ability: AbilityData,
+  dir?: string,
 ): { hits: number; isAoE: boolean; targets: Entity[] } {
   const hits = parseMultiHit(ability);
   const range = ability.range.toLowerCase().trim();
@@ -622,7 +623,13 @@ function prepareTargeting(
 
   let targets: Entity[] = [];
   if (isAoE) {
-    targets = getAoETargets(game, user, ability.range, ability.targetGroup);
+    targets = getAoETargets(
+      game,
+      user,
+      ability.range,
+      ability.targetGroup,
+      dir,
+    );
   }
   return { hits, isAoE, targets };
 }
@@ -665,7 +672,11 @@ function findTargets(
   });
 }
 
-export function isValidTarget(user: Entity, target: Entity, group: string): boolean {
+export function isValidTarget(
+  user: Entity,
+  target: Entity,
+  group: string,
+): boolean {
   if (target.curhp <= 0) return false;
   const g = group.toLowerCase();
 
