@@ -43,6 +43,8 @@ function makeEntity(
 function makeGame(opts: {
   entities?: Entity[];
   votes?: Record<string, string>;
+  voteOpen?: boolean;
+  mode?: string;
   modeChosen?: boolean;
 } = {}): Game {
   const size = 4;
@@ -65,7 +67,7 @@ function makeGame(opts: {
     round: 1,
     log: [],
     snapshots: [],
-    mode: "FFA",
+    mode: opts.mode ?? "FFA",
     modeChosen: opts.modeChosen ?? false,
     phase: "setup",
     started: false,
@@ -75,7 +77,7 @@ function makeGame(opts: {
     toasts: [],
     signupsOpen: false,
     votes: opts.votes ?? {},
-    voteOpen: false,
+    voteOpen: opts.voteOpen ?? false,
     voteRunoff: null,
   };
 }
@@ -83,51 +85,59 @@ function makeGame(opts: {
 describe("host setup panel", () => {
   beforeEach(() => games.clear());
 
-  it("applies the vote winner instead of hardcoded FFA", () => {
-    const game = makeGame({
-      votes: { p1: "2v2", p2: "2v2" },
-      modeChosen: false,
-    });
+  it("ends the vote (applying the leader) instead of %setgame while voting is open", () => {
+    const game = makeGame({ votes: { p1: "2v2", p2: "2v2" }, voteOpen: true });
     const html = buildHostPage(game);
-    // The Set Game button should carry the winning mode, not FFA.
-    expect(html).toContain('%setgame 2V2');
-    expect(html).toContain("(vote winner)");
-    // No Start button yet: mode not chosen.
-    expect(html).not.toContain("%start");
+    // The button should end the vote and label the winning leader.
+    expect(html).toContain('value="%endvote"');
+    expect(html).toContain("End Vote: Set 2V2");
+    // No plain %setgame button while a vote is in progress.
+    expect(html).not.toContain('value="%setgame');
   });
 
-  it("falls back to FFA when there are no votes", () => {
-    const game = makeGame({ votes: {}, modeChosen: false });
-    const html = buildHostPage(game);
-    expect(html).toContain('%setgame FFA');
-    expect(html).not.toContain("(vote winner)");
-  });
-
-  it("falls back to the already-chosen mode when a vote leader is tied", () => {
+  it("ends the vote without claiming a leader when tied", () => {
     const game = makeGame({
       votes: { p1: "ffa", p2: "ntr" },
-      modeChosen: true,
-      entities: [
-        makeEntity({ num: "P1", name: "Alice", pos: [1, 1], team: 0 }),
-        makeEntity({ num: "P2", name: "Bob", pos: [2, 2], team: 1 }),
-        makeEntity({ num: "P3", name: "Carol", pos: [2, 1], team: 0 }),
-      ],
+      voteOpen: true,
     });
     const html = buildHostPage(game);
-    // Tie → no "vote winner" tag; keep the chosen mode as the target.
-    expect(html).not.toContain("(vote winner)");
-    expect(html).toContain('%setgame FFA');
+    expect(html).toContain('value="%endvote"');
+    // Button label is HTML-escaped (& -> &amp;) by the page renderer.
+    expect(html).toContain("End Vote &amp; Apply Winner");
+  });
+
+  it("falls back to %setgame FFA when no vote is open and no mode chosen", () => {
+    const game = makeGame({ votes: {}, voteOpen: false, modeChosen: false });
+    const html = buildHostPage(game);
+    expect(html).toContain('value="%setgame FFA"');
+    expect(html).not.toContain("End Vote");
+  });
+
+  it("keeps the chosen mode on the Set Game button once voting closed", () => {
+    const game = makeGame({
+      votes: {},
+      voteOpen: false,
+      mode: "NTR",
+      modeChosen: true,
+    });
+    const html = buildHostPage(game);
+    expect(html).toContain('value="%setgame NTR"');
   });
 
   it("shows a Start button once the mode is chosen (after Set Game)", () => {
-    const game = makeGame({ votes: { p1: "ffa" }, modeChosen: true });
+    const game = makeGame({
+      votes: {},
+      voteOpen: false,
+      mode: "FFA",
+      modeChosen: true,
+    });
     const html = buildHostPage(game);
-    expect(html).toContain("%start");
+    expect(html).toContain('value="%start"');
     expect(html).toContain("Start Game");
   });
 
   it("hides the whole setup panel once the game has started", () => {
-    const game = makeGame({ votes: { p1: "ffa" }, modeChosen: true });
+    const game = makeGame({ voteOpen: false, modeChosen: true });
     game.started = true;
     game.phase = "playing";
     const html = buildHostPage(game);
