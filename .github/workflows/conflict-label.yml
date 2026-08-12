@@ -1,0 +1,73 @@
+name: Merge conflict labeler
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  # No cancel-in-progress: a canceled scheduled pass would leave PRs unlabeled
+  # until the next run. Every pass re-checks ALL open PRs, and each PR edit is
+  # idempotent, so concurrent runs are safe.
+  group: conflict-labeler
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR heads + base branches
+        run: |
+          git fetch origin "+refs/pull/*/head:refs/remotes/origin/pr/*"
+          git fetch origin "+refs/heads/*:refs/remotes/origin/*"
+
+      - name: Ensure the label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "merge conflict" --color b60205 --force >/dev/null 2>&1 || true
+
+      - name: Label conflicting PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            PRS=$(gh pr list --state open --limit 100 --json number,baseRefName --jq '.[] | "\(.number) \(.baseRefName)"')
+          else
+            PRS="${{ github.event.pull_request.number }} ${{ github.event.pull_request.base.ref }}"
+          fi
+
+          while read -r N BASE; do
+            [ -z "$N" ] && continue
+            # Skip PRs whose head/base refs we don't have locally (e.g. deleted
+            # branches) - merging is not computable, so leave the label alone.
+            if ! git rev-parse --verify -q "refs/remotes/origin/pr/$N" >/dev/null ||
+               ! git rev-parse --verify -q "refs/remotes/origin/$BASE" >/dev/null; then
+              echo "PR #$N: refs missing, skipping"
+              continue
+            fi
+            # git merge-tree --write-tree exits 1 when the two branches conflict,
+            # 0 when they merge cleanly. Deterministic - no reliance on GitHub's
+            # lazily-computed "mergeable" field. Anything else is an error, so
+            # leave the label alone rather than guessing.
+            git merge-tree --write-tree --name-only \
+              "refs/remotes/origin/$BASE" "refs/remotes/origin/pr/$N" >/dev/null 2>&1
+            RC=$?
+            if [ "$RC" -eq 0 ]; then
+              gh pr edit "$N" --remove-label "merge conflict" >/dev/null 2>&1 || true
+              echo "PR #$N: clean"
+            elif [ "$RC" -eq 1 ]; then
+              gh pr edit "$N" --add-label "merge conflict" >/dev/null 2>&1 || true
+              echo "PR #$N: CONFLICT"
+            else
+              echo "PR #$N: merge-tree error ($RC), skipping"
+            fi
+          done <<< "$PRS"
