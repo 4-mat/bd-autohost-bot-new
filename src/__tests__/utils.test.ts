@@ -54,6 +54,37 @@ function makeFakeSocketCbError() {
   return { sent, open: () => (open = true) };
 }
 
+// A fake ws whose send callback stays pending until the test fires it,
+// so a test can order a reconnect (resumeSending) before the in-flight
+// send reports its failure -- the exact race that used to strand the
+// retained queue head.
+function makeFakeSocketDeferred() {
+  const sent: string[] = [];
+  let open = false;
+  let pendingCb: ((err?: Error) => void) | null = null;
+  setWs({
+    send: (msg: string, cb?: (err?: Error) => void) => {
+      if (!open) {
+        pendingCb = cb ?? null;
+        return;
+      }
+      sent.push(msg);
+      cb?.();
+    },
+  });
+  return {
+    sent,
+    open: () => {
+      open = true;
+    },
+    failPending: (err?: Error) => {
+      const cb = pendingCb;
+      pendingCb = null;
+      cb?.(err);
+    },
+  };
+}
+
 describe("send queue", () => {
   it("keeps a message queued when the socket is down, then flushes on resume", async () => {
     const sock = makeFakeSocket();
@@ -95,6 +126,24 @@ describe("send queue", () => {
 
     sock.open();
     resumeSending();
+    await new Promise((r) => setTimeout(r, 500));
+    expect(sock.sent).toEqual(["|hello"]);
+  });
+
+  it("restarts draining when a late send-callback error raced a reconnect", async () => {
+    const sock = makeFakeSocketDeferred();
+
+    send("battledome", "hello");
+    // The send is in flight: ws.send() was called but its callback is
+    // still pending (sending === true).
+
+    sock.open();
+    resumeSending();
+    // resumeSending() is a no-op here (a send is in flight), but the late
+    // callback error below must still restart the drain so the retained
+    // head is not stranded.
+
+    sock.failPending(new Error("socket dropped mid-flight"));
     await new Promise((r) => setTimeout(r, 500));
     expect(sock.sent).toEqual(["|hello"]);
   });

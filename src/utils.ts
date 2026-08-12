@@ -13,6 +13,11 @@ export function capitalize(s: string): string {
 const sendQueue: Array<{ room: string; msg: string }> = [];
 let sending = false;
 let drainTimer: ReturnType<typeof setTimeout> | null = null;
+// True when resumeSending() ran while a send was still in flight (the
+// socket reconnected during the send). The error callback uses it to
+// restart the drain, because the resumeSending() call itself was a no-op
+// at the time (sending was true).
+let resumeWhileSending = false;
 
 export function send(room: string, msg: string) {
   sendQueue.push({ room, msg });
@@ -31,14 +36,21 @@ function drain() {
   const onSent = (err?: Error) => {
     if (err) {
       // Asynchronous send failure (socket dropped mid-flight): keep the
-      // message at the front of the queue and stop draining. resumeSending()
-      // (called from the WebSocket open handler) retries once the socket is
-      // back.
+      // message at the front of the queue and stop draining. If the socket
+      // reconnected while this send was in flight, resumeSending() was a
+      // no-op (sending was still true), so restart the drain now that the
+      // send is done; otherwise resumeSending() (called from the WebSocket
+      // open handler) retries once the socket is back.
       sending = false;
       drainTimer = null;
+      if (resumeWhileSending) {
+        resumeWhileSending = false;
+        drain();
+      }
       return;
     }
     sendQueue.shift();
+    resumeWhileSending = false;
     drainTimer = setTimeout(drain, 400);
   };
   try {
@@ -53,7 +65,13 @@ function drain() {
 
 /** Resume draining the outbound queue once the WebSocket (re)opens. */
 export function resumeSending() {
-  if (!sending) drain();
+  if (!sending) {
+    drain();
+  } else {
+    // A send is in flight; remember that the socket (re)opened so the
+    // error callback can restart the drain after this send completes.
+    resumeWhileSending = true;
+  }
 }
 
 /**
@@ -65,6 +83,7 @@ export function resetSendQueueForTests() {
   drainTimer = null;
   sendQueue.length = 0;
   sending = false;
+  resumeWhileSending = false;
 }
 
 export function sendPm(user: string, msg: string) {
