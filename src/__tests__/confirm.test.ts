@@ -11,6 +11,7 @@ import {
   type AbilityData,
   Terrain,
 } from "../game/state.js";
+import type { GameVersion } from "../data/index.js";
 
 setWs({ send() {} });
 
@@ -49,7 +50,9 @@ function makeEntity(
   };
 }
 
-function makeGame(opts: { entities?: Entity[]; mode?: string } = {}): Game {
+function makeGame(
+  opts: { entities?: Entity[]; mode?: string; version?: GameVersion } = {},
+): Game {
   const size = 10;
   const map = Array.from({ length: size }, () =>
     Array(size).fill(Terrain.Normal),
@@ -71,6 +74,7 @@ function makeGame(opts: { entities?: Entity[]; mode?: string } = {}): Game {
     log: [],
     snapshots: [],
     mode: opts.mode ?? "ffa",
+    version: opts.version ?? "4.4",
     phase: "playing",
     started: true,
     kills: {},
