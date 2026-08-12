@@ -1487,4 +1487,45 @@ describe("stat-mod subject routing (#101)", () => {
     expect(target.buffs[0]).toEqual({ stat: "atk", amount: 3, rounds: 1 });
     expect(user.buffs).toHaveLength(0);
   });
+
+  it("Razor Rust regression: unsigned 'Target: 3 MP/1' routes to the target", () => {
+    // Real data (src/data/index.ts:3105): Razor Rust's effect is
+    // "Target: 3 MP/1. Apex: inflict 5 Cripple/1." -- "Target: N STAT" is
+    // written WITHOUT a sign, which the marker regexes used to require.
+    // Before this fix the +3 MP buff landed on the USER instead of the
+    // target.
+    const ability = makeAbility({
+      name: "Razor Rust",
+      range: "Pierce 4",
+      effect: "Target: 3 MP/1. Apex: inflict 5 Cripple/1.",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 9], team: 1 });
+    const game = makeGame({ entities: [user, target] });
+
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+
+    const mpBuff = target.buffs.find((b) => b.stat === "mp");
+    expect(mpBuff).toBeDefined();
+    expect(user.buffs.find((b) => b.stat === "mp")).toBeUndefined();
+    // The Apex clause still works (target at max Pierce 4 range).
+    expect(target.statuses.find((s) => s.name === "Cripple")).toBeDefined();
+  });
+
+  it("unsigned 'Target:' parses with subject target", () => {
+    const effects = parseEffects("Target: 3 MP/1");
+    expect(effects).toHaveLength(1);
+    expect(effects[0]).toMatchObject({
+      type: "buff",
+      stat: "mp",
+      subject: "target",
+    });
+  });
+
+  it("'Each target's next ...' does not crash", () => {
+    const effects = parseEffects(
+      "Each target's next Standard/Full on user: -1 dice",
+    );
+    expect(Array.isArray(effects)).toBe(true);
+  });
 });

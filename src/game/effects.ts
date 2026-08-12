@@ -552,9 +552,14 @@ function parseStatMods(lower: string): Effect[] {
   // +5 damage") stays a self-buff.
   let subject: "self" | "target" = "self";
   if (/\binflict/.test(lower)) subject = "target";
-  else if (/^targets?\s*:?\s*[-+]\s*\d/.test(lower)) subject = "target";
-  else if (/^targets?\s+[-+]\s*\d/.test(lower)) subject = "target";
+  // "Target: N STAT" clauses may be unsigned (e.g. Razor Rust's
+  // "Target: 3 MP/1" = the target only has 3 MP). Accept an optional
+  // +/- sign so those route to the target, not the user.
+  else if (/^targets?\s*:?\s*[-+]?\s*\d/.test(lower)) subject = "target";
+  else if (/^targets?\s+[-+]?\s*\d/.test(lower)) subject = "target";
   else if (/^foes?\s+in\b/.test(lower)) subject = "target";
+  // "Each target's ..." clauses are also target-directed.
+  else if (/^each\s+target/.test(lower)) subject = "target";
 
   const statRegex =
     /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range)\s*(?:\/\s*(\d+))?/g;
