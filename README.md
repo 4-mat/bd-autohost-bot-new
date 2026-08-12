@@ -36,49 +36,13 @@ Local mode can **save** maps back to `maps/` directly (as JSON) and always lists
 
 ---
 
-## Local Test Client
-
-A built-in testing environment lets you test commands and HTML pages without connecting the bot to Pokemon Showdown.
-
-Start it with:
-
-```bash
-npm run testapp
-```
-
-Then open:
-
-```text
-http://localhost:4000
-```
-
-### Features
-
-- Pokémon Showdown–style chat panel
-- Live GUI preview
-- Supports bot commands
-- No network connection to PS required
-
-### Example Commands
-
-```text
-%host
-
-%addp Alice
-
-%addp Bob
-
-%start
-```
-
----
-
 ## Ability Editor (GitHub Pages)
 
-A browser GUI for editing the bot's classes, weapons and abilities — plus
-**temporary custom test classes/weapons** that never touch the bot.
+The ability editor is a browser GUI for editing classes, weapons, and abilities. It also supports temporary custom test classes and weapons. Custom data is stored in the browser and is not written to the bot.
 
-- **Public demo** — [https://4-mat.github.io/bd-autohost-bot-new/ability-editor/](https://4-mat.github.io/bd-autohost-bot-new/ability-editor/): edits stay in your browser; **Propose to Bot** opens a GitHub issue that a bot turns into a reviewed PR.
-- **Local mode** — `npm run editor` → http://localhost:4700; edits mirror live to the test client, and **Save to Bot** rewrites `src/data/index.ts` with a minimal diff.
-- Full workflow: [`abilityeditor/README.md`](abilityeditor/README.md).
+Two modes are available:
 
+- **Public demo** ([https://4-mat.github.io/bd-autohost-bot-new/ability-editor/](https://4-mat.github.io/bd-autohost-bot-new/ability-editor/)): edits stay in the browser. **Propose to Bot** creates a GitHub issue that a bot converts into a reviewed pull request.
+- **Local mode** (`npm run editor`, http://localhost:4700): edits are mirrored to the test client. **Save to Bot** writes changes to `src/data/index.ts` with a minimal diff.
+
+For the full workflow, see [`abilityeditor/README.md`](abilityeditor/README.md).
