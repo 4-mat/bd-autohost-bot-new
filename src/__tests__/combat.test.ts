@@ -768,6 +768,20 @@ describe("eva43", () => {
     expect(eva43(e, "Magical")).toBe(6);
   });
 
+  it("caps base + EVA buffs at 9 before poison", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 90 });
+    e.buffs.push({ stat: "eva", amount: 3, rounds: 1 });
+    expect(eva43(e, "Physical")).toBe(9);
+    e.statuses.push({
+      name: "Poison",
+      damage: 0,
+      rounds: 2,
+      maxRounds: 2,
+      removable: true,
+    });
+    expect(eva43(e, "Physical")).toBe(7);
+  });
+
   it("applies DEF buffs to the underlying defense", () => {
     const e = makeEntity({ num: "P1", name: "Alice", pd: 25 });
     e.buffs.push({ stat: "def", amount: 20, rounds: 1 });

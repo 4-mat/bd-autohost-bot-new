@@ -80,7 +80,7 @@ export function eva43(entity: Entity, damageType: string): number {
     .filter((b) => b.stat === "eva")
     .reduce((sum, b) => sum + b.amount, 0);
   const pen = hasStatus(entity, "poison") ? -2 : 0;
-  return Math.max(0, Math.min(9, Math.floor(base / 10)) + bonus + pen);
+  return Math.max(0, Math.min(9, Math.floor(base / 10) + bonus) + pen);
 }
 
 export function getEffectiveStat(entity: Entity, stat: string): number {
