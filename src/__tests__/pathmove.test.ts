@@ -163,6 +163,18 @@ describe("interactive movement pathing", () => {
     expect(pathState.get(key1(game))).toEqual([[0, 1]]);
   });
 
+  it("clicking a tile two steps back truncates even though not adjacent to tip", () => {
+    const game = freshGame();
+
+    gameCommand(room, alice, "pathstep", "a", "2,P1");
+    gameCommand(room, alice, "pathstep", "b", "2,P1");
+    gameCommand(room, alice, "pathstep", "c", "2,P1");
+    expect(pathState.get(key1(game))?.length).toBe(3);
+    // Tip is [2,1], clicking [0,1] (manhattan 2) shortens the whole path.
+    gameCommand(room, alice, "pathstep", "a", "2,P1");
+    expect(pathState.get(key1(game))).toEqual([]);
+  });
+
   it("%cancelpath clears the path", () => {
     const game = freshGame();
 

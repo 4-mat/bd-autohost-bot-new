@@ -1175,16 +1175,22 @@ function handlePathStep(game: Game, user: User, args: string) {
   if (occupied) return sendPm(user.name, "That tile is occupied.");
 
   const path = pathState.get(movementKey(game, entity)) ?? [];
+  const key = posToStr(pos[0], pos[1]);
+  const idx = path.findIndex(([r, c]) => posToStr(r, c) === key);
+  // Clicking a tile already in the path truncates the path there (lets the
+  // player shorten it) regardless of adjacency. Otherwise it must be adjacent
+  // to the current tip to be appended as the next step.
+  if (idx >= 0) {
+    const candidate = path.slice(0, idx);
+    pathState.set(movementKey(game, entity), candidate);
+    broadcastPages(game);
+    return;
+  }
   const tip = path.length > 0 ? path[path.length - 1] : entity.pos;
   if (manhattan(tip, pos) !== 1) {
     return sendPm(user.name, "You can only step to an adjacent tile.");
   }
-
-  const key = posToStr(pos[0], pos[1]);
-  const idx = path.findIndex(([r, c]) => posToStr(r, c) === key);
-  // Clicking a tile already in the path truncates the path there (lets the
-  // player shorten it). Otherwise append it as the next step.
-  const candidate = idx >= 0 ? path.slice(0, idx) : [...path, pos];
+  const candidate = [...path, pos];
 
   if (pathCost(game, candidate) > getEffectiveMp(entity)) {
     return sendPm(user.name, "That tile costs too much MP.");
