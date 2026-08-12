@@ -120,22 +120,32 @@ export function sendPm(user: string, msg: string) {
   send(`pm-${toId(user)}`, `|/pm ${user}, ${msg}`);
 }
 
-const PM_CHUNK_LIMIT = 900;
-export function sendPmChunks(user: string, msg: string) {
-  if (msg.length <= PM_CHUNK_LIMIT) {
-    sendPm(user, msg);
-    return;
-  }
+// Showdown caps a single message at 1000 chars (server MAX_MESSAGE_LENGTH).
+// Chunk well under it so the "/pm user, " command never pushes a chunk over
+// the limit; older Showdown forks used 300, so the size is overridable via
+// PM_CHUNK_LIMIT.
+const PM_CHUNK_LIMIT = Math.max(1, Number(process.env.PM_CHUNK_LIMIT) || 950);
+export function splitPmChunks(msg: string, limit = PM_CHUNK_LIMIT): string[] {
+  if (msg.length <= limit) return [msg];
+  const chunks: string[] = [];
   let start = 0;
   while (start < msg.length) {
-    let end = start + PM_CHUNK_LIMIT;
+    let end = start + limit;
     if (end < msg.length) {
-      const newline = msg.lastIndexOf("\n", end);
-      if (newline > start) end = newline + 1;
+      // Prefer breaking at a line boundary, then a space, so words are never
+      // split mid-chunk. Fall back to a hard cut for unbroken long runs.
+      let cut = msg.lastIndexOf("\n", end);
+      if (cut <= start) cut = msg.lastIndexOf(" ", end);
+      if (cut > start) end = cut + 1;
     }
-    sendPm(user, msg.slice(start, end).trim());
+    const chunk = msg.slice(start, end).trim();
+    if (chunk) chunks.push(chunk);
     start = end;
   }
+  return chunks;
+}
+export function sendPmChunks(user: string, msg: string) {
+  for (const chunk of splitPmChunks(msg)) sendPm(user, chunk);
 }
 
 export function splitMessage(msg: string) {
