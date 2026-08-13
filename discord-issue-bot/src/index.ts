@@ -464,6 +464,26 @@ async function handleMessage(message: Message): Promise<void> {
       );
       return;
     }
+    // Validate before the rate-limit check so malformed proposals don't
+    // consume the cooldown (mirrors the slash-command path).
+    const kindNorm = normalizeKind(kind);
+    if (!kindNorm) {
+      await message.reply("❌ `kind` must be class or weapon.");
+      return;
+    }
+    const modeNorm = normalizeMode(mode);
+    if (!modeNorm) {
+      await message.reply("❌ `mode` must be add or update.");
+      return;
+    }
+    try {
+      parseEntryJson(entryRaw);
+    } catch {
+      await message.reply(
+        '❌ The `entry` JSON didn\'t parse or isn\'t an object. Use valid JSON, e.g. {"stats":{"hp":"80"},"abilities":[]}',
+      );
+      return;
+    }
     try {
       if (!acquireRateLimit(message.author.id)) {
         await message.reply("⏳ Please wait a few seconds between commands.");
@@ -472,8 +492,8 @@ async function handleMessage(message: Message): Promise<void> {
       const url = await createProposalIssue(
         message.author.id,
         name,
-        kind,
-        mode,
+        kindNorm,
+        modeNorm,
         entryRaw,
       );
       await message.reply(
