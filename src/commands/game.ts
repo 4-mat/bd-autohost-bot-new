@@ -114,6 +114,7 @@ const GAME_CMDS: Record<string, GameCmd> = {
   endturn: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   next: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   back: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
+  undo: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
   r: (_g, u, args) => handleRoll(u.name, args),
   roll: (_g, u, args) => handleRoll(u.name, args),
   dice: (_g, u, args) => handleRoll(u.name, args),

@@ -1463,6 +1463,10 @@ function createTabs(tabs) {
 let ws;
 const nickKey = 'bdUser';
 let nick = '';
+// Only render the server's chat history once per page load. Reconnects
+// re-send the full CHAT_LOG, so without this flag every reconnect
+// duplicates the whole backlog on top of the already-rendered chat.
+let historyApplied = false;
 
 function loadNick() {
   try { return localStorage.getItem(nickKey) || ''; } catch (e) { return ''; }
@@ -1518,6 +1522,8 @@ function connect() {
   const msg = JSON.parse(e.data);
 
   if (msg.type === 'history') {
+    if (historyApplied) return; // chat already rendered; reconnect re-sends it
+    historyApplied = true;
     if (msg.lines.length > 0) {
       msg.lines.forEach((line) => {
         if (line.type === 'chat' || line.type === 'quote') addLine(line.type, withSignupLink(line.text));
