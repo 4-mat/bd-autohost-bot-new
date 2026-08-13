@@ -10,6 +10,7 @@ import {
   parseEffects,
   applyEffects,
   applyEffectStream,
+  extractCombatMetadata,
   evaluateCondition,
   isApexActive,
   isThirstActive,
@@ -1454,6 +1455,24 @@ describe("stat-mod subject routing (#101)", () => {
     const dmgDebuff = target.buffs.find((b) => b.stat === "dmg");
     expect(dmgDebuff).toBeDefined();
     expect(user.buffs.find((b) => b.stat === "dmg")).toBeUndefined();
+  });
+
+  it("Sandstorm: target-directed -25% damage does not reduce the user's outgoing damage", () => {
+    const effects = parseEffects(
+      "Targets: -25% damage on next Standard/Full",
+    );
+    expect(effects[0]).toMatchObject({ type: "debuff", subject: "target" });
+    // The -25% belongs to the target's next attack, so it must not be
+    // folded into the user's combat metadata.
+    expect(extractCombatMetadata(effects).damagePercent).toBe(0);
+  });
+
+  it("'Target gains +N STAT' clauses route to the target", () => {
+    const effects = parseEffects("Target gains +4 DMG/1 or +4 DEF/1");
+    expect(effects.length).toBeGreaterThan(0);
+    for (const e of effects) {
+      expect(e.subject).toBe("target");
+    }
   });
 
   it("condition mention of the target does not flip a self-buff", () => {

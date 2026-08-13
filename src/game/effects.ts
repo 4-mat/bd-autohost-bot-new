@@ -560,6 +560,12 @@ function parseStatMods(lower: string): Effect[] {
   else if (/^foes?\s+in\b/.test(lower)) subject = "target";
   // "Each target's ..." clauses are also target-directed.
   else if (/^each\s+target/.test(lower)) subject = "target";
+  // "Target gains +4 DMG/1" / "Healed targets gain +1 EVA/1" -- the
+  // target is the recipient. "Targets at full HP: +5 damage" (a
+  // condition) stays a self-buff because it uses "at", not "gain".
+  else if (/targets?\s+gains?\b/.test(lower)) subject = "target";
+  // "Next Standard/Full on each target: +2 ACC" -- recipient is target.
+  else if (/on each target/.test(lower)) subject = "target";
 
   const statRegex =
     /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range|dice faces)\s*(?:\/\s*(\d+))?/g;
@@ -1827,8 +1833,10 @@ export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
       // buff/debuff still lands on entity.buffs (self-buffs on the
       // user, target debuffs on the target via `subject`) so legacy
       // code that scans entity.buffs for damage modifiers keeps
-      // working too.
-      if (e.stat === "dmg") {
+      // working too. Target-directed modifiers ("Targets: -25% damage")
+      // are the target's own outgoing-damage modifiers, not the user's,
+      // so they must NOT be folded into the user's metadata here.
+      if (e.stat === "dmg" && e.subject !== "target") {
         // parseStatMods bakes the sign into percent / amount, so a
         // debuff for "-10% damage" arrives here with percent = -10.
         if (typeof e.percent === "number") {

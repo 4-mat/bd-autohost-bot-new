@@ -380,8 +380,13 @@ function* resolveAttackFlow(
   // TARGET, not a self-buff for the user -- parseStatMods defaults "gain"
   // to subject "self" because it has no ability context, so re-route it
   // here. Foe-targeted abilities keep the user as the "gain" recipient
-  // (Blitz, Point-in-Line, ...).
-  if (/(^| )(allies|ally|any)/i.test(ability.targetGroup)) {
+  // (Blitz, Point-in-Line, ...). Only exclusively-friendly groups reroute:
+  // "Any" / "Foe or Ally" / "Self, Foes, Allies" can select a foe, and a
+  // foe would then receive the buff instead of the user.
+  if (
+    !/(^| )foe/i.test(ability.targetGroup) &&
+    /(^| )(allies|ally)/i.test(ability.targetGroup)
+  ) {
     for (const e of effects) {
       if (
         (e.type === "buff" || e.type === "debuff") &&
