@@ -71,6 +71,17 @@ export function terrainStatBonus(
   }
   return 0;
 }
+
+// BD 4.3 evasion: physical uses PE (PD/10), magical uses ME (MD/10), max 9.
+export function eva43(entity: Entity, damageType: string): number {
+  const base =
+    damageType === "Physical"
+      ? getEffectiveStat(entity, "pd")
+      : getEffectiveStat(entity, "md");
+  const pen = hasStatus(entity, "poison") ? -2 : 0;
+  return Math.max(0, Math.min(9, Math.floor(base / 10) + pen));
+}
+
 export function getEffectiveStat(entity: Entity, stat: string): number {
   let base = 0;
   switch (stat) {
@@ -228,8 +239,37 @@ function* resolveAttackFlow(
     }
   }
 
+  // --- Variant choice for damageType "Varies" ---
+  let active = ability;
+  if (ability.damageType === "Varies") {
+    if (!ability.variants?.length) {
+      result.messages.push(
+        `${user.num} uses ${ability.name} but it has no damage variants.`,
+      );
+      return result;
+    }
+    const variantId = yield {
+      kind: "selection",
+      message: `Choose the type of ${ability.name}`,
+      options: ability.variants.map((v) => ({ id: v.id, label: v.label })),
+    };
+    const variant = ability.variants.find((v) => v.id === variantId);
+    if (!variant) {
+      result.messages.push(
+        `${user.num} cancels ${ability.name}: unknown variant.`,
+      );
+      return result;
+    }
+    active = {
+      ...ability,
+      damageType: variant.damageType,
+      range: variant.range ?? ability.range,
+      effect: variant.effect ?? ability.effect,
+    };
+  }
+
   // --- Direction prompt for AoE abilities ---
-  const needsDir = needsDirection(ability);
+  const needsDir = needsDirection(active);
   let dir = user.pendingAction?.direction;
   if (needsDir && !dir) {
     const dirs = getDirectionCandidates();
@@ -245,14 +285,14 @@ function* resolveAttackFlow(
     hits: hitCount,
     isAoE,
     targets: autoTargets,
-  } = prepareTargeting(game, user, ability);
+  } = prepareTargeting(game, user, active);
   let targets = autoTargets;
   if (targets.length === 0) {
-    const candidates = getTargetCandidates(game, user, ability);
+    const candidates = getTargetCandidates(game, user, active);
 
     if (candidates.length === 0) {
       result.messages.push(
-        `${user.num} uses ${ability.name} but no valid targets found.`,
+        `${user.num} uses ${active.name} but no valid targets found.`,
       );
       return result;
     }
@@ -261,31 +301,31 @@ function* resolveAttackFlow(
       initialTarget ??
       (yield {
         kind: "target",
-        message: `Choose a target for ${ability.name}`,
+        message: `Choose a target for ${active.name}`,
         candidates,
       });
 
-    targets = findTargets(game, user, ability, targetRef);
+    targets = findTargets(game, user, active, targetRef);
 
     if (targets.length === 0) {
       result.messages.push(
-        `${user.num} uses ${ability.name} but no valid targets found.`,
+        `${user.num} uses ${active.name} but no valid targets found.`,
       );
       return result;
     }
   }
 
   const targetNames = targets.map((t) => t.num).join(", ");
-  const rollStr = ability.roll ? ` ${ability.roll}` : "";
-  const actionTypeStr = ability.actionType === "Reaction" ? " (Reaction)" : "";
+  const rollStr = active.roll ? ` ${active.roll}` : "";
+  const actionTypeStr = active.actionType === "Reaction" ? " (Reaction)" : "";
   result.messages.push(
-    `/me ${ability.name} @ ${targetNames}, MR ${ability.mr},${rollStr}${actionTypeStr}`,
+    `/me ${active.name} @ ${targetNames}, MR ${active.mr},${rollStr}${actionTypeStr}`,
   );
 
   const isAttack =
-    ability.damageType === "Physical" || ability.damageType === "Magical";
-  const isHeal = ability.effect.toLowerCase().includes("heal") && !isAttack;
-  const pushPullResult = parsePushPull(ability);
+    active.damageType === "Physical" || active.damageType === "Magical";
+  const isHeal = active.effect.toLowerCase().includes("heal") && !isAttack;
+  const pushPullResult = parsePushPull(active);
 
   // Combat metadata walks the whole effect tree once for `Multi-Hit: N`,
   // `+N% damage`, `+N DMG`, and `Ignores …` clauses. The base hit count
@@ -293,7 +333,7 @@ function* resolveAttackFlow(
   // parseMultiHit(); meta.additionalHits adds the effect-driven extra hits
   // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
   // effect still rolls the highest of the two.
-  const effects = parseEffects(ability.effect);
+  const effects = parseEffects(active.effect);
   const combat = extractCombatMetadata(effects);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
@@ -306,7 +346,7 @@ function* resolveAttackFlow(
         const singleResult: ResolutionResult = yield* resolveSingleTarget(
           game,
           user,
-          ability,
+          active,
           target,
           combat,
           label,
@@ -327,13 +367,13 @@ function* resolveAttackFlow(
         }
       }
     } else if (isHeal) {
-      const healResult = resolveHeal(game, user, ability, target);
+      const healResult = resolveHeal(game, user, active, target);
       result.messages.push(...healResult.messages);
     } else {
       const statusResult: ResolutionResult = yield* resolveNonDamaging(
         game,
         user,
-        ability,
+        active,
         target,
       );
       result.messages.push(...statusResult.messages);
@@ -342,16 +382,16 @@ function* resolveAttackFlow(
   }
 
   if (isAttack && !isAoE && targets.length > 0) {
-    const splashResult = resolveSplash(game, user, ability, targets[0], combat);
+    const splashResult = resolveSplash(game, user, active, targets[0], combat);
     result.messages.push(...splashResult.messages);
     result.deaths.push(...splashResult.deaths);
   }
 
   // --- After Resolving (cooldowns, use tracking, win check) ---
-  setCooldown(user, ability);
-  const { uses } = parseFrequency(ability.frequency);
-  if (ability.maxUses ?? uses) {
-    user.usesUsed[ability.name] = (user.usesUsed[ability.name] ?? 0) + 1;
+  setCooldown(user, active);
+  const { uses } = parseFrequency(active.frequency);
+  if (active.maxUses ?? uses) {
+    user.usesUsed[active.name] = (user.usesUsed[active.name] ?? 0) + 1;
   }
   // Bug fix carried over: check win condition once after all deaths this
   // action, not once per death (was producing duplicate "Game over!" lines
@@ -654,22 +694,41 @@ function findTargets(
   });
 }
 
-export function isValidTarget(user: Entity, target: Entity, group: string): boolean {
+export function isValidTarget(
+  user: Entity,
+  target: Entity,
+  group: string,
+): boolean {
   if (target.curhp <= 0) return false;
   const g = group.toLowerCase();
+  // FFA / no-team games put everyone on team 0: "Foe" means anyone but
+  // self, "Ally" targets nobody, and ally-groups resolve to self only.
+  // Mirrors the GUI candidate filter in pages.ts so the direct-target
+  // path agrees with the AoE path (isValidGroupTarget in state.ts).
+  const noTeams = user.team === 0;
+  const foeCheck = noTeams
+    ? target.num !== user.num
+    : target.team !== user.team;
+  const allyCheck = noTeams
+    ? false
+    : target.team === user.team && target.num !== user.num;
+  const selfOrAllyCheck = noTeams
+    ? target.num === user.num
+    : target.team === user.team;
 
   if (g.includes("self and allies") || g.includes("self and ally"))
-    return target.team === user.team;
+    return selfOrAllyCheck;
+  if (g.includes("allies and self")) return selfOrAllyCheck;
   if (g.includes("self or ally") || g.includes("self or allies"))
-    return target.team === user.team;
+    return selfOrAllyCheck;
   if (g.includes("self or foe")) return true;
   if (g.includes("foe or ally")) return target.num !== user.num;
   if (g.includes("self, foes, allies") || g.includes("self, foes, and allies"))
     return true;
 
   if (g === "self") return target.num === user.num;
-  if (g === "ally") return target.team === user.team && target.num !== user.num;
-  if (g === "foe") return target.team !== user.team;
+  if (g === "ally") return allyCheck;
+  if (g === "foe") return foeCheck;
   if (g === "any") return true;
   if (g === "tile") return false;
 
@@ -689,7 +748,9 @@ function* resolveSingleTarget(
 
   const userAccBonus = getStatBonus(user, "acc");
   const targetEva =
-    getEffectiveStat(target, "eva") +
+    (game.version === "4.3"
+      ? eva43(target, ability.damageType)
+      : getEffectiveStat(target, "eva")) +
     terrainStatBonus(game, target, "eva", ability.damageType);
   const {
     hit,

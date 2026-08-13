@@ -15,10 +15,13 @@ import {
   type AbilityData,
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
+import { eva43 } from "../game/resolve.js";
+import { getVersionData } from "../data/version43.js";
 import { classes, weapons } from "../data/index.js";
 import {
   runoffOptions,
   tallyVotes,
+  tieModes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
 
@@ -189,6 +192,8 @@ export function buildHostPage(game: Game): string {
   const log = buildActionLog(game);
   // Controls (Next Turn / Undo / d20) only matter once the battle is running.
   const controls = game.started ? buildControls(game) : "";
+  // Setup shortcuts (%setgame ffa / %setlevel all) only matter pre-start.
+  const setup = game.started ? "" : buildSetupPanel(game);
   // "FFA" is just the placeholder until a mode is actually chosen (%setgame, the
   // vote, or %genpos) — don't claim a mode in the header before then.
   const modeSeg =
@@ -196,7 +201,7 @@ export function buildHostPage(game: Game): string {
 
   return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
   <b>Game: ${esc(game.id)}</b>${modeSeg} Round <b>${game.round}</b> -- Phase: ${esc(game.phase)}
-  <hr>${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}${controls ? `<hr>${controls}` : ""}
+  <hr>${setup}${buildVotePanel(game, null)}${map}<hr>${pl}<hr>${log}${controls ? `<hr>${controls}` : ""}
   ${buildToasts(game)}
 </div>`;
 }
@@ -279,13 +284,14 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   // (e.g. after the gamemode vote decides the mode, before the map is set).
   let loadout = "";
   if (!game.started) {
-    const classOpts = [...classes.values()]
+    const data = getVersionData(game.version);
+    const classOpts = [...data.classes.values()]
       .map(
         (c) =>
           `<option value="${esc(c.name)}"${c.name === entity.className ? " selected" : ""}>${esc(c.name)}</option>`,
       )
       .join("");
-    const weaponOpts = [...weapons.values()]
+    const weaponOpts = [...data.weapons.values()]
       .map(
         (w) =>
           `<option value="${esc(w.name)}"${w.name === entity.weaponName ? " selected" : ""}>${esc(w.name)}</option>`,
@@ -479,6 +485,7 @@ function buildPlayerDataTable(game: Game): string {
   // Header
   html += `<tr style="height:22px">`;
 
+  const is43 = game.version === "4.3";
   const headers = [
     "#",
     "Name",
@@ -488,7 +495,7 @@ function buildPlayerDataTable(game: Game): string {
     "M",
     "PD",
     "MD",
-    "EVA",
+    is43 ? "PE/ME" : "EVA",
     "MP",
     "Tile",
   ];
@@ -529,7 +536,13 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
     html += buildStatCell(e, "mag", e.mag);
     html += buildStatCell(e, "pd", e.pd);
     html += buildStatCell(e, "md", e.md);
-    html += buildStatCell(e, "eva", e.eva);
+    if (is43) {
+      const pe = eva43(e, "Physical");
+      const me = eva43(e, "Magical");
+      html += `<td style="padding:0px 8px">${pe}/${me}</td>`;
+    } else {
+      html += buildStatCell(e, "eva", e.eva);
+    }
     html += buildStatCell(e, "mp", e.mp);
     html += buildTileCell(game, e);
 
@@ -586,6 +599,56 @@ function buildActionLog(game: Game, collapsed = false): string {
   return `<b>Action Log</b>${body}`;
 }
 
+// -- Setup (Host, pre-start) --------------------------------------------------
+
+function buildSetupPanel(game: Game): string {
+  // %start only makes sense once the mode is set (%setgame, the vote, or
+  // %genpos) — i.e. right after the Set Game button has done its job.
+  const startBtn = game.modeChosen
+    ? ` <span style="color:#888;margin:0 4px">|</span> ${btn("%start", "Start Game")}`
+    : "";
+
+  // While voting is open, the Set Game button ENDS the vote so the winning
+  // mode is applied properly — a tie starts a runoff instead of being
+  // silently cancelled by %setgame.
+  let setBtn: string;
+  if (game.voteOpen) {
+    const tally = tallyVotes(game.votes);
+    const tied = tieModes(tally);
+    const leader =
+      !tied && tally.length > 0 ? tally[0].mode.toUpperCase() : null;
+    setBtn = btn(
+      "%endvote",
+      leader ? `End Vote: Set ${leader}` : "End Vote & Apply Winner",
+    );
+  } else {
+    const targetMode = game.modeChosen ? game.mode : "FFA";
+    setBtn = btn(`%setgame ${targetMode}`, `Set Game: ${targetMode}`);
+  }
+
+  // The Set FFA escape hatch (even mid-vote the host can force FFA) is the
+  // only control tucked behind a small arrow — the main buttons (Set Game,
+  // Level All, Start) stay visible without opening anything. %ffabtn hides
+  // the arrow entirely for hosts who never run FFA.
+  const ffaShortcut = game.hideFfaShortcut
+    ? ""
+    : `<details style="display:inline-block;vertical-align:middle"><summary style="cursor:pointer;user-select:none;display:inline-block;color:#888;font-size:10px;padding:1px 6px;margin:2px;border:1px solid #555;border-radius:3px;background:#222">▸ FFA</summary>
+<div style="margin-top:4px">${btn("%setgame ffa", "Set FFA", "background:#433;")}</div>
+</details>`;
+  const ffaToggle = btn(
+    "%ffabtn",
+    game.hideFfaShortcut ? "Show FFA shortcut" : "Hide FFA shortcut",
+    "font-size:10px;padding:1px 6px;color:#888;background:#222;",
+  );
+
+  return `<div style="margin-top:4px"><b>Setup</b><div style="margin-top:4px">
+  ${setBtn}
+  ${btn("%setlevel all, 10", "Level All \u2192 10")}
+  ${startBtn}
+  ${ffaShortcut}
+  <span style="color:#888;font-size:10px">${ffaToggle}</span>
+</div></div>`;
+}
 // -- Controls (Host) ----------------------------------------------------------
 
 function buildControls(game: Game): string {

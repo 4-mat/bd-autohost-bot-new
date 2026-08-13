@@ -1,5 +1,5 @@
 import { checkAllUpdates } from "./scraper.js";
-import { checkAllSheets, checkSheet } from "./spec-checker.js";
+import { checkAllSheets, checkSheet, rowName } from "./spec-checker.js";
 
 async function main() {
   const checkAll = process.argv.includes("--all");
@@ -44,18 +44,18 @@ async function main() {
     console.log(`=== ${diff.label} (${diff.sheet}) ===`);
     if (diff.added.length) {
       console.log(
-        `  Added: ${diff.added.map((r) => r.Name || r["Ability Name"] || "unknown").join(", ")}`,
+        `  Added: ${diff.added.map((r) => rowName(r) || "unknown").join(", ")}`,
       );
     }
     if (diff.removed.length) {
       console.log(
-        `  Removed: ${diff.removed.map((r) => r.Name || r["Ability Name"] || "unknown").join(", ")}`,
+        `  Removed: ${diff.removed.map((r) => rowName(r) || "unknown").join(", ")}`,
       );
     }
     if (diff.changed.length) {
       console.log(`  Modified: ${diff.changed.length} row(s)`);
       for (const c of diff.changed) {
-        const name = c.row.Name || c.row["Ability Name"] || "unknown";
+        const name = rowName(c.row) || "unknown";
         console.log(`    - ${name}:`);
         for (const [field, { from, to }] of Object.entries(c.changes)) {
           console.log(`      ${field}: "${from}" -> "${to}"`);
