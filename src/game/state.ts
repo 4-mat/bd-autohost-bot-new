@@ -877,16 +877,28 @@ function isValidGroupTarget(
   target: Entity,
   group: string,
 ): boolean {
+  // FFA / no-team games put everyone on team 0: "Foe" = anyone but self,
+  // "Ally" = nobody, ally-groups = self only. Mirrors the GUI candidate
+  // filter in pages.ts and the single-target validator in resolve.ts.
+  const noTeams = user.team === 0;
+  const foeCheck = noTeams
+    ? target.num !== user.num
+    : target.team !== user.team;
+  const allyCheck = noTeams
+    ? false
+    : target.team === user.team && target.num !== user.num;
+  const selfOrAllyCheck = noTeams
+    ? target.num === user.num
+    : target.team === user.team;
+
   if (group === "self") return target.num === user.num;
-  if (group === "ally")
-    return target.team === user.team && target.num !== user.num;
-  if (group === "foe") return target.team !== user.team;
+  if (group === "ally") return allyCheck;
+  if (group === "foe") return foeCheck;
   if (group === "any") return true;
   if (group === "tile") return false;
-  if (group.includes("self and allies")) return target.team === user.team;
-  if (group.includes("self or ally")) return target.team === user.team;
-  if (group.includes("self or foe"))
-    return target.team === user.team || target.team !== user.team;
+  if (group.includes("self and allies")) return selfOrAllyCheck;
+  if (group.includes("self or ally")) return selfOrAllyCheck;
+  if (group.includes("self or foe")) return true;
   if (group.includes("foe or ally")) return target.num !== user.num;
   if (group.includes("self, foes, allies")) return true;
   return true;

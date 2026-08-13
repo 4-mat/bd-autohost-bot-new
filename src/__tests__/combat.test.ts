@@ -10,7 +10,10 @@ import {
   parseEffects,
   extractCombatMetadata,
 } from "../game/effects.js";
-import { startAttack } from "../game/resolve.js";
+import {
+  startAttack,
+  isValidTarget,
+} from "../game/resolve.js";
 
 setWs({ send() {} });
 
@@ -511,5 +514,30 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
     // The mod trails reference just the damageValue; for each target we
     // confirm at least one line contains the +50% tag.
     expect(log).toMatch(/\+50% damage/);
+  });
+});
+
+
+describe("FFA targeting (team 0 = no teams)", () => {
+  it("treats every other player as a Foe and no one as an Ally", () => {
+    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 0 });
+    expect(isValidTarget(p1, p2, "Foe")).toBe(true);
+    expect(isValidTarget(p1, p2, "Ally")).toBe(false);
+    expect(isValidTarget(p1, p1, "Foe")).toBe(false);
+    expect(isValidTarget(p1, p2, "Self or Foe")).toBe(true);
+    expect(isValidTarget(p1, p2, "Self and Allies")).toBe(false);
+    expect(isValidTarget(p1, p1, "Self and Allies")).toBe(true);
+    expect(isValidTarget(p1, p2, "Foe or Ally")).toBe(true);
+  });
+
+  it("keeps team-mode targeting unchanged", () => {
+    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "Carol", pos: [2, 4], team: 2 });
+    expect(isValidTarget(p1, p2, "Ally")).toBe(true);
+    expect(isValidTarget(p1, p2, "Foe")).toBe(false);
+    expect(isValidTarget(p1, p3, "Foe")).toBe(true);
+    expect(isValidTarget(p1, p3, "Ally")).toBe(false);
   });
 });
