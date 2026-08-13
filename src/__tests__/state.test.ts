@@ -1206,6 +1206,33 @@ describe("nextTurn end-of-turn death", () => {
     expect(result.died).toBe(true);
     expect(game.entities.find((x) => x.num === "P2")).toBeUndefined();
   });
+
+  it("ends the game when the last survivors die across the turn transition", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[0][0] = Terrain.Lava;
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 20, pos: [0, 0] });
+    const p2 = makeEntity({
+      num: "P2",
+      name: "B",
+      curhp: 5,
+      pos: [2, 2],
+      statuses: [
+        { name: "Bleed", damage: 99, rounds: 3, maxRounds: 3, removable: true },
+      ],
+    });
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+      terrain: map,
+    });
+    // P1 ends its turn on lava and dies; P2's turn begins and bleeds out.
+    game.turnIndex = 0;
+    const result = nextTurn(game);
+    expect(result.entity).toBeNull();
+    expect(result.died).toBe(true);
+    expect(game.phase).toBe("ended");
+    expect(game.entities.length).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

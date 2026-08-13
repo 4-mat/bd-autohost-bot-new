@@ -690,10 +690,10 @@ export function isValidTarget(
   // equivalent normalization in state.ts isValidGroupTarget.
   const g = group
     .toLowerCase()
-    .replace(/foes/, "foe")
-    .replace(/allies/, "ally")
-    .replace(/foe\(s\)/, "foe")
-    .replace(/ally and self/, "self and ally");
+    .replace(/foes/g, "foe")
+    .replace(/allies/g, "ally")
+    .replace(/foe\(s\)/g, "foe")
+    .replace(/ally and self/g, "self and ally");
 
   if (g.includes("self and ally")) return target.team === user.team;
   if (g.includes("self or ally")) return target.team === user.team;

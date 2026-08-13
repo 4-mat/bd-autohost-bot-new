@@ -545,8 +545,9 @@ Splash uses half PD/MD for defense.
 3 turns. `maxUses` is tracked via `usesUsed[ability.name]`.
 
 **Stage 12: Win check**
-If any deaths occurred and `isWinCondition(game)` is true, prints game
-over. Win condition is checked once after all deaths, not per death.
+If any deaths occurred, `checkGameOver(game)` runs once after all deaths
+(not per death); when the game is over it prints the winner, or
+"No survivors!" when every entity died.
 
 ---
 

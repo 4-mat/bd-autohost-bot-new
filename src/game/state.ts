@@ -879,10 +879,10 @@ function isValidGroupTarget(
   // Normalize plural/legacy spellings so the checks below match the data as
   // written ("Foe(s)", "Self, Foes, Allies", "Allies and Self", ...).
   const g = group
-    .replace(/foes/, "foe")
-    .replace(/allies/, "ally")
-    .replace(/foe\(s\)/, "foe")
-    .replace(/ally and self/, "self and ally");
+    .replace(/foes/g, "foe")
+    .replace(/allies/g, "ally")
+    .replace(/foe\(s\)/g, "foe")
+    .replace(/ally and self/g, "self and ally");
   if (g === "self") return target.num === user.num;
   if (g === "ally")
     return target.team === user.team && target.num !== user.num;
@@ -1332,6 +1332,11 @@ export function nextTurn(
     break;
   }
 
-  if (!entity) return { entity: null, messages, died };
+  if (!entity) {
+    // Every entity died during the transition (end-of-turn and
+    // start-of-turn deaths consumed the last survivors): end the game.
+    game.phase = "ended";
+    return { entity: null, messages, died };
+  }
   return { entity, messages, died };
 }
