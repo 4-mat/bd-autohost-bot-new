@@ -1201,6 +1201,69 @@ describe("evaluateCondition: supported patterns", () => {
       ),
     ).toBe("unknown");
   });
+
+  it("debuff (not) active / buff active on target", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const clean = makeEntity({ num: "P2", name: "B" });
+    const debuffed = makeEntity({
+      num: "P3",
+      name: "C",
+      buffs: [{ stat: "def", amount: -3, rounds: 2 }],
+    });
+    const buffed = makeEntity({
+      num: "P4",
+      name: "D",
+      buffs: [{ stat: "atk", amount: 2, rounds: 1 }],
+    });
+    // Point-in-Line: "If debuff not active: gain +2 dice faces/1"
+    expect(evaluateCondition("debuff not active", user, clean)).toBe("then");
+    expect(evaluateCondition("debuff not active", user, debuffed)).toBe("else");
+    expect(evaluateCondition("debuff active", user, debuffed)).toBe("then");
+    expect(evaluateCondition("buff active", user, buffed)).toBe("then");
+    expect(evaluateCondition("buff active", user, clean)).toBe("else");
+  });
+
+  it("user/target debuffed (by foe)", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "A",
+      buffs: [{ stat: "acc", amount: -1, rounds: 1 }],
+    });
+    const clean = makeEntity({ num: "P2", name: "B" });
+    expect(evaluateCondition("user debuffed by foe", user, clean)).toBe("then");
+    expect(evaluateCondition("user debuffed by foe", clean, clean)).toBe("else");
+    expect(evaluateCondition("target debuffed", clean, user)).toBe("then");
+  });
+
+  it("<status> active / 'Moonblast or Celestial Blessing active'", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const moon = makeEntity({
+      num: "P2",
+      name: "B",
+      statuses: [
+        { name: "Moonblast", damage: 0, rounds: 2, maxRounds: 2 },
+      ],
+    });
+    const celestial = makeEntity({
+      num: "P3",
+      name: "C",
+      statuses: [
+        { name: "Celestial Blessing", damage: 0, rounds: 1, maxRounds: 1 },
+      ],
+    });
+    const none = makeEntity({ num: "P4", name: "D" });
+    expect(evaluateCondition("Moonblast active", user, moon)).toBe("then");
+    expect(evaluateCondition("Moonblast active", user, none)).toBe("else");
+    expect(
+      evaluateCondition("Moonblast or Celestial Blessing active", user, celestial),
+    ).toBe("then");
+    expect(
+      evaluateCondition("Moonblast or Celestial Blessing active", user, none),
+    ).toBe("else");
+    expect(
+      evaluateCondition("Moonblast not active", user, none),
+    ).toBe("then");
+  });
 });
 
 describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => {

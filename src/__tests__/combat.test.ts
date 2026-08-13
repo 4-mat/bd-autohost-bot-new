@@ -611,6 +611,9 @@ describe("FFA targeting (team 0 = no teams)", () => {
     expect(isValidTarget(p1, p2, "Foe")).toBe(false);
     expect(isValidTarget(p1, p3, "Foe")).toBe(true);
     expect(isValidTarget(p1, p3, "Ally")).toBe(false);
+  });
+});
+
 // ===========================================================================
 // resolveAttackFlow: self-buffs must apply once per ability use, not once
 // per target (#101 subject routing regression)

@@ -8,6 +8,7 @@ import {
   dealDamage,
   hasLineOfSight,
   inRange,
+  hasStatus,
   manhattan,
   pushEntity,
   pullEntity,
@@ -697,7 +698,7 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+(\d+(?:-\d+)?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+(\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
@@ -1113,6 +1114,42 @@ export function evaluateCondition(
 
   const word = evalStatWordCompare(lower, user, target);
   if (word !== null) return word;
+
+  // "<user|target> debuffed (by foe)" -- any negative buff active
+  const debuffedMatch = lower.match(
+    /^(user|target)\s+debuffed(?:\s+by\s+[a-z]+)?$/,
+  );
+  if (debuffedMatch) {
+    const entity = debuffedMatch[1] === "user" ? user : target;
+    return entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
+  }
+
+  // "<name> (not) active" / "<user|target> <name> (not) active"
+  // e.g. "Moonblast active", "Moonblast or Celestial Blessing active",
+  // "debuff not active". Bare names default to the target (for self-targeted
+  // abilities the target *is* the user, so both readings line up).
+  const activeMatch = lower.match(/^(user|target)?\s*(.+?)\s+(not\s+)?active$/);
+  if (activeMatch) {
+    const which = activeMatch[1] ?? "target";
+    const name = activeMatch[2].trim();
+    const negated = Boolean(activeMatch[3]);
+    const entity = which === "user" ? user : target;
+    let outcome: ConditionOutcome;
+    if (name === "debuff") {
+      outcome = entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
+    } else if (name === "buff") {
+      outcome = entity.buffs.some((b) => b.amount > 0) ? "then" : "else";
+    } else {
+      const candidates = name
+        .split(/\s+or\s+|\s*,\s*/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      outcome = candidates.some((c) => hasStatus(entity, c))
+        ? "then"
+        : "else";
+    }
+    return negated ? (outcome === "then" ? "else" : "then") : outcome;
+  }
 
   return "unknown";
 }
