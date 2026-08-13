@@ -281,37 +281,82 @@ function* resolveAttackFlow(
   }
 
   // --- Target (attack may not continue if nothing can be chosen) ---
-  const {
-    hits: hitCount,
-    isAoE,
-    targets: autoTargets,
-  } = prepareTargeting(game, user, active);
-  let targets = autoTargets;
-  if (targets.length === 0) {
-    const candidates = getTargetCandidates(game, user, active);
+  // Tile-group abilities that actually place terrain (Whittle, Mending
+  // Mantel, ...) target a map tile instead of an entity: collect in-range
+  // tiles, yield a "tile" prompt, and resolve the chosen reference into a
+  // position. Passives whose targetGroup is "Tile" but whose effects carry
+  // no tile clause (Bloom, Mantrap, ...) fall through to entity targeting.
+  const isTileAbility = /^tiles?$/i.test(active.targetGroup);
+  const effects = parseEffects(active.effect);
+  const shouldPromptTile =
+    isTileAbility && effects.some((e) => e.type === "tile");
+  let tilePos: [number, number] | null = null;
+  let targets: Entity[] = [];
+  let hitCount = 0;
+  let isAoE = false;
+
+  if (shouldPromptTile) {
+    const candidates = getTileCandidates(game, user, active);
 
     if (candidates.length === 0) {
       result.messages.push(
-        `${user.num} uses ${active.name} but no valid targets found.`,
+        `${user.num} uses ${active.name} but no valid tiles in range.`,
       );
       return result;
     }
 
-    const targetRef =
+    const tileRef =
       initialTarget ??
       (yield {
-        kind: "target",
-        message: `Choose a target for ${active.name}`,
+        kind: "tile",
+        message: `Choose a tile for ${active.name}`,
         candidates,
       });
 
-    targets = findTargets(game, user, active, targetRef);
-
-    if (targets.length === 0) {
+    tilePos = parseTileRef(tileRef);
+    if (
+      !tilePos ||
+      tilePos[0] < 0 ||
+      tilePos[0] >= game.map.length ||
+      tilePos[1] < 0 ||
+      tilePos[1] >= game.map[0].length
+    ) {
       result.messages.push(
-        `${user.num} uses ${active.name} but no valid targets found.`,
+        `${user.num} uses ${active.name} but the chosen tile is invalid.`,
       );
       return result;
+    }
+  } else {
+    const prepared = prepareTargeting(game, user, ability);
+    hitCount = prepared.hits;
+    isAoE = prepared.isAoE;
+    targets = prepared.targets;
+    if (targets.length === 0) {
+      const candidates = getTargetCandidates(game, user, ability);
+
+      if (candidates.length === 0) {
+        result.messages.push(
+          `${user.num} uses ${ability.name} but no valid targets found.`,
+        );
+        return result;
+      }
+
+      const targetRef =
+        initialTarget ??
+        (yield {
+          kind: "target",
+          message: `Choose a target for ${ability.name}`,
+          candidates,
+        });
+
+      targets = findTargets(game, user, ability, targetRef);
+
+      if (targets.length === 0) {
+        result.messages.push(
+          `${user.num} uses ${ability.name} but no valid targets found.`,
+        );
+        return result;
+      }
     }
   }
 
@@ -319,7 +364,11 @@ function* resolveAttackFlow(
   const rollStr = active.roll ? ` ${active.roll}` : "";
   const actionTypeStr = active.actionType === "Reaction" ? " (Reaction)" : "";
   result.messages.push(
-    `/me ${active.name} @ ${targetNames}, MR ${active.mr},${rollStr}${actionTypeStr}`,
+    `/me ${active.name} @ ${
+      shouldPromptTile && tilePos
+        ? posToStr(tilePos[0], tilePos[1])
+        : targetNames
+    }, MR ${active.mr},${rollStr}${actionTypeStr}`,
   );
 
   const isAttack =
@@ -333,9 +382,22 @@ function* resolveAttackFlow(
   // parseMultiHit(); meta.additionalHits adds the effect-driven extra hits
   // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
   // effect still rolls the highest of the two.
-  const effects = parseEffects(active.effect);
+
   const combat = extractCombatMetadata(effects);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
+
+  if (shouldPromptTile && tilePos) {
+    // Tile-targeting abilities run their effect stream against the chosen
+    // tile: the user stands in as the target (the "tile" case places the
+    // terrain at tilePos; buff-style clauses still land on the user).
+    const tileMsgs: string[] = yield* runEffectStream(
+      applyEffectStream(game, user, user, effects, ability, tilePos),
+    );
+    if (tileMsgs.length > 0) {
+      result.messages.push(`  ${user.num} uses ${ability.name}:`);
+      result.messages.push(...tileMsgs);
+    }
+  }
 
   for (const target of targets) {
     if (isAttack) {
@@ -619,8 +681,9 @@ function parseTileRef(ref: string): [number, number] | null {
     const c = parseInt(parts[1]);
     if (!isNaN(r) && !isNaN(c)) return [r, c];
   }
-  // Letter-number format: A1, B3, etc.
-  const match = ref.match(/^([a-zA-Z])\s*(\d+)$/);
+  // Letter-number format: A1, B3, etc. (also accepts "a,2" -- the format
+  // produced by posToStr and shown as tile-prompt candidates).
+  const match = ref.trim().match(/^([a-zA-Z])\s*,?\s*(\d+)$/);
   if (match) {
     const r = match[1].toUpperCase().charCodeAt(0) - 65;
     const c = parseInt(match[2]) - 1;

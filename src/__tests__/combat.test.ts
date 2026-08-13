@@ -7,8 +7,7 @@ import {
   Terrain,
 } from "../game/state.js";
 import { parseEffects, extractCombatMetadata } from "../game/effects.js";
-import { startAttack, isValidTarget } from "../game/resolve.js";
-
+import { startAttack, isValidTarget, respondToTile } from "../game/resolve.js";
 setWs({ send() {} });
 
 // ---------------------------------------------------------------------------
@@ -512,7 +511,7 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
   });
 });
 
-// ===========================================================================
+/ ===========================================================================
 // Terrain stat bonuses: Forest +5 PD / -1 EVA vs Physical; Water +5 MD /
 // -1 EVA vs Magical (BD 4.4 Map glossary).
 // ===========================================================================
@@ -664,7 +663,77 @@ describe("resolveAttackFlow: terrain stat bonuses", () => {
     );
     expect(log).toMatch(/EVA 0 =/);
     expect(log).toMatch(/PD\(5\)/);
+});
+
+
+describe("tile-targeting abilities", () => {
+  it("prompts for a tile and places the terrain on the chosen tile (Whittle)", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game = makeGame({ entities: [caster] });
+    // Prove placement: the tile starts as Lava and Whittle clears it.
+    game.map[2][3] = Terrain.Lava;
+
+    const step = startAttack(game, caster, whittle);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+
+    // "c,4" is posToStr(2, 3) -- a valid candidate within Homing 2.
+    const step2 = respondToTile(caster, "c,4");
+    expect(step2.done).toBe(true);
+    if (!step2.done) return;
+    expect(game.map[2][3]).toBe(Terrain.Normal);
+    expect(step2.result.messages.join("\n")).toContain(
+      "creates a Normal tile at c,4",
+    );
   });
+
+  it("rejects an invalid tile reference without placing anything", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game = makeGame({ entities: [caster] });
+    // Nothing may change: Whittle must not place anything on an invalid ref.
+    game.map[2][3] = Terrain.Lava;
+
+    const step = startAttack(game, caster, whittle);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+
+    const step2 = respondToTile(caster, "not-a-tile");
+    expect(step2.done).toBe(true);
+    if (!step2.done) return;
+    expect(step2.result.messages.join("\n")).toContain(
+      "chosen tile is invalid",
+    );
+    expect(game.map[2][3]).toBe(Terrain.Lava);  });
 });
 
 describe("FFA targeting (team 0 = no teams)", () => {

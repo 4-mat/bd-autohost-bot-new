@@ -4,6 +4,7 @@ import {
   type AbilityData,
   type StatusEffect,
   Terrain,
+  TERRAIN_NAMES,
   chebyshev,
   dealDamage,
   hasLineOfSight,
@@ -12,7 +13,7 @@ import {
   pushEntity,
   pullEntity,
 } from "./state.js";
-import { rollDice, toId } from "../utils.js";
+import { rollDice, toId, posToStr } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Effect types
@@ -1261,6 +1262,7 @@ export function* applyEffectStream(
   target: Entity,
   effects: Effect[],
   ability?: AbilityData,
+  tilePos?: [number, number],
 ): Generator<EffectChoosePrompt, string[], string> {
   const messages: string[] = [];
 
@@ -1527,6 +1529,7 @@ export function* applyEffectStream(
             target,
             effect.thenEffects,
             ability,
+            tilePos,
           );
           messages.push(...thenMsgs.map((m) => `    ${m}`));
         }
@@ -1537,6 +1540,7 @@ export function* applyEffectStream(
             target,
             effect.elseEffects,
             ability,
+            tilePos,
           );
           messages.push(...elseMsgs.map((m) => `    ${m}`));
         }
@@ -1556,6 +1560,7 @@ export function* applyEffectStream(
           target,
           effect.effects,
           ability,
+          tilePos,
         );
         messages.push(
           ...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`),
@@ -1580,6 +1585,7 @@ export function* applyEffectStream(
           target,
           effect.effects,
           ability,
+          tilePos,
         );
         messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
         break;
@@ -1610,12 +1616,30 @@ export function* applyEffectStream(
           target,
           effect.options[idx],
           ability,
+          tilePos,
         );
         messages.push(...chosenMsgs.map((m) => `    ${m}`));
         break;
       }
 
       case "tile": {
+        if (tilePos) {
+          const [tr, tc] = tilePos;
+          if (
+            tr >= 0 &&
+            tr < game.map.length &&
+            tc >= 0 &&
+            tc < game.map[0].length
+          ) {
+            game.map[tr][tc] = effect.terrain;
+            messages.push(
+              `  ${user.num} creates a ${
+                TERRAIN_NAMES[effect.terrain] ?? "terrain"
+              } tile at ${posToStr(tr, tc)}.`,
+            );
+            break;
+          }
+        }
         messages.push(
           `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
         );
