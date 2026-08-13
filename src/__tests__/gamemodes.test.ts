@@ -229,6 +229,8 @@ describe("normalizeVoteMode", () => {
     expect(normalizeVoteMode("pvp juggernaut")).toBe("PvPJ");
     expect(normalizeVoteMode("pvp ntr")).toBe("PvPNTR");
     expect(normalizeVoteMode("2vj")).toBe("JUGG");
+    expect(normalizeVoteMode("3vj")).toBe("JUGG");
+    expect(normalizeVoteMode("4vj")).toBe("JUGG");
     expect(normalizeVoteMode("4v4")).toBe("4v4");
     expect(normalizeVoteMode("2v2v2")).toBe("2v2v2");
   });
