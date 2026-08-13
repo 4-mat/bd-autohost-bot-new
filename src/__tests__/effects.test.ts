@@ -1574,10 +1574,7 @@ describe("dice faces stat modifier (#101)", () => {
     });
   });
 
-  it("parses Point-in-Line's effect clauses (inflict + gain both recognized)", () => {
-    // Note: the "If debuff not active:" gating uses a colon, which the
-    // conditional parser (comma form only) doesn't pick up on this branch,
-    // so the gain applies unconditionally -- the stat itself now parses.
+  it("parses Point-in-Line's full effect (inflict + If-colon conditional gain)", () => {
     const effects = parseEffects(
       "inflict -2 dice faces/1. If debuff not active: gain +2 dice faces/1.",
     );
@@ -1589,12 +1586,44 @@ describe("dice faces stat modifier (#101)", () => {
       rounds: 1,
       subject: "target",
     });
-    expect(effects[1]).toMatchObject({
+    // The "If ...:" colon form now forms a conditional, so the +2 gain is
+    // gated on the condition rather than applied unconditionally.
+    expect(effects[1]).toMatchObject({ type: "conditional" });
+    const cond = effects[1] as { thenEffects: Effect[] };
+    expect(cond.thenEffects[0]).toMatchObject({
       type: "buff",
       stat: "dice faces",
       amount: 2,
+      subject: "self",
+    });
+  });
+
+  it("parses 'gain +N dice/M' as a self buff (die count)", () => {
+    const effects = parseEffects("gain +1 dice/1");
+    expect(effects).toHaveLength(1);
+    expect(effects[0]).toMatchObject({
+      type: "buff",
+      stat: "dice",
+      amount: 1,
       rounds: 1,
       subject: "self",
     });
+  });
+
+  it("'remove N dice' parses as a negative die-count debuff", () => {
+    const effects = parseEffects("remove 1 dice");
+    expect(effects).toHaveLength(1);
+    expect(effects[0]).toMatchObject({
+      type: "debuff",
+      stat: "dice",
+      amount: -1,
+      subject: "self",
+    });
+  });
+
+  it("'dice faces' still wins the alternation over 'dice'", () => {
+    const effects = parseEffects("+2 dice faces/1");
+    expect(effects).toHaveLength(1);
+    expect(effects[0]).toMatchObject({ stat: "dice faces" });
   });
 });

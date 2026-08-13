@@ -260,7 +260,7 @@ export function parseEffects(text: string): Effect[] {
   // The regex tolerates either ", " or ". " before "Otherwise", and an
   // optional trailing period at the end of the else-branch.
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?),\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
   if (fullIfMatch) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
@@ -568,13 +568,18 @@ function parseStatMods(lower: string): Effect[] {
   else if (/on each target/.test(lower)) subject = "target";
 
   const statRegex =
-    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range|dice faces)\s*(?:\/\s*(\d+))?/g;
+    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range|dice faces|dice)\s*(?:\/\s*(\d+))?/g;
   let match;
   while ((match = statRegex.exec(lower)) !== null) {
     const sign = match[1] === "-" ? -1 : 1;
     const isPercent = match[2].includes("%");
     const value = parseFloat(match[2].replace("%", ""));
     let stat = match[3].toLowerCase();
+
+    // "remove 1 dice" / "lose 2 MP" -- an unsigned value preceded by a
+    // removal verb is a negative modifier, not a gain.
+    const before = lower.slice(0, match.index);
+    const removed = sign > 0 && /(remove|lose|spend|cost)\s*$/.test(before);
 
     // Normalize stat names
     if (stat === "damage") stat = "dmg";
@@ -585,18 +590,18 @@ function parseStatMods(lower: string): Effect[] {
 
     if (isPercent) {
       effects.push({
-        type: sign > 0 ? "buff" : "debuff",
+        type: sign > 0 && !removed ? "buff" : "debuff",
         stat,
         amount: 0,
-        percent: sign * value,
+        percent: (removed ? -1 : sign) * value,
         rounds,
         subject,
       });
     } else {
       effects.push({
-        type: sign > 0 ? "buff" : "debuff",
+        type: sign > 0 && !removed ? "buff" : "debuff",
         stat,
-        amount: sign * value,
+        amount: (removed ? -1 : sign) * value,
         rounds,
         subject,
       });

@@ -300,6 +300,17 @@ function* resolveDirection(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
+/** Roll a damage/heal formula applying the attacker's dice-faces and
+ * dice-count buffs (e.g. Final Hour's "+4 dice faces", Kinetic Impact's
+ * "+1 dice"). */
+function rollWithUserBuffs(user: Entity, formula: string) {
+  return rollDice(
+    formula,
+    getStatBonus(user, "dice faces"),
+    getStatBonus(user, "dice"),
+  );
+}
+
 function* resolveAttackFlow(
   game: Game,
   user: Entity,
@@ -1237,7 +1248,7 @@ function resolveHeal(
   const result = newResult();
 
   if (ability.roll) {
-    const healRoll = rollDice(ability.roll, getStatBonus(user, "dice faces"));
+    const healRoll = rollWithUserBuffs(user, ability.roll);
     let healAmount = healRoll.total;
 
     const effect = ability.effect.toLowerCase();
@@ -1317,7 +1328,7 @@ function resolveSplash(
   result.messages.push(`  **Splash ${radius}**: hits ${names}`);
 
   for (const target of splashTargets) {
-    const damageRoll = rollDice(ability.roll, getStatBonus(user, "dice faces"));
+    const damageRoll = rollWithUserBuffs(user, ability.roll);
     const half = (v: number) => Math.floor(v / 2);
     // Splash halves defense by default per the home page ("half target
     // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores

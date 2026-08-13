@@ -791,4 +791,29 @@ describe("On Miss hook (#139)", () => {
     expect(userEva).toBe(1);
     expect(targetEva).toBe(0);
   });
+
+  it("a +1 dice buff adds a die (2d4 -> 3d4, deterministic max roll)", () => {
+    const origRandom = Math.random;
+    Math.random = () => 0.94;
+    try {
+      const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+      user.buffs.push({ stat: "dice", amount: 1, rounds: 1 });
+      const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1 });
+      const ability = makeAbility({
+        name: "Kinetic Impact",
+        range: "Melee",
+        mr: 0,
+        roll: "2d4+0",
+        targetAmount: 1,
+        targetGroup: "Foe",
+        effect: "",
+      });
+      const log = driveResolveAgainst(user, ability, target);
+      // 3d4 max (12) + ATK 10 - PD 5 = 17. Without the buff it would be
+      // 13 (2d4 max 8 + 10 - 5).
+      expect(log).toContain("= **17**");
+    } finally {
+      Math.random = origRandom;
+    }
+  });
 });
