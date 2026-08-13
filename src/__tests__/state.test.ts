@@ -1143,4 +1143,23 @@ describe("getAoETargets FFA (team 0 = no teams)", () => {
     // Before the fix this fell through to the default true: everyone in range.
     expect(targets.some((t) => t.num === "P3")).toBe(false);
   });
+
+  it("Self or Allies AoE hits allies in team mode (never foes)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [3, 2], team: 2 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self or Allies");
+    expect(targets.map((t) => t.num)).toEqual(["P2"]);
+    // Before the fix the plural form fell through to default true.
+    expect(targets.some((t) => t.num === "P3")).toBe(false);
+  });
+
+  it("Self or Allies AoE hits nobody else in FFA", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
+    const game = makeGame({ entities: [p1, p2] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self or Allies");
+    expect(targets.length).toBe(0);
+  });
 });
