@@ -131,6 +131,7 @@ export function gameCommand(
       break;
 
     case "back":
+    case "undo":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleBack(game, user);
       break;

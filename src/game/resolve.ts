@@ -332,6 +332,13 @@ function* resolveAttackFlow(
         result.messages.push(...singleResult.messages);
         result.deaths.push(...singleResult.deaths);
 
+        // The target died on this hit: stop swinging at the corpse.
+        // Later hits only re-roll against a dead entity and re-announce
+        // the defeat.
+        if (target.curhp <= 0 || !game.entities.includes(target)) {
+          break;
+        }
+
         if (!confusionApplied && singleResult.confusionTriggered) {
           confusionApplied = true;
         }
