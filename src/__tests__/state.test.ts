@@ -136,14 +136,15 @@ describe("Terrain", () => {
     expect(isObstruction(Terrain.Hearth)).toBe(true);
   });
 
-  it("placeTerrain refuses to overwrite obstruction tiles", () => {
+  it("placeTerrain replaces any in-bounds tile (obstructions too)", () => {
     const map = [
       [Terrain.Normal, Terrain.Stone],
       [Terrain.Lava, Terrain.Normal],
     ];
-    expect(placeTerrain(map, [0, 1], Terrain.Water)).toBe(false);
-    expect(map[0][1]).toBe(Terrain.Stone);
-    // Passable and hazard tiles remain replaceable.
+    // The engine places unconditionally; the confirm-before-replacing rule
+    // lives in the targeting flow (resolve.ts).
+    expect(placeTerrain(map, [0, 1], Terrain.Water)).toBe(true);
+    expect(map[0][1]).toBe(Terrain.Water);
     expect(placeTerrain(map, [0, 0], Terrain.Water)).toBe(true);
     expect(map[0][0]).toBe(Terrain.Water);
     expect(placeTerrain(map, [1, 0], Terrain.Water)).toBe(true);

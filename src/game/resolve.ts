@@ -325,8 +325,31 @@ function* resolveAttackFlow(
     ) {
       result.messages.push(
         `${user.num} uses ${active.name} but the chosen tile is invalid.`,
+
       );
       return result;
+    }
+
+    // Obstruction tiles (Stop/Bone/Ice/Stone/Hearth) are replaceable, but
+    // only with explicit confirmation.
+    if (isObstruction(game.map[tilePos[0]][tilePos[1]])) {
+      const tileName =
+        TERRAIN_NAMES[game.map[tilePos[0]][tilePos[1]]] ?? "obstruction";
+      const decision = yield {
+        kind: "selection",
+        message: `Replace the ${tileName} obstruction at ${posToStr(
+          tilePos[0],
+          tilePos[1],
+        )}?`,
+        options: [
+          { id: "yes", label: "Yes, replace it" },
+          { id: "no", label: "Cancel" },
+        ],
+      };
+      if (decision !== "yes") {
+        result.messages.push(`${user.num} cancels ${ability.name}.`);
+        return result;
+      }
     }
   } else {
     const prepared = prepareTargeting(game, user, ability);
@@ -667,8 +690,6 @@ function getTileCandidates(
 
   for (let r = 0; r < game.map.length; r++) {
     for (let c = 0; c < game.map[0].length; c++) {
-      // Obstruction tiles cannot be replaced, so they are not offered.
-      if (isObstruction(game.map[r][c])) continue;
       const d = Math.abs(r - user.pos[0]) + Math.abs(c - user.pos[1]);
       if (d === 0) continue;
       if (d > range) continue;

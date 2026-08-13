@@ -7,7 +7,12 @@ import {
   Terrain,
 } from "../game/state.js";
 import { parseEffects, extractCombatMetadata } from "../game/effects.js";
-import { startAttack, isValidTarget, respondToTile } from "../game/resolve.js";
+import {
+  startAttack,
+  isValidTarget,
+  respondToTile,
+  respondToChoice,
+} from "../game/resolve.js";
 setWs({ send() {} });
 
 // ---------------------------------------------------------------------------
@@ -702,7 +707,7 @@ describe("tile-targeting abilities", () => {
     );
   });
 
-  it("does not offer obstruction tiles as tile targets", () => {
+  it("offers obstruction tiles but requires confirmation to replace them", () => {
     const caster = makeEntity({
       num: "P1",
       name: "Alice",
@@ -719,9 +724,9 @@ describe("tile-targeting abilities", () => {
     });
     caster.abilities = [whittle];
     const game = makeGame({ entities: [caster] });
-    // Stone at (2,3) is an obstruction within Homing 2: it must not be
-    // offered. Lava at (2,4) is a hazard, not an obstruction: it stays
-    // replaceable.
+    // Stone at (2,3) is an obstruction within Homing 2: it IS offered, but
+    // choosing it asks for confirmation first. Lava at (2,4) is a hazard,
+    // not an obstruction: it stays replaceable without confirmation.
     game.map[2][3] = Terrain.Stone;
     game.map[2][4] = Terrain.Lava;
 
@@ -730,15 +735,57 @@ describe("tile-targeting abilities", () => {
     if (step.done) return;
     expect(step.prompt.kind).toBe("tile");
     if (step.prompt.kind !== "tile") return;
-    expect(step.prompt.candidates).not.toContain("c,4");
+    expect(step.prompt.candidates).toContain("c,4");
     expect(step.prompt.candidates).toContain("c,5");
 
-    const step2 = respondToTile(caster, "c,5");
-    expect(step2.done).toBe(true);
-    if (!step2.done) return;
-    // The hazard was replaced, the obstruction was left untouched.
-    expect(game.map[2][4]).toBe(Terrain.Normal);
+    // Picking the Stone tile yields a confirmation prompt.
+    const step2 = respondToTile(caster, "c,4");
+    expect(step2.done).toBe(false);
+    if (step2.done) return;
+    expect(step2.prompt.kind).toBe("selection");
+    if (step2.prompt.kind !== "selection") return;
+    expect(step2.prompt.message).toContain("Stone obstruction");
+
+    // Declining cancels and leaves the obstruction untouched.
+    const step3 = respondToChoice(caster, "no");
+    expect(step3.done).toBe(true);
+    if (!step3.done) return;
     expect(game.map[2][3]).toBe(Terrain.Stone);
+  });
+
+  it("replaces an obstruction tile after confirmation", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game = makeGame({ entities: [caster] });
+    game.map[2][3] = Terrain.Stone;
+
+    const step = startAttack(game, caster, whittle);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+
+    const step2 = respondToTile(caster, "c,4");
+    expect(step2.done).toBe(false);
+    if (step2.done) return;
+    expect(step2.prompt.kind).toBe("selection");
+
+    const step3 = respondToChoice(caster, "yes");
+    expect(step3.done).toBe(true);
+    if (!step3.done) return;
+    expect(game.map[2][3]).toBe(Terrain.Normal);
   });
 
   it("rejects an invalid tile reference without placing anything", () => {

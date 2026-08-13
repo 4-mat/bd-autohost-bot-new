@@ -1624,21 +1624,12 @@ export function* applyEffectStream(
       }
 
       case "tile": {
-        if (tilePos) {
-          if (placeTerrain(game.map, tilePos, effect.terrain)) {
-            const [tr, tc] = tilePos;
-            messages.push(
-              `  ${user.num} creates a ${
-                TERRAIN_NAMES[effect.terrain] ?? "terrain"
-              } tile at ${posToStr(tr, tc)}.`,
-            );
-            break;
-          }
+        if (tilePos && placeTerrain(game.map, tilePos, effect.terrain)) {
+          const [tr, tc] = tilePos;
           messages.push(
-            `  ${user.num} cannot replace the obstruction at ${posToStr(
-              tilePos[0],
-              tilePos[1],
-            )}.`,
+            `  ${user.num} creates a ${
+              TERRAIN_NAMES[effect.terrain] ?? "terrain"
+            } tile at ${posToStr(tr, tc)}.`,
           );
           break;
         }

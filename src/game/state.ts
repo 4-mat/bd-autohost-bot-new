@@ -244,8 +244,6 @@ export function placeTerrain(
 ): boolean {
   const [r, c] = pos;
   if (r >= 0 && r < map.length && c >= 0 && c < map[0].length) {
-    // Obstructions (Stop/Bone/Ice/Stone/Hearth) cannot be replaced.
-    if (isObstruction(map[r][c])) return false;
     map[r][c] = terrain;
     return true;
   }
