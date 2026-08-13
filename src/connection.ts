@@ -6,6 +6,7 @@ import { setWs, resumeSending } from "./utils.js";
 
 export const bot = new EventEmitter();
 
+/** Connect to the Pokemon Showdown WebSocket and wire up login and message handling. */
 export function connect() {
   const proto = config.useTLS ? "wss" : "ws";
   const url = `${proto}://${config.server}:${config.port}/showdown/websocket`;
