@@ -124,6 +124,7 @@ export function handleCommand(
     id === "endturn" ||
     id === "next" ||
     id === "back" ||
+    id === "undo" ||
     id === "r" ||
     id === "roll" ||
     id === "dice" ||
