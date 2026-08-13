@@ -879,6 +879,7 @@ function isValidGroupTarget(
   // Normalize plural/legacy spellings so the checks below match the data as
   // written ("Foe(s)", "Self, Foes, Allies", "Allies and Self", ...).
   const g = group
+    .toLowerCase()
     .replace(/foes/g, "foe")
     .replace(/allies/g, "ally")
     .replace(/foe\(s\)/g, "foe")
@@ -908,7 +909,7 @@ function isValidGroupTarget(
     return target.num === user.num || foeCheck;
   if (g.includes("foe or ally")) return target.num !== user.num;
   if (g.includes("tile or foe")) return foeCheck;
-  if (g.includes("self, foe, ally")) return true;
+  if (g.includes("self, foe, ally") || g.includes("self, foe, and ally")) return true;
   // Unknown group: reject, matching isValidTarget in resolve.ts, so a
   // malformed targetGroup cannot select arbitrary living entities here
   // while selecting nothing in the single-target path.
