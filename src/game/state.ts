@@ -870,7 +870,7 @@ export function getSplashTargets(
   });
 }
 
-// Check if entity is valid for a target group
+/** Check whether an entity is a valid target for a target group (normalizing legacy spellings). */
 function isValidGroupTarget(
   user: Entity,
   target: Entity,
@@ -920,6 +920,7 @@ export function pullEntity(
   return moveEntityInLine(game, target, source, amount, false);
 }
 
+/** Move an entity in a straight line, stopping at obstacles, occupied tiles, and the map edge. */
 function moveEntityInLine(
   game: Game,
   target: Entity,
@@ -1027,7 +1028,7 @@ export function getEffectiveMp(entity: Entity): number {
   return Math.max(0, entity.mp - getSlowMpReduction(entity));
 }
 
-// Apply damage to entity — Shield absorbs first if present
+/** Apply damage to an entity: Shield absorbs first when present, and HP is clamped at zero. */
 export function dealDamage(
   entity: Entity,
   damage: number,
@@ -1098,7 +1099,7 @@ export function processStartOfTurn(
   return { messages, died };
 }
 
-// Cooldowns, status durations, and lava resolve at the end of the entity's turn
+/** Resolve cooldowns, status durations, and lava at the end of an entity's turn. */
 export function processEndOfTurn(
   game: Game,
   entity: Entity,

@@ -180,6 +180,7 @@ function* runEffectStream(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
+/** Run the full attack pipeline: accuracy, damage, on-hit/on-miss/regardless, then after-resolving hooks. */
 function* resolveAttackFlow(
   game: Game,
   user: Entity,
@@ -677,6 +678,7 @@ function findTargets(
   });
 }
 
+/** Check whether an entity is a valid single target for a target group. */
 export function isValidTarget(
   user: Entity,
   target: Entity,
@@ -948,6 +950,7 @@ function emitDamageModTrail(
   );
 }
 
+/** Set the cooldown on an entity for an ability based on its frequency. */
 function setCooldown(entity: Entity, ability: AbilityData) {
   const { cooldown } = parseFrequency(ability.frequency);
   if (cooldown) entity.cooldowns[ability.name] = cooldown;

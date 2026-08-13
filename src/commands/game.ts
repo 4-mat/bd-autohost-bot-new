@@ -969,6 +969,7 @@ function handleRoll(target: string, args: string) {
   sendPm(target, msg);
 }
 
+/** Toggle the current entity's pre-move ability view. */
 function handlePremove(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
 
@@ -1012,6 +1013,7 @@ function handleDirChoice(game: Game, user: User, dir: string) {
   }
 }
 
+/** Handle a tile choice for tile-placement abilities. */
 function handleTileChoice(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);

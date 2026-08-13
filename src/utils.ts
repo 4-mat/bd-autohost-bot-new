@@ -2,6 +2,7 @@ export function toId(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/** Capitalize the first character of a string. */
 export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -19,6 +20,7 @@ let drainTimer: ReturnType<typeof setTimeout> | null = null;
 // at the time (sending was true).
 let resumeWhileSending = false;
 
+/** Enqueue a message for a room; the queue drains on a 400ms chain and survives socket downtime. */
 export function send(room: string, msg: string) {
   sendQueue.push({ room, msg });
   if (!sending) drain();
@@ -150,7 +152,7 @@ export function natList(arr: string[]): string {
   return `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`;
 }
 
-// Dice roller: parses XdY+Z, rolls, returns total and breakdown
+/** Roll an XdY+Z dice formula and return the total plus the per-die breakdown. */
 export function rollDice(formula: string): {
   total: number;
   rolls: number[];
