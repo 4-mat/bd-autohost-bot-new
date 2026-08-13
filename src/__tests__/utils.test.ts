@@ -4,6 +4,7 @@ import {
   setWs,
   resumeSending,
   resetSendQueueForTests,
+  getSendQueueForTests,
 } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -86,6 +87,21 @@ function makeFakeSocketDeferred() {
 }
 
 describe("send queue", () => {
+  it("caps the queue at MAX_SEND_QUEUE and drops the oldest messages", () => {
+    const sock = makeFakeSocket();
+
+    // Socket is down: every send throws and accumulates in the queue.
+    for (let i = 0; i < 2005; i++) {
+      send("battledome", `msg-${i}`);
+    }
+
+    expect(getSendQueueForTests().length).toBe(2000);
+    // The 5 oldest (msg-0..msg-4) were dropped; the newest 2000 remain,
+    // still in order.
+    expect(getSendQueueForTests()[0].msg).toBe("msg-5");
+    expect(getSendQueueForTests()[1999].msg).toBe("msg-2004");
+  });
+
   it("keeps a message queued when the socket is down, then flushes on resume", async () => {
     const sock = makeFakeSocket();
 

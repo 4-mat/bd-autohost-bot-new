@@ -1239,13 +1239,13 @@ export function calculateLoot(
 
 export function nextTurn(
   game: Game,
-  opts: { actorDied?: boolean } = {},
+  opts: { actorDied?: boolean; actorWasLast?: boolean } = {},
 ): {
   entity: Entity | null;
   messages: string[];
   died: boolean;
 } {
-  const { actorDied = false } = opts;
+  const { actorDied = false, actorWasLast = false } = opts;
   if (game.entities.length <= 1) {
     game.phase = "ended";
     return { entity: null, messages: [], died: false };
@@ -1291,12 +1291,25 @@ export function nextTurn(
   // When the actor died mid-turn it was already removed from turnOrder and
   // turnIndex now points at the entity that shifted into its slot, so we must
   // NOT advance past it again (that would skip that entity's turn).
+  // But if the actor held the LAST slot, removeEntity already wrapped
+  // turnIndex back to 0 — a full cycle completed, so advance round to
+  // match what the non-death path would have done on the wrap.
+  else if (actorWasLast) {
+    game.round++;
+  }
 
   // Start the turn of the entity at turnIndex, advancing past any entity
   // that dies when its turn starts (e.g. start-of-turn DoT), so a dead
   // entity is never returned as the current actor.
   let entity = getCurrentEntity(game);
-  while (entity && entity.curhp > 0) {
+  while (entity) {
+    if (entity.curhp <= 0) {
+      // Dead but still present (its removal was missed): never hand a
+      // corpse the turn — remove it and advance to the next entity.
+      removeEntity(game, entity);
+      entity = getCurrentEntity(game);
+      continue;
+    }
     // Reset per-turn flags
     entity.dashUsed = false;
     entity.standardUsed = false;
