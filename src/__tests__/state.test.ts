@@ -1092,3 +1092,24 @@ describe("formatChatTime", () => {
     expect(formatChatTime(0)).toBe("");
   });
 });
+
+
+describe("getAoETargets FFA (team 0 = no teams)", () => {
+  it("hits every in-range player except the user", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [3, 2], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Foe");
+    expect(targets.map((t) => t.num).sort()).toEqual(["P2", "P3"]);
+    expect(targets.some((t) => t.num === "P1")).toBe(false);
+  });
+
+  it("finds no allies in FFA", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
+    const game = makeGame({ entities: [p1, p2] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Ally");
+    expect(targets.length).toBe(0);
+  });
+});

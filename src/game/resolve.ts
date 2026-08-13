@@ -678,19 +678,33 @@ export function isValidTarget(
 ): boolean {
   if (target.curhp <= 0) return false;
   const g = group.toLowerCase();
+  // FFA / no-team games put everyone on team 0: "Foe" means anyone but
+  // self, "Ally" targets nobody, and ally-groups resolve to self only.
+  // Mirrors the GUI candidate filter in pages.ts so the direct-target
+  // path agrees with the AoE path (isValidGroupTarget in state.ts).
+  const noTeams = user.team === 0;
+  const foeCheck = noTeams
+    ? target.num !== user.num
+    : target.team !== user.team;
+  const allyCheck = noTeams
+    ? false
+    : target.team === user.team && target.num !== user.num;
+  const selfOrAllyCheck = noTeams
+    ? target.num === user.num
+    : target.team === user.team;
 
   if (g.includes("self and allies") || g.includes("self and ally"))
-    return target.team === user.team;
+    return selfOrAllyCheck;
   if (g.includes("self or ally") || g.includes("self or allies"))
-    return target.team === user.team;
+    return selfOrAllyCheck;
   if (g.includes("self or foe")) return true;
   if (g.includes("foe or ally")) return target.num !== user.num;
   if (g.includes("self, foes, allies") || g.includes("self, foes, and allies"))
     return true;
 
   if (g === "self") return target.num === user.num;
-  if (g === "ally") return target.team === user.team && target.num !== user.num;
-  if (g === "foe") return target.team !== user.team;
+  if (g === "ally") return allyCheck;
+  if (g === "foe") return foeCheck;
   if (g === "any") return true;
   if (g === "tile") return false;
 
