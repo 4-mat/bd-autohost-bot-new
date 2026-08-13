@@ -896,7 +896,9 @@ function isValidGroupTarget(
   if (group === "foe") return foeCheck;
   if (group === "any") return true;
   if (group === "tile") return false;
-  if (group.includes("self and allies")) return selfOrAllyCheck;
+  if (group.includes("self and allies") || group.includes("self and ally"))
+    return selfOrAllyCheck;
+  if (group.includes("allies and self")) return selfOrAllyCheck;
   if (group.includes("self or ally")) return selfOrAllyCheck;
   if (group.includes("self or foe")) return true;
   if (group.includes("foe or ally")) return target.num !== user.num;
