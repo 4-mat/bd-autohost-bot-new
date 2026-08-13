@@ -528,6 +528,10 @@ describe("FFA targeting (team 0 = no teams)", () => {
     expect(isValidTarget(p1, p2, "Self or Foe")).toBe(true);
     expect(isValidTarget(p1, p2, "Self and Allies")).toBe(false);
     expect(isValidTarget(p1, p1, "Self and Allies")).toBe(true);
+    expect(isValidTarget(p1, p2, "Self and Ally")).toBe(false);
+    expect(isValidTarget(p1, p1, "Self and Ally")).toBe(true);
+    expect(isValidTarget(p1, p2, "Allies and Self")).toBe(false);
+    expect(isValidTarget(p1, p1, "Allies and Self")).toBe(true);
     expect(isValidTarget(p1, p2, "Foe or Ally")).toBe(true);
   });
 

@@ -695,6 +695,7 @@ export function isValidTarget(
 
   if (g.includes("self and allies") || g.includes("self and ally"))
     return selfOrAllyCheck;
+  if (g.includes("allies and self")) return selfOrAllyCheck;
   if (g.includes("self or ally") || g.includes("self or allies"))
     return selfOrAllyCheck;
   if (g.includes("self or foe")) return true;
