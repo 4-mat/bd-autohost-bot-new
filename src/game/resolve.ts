@@ -46,6 +46,7 @@ import {
   applyEffectStream,
   extractCombatMetadata,
   type CombatMetadata,
+  type Effect,
   type EffectChoosePrompt,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
@@ -373,6 +374,20 @@ function* resolveAttackFlow(
   const effects = parseEffects(active.effect);
   const combat = extractCombatMetadata(effects);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
+
+  // Self-subject stat mods ("gain +2 DMG/1", "gain +1 ACC/1") must apply
+  // ONCE per ability use, not once per hit/target: applyEffectStream runs
+  // inside the per-target x per-hit loops below, so leaving them in the
+  // per-hit list would push the buff onto the user once per hit per target
+  // (getStatBonus sums buffs, so a Pierce 3 "gain +2 DMG/1" would become
+  // +6 dice faces). Apply them once after the loops and pass only the
+  // target effects down to the per-hit/per-target resolution.
+  const selfEffects = effects.filter(
+    (e) => (e.type === "buff" || e.type === "debuff") && e.subject === "self",
+  );
+  const targetEffects = effects.filter(
+    (e) => !((e.type === "buff" || e.type === "debuff") && e.subject === "self"),
+  );
 
   for (const target of targets) {
     const userDefeated = yield* resolveTargetAction(
@@ -815,6 +830,7 @@ function* resolveSingleTarget(
   ability: AbilityData,
   target: Entity,
   combat: CombatMetadata,
+  effects: Effect[],
   hitLabel = "",
   confusionAlreadyApplied = false,
 ): Generator<AttackPrompt, ResolutionResult, string> {
@@ -1231,9 +1247,9 @@ function* resolveNonDamaging(
   user: Entity,
   ability: AbilityData,
   target: Entity,
+  effects: Effect[],
 ): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
-  const effects = parseEffects(ability.effect);
   const effectMsgs: string[] = yield* runEffectStream(
     applyEffectStream(game, user, target, effects, ability),
   );
