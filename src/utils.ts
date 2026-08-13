@@ -11,6 +11,11 @@ export function capitalize(s: string): string {
 // (no expiry): the 400ms chain only advances after a successful send, and
 // resumeSending() restarts it on reconnect. `resetSendQueueForTests` exists
 // for the test suite to clear the queue between tests.
+// Hard cap on the outbound queue: the queue is deliberately retained
+// across socket downtime, but an unbounded backlog would let memory grow
+// without limit during a long outage. When the cap is hit the OLDEST
+// messages are dropped (chat history is expendable; memory is not).
+const MAX_SEND_QUEUE = 2000;
 const sendQueue: Array<{ room: string; msg: string }> = [];
 let sending = false;
 let drainTimer: ReturnType<typeof setTimeout> | null = null;
@@ -22,6 +27,12 @@ let resumeWhileSending = false;
 
 /** Enqueue a message for a room; the queue drains on a 400ms chain and survives socket downtime. */
 export function send(room: string, msg: string) {
+  // Trim only while no send is in flight: the queue can only reach the cap
+  // during an outage (sending === false), and splicing the head mid-flight
+  // would let the drain callback's shift() drop the wrong message.
+  if (!sending && sendQueue.length >= MAX_SEND_QUEUE) {
+    sendQueue.splice(0, sendQueue.length - MAX_SEND_QUEUE + 1);
+  }
   sendQueue.push({ room, msg });
   if (!sending) drain();
 }
@@ -86,6 +97,11 @@ export function resetSendQueueForTests() {
   sendQueue.length = 0;
   sending = false;
   resumeWhileSending = false;
+}
+
+/** Test-only: expose the current queue so tests can assert the cap. */
+export function getSendQueueForTests() {
+  return sendQueue;
 }
 
 export function sendPm(user: string, msg: string) {

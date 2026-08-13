@@ -1137,6 +1137,54 @@ describe("nextTurn end-of-turn death", () => {
     expect(game.turnIndex).toBe(0);
   });
 
+  it("advances the round when the last actor dies mid-turn (round wrap)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C", curhp: 1 });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 2; // P3 (last slot) is acting
+    game.round = 1;
+    removeEntity(game, p3); // dies mid-turn; removal wraps turnIndex to 0
+    const result = nextTurn(game, { actorDied: true, actorWasLast: true });
+    expect(result.entity?.num).toBe("P1");
+    expect(game.turnIndex).toBe(0);
+    expect(game.round).toBe(2); // a full cycle completed, so round must advance
+  });
+
+  it("does not advance the round when a mid-slot actor dies mid-turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 (mid-slot) is acting
+    game.round = 1;
+    removeEntity(game, p2); // dies mid-turn; P3 shifts into slot 1 (no wrap)
+    const result = nextTurn(game, { actorDied: true, actorWasLast: false });
+    expect(result.entity?.num).toBe("P3");
+    expect(game.turnIndex).toBe(1);
+    expect(game.round).toBe(1); // cycle NOT complete
+  });
+
+  it("removes a dead-but-present entity instead of handing it the turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 0 }); // dead but still present
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 was the actor but died and its corpse was missed
+    const result = nextTurn(game, { actorDied: true });
+    expect(result.entity?.num).toBe("P3");
+    expect(game.entities.find((e) => e.num === "P2")).toBeUndefined();
+  });
+
   it("advances past an entity that dies at the start of its turn", () => {
     const p1 = makeEntity({ num: "P1", name: "A" });
     const p2 = makeEntity({
