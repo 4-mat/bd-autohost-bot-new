@@ -72,15 +72,10 @@ export const GAMEMODE_MAPS: Record<GameModeId, string[]> = {
     "fortress",
     "snowyvillage",
   ],
-  // 1v1 duels: small, tight, symmetric maps.
+  // 1v1 duels: open, symmetric maps larger than 7x7 so duels have room to move.
   "1v1": [
-    "duelingground",
     "duel",
     "arena",
-    "miniarena",
-    "minicrossroads",
-    "combatring",
-    "tinyring",
     "crossout",
   ],
 };
