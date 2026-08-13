@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Battle Dome — Map Pools</title>
+<style>
+	/* Pokémon Showdown-style light theme, matching the map browser */
+	body {
+		background: #f2f2f2;
+		color: #222;
+		font-family: Verdana, Tahoma, "Segoe UI", Arial, sans-serif;
+		font-size: 12px;
+		margin: 0;
+	}
+	#app { padding: 25px 80px; position: relative; }
+	@media (max-width: 700px) { #app { padding: 16px 12px; } }
+
+	a { color: #2b5e8c; }
+	a:hover { color: #1a4a73; }
+
+	.button {
+		display: inline-block;
+		padding: 4px 13px;
+		margin: 3px 4px 3px 0;
+		background: linear-gradient(#fdfdfd, #e2e2e2);
+		border: 1px solid #8a8a8a;
+		border-radius: 3px;
+		color: #222;
+		text-decoration: none;
+		font-size: 12px;
+		cursor: pointer;
+	}
+	.button:hover { background: linear-gradient(#ffffff, #d3d3d3); border-color: #555; }
+	.button:active { background: linear-gradient(#d3d3d3, #e8e8e8); }
+	.button.primary { background: linear-gradient(#eaf3fb, #cfe3f0); border-color: #6f93ad; }
+
+	h1 { font-size: 26px; margin: 4px 0 2px; font-weight: bold; }
+	.map-info { color: #666; font-size: 12px; margin: 0 0 12px; }
+	.map-info code { background: #eee; padding: 0 3px; border-radius: 2px; }
+	hr { border: 0; border-top: 1px solid #bbb; margin: 12px 0 16px; }
+	.muted { color: #888; font-size: 11px; }
+	#status { color: #a33; font-size: 12px; margin: 8px 0; }
+	#diffbar p { margin: 6px 0 0; color: #333; }
+
+	.section { margin: 18px 0; }
+	.section h2 {
+		font-size: 14px;
+		color: #333;
+		border-bottom: 1px solid #ccc;
+		padding-bottom: 3px;
+		margin: 0 0 8px;
+	}
+	.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+	.chip {
+		padding: 3px 10px;
+		border: 1px solid #8a8a8a;
+		border-radius: 3px;
+		background: linear-gradient(#fdfdfd, #e2e2e2);
+		color: #777;
+		font-size: 12px;
+		cursor: pointer;
+		font-family: inherit;
+	}
+	.chip.on { background: linear-gradient(#dff0d8, #c5e1b7); border-color: #5c8a4f; color: #222; }
+	.chip:hover { border-color: #555; }
+	.actions { margin: 18px 0 40px; }
+</style>
+</head>
+<body>
+<div id="app">
+	<div id="topbar"></div>
+	<hr>
+	<div id="content"><p class="muted">Loading pools…</p></div>
+</div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function getJSON(u) { const r = await fetch(u); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }
+
+let manifest = [];   // {name, display, format, rows, cols}
+let modes = {};      // modeId -> [map names]
+let modeLabels = {}; // modeId -> display label
+let current = {};    // modeId -> {added:Set, removed:Set}
+
+(async () => {
+	try { manifest = ((await getJSON('../../maps/index.json')).maps) || []; } catch (e) { manifest = []; }
+	try {
+		const d = await getJSON('../../maps/modes.json');
+		modes = d.modes || {};
+		modeLabels = d.labels || {};
+	} catch (e) { modes = {}; modeLabels = {}; }
+	render();
+})();
+
+function render() {
+	$('topbar').innerHTML = '<a class="button" href="../gallery/index.html">🗺 Map browser</a> <a class="button" href="../index.html">✏️ Map editor</a> <span class="muted">Battle Dome — map pools</span>';
+	let html = '<h1>Battle Dome — Map Pools</h1>';
+	html += '<p class="map-info">Assign maps to gamemode pools. Toggle the chips below, then propose your changes — a bot opens a pull request that updates <code>maps/modes.json</code>.</p>';
+	html += '<div id="status"></div>';
+	html += '<div id="diffbar"><p class="muted">No changes yet.</p></div>';
+	const order = Object.keys(modes).length ? Object.keys(modes) : ['ffa', 'ntr', 'jugg', 'pvp', '1v1'];
+	const sorted = manifest.slice().sort((a, b) => (a.display || a.name).localeCompare(b.display || b.name));
+	for (const k of order) {
+		current[k] = { added: new Set(), removed: new Set() };
+		const inPool = new Set(modes[k] || []);
+		html += '<div class="section"><h2>' + esc(modeLabels[k] || k) + ' <span class="muted">(' + (modes[k] ? modes[k].length : 0) + ')</span></h2><div class="chips">';
+		for (const m of sorted) {
+			const on = inPool.has(m.name);
+			html += '<button type="button" class="chip' + (on ? ' on' : '') + '" data-mode="' + esc(k) + '" data-name="' + esc(m.name) + '" data-in="' + (on ? 1 : 0) + '" title="' + esc(m.display || m.name) + ' (' + m.rows + '×' + m.cols + ')">' + esc(m.display || m.name) + '</button>';
+		}
+		html += '</div></div>';
+	}
+	if (!manifest.length) {
+		html = '<p id="status">No maps found — the map data failed to load. Try a hard refresh (Ctrl+Shift+R).</p>';
+	}
+	html += '<div class="actions"><button class="button primary" id="btnPropose">🚀 Propose pool changes</button> <button class="button" id="btnCopy">📋 Copy changes</button></div>';
+	$('content').innerHTML = html;
+	document.querySelectorAll('.chip').forEach((ch) => ch.addEventListener('click', toggleChip));
+	$('btnPropose').addEventListener('click', propose);
+	$('btnCopy').addEventListener('click', copyChanges);
+}
+
+function toggleChip(e) {
+	const ch = e.currentTarget;
+	const mode = ch.dataset.mode;
+	const name = ch.dataset.name;
+	const st = current[mode];
+	if (ch.dataset.in === '1') {
+		st.removed.add(name);
+		st.added.delete(name);
+		ch.dataset.in = '0';
+		ch.classList.remove('on');
+	} else {
+		st.added.add(name);
+		st.removed.delete(name);
+		ch.dataset.in = '1';
+		ch.classList.add('on');
+	}
+	updateDiff();
+}
+
+function changeLines() {
+	const lines = [];
+	for (const mode in current) {
+		const st = current[mode];
+		for (const n of st.added) lines.push(mode + '|+|' + n);
+		for (const n of st.removed) lines.push(mode + '|-|' + n);
+	}
+	return lines;
+}
+
+function updateDiff() {
+	const lines = changeLines();
+	const bar = $('diffbar');
+	if (!bar) return;
+	if (!lines.length) { bar.innerHTML = '<p class="muted">No changes yet.</p>'; return; }
+	bar.innerHTML = '<p><b>' + lines.length + ' change' + (lines.length === 1 ? '' : 's') + '</b>: <code>' + esc(lines.join(' · ')) + '</code></p>';
+}
+
+function issueUrl() {
+	const lines = changeLines();
+	const body = 'Pool update\n\n' + lines.join('\n');
+	return 'https://github.com/4-mat/bd-autohost-bot-new/issues/new?title=' + encodeURIComponent('Pools: update') + '&body=' + encodeURIComponent(body);
+}
+
+function propose() {
+	if (!changeLines().length) { $('status').textContent = 'No changes to propose yet.'; return; }
+	window.open(issueUrl(), '_blank');
+	$('status').textContent = 'Opened a pre-filled issue — submit it and the bot opens the PR.';
+}
+
+async function copyChanges() {
+	const lines = changeLines();
+	if (!lines.length) { $('status').textContent = 'No changes to copy yet.'; return; }
+	const text = lines.join('\n');
+	try {
+		await navigator.clipboard.writeText(text);
+		$('status').textContent = 'Copied changes to clipboard.';
+	} catch (e) {
+		const ta = document.createElement('textarea');
+		ta.value = text;
+		ta.style.position = 'fixed';
+		ta.style.opacity = '0';
+		document.body.appendChild(ta);
+		ta.select();
+		try { document.execCommand('copy'); $('status').textContent = 'Copied changes to clipboard.'; }
+		catch (e2) { $('status').textContent = 'Could not copy — select the changes manually.'; }
+		document.body.removeChild(ta);
+	}
+}
+</script>
+</body>
+</html>

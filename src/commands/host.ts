@@ -208,6 +208,9 @@ export function hostCommand(
     case "endvote":
       handleEndVote(room, user);
       break;
+    case "ffabtn":
+      handleFfaButton(room, user);
+      break;
     case "nudge":
       handleNudge(room, user);
       break;
@@ -538,6 +541,28 @@ function handleEndVote(room: Room, user: User) {
   send(
     room.id,
     `**Voting closed.** ${summary}\nMode set to **${game.mode}** (won by ${wasRunoff ? "runoff" : "vote"}).${hint}`,
+  );
+  broadcastPages(game);
+}
+
+/**
+ * %ffabtn — host-only: toggle the Setup panel's always-available %setgame ffa
+ * shortcut. Some hosts never run FFA and prefer the panel to only show the
+ * vote-winner action; this lets them hide the extra button per game.
+ */
+function handleFfaButton(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %ffabtn.");
+  }
+
+  game.hideFfaShortcut = !game.hideFfaShortcut;
+  send(
+    room.id,
+    game.hideFfaShortcut
+      ? "The FFA shortcut is now hidden (use %ffabtn again to show it)."
+      : "The FFA shortcut is now shown.",
   );
   broadcastPages(game);
 }
