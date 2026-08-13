@@ -883,20 +883,35 @@ function isValidGroupTarget(
     .replace(/allies/g, "ally")
     .replace(/foe\(s\)/g, "foe")
     .replace(/ally and self/g, "self and ally");
+  // FFA / no-team games put everyone on team 0: "Foe" = anyone but self,
+  // "Ally" = nobody, ally-groups = self only. Mirrors the GUI candidate
+  // filter in pages.ts and the single-target validator in resolve.ts.
+  const noTeams = user.team === 0;
+  const foeCheck = noTeams
+    ? target.num !== user.num
+    : target.team !== user.team;
+  const allyCheck = noTeams
+    ? false
+    : target.team === user.team && target.num !== user.num;
+  const selfOrAllyCheck = noTeams
+    ? target.num === user.num
+    : target.team === user.team;
+
   if (g === "self") return target.num === user.num;
-  if (g === "ally")
-    return target.team === user.team && target.num !== user.num;
-  if (g === "foe") return target.team !== user.team;
+  if (g === "ally") return allyCheck;
+  if (g === "foe") return foeCheck;
   if (g === "any") return true;
   if (g === "tile") return false;
-  if (g.includes("self and ally")) return target.team === user.team;
-  if (g.includes("self or ally")) return target.team === user.team;
+  if (g.includes("self and ally")) return selfOrAllyCheck;
+  if (g.includes("self or ally")) return selfOrAllyCheck;
   if (g.includes("self or foe"))
-    return target.num === user.num || target.team !== user.team;
+    return target.num === user.num || foeCheck;
   if (g.includes("foe or ally")) return target.num !== user.num;
-  if (g.includes("tile or foe")) return target.team !== user.team;
-  if (g.includes("self, foe, ally") || g.includes("self, foe, and ally"))
-    return true;
+  if (g.includes("tile or foe")) return foeCheck;
+  if (g.includes("self, foe, ally")) return true;
+  // Unknown group: reject, matching isValidTarget in resolve.ts, so a
+  // malformed targetGroup cannot select arbitrary living entities here
+  // while selecting nothing in the single-target path.
   return false;
 }
 
