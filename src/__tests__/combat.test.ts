@@ -7,7 +7,7 @@ import {
   Terrain,
 } from "../game/state.js";
 import { parseEffects, extractCombatMetadata } from "../game/effects.js";
-import { startAttack, eva43 } from "../game/resolve.js";
+import { startAttack, isValidTarget, eva43 } from "../game/resolve.js";
 import type { GameVersion } from "../data/index.js";
 
 setWs({ send() {} });
@@ -559,5 +559,33 @@ describe("eva43 — BD 4.3 evasion", () => {
     const log = driveResolveAgainst(user, ability, target, "4.3");
     expect(log).toContain("EVA 4");
     expect(log).not.toContain("EVA 99");
+  });
+});
+
+describe("FFA targeting (team 0 = no teams)", () => {
+  it("treats every other player as a Foe and no one as an Ally", () => {
+    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 0 });
+    expect(isValidTarget(p1, p2, "Foe")).toBe(true);
+    expect(isValidTarget(p1, p2, "Ally")).toBe(false);
+    expect(isValidTarget(p1, p1, "Foe")).toBe(false);
+    expect(isValidTarget(p1, p2, "Self or Foe")).toBe(true);
+    expect(isValidTarget(p1, p2, "Self and Allies")).toBe(false);
+    expect(isValidTarget(p1, p1, "Self and Allies")).toBe(true);
+    expect(isValidTarget(p1, p2, "Self and Ally")).toBe(false);
+    expect(isValidTarget(p1, p1, "Self and Ally")).toBe(true);
+    expect(isValidTarget(p1, p2, "Allies and Self")).toBe(false);
+    expect(isValidTarget(p1, p1, "Allies and Self")).toBe(true);
+    expect(isValidTarget(p1, p2, "Foe or Ally")).toBe(true);
+  });
+
+  it("keeps team-mode targeting unchanged", () => {
+    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "Carol", pos: [2, 4], team: 2 });
+    expect(isValidTarget(p1, p2, "Ally")).toBe(true);
+    expect(isValidTarget(p1, p2, "Foe")).toBe(false);
+    expect(isValidTarget(p1, p3, "Foe")).toBe(true);
+    expect(isValidTarget(p1, p3, "Ally")).toBe(false);
   });
 });
