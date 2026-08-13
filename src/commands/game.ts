@@ -844,7 +844,11 @@ function handleAdvanceTurn(game: Game, user: User) {
     );
   }
 
-  const result = nextTurn(game);
+  // If the actor died mid-turn (recoil/confusion), removeEntity already
+  // repositioned turnIndex onto the next entity; tell nextTurn so it does
+  // not advance past it a second time.
+  const actorDied = entity.curhp <= 0 || !game.entities.includes(entity);
+  const result = nextTurn(game, { actorDied });
   for (const msg of result.messages) {
     send(game.room, msg);
   }
