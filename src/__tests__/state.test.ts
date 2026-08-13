@@ -1104,6 +1104,60 @@ describe("nextTurn end-of-turn death", () => {
     expect(result.died).toBe(false);
     expect(result.entity?.num).toBe("P2");
   });
+
+  it("hands the turn to the shifted-in entity when the active actor died mid-turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 is acting
+    // P2 dies mid-turn (recoil/confusion) and is removed; P3 shifts into
+    // index 1. nextTurn must hand the turn to P3, not skip it.
+    removeEntity(game, p2);
+    const result = nextTurn(game, { actorDied: true });
+    expect(result.entity?.num).toBe("P3");
+    expect(game.turnIndex).toBe(1);
+  });
+
+  it("wraps to the first entity when the last actor dies mid-turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C", curhp: 1 });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 2; // P3 is acting (last in order)
+    removeEntity(game, p3); // P3 dies mid-turn; removal clamps turnIndex to 0
+    const result = nextTurn(game, { actorDied: true });
+    expect(result.entity?.num).toBe("P1");
+    expect(game.turnIndex).toBe(0);
+  });
+
+  it("advances past an entity that dies at the start of its turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({
+      num: "P2",
+      name: "B",
+      curhp: 5,
+      statuses: [
+        { name: "Bleed", damage: 99, rounds: 3, maxRounds: 3, removable: true },
+      ],
+    });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 0; // P1's turn is ending; P2's turn begins and bleeds out
+    const result = nextTurn(game);
+    expect(result.entity?.num).toBe("P3");
+    expect(result.died).toBe(true);
+    expect(game.entities.find((x) => x.num === "P2")).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

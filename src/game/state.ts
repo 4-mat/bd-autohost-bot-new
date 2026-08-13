@@ -1237,69 +1237,88 @@ export function calculateLoot(
   return results;
 }
 
-export function nextTurn(game: Game): {
+export function nextTurn(
+  game: Game,
+  opts: { actorDied?: boolean } = {},
+): {
   entity: Entity | null;
   messages: string[];
   died: boolean;
 } {
+  const { actorDied = false } = opts;
   if (game.entities.length <= 1) {
     game.phase = "ended";
     return { entity: null, messages: [], died: false };
   }
 
-  // Tick buffs of the entity whose turn is ending
   const messages: string[] = [];
-  const prev = getCurrentEntity(game);
-  const prevIndex = game.turnIndex;
-  if (prev) {
-    prev.buffs = prev.buffs.filter((b) => {
-      b.rounds--;
-      if (b.rounds <= 0) {
-        messages.push(
-          `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
-        );
-        return false;
-      }
-      return true;
-    });
-  }
-
-  game.turnIndex++;
-  if (game.turnIndex >= game.turnOrder.length) {
-    game.turnIndex = 0;
-    game.round++;
-  }
-
-  // Resolve end-of-turn effects for the entity whose turn just ended
   let died = false;
-  if (prev) {
-    const end = processEndOfTurn(game, prev);
-    messages.push(...end.messages);
-    died = end.died;
-    if (end.died) {
-      // prev was removed from turnOrder; keep the pointer on the next entity
-      game.turnIndex = prevIndex >= game.turnOrder.length ? 0 : prevIndex;
+
+  if (!actorDied) {
+    // Tick buffs of the entity whose turn is ending
+    const prev = getCurrentEntity(game);
+    const prevIndex = game.turnIndex;
+    if (prev) {
+      prev.buffs = prev.buffs.filter((b) => {
+        b.rounds--;
+        if (b.rounds <= 0) {
+          messages.push(
+            `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
+          );
+          return false;
+        }
+        return true;
+      });
+    }
+
+    game.turnIndex++;
+    if (game.turnIndex >= game.turnOrder.length) {
+      game.turnIndex = 0;
+      game.round++;
+    }
+
+    // Resolve end-of-turn effects for the entity whose turn just ended
+    if (prev) {
+      const end = processEndOfTurn(game, prev);
+      messages.push(...end.messages);
+      died = end.died;
+      if (end.died) {
+        // prev was removed from turnOrder; keep the pointer on the next entity
+        game.turnIndex = prevIndex >= game.turnOrder.length ? 0 : prevIndex;
+      }
     }
   }
+  // When the actor died mid-turn it was already removed from turnOrder and
+  // turnIndex now points at the entity that shifted into its slot, so we must
+  // NOT advance past it again (that would skip that entity's turn).
 
-  const entity = getCurrentEntity(game);
+  // Start the turn of the entity at turnIndex, advancing past any entity
+  // that dies when its turn starts (e.g. start-of-turn DoT), so a dead
+  // entity is never returned as the current actor.
+  let entity = getCurrentEntity(game);
+  while (entity && entity.curhp > 0) {
+    // Reset per-turn flags
+    entity.dashUsed = false;
+    entity.standardUsed = false;
+    entity.movementUsed = false;
+    entity.swiftUsed = false;
+    entity.triggered = false;
+    entity.pendingAction = null;
+
+    const { messages: startMessages, died: startDied } = processStartOfTurn(
+      game,
+      entity,
+    );
+    messages.push(...startMessages);
+    died = died || startDied;
+    if (startDied) {
+      // entity was removed; the next entity shifted into this slot
+      entity = getCurrentEntity(game);
+      continue;
+    }
+    break;
+  }
+
   if (!entity) return { entity: null, messages, died };
-
-  // Reset per-turn flags
-  entity.dashUsed = false;
-  entity.standardUsed = false;
-  entity.movementUsed = false;
-  entity.swiftUsed = false;
-  entity.triggered = false;
-  entity.pendingAction = null;
-
-  const { messages: startMessages, died: startDied } = processStartOfTurn(
-    game,
-    entity,
-  );
-  return {
-    entity,
-    messages: [...messages, ...startMessages],
-    died: died || startDied,
-  };
+  return { entity, messages, died };
 }
