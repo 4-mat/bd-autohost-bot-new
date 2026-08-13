@@ -319,7 +319,8 @@ function* resolveAttackFlow(
       tilePos[0] < 0 ||
       tilePos[0] >= game.map.length ||
       tilePos[1] < 0 ||
-      tilePos[1] >= game.map[0].length
+      tilePos[1] >= game.map[0].length ||
+      !candidates.includes(posToStr(tilePos[0], tilePos[1]))
     ) {
       result.messages.push(
         `${user.num} uses ${active.name} but the chosen tile is invalid.`,

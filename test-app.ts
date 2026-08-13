@@ -1570,6 +1570,9 @@ function connect() {
       if (msg.role === 'signin') restoreSigninSelects();
     }
     } else if (msg.type === 'nick') {
+      // Account switch: don't carry the previous account's signin picks.
+      signinClass = '';
+      signinWeapon = '';
       currentNick = msg.user;
       if (userEl) userEl.textContent = msg.user;
       saveNick(msg.user);

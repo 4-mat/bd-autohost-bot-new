@@ -511,7 +511,7 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
   });
 });
 
-/ ===========================================================================
+// ===========================================================================
 // Terrain stat bonuses: Forest +5 PD / -1 EVA vs Physical; Water +5 MD /
 // -1 EVA vs Magical (BD 4.4 Map glossary).
 // ===========================================================================
@@ -663,8 +663,8 @@ describe("resolveAttackFlow: terrain stat bonuses", () => {
     );
     expect(log).toMatch(/EVA 0 =/);
     expect(log).toMatch(/PD\(5\)/);
+  });
 });
-
 
 describe("tile-targeting abilities", () => {
   it("prompts for a tile and places the terrain on the chosen tile (Whittle)", () => {
@@ -733,7 +733,41 @@ describe("tile-targeting abilities", () => {
     expect(step2.result.messages.join("\n")).toContain(
       "chosen tile is invalid",
     );
-    expect(game.map[2][3]).toBe(Terrain.Lava);  });
+    expect(game.map[2][3]).toBe(Terrain.Lava);
+  });
+
+  it("rejects an in-bounds tile that is outside the ability range", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 1",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game = makeGame({ entities: [caster] });
+    // Far corner: in-bounds but outside Homing 1 from (2,2).
+    const step = startAttack(game, caster, whittle);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+
+    const step2 = respondToTile(caster, "a,1");
+    expect(step2.done).toBe(true);
+    if (!step2.done) return;
+    expect(step2.result.messages.join("\n")).toContain(
+      "chosen tile is invalid",
+    );
+    // Placement must never happen on an out-of-range tile.
+    expect(game.map[0][0]).toBe(Terrain.Normal);
+  });
 });
 
 describe("FFA targeting (team 0 = no teams)", () => {
