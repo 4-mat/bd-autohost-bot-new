@@ -189,7 +189,9 @@ export function rollDice(formula: string): {
   const match = formula.match(/^(\d+)d(\d+)([+-]\d+)?$/);
   if (!match) return { total: 0, rolls: [], base: 0 };
   const count = parseInt(match[1]);
-  const sides = parseInt(match[2]);
+  // "dice faces" buffs/debuffs shift the die size (d4 + 4 faces -> d8);
+  // faces round up per the data ("dice faces round up"), min d2.
+  const sides = Math.max(2, parseInt(match[2]) + Math.ceil(facesMod));
   const mod = match[3] ? parseInt(match[3]) : 0;
   const rolls: number[] = [];
   for (let i = 0; i < count; i++) {

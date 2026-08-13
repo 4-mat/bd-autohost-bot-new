@@ -562,7 +562,7 @@ function parseStatMods(lower: string): Effect[] {
   else if (/^each\s+target/.test(lower)) subject = "target";
 
   const statRegex =
-    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range)\s*(?:\/\s*(\d+))?/g;
+    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range|dice faces)\s*(?:\/\s*(\d+))?/g;
   let match;
   while ((match = statRegex.exec(lower)) !== null) {
     const sign = match[1] === "-" ? -1 : 1;

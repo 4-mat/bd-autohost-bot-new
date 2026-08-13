@@ -1529,3 +1529,53 @@ describe("stat-mod subject routing (#101)", () => {
     expect(Array.isArray(effects)).toBe(true);
   });
 });
+
+describe("dice faces stat modifier (#101)", () => {
+  it("parses 'gain +N dice faces/M' as a self buff", () => {
+    const effects = parseEffects("gain +2 dice faces/1");
+    expect(effects).toHaveLength(1);
+    expect(effects[0]).toMatchObject({
+      type: "buff",
+      stat: "dice faces",
+      amount: 2,
+      rounds: 1,
+      subject: "self",
+    });
+  });
+
+  it("parses 'inflict -N dice faces/M' as a target debuff", () => {
+    const effects = parseEffects("inflict -2 dice faces/1");
+    expect(effects).toHaveLength(1);
+    expect(effects[0]).toMatchObject({
+      type: "debuff",
+      stat: "dice faces",
+      amount: -2,
+      rounds: 1,
+      subject: "target",
+    });
+  });
+
+  it("parses Point-in-Line's effect clauses (inflict + gain both recognized)", () => {
+    // Note: the "If debuff not active:" gating uses a colon, which the
+    // conditional parser (comma form only) doesn't pick up on this branch,
+    // so the gain applies unconditionally -- the stat itself now parses.
+    const effects = parseEffects(
+      "inflict -2 dice faces/1. If debuff not active: gain +2 dice faces/1.",
+    );
+    expect(effects).toHaveLength(2);
+    expect(effects[0]).toMatchObject({
+      type: "debuff",
+      stat: "dice faces",
+      amount: -2,
+      rounds: 1,
+      subject: "target",
+    });
+    expect(effects[1]).toMatchObject({
+      type: "buff",
+      stat: "dice faces",
+      amount: 2,
+      rounds: 1,
+      subject: "self",
+    });
+  });
+});

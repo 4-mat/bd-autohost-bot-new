@@ -375,6 +375,23 @@ function* resolveAttackFlow(
   const combat = extractCombatMetadata(effects);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
+  // Ally-targeted abilities (Rising Hope, Primadonna, Crusade, Flower
+  // Crown, Windmill, ...): a "gain +N STAT" clause is a buff FOR EACH
+  // TARGET, not a self-buff for the user -- parseStatMods defaults "gain"
+  // to subject "self" because it has no ability context, so re-route it
+  // here. Foe-targeted abilities keep the user as the "gain" recipient
+  // (Blitz, Point-in-Line, ...).
+  if (/(^| )(allies|ally|any)/i.test(ability.targetGroup)) {
+    for (const e of effects) {
+      if (
+        (e.type === "buff" || e.type === "debuff") &&
+        e.subject === "self"
+      ) {
+        e.subject = "target";
+      }
+    }
+  }
+
   // Self-subject stat mods ("gain +2 DMG/1", "gain +1 ACC/1") must apply
   // ONCE per ability use, not once per hit/target: applyEffectStream runs
   // inside the per-target x per-hit loops below, so leaving them in the
@@ -1215,7 +1232,7 @@ function resolveHeal(
   const result = newResult();
 
   if (ability.roll) {
-    const healRoll = rollDice(ability.roll);
+    const healRoll = rollDice(ability.roll, getStatBonus(user, "dice faces"));
     let healAmount = healRoll.total;
 
     const effect = ability.effect.toLowerCase();
@@ -1295,7 +1312,7 @@ function resolveSplash(
   result.messages.push(`  **Splash ${radius}**: hits ${names}`);
 
   for (const target of splashTargets) {
-    const damageRoll = rollDice(ability.roll);
+    const damageRoll = rollDice(ability.roll, getStatBonus(user, "dice faces"));
     const half = (v: number) => Math.floor(v / 2);
     // Splash halves defense by default per the home page ("half target
     // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores
