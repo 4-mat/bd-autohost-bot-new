@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import {
   Terrain,
+  placeTerrain,
   isObstruction,
   isStandable,
   moveCost,
@@ -133,6 +134,22 @@ describe("Terrain", () => {
     expect(isObstruction(Terrain.Ice)).toBe(true);
     expect(isObstruction(Terrain.Stone)).toBe(true);
     expect(isObstruction(Terrain.Hearth)).toBe(true);
+  });
+
+  it("placeTerrain refuses to overwrite obstruction tiles", () => {
+    const map = [
+      [Terrain.Normal, Terrain.Stone],
+      [Terrain.Lava, Terrain.Normal],
+    ];
+    expect(placeTerrain(map, [0, 1], Terrain.Water)).toBe(false);
+    expect(map[0][1]).toBe(Terrain.Stone);
+    // Passable and hazard tiles remain replaceable.
+    expect(placeTerrain(map, [0, 0], Terrain.Water)).toBe(true);
+    expect(map[0][0]).toBe(Terrain.Water);
+    expect(placeTerrain(map, [1, 0], Terrain.Water)).toBe(true);
+    expect(map[1][0]).toBe(Terrain.Water);
+    // Out of bounds is a no-op that reports failure.
+    expect(placeTerrain(map, [9, 9], Terrain.Water)).toBe(false);
   });
 
   it("isObstruction returns false for Broken and passable tiles", () => {

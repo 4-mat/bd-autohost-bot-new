@@ -12,6 +12,7 @@ import {
   manhattan,
   pushEntity,
   pullEntity,
+  placeTerrain,
 } from "./state.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
@@ -1624,14 +1625,8 @@ export function* applyEffectStream(
 
       case "tile": {
         if (tilePos) {
-          const [tr, tc] = tilePos;
-          if (
-            tr >= 0 &&
-            tr < game.map.length &&
-            tc >= 0 &&
-            tc < game.map[0].length
-          ) {
-            game.map[tr][tc] = effect.terrain;
+          if (placeTerrain(game.map, tilePos, effect.terrain)) {
+            const [tr, tc] = tilePos;
             messages.push(
               `  ${user.num} creates a ${
                 TERRAIN_NAMES[effect.terrain] ?? "terrain"
@@ -1639,6 +1634,13 @@ export function* applyEffectStream(
             );
             break;
           }
+          messages.push(
+            `  ${user.num} cannot replace the obstruction at ${posToStr(
+              tilePos[0],
+              tilePos[1],
+            )}.`,
+          );
+          break;
         }
         messages.push(
           `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,

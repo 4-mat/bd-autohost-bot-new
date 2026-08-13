@@ -702,6 +702,45 @@ describe("tile-targeting abilities", () => {
     );
   });
 
+  it("does not offer obstruction tiles as tile targets", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game = makeGame({ entities: [caster] });
+    // Stone at (2,3) is an obstruction within Homing 2: it must not be
+    // offered. Lava at (2,4) is a hazard, not an obstruction: it stays
+    // replaceable.
+    game.map[2][3] = Terrain.Stone;
+    game.map[2][4] = Terrain.Lava;
+
+    const step = startAttack(game, caster, whittle);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+    if (step.prompt.kind !== "tile") return;
+    expect(step.prompt.candidates).not.toContain("c,4");
+    expect(step.prompt.candidates).toContain("c,5");
+
+    const step2 = respondToTile(caster, "c,5");
+    expect(step2.done).toBe(true);
+    if (!step2.done) return;
+    // The hazard was replaced, the obstruction was left untouched.
+    expect(game.map[2][4]).toBe(Terrain.Normal);
+    expect(game.map[2][3]).toBe(Terrain.Stone);
+  });
+
   it("rejects an invalid tile reference without placing anything", () => {
     const caster = makeEntity({
       num: "P1",
