@@ -899,10 +899,15 @@ function isValidGroupTarget(
   if (group.includes("self and allies") || group.includes("self and ally"))
     return selfOrAllyCheck;
   if (group.includes("allies and self")) return selfOrAllyCheck;
-  if (group.includes("self or ally")) return selfOrAllyCheck;
+  if (group.includes("self or ally") || group.includes("self or allies"))
+    return selfOrAllyCheck;
   if (group.includes("self or foe")) return true;
   if (group.includes("foe or ally")) return target.num !== user.num;
-  if (group.includes("self, foes, allies")) return true;
+  if (
+    group.includes("self, foes, allies") ||
+    group.includes("self, foes, and allies")
+  )
+    return true;
   return true;
 }
 
