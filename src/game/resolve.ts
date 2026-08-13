@@ -136,6 +136,8 @@ export type AttackPrompt =
       kind: "selection";
       message: string;
       options: SelectionOption[];
+      /** Obstruction-replacement confirmations: only the host may answer. */
+      confirmObstruction?: boolean;
     }
   | {
       kind: "target";
@@ -345,6 +347,7 @@ function* resolveAttackFlow(
           { id: "yes", label: "Yes, replace it" },
           { id: "no", label: "Cancel" },
         ],
+        confirmObstruction: true,
       };
       if (decision !== "yes") {
         result.messages.push(`${user.num} cancels ${ability.name}.`);

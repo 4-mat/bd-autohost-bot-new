@@ -745,6 +745,7 @@ describe("tile-targeting abilities", () => {
     expect(step2.prompt.kind).toBe("selection");
     if (step2.prompt.kind !== "selection") return;
     expect(step2.prompt.message).toContain("Stone obstruction");
+    expect(step2.prompt.confirmObstruction).toBe(true);
 
     // Declining cancels and leaves the obstruction untouched.
     const step3 = respondToChoice(caster, "no");
