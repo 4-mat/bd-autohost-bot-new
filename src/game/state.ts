@@ -609,13 +609,8 @@ function inBeam(
     return rowDist >= 1 && rowDist <= range;
   }
 
-  // Diagonal beams: center line where |dr| = |dc|, width where they differ by 1
-  const absDr = Math.abs(dr);
-  const absDc = Math.abs(dc);
-  if (Math.abs(absDr - absDc) <= 1 && absDr >= 1 && absDc >= 1) {
-    return Math.max(absDr, absDc) <= range;
-  }
-
+  // Diagonal beams are not valid: getBeamTiles emits only the 4 cardinal
+  // directions, so the single-target check must agree (see #183 / #238).
   return false;
 }
 

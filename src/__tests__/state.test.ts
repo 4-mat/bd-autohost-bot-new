@@ -378,6 +378,38 @@ describe("inRange", () => {
     expect(inRange(game, [5, 5], [8, 8], "line 5")).toBe(true); // diagonal, diagDist 3 <= ceil(5/2)=3
     expect(inRange(game, [5, 5], [3, 7], "line 5")).toBe(true); // diagonal, diagDist 2 <= ceil(5/2)=3
   });
+
+  it("beam X: cardinal 3-wide strips only, diagonals rejected", () => {
+    // Cardinal centerline + perpendicular width
+    expect(inRange(game, [5, 5], [5, 7], "beam 2")).toBe(true); // right, depth 2
+    expect(inRange(game, [5, 5], [6, 7], "beam 2")).toBe(true); // right, perpendicular +1
+    expect(inRange(game, [5, 5], [4, 7], "beam 2")).toBe(true); // right, perpendicular -1
+    expect(inRange(game, [5, 5], [7, 5], "beam 2")).toBe(true); // down, depth 2
+    expect(inRange(game, [5, 5], [5, 8], "beam 2")).toBe(false); // beyond depth
+    expect(inRange(game, [5, 5], [3, 7], "beam 2")).toBe(false); // perpendicular offset > 1
+    // (6,6) is the corner of the cardinal beam (depth 1, width 1) -- valid
+    expect(inRange(game, [5, 5], [6, 6], "beam 2")).toBe(true);
+    // Diagonal centerline tiles (e.g. (7,7)) are not beams -- getBeamTiles
+    // never emits them, so the single-target check must reject them (#183)
+    expect(inRange(game, [5, 5], [7, 7], "beam 2")).toBe(false);
+    expect(inRange(game, [5, 5], [7, 8], "beam 2")).toBe(false); // diagonal strip
+  });
+
+  it("beam X: inRange agrees with getBeamTiles on every tile", () => {
+    // #183: the single-target check and the AoE tile generator must not drift.
+    const from: [number, number] = [5, 5];
+    const range = 3;
+    const tileSet = new Set(
+      getBeamTiles(from, range).map(([r, c]) => `${r},${c}`),
+    );
+    for (let dr = -range - 1; dr <= range + 1; dr++) {
+      for (let dc = -range - 1; dc <= range + 1; dc++) {
+        const to: [number, number] = [from[0] + dr, from[1] + dc];
+        const expected = tileSet.has(`${to[0]},${to[1]}`);
+        expect(inRange(game, from, to, `beam ${range}`)).toBe(expected);
+      }
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
