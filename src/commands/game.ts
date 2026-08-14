@@ -782,10 +782,11 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
         `Use %choose <option>. Options: ${step.prompt.options.map((o) => o.id).join(", ")}`,
       );
     } else if (step.prompt.kind === "direction") {
-      send(
-        game.room,
-        `Use %dir <direction>. Options: ${step.prompt.candidates.join(", ")}`,
-      );
+      const labels = step.prompt.candidateTargets ?? [];
+      const opts = step.prompt.candidates
+        .map((c, i) => `${c}${labels[i] ? ` (${labels[i]})` : ""}`)
+        .join(", ");
+      send(game.room, `Use %dir <direction>. Options: ${opts}`);
     } else if (step.prompt.kind === "tile") {
       send(
         game.room,

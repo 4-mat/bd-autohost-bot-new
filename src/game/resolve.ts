@@ -122,6 +122,7 @@ export type AttackPrompt =
       kind: "direction";
       message: string;
       candidates: string[];
+      candidateTargets?: string[];
     }
   | {
       kind: "tile";
@@ -222,7 +223,6 @@ function* resolveAttackFlow(
     if (!ability.variants?.length) {
       result.messages.push(
         `${user.num} cannot use ${ability.name}: no damage-type variants defined.`,
-
       );
       return result;
     }
@@ -251,10 +251,34 @@ function* resolveAttackFlow(
   let dir = user.pendingAction?.direction;
   if (needsDir && !dir) {
     const dirs = getDirectionCandidates(active);
+    const valid = dirs
+      .map((d) => ({
+        dir: d,
+        targets: getAoETargets(game, user, active.range, active.targetGroup, d),
+      }))
+      .filter((d) => d.targets.length > 0);
+
+    if (valid.length === 0) {
+      const choice = yield {
+        kind: "selection",
+        message: `No valid targets in any direction for ${ability.name}.`,
+        options: [{ id: "undo", label: "↶ Undo — choose a different action" }],
+      };
+      if (choice === "undo") {
+        result.messages.push(
+          `${user.num} cancels ${ability.name} (no valid targets).`,
+        );
+        return result;
+      }
+    }
+
     dir = yield {
       kind: "direction",
       message: `Choose a direction for ${ability.name}`,
-      candidates: dirs,
+      candidates: valid.map((d) => d.dir),
+      candidateTargets: valid.map((d) =>
+        d.targets.map((t) => t.name).join(", "),
+      ),
     };
   }
 

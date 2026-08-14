@@ -306,7 +306,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
         .map((o) => btn(`%choose ${o.id}`, o.label))
         .join("");
       prompt = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #a0c;background:rgba(160,0,204,0.10)"><b style="color:#a0c">CHOOSE</b> ${esc(pp.message)}<div style="margin-top:4px">${opts}</div></div>`;
-    } else {
+    } else if (pp.kind === "target") {
       const opts = pp.candidates
         .map((e) => btn(`%target ${e.num}`, e.num))
         .join("");
@@ -330,15 +330,28 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
       actions = buildAbilityButtons(game, entity);
     }
-    // Direction prompt buttons
+    // Direction prompt buttons — one button per direction that has targets,
+    // labelled with the comma-joined names of entities it would hit.
     if (entity.pendingPromptKind === "direction") {
-      const dirs = ["up", "down", "left", "right"];
-      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #f80;background:rgba(255,136,0,0.10)"><b style="color:#f80">CHOOSE DIRECTION</b><br>`;
-      for (const d of dirs) {
-        const label = DIRECTION_LABELS[d] ?? d;
-        actions += btn(`%dir ${d}`, label, "font-size:12px;padding:4px 12px");
+      const p = entity.pendingPrompt!;
+      if (p.kind === "direction") {
+        const cands = p.candidates;
+        const labels = p.candidateTargets ?? [];
+        actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #f80;background:rgba(255,136,0,0.10)"><b style="color:#f80">CHOOSE DIRECTION</b><br>`;
+        for (let i = 0; i < cands.length; i++) {
+          const d = cands[i];
+          const base = DIRECTION_LABELS[d] ?? d;
+          const extra = labels[i] ? ` — ${labels[i]}` : "";
+          const tip = labels[i] ? `Targets: ${labels[i]}` : "";
+          actions += btn(
+            `%dir ${d}`,
+            `${base}${extra}`,
+            "font-size:12px;padding:4px 12px",
+            tip,
+          );
+        }
+        actions += `</div>`;
       }
-      actions += `</div>`;
     }
 
     // Tile prompt buttons
