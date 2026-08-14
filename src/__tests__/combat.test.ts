@@ -795,6 +795,27 @@ describe("On Miss hook (#139)", () => {
     expect(targetEva).toBe(0);
   });
 
+  it("an unmodified 1d1 formula stays one-sided (CR d1 clamp finding)", () => {
+    const origRandom = Math.random;
+    Math.random = () => 0.94; // max face
+    try {
+      const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+      const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 0 });
+      const ability = makeAbility({
+        name: "Stab",
+        range: "Melee",
+        mr: 0,
+        roll: "1d1+0", // 1 die, 1 face: exactly 1, no facesMod applied
+        damageType: "Physical",
+      });
+      const log = driveResolveAgainst(user, ability, target);
+      // ATK 10 - PD 0 = 10, so total must be 11 (roll 1), never 12.
+      expect(log).toContain("= **11**");
+    } finally {
+      Math.random = origRandom;
+    }
+  });
+
   it("a +1 dice buff adds a die (2d4 -> 3d4, deterministic max roll)", () => {
     const origRandom = Math.random;
     Math.random = () => 0.94;

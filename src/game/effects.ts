@@ -263,7 +263,15 @@ export function parseEffects(text: string): Effect[] {
   const fullIfMatch = lowerFull.match(
     /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
-  if (fullIfMatch) {
+  // A ". " sentence boundary not followed by "otherwise" means the input
+  // is several independent effects, not one conditional: "If target is at
+  // Range 7+: crit on 14+. If target is under Range 3: gain +1 MP/2." must
+  // parse as TWO conditionals, and the second must not be nested inside
+  // the first (its condition is mutually exclusive). Skip the whole-input
+  // match in that case so splitClauses + the clause-level ifMatch handle
+  // each sentence on its own.
+  const hasLaterSentence = /\.\s+(?!otherwise\b)/i.test(normalized);
+  if (fullIfMatch && !hasLaterSentence) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
     const elseEffects = fullIfMatch[3]
       ? parseEffects(fullIfMatch[3].trim())
@@ -1128,7 +1136,7 @@ export function evaluateCondition(
   // e.g. "Moonblast active", "Moonblast or Celestial Blessing active",
   // "debuff not active". Bare names default to the target (for self-targeted
   // abilities the target *is* the user, so both readings line up).
-  const activeMatch = lower.match(/^(user|target)?\s*(.+?)\s+(not\s+)?active$/);
+  const activeMatch = lower.match(/^(?:(user|target)\s+)?(.+?)\s+(not\s+)?active$/);
   if (activeMatch) {
     const which = activeMatch[1] ?? "target";
     const name = activeMatch[2].trim();

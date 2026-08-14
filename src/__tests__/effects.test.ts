@@ -1076,6 +1076,26 @@ describe("parseEffects: conditional clause", () => {
     expect(effects[0].thenEffects.length).toBeGreaterThan(0);
     expect(effects[0].elseEffects).toBeUndefined();
   });
+
+  it("does not swallow later sentences into a colon-conditional (Swift Shot pattern)", () => {
+    // "If target is at Range 7+: crit on 14+. If target is under Range 3:
+    // gain +1 MP/2." — two INDEPENDENT conditionals. The second must not be
+    // nested inside the first (the ranges are mutually exclusive, so nesting
+    // would make the MP gain unreachable).
+    const effects = parseEffects(
+      "If target is at Range 7+: crit on 14+. If target is under Range 3: gain +1 MP/2.",
+    );
+    expect(effects).toHaveLength(2);
+    expect(effects[0].type).toBe("conditional");
+    expect(effects[1].type).toBe("conditional");
+    if (effects[0].type !== "conditional" || effects[1].type !== "conditional")
+      return;
+    expect(effects[0].condition).toContain("range 7+");
+    expect(effects[1].condition).toContain("under range 3");
+    // The MP gain lives in the SECOND conditional, not nested in the first.
+    const mpInFirst = JSON.stringify(effects[0]).includes("\"mp\"");
+    expect(mpInFirst).toBe(false);
+  });
 });
 
 describe("evaluateCondition: supported patterns", () => {
@@ -1184,6 +1204,16 @@ describe("evaluateCondition: supported patterns", () => {
     expect(evaluateCondition("no target has Stun", user, target)).toBe("else");
     expect(evaluateCondition("target is alive", user, target)).toBe("then");
     expect(evaluateCondition("not target is alive", user, target)).toBe("else");
+  });
+
+  it("requires a separator after the user/target prefix (no 'targeted aura' mis-split)", () => {
+    // CR finding: /(user|target)?\s*/ could consume the first characters of a
+    // longer word, so "targeted aura active" became which="target" + name="ed
+    // aura" and the status lookup silently failed. With the required
+    // whitespace it stays one condition name.
+    expect(evaluateCondition("targeted aura active", makeEntity({ num: "A", name: "A" }), makeEntity({ num: "B", name: "B" }))).toBe("else");
+    // Bare names (no prefix) still resolve as before.
+    expect(evaluateCondition("debuff not active", makeEntity({ num: "A", name: "A" }), makeEntity({ num: "B", name: "B" }))).toBe("then");
   });
 
   it("unknown conditions return 'unknown' (and fall back to then-branch)", () => {

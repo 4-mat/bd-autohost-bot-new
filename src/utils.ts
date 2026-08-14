@@ -192,7 +192,13 @@ export function rollDice(formula: string): {
   // "dice faces" buffs/debuffs shift the die size (d4 + 4 faces -> d8),
   // faces round up per the data ("dice faces round up"), min d2.
   const count = Math.max(1, parseInt(match[1]) + Math.round(diceMod));
-  const sides = Math.max(2, parseInt(match[2]) + Math.ceil(facesMod));
+  const baseSides = parseInt(match[2]);
+  // Only clamp to d2 when a faces mod was actually applied: an unmodified
+  // "1d1+0" must stay one-sided, otherwise it rolls 1 or 2.
+  const sides =
+    facesMod === 0
+      ? baseSides
+      : Math.max(2, baseSides + Math.ceil(facesMod));
   const mod = match[3] ? parseInt(match[3]) : 0;
   const rolls: number[] = [];
   for (let i = 0; i < count; i++) {
