@@ -311,6 +311,62 @@ function rollWithUserBuffs(user: Entity, formula: string) {
   );
 }
 
+/**
+ * Flips subject "self" -> "target" on every stat mod in the subtree,
+ * recursing through wrapper effects (conditional/thirst/apex/choose).
+ * Used for exclusively-friendly groups so gated ally buffs ("If origin
+ * has more MAG: gain +4 MAG/1") land on each ally, not the user.
+ */
+function rerouteSelfToTarget(effects: Effect[]): void {
+  for (const e of effects) {
+    if (e.type === "buff" || e.type === "debuff") {
+      if (e.subject === "self") e.subject = "target";
+      continue;
+    }
+    if (e.type === "conditional") {
+      rerouteSelfToTarget(e.thenEffects);
+      if (e.elseEffects) rerouteSelfToTarget(e.elseEffects);
+    } else if (e.type === "thirst" || e.type === "apex") {
+      rerouteSelfToTarget(e.effects);
+    } else if (e.type === "choose") {
+      for (const opts of e.options) rerouteSelfToTarget(opts);
+    }
+  }
+}
+
+/**
+ * True when the effect subtree is nothing but self-subject stat mods,
+ * possibly wrapped in conditionals/thirst/apex/choose. Such subtrees can
+ * be hoisted out of the per-target stream and applied once per ability
+ * use. Any other effect inside (target mods, ignores, heals, damage mods,
+ * unknown, ...) keeps the whole subtree in the per-target stream.
+ */
+function isSelfOnlyEffect(e: Effect): boolean {
+  if (e.type === "buff" || e.type === "debuff") {
+    return e.subject === "self";
+  }
+  if (e.type === "conditional") {
+    return (
+      e.thenEffects.length > 0 &&
+      e.thenEffects.every(isSelfOnlyEffect) &&
+      (!e.elseEffects ||
+        (e.elseEffects.length > 0 && e.elseEffects.every(isSelfOnlyEffect)))
+    );
+  }
+  if (e.type === "thirst" || e.type === "apex") {
+    return e.effects.length > 0 && e.effects.every(isSelfOnlyEffect);
+  }
+  if (e.type === "choose") {
+    return (
+      e.options.length > 0 &&
+      e.options.every(
+        (opts) => opts.length > 0 && opts.every(isSelfOnlyEffect),
+      )
+    );
+  }
+  return false;
+}
+
 function* resolveAttackFlow(
   game: Game,
   user: Entity,
@@ -398,14 +454,7 @@ function* resolveAttackFlow(
     !/(^| )foe/i.test(ability.targetGroup) &&
     /(^| )(allies|ally)/i.test(ability.targetGroup)
   ) {
-    for (const e of effects) {
-      if (
-        (e.type === "buff" || e.type === "debuff") &&
-        e.subject === "self"
-      ) {
-        e.subject = "target";
-      }
-    }
+    rerouteSelfToTarget(effects);
   }
 
   // Self-subject stat mods ("gain +2 DMG/1", "gain +1 ACC/1") must apply
@@ -415,12 +464,8 @@ function* resolveAttackFlow(
   // (getStatBonus sums buffs, so a Pierce 3 "gain +2 DMG/1" would become
   // +6 dice faces). Apply them once after the loops and pass only the
   // target effects down to the per-hit/per-target resolution.
-  const selfEffects = effects.filter(
-    (e) => (e.type === "buff" || e.type === "debuff") && e.subject === "self",
-  );
-  const targetEffects = effects.filter(
-    (e) => !((e.type === "buff" || e.type === "debuff") && e.subject === "self"),
-  );
+  const selfEffects = effects.filter(isSelfOnlyEffect);
+  const targetEffects = effects.filter((e) => !isSelfOnlyEffect(e));
 
   for (const target of targets) {
     const userDefeated = yield* resolveTargetAction(
