@@ -315,6 +315,15 @@ export interface Game {
   voteRunoff: string[] | null;
   /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
   timer?: { entity: string | null; endAt: number } | null;
+  /**
+   * Transient: set by removeEntity when the CURRENT actor is removed mid-turn
+   * (e.g. %leave, %remp, %hp, or a no-dice Free/Swift finishStep). The turn
+   * pointer then already sits on the entity that shifted into the removed
+   * slot, so the next nextTurn() must behave like an actor-death transition
+   * (no buff tick / no advance) or that entity's turn gets skipped. Cleared
+   * by nextTurn when consumed.
+   */
+  removedCurrentActor?: boolean;
 }
 
 export const games = new Map<string, Game>();
@@ -1165,11 +1174,23 @@ export function processEndOfTurn(
 export function removeEntity(game: Game, entity: Entity): boolean {
   const removedNum = entity.num;
   const oldIdx = game.turnOrder.indexOf(removedNum);
+  // Removing the CURRENT actor mid-turn (%leave, %remp, %hp, a no-dice
+  // Free/Swift finishStep): the entity that was next shifts into this slot,
+  // so the pointer already rests on the upcoming actor. Tell the next
+  // nextTurn() to treat it as an actor-death transition (no buff tick of
+  // the shifted-in entity, no double advance) — otherwise its turn is
+  // silently skipped.
+  if (game.phase === "playing" && oldIdx === game.turnIndex) {
+    game.removedCurrentActor = true;
+  }
   game.entities = game.entities.filter((e) => e.num !== removedNum);
   game.turnOrder = game.turnOrder.filter((n) => n !== removedNum);
   if (oldIdx !== -1 && oldIdx < game.turnIndex) {
     game.turnIndex--;
   }
+  // Drop the removed entity's gamemode vote on EVERY path — including the
+  // wrap below, which returns early (CodeRabbit L1186).
+  delete game.votes[entity.id];
   if (game.turnIndex >= game.turnOrder.length) {
     // The entity occupying the final slot was removed, so the turn pointer
     // wrapped back to slot 0: a full cycle completed. Advance the round
@@ -1182,7 +1203,6 @@ export function removeEntity(game: Game, entity: Entity): boolean {
       return true;
     }
   }
-  delete game.votes[entity.id];
   return false;
 }
 
@@ -1279,6 +1299,13 @@ export function nextTurn(
   died: boolean;
 } {
   const { actorDied = false } = opts;
+  // If the CURRENT actor was removed mid-turn (removeEntity set this), the
+  // pointer already rests on the entity that shifted into its slot — treat
+  // it exactly like an actor-death transition: no buff tick of a "prev"
+  // that never had its turn, no extra advance (CodeRabbit L1172).
+  const actorRemoved = game.removedCurrentActor === true;
+  game.removedCurrentActor = false;
+  const skipAdvance = actorDied || actorRemoved;
   if (game.entities.length <= 1) {
     game.phase = "ended";
     return { entity: null, messages: [], died: false };
@@ -1287,7 +1314,7 @@ export function nextTurn(
   const messages: string[] = [];
   let died = false;
 
-  if (!actorDied) {
+  if (!skipAdvance) {
     // Tick buffs of the entity whose turn is ending
     const prev = getCurrentEntity(game);
     const prevIndex = game.turnIndex;
@@ -1335,7 +1362,14 @@ export function nextTurn(
     if (entity.curhp <= 0) {
       // Dead but still present (its removal was missed): never hand a
       // corpse the turn — remove it and advance to the next entity.
+      // Report the removal through `died` so the caller re-checks game
+      // over even when a living entity follows (CodeRabbit L1341).
       removeEntity(game, entity);
+      died = true;
+      // The shift-in is handled right here (the loop starts the next
+      // entity's turn), so don't let removeEntity's current-actor flag
+      // leak into a FUTURE nextTurn call and skip that entity.
+      game.removedCurrentActor = false;
       entity = getCurrentEntity(game);
       continue;
     }
