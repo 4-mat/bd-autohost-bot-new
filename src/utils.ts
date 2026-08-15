@@ -181,7 +181,7 @@ export function natList(arr: string[]): string {
 }
 
 /** Roll an XdY+Z dice formula and return the total plus the per-die breakdown. */
-export function rollDice(formula: string): {
+export function rollDice(formula: string, diceMod = 0, facesMod = 0): {
   total: number;
   rolls: number[];
   base: number;

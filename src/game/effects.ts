@@ -706,12 +706,14 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+(\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+([+-]?\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
     const amountStr = match[2];
-    const amount = /^\d+$/.test(amountStr) ? parseInt(amountStr) : amountStr;
+    const amount = /^[+-]?\d+$/.test(amountStr)
+      ? parseInt(amountStr, 10)
+      : amountStr;
     const resource = match[3].toLowerCase();
 
     if (RESOURCE_NAMES.includes(resource) || lower.includes(resource)) {
@@ -1886,7 +1888,11 @@ export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
       // working too. Target-directed modifiers ("Targets: -25% damage")
       // are the target's own outgoing-damage modifiers, not the user's,
       // so they must NOT be folded into the user's metadata here.
-      if (e.stat === "dmg" && e.subject !== "target") {
+      // Only EXPLICIT self-directed modifiers fold into the user's outgoing
+      // damage metadata. Omitted (legacy) and explicit "target" subjects
+      // are the target's own modifiers, so they must not inflate the
+      // user's damage (CodeRabbit L1935).
+      if (e.stat === "dmg" && e.subject === "self") {
         // parseStatMods bakes the sign into percent / amount, so a
         // debuff for "-10% damage" arrives here with percent = -10.
         if (typeof e.percent === "number") {

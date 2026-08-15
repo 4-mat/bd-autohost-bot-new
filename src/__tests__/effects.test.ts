@@ -1550,6 +1550,27 @@ describe("stat-mod subject routing (#101)", () => {
     expect(user.buffs.find((b) => b.stat === "dmg")).toBeUndefined();
   });
 
+  it("Sandstorm: the target's -25% damage debuff keeps its percentage (not flattened to 0 by getBaseStat)", () => {
+    const ability = makeAbility({
+      name: "Sandstorm",
+      range: "Melee",
+      effect: "Targets: -25% damage/1.",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+
+    const dmgDebuff = target.buffs.find((b) => b.stat === "dmg");
+    // The percentage must survive on the buff (marked percent) so the
+    // target's outgoing damage is reduced when it attacks (CodeRabbit
+    // L1435). The old code ran it through getBaseStat("dmg") -> +0.
+    expect(dmgDebuff).toBeDefined();
+    expect(dmgDebuff!.percent).toBe(true);
+    expect(dmgDebuff!.amount).toBe(-25);
+  });
+
   it("Sandstorm: target-directed -25% damage does not reduce the user's outgoing damage", () => {
     const effects = parseEffects(
       "Targets: -25% damage on next Standard/Full",

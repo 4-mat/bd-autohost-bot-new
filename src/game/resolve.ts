@@ -367,6 +367,38 @@ function isSelfOnlyEffect(e: Effect): boolean {
   return false;
 }
 
+/**
+ * True when the effect subtree is nothing but stat mods (buff/debuff),
+ * possibly wrapped in conditionals/thirst/apex/choose. Used to hoist
+ * rerouted ally stat mods out of the per-hit stream so a multi-hit attack
+ * cannot stack the ally buff once per hit.
+ */
+function isStatModSubtree(e: Effect): boolean {
+  if (e.type === "buff" || e.type === "debuff") {
+    return true;
+  }
+  if (e.type === "conditional") {
+    return (
+      e.thenEffects.length > 0 &&
+      e.thenEffects.every(isStatModSubtree) &&
+      (!e.elseEffects ||
+        (e.elseEffects.length > 0 && e.elseEffects.every(isStatModSubtree)))
+    );
+  }
+  if (e.type === "thirst" || e.type === "apex") {
+    return e.effects.length > 0 && e.effects.every(isStatModSubtree);
+  }
+  if (e.type === "choose") {
+    return (
+      e.options.length > 0 &&
+      e.options.every(
+        (opts) => opts.length > 0 && opts.every(isStatModSubtree),
+      )
+    );
+  }
+  return false;
+}
+
 function* resolveAttackFlow(
   game: Game,
   user: Entity,
@@ -440,6 +472,18 @@ function* resolveAttackFlow(
   // effect still rolls the highest of the two.
   const effects = parseEffects(active.effect);
   const combat = extractCombatMetadata(effects);
+
+  // Persistent outgoing-damage modifiers on the attacker (a "-25% damage"
+  // debuff from Sandstorm, a "gain +50% damage/2" self-buff from a previous
+  // turn) fold into this attack's combat metadata. The ability's own text
+  // clauses are already folded by extractCombatMetadata; entity.buffs carry
+  // the round-limited persistent ones. Percent-marked dmg buffs are
+  // percentages; plain "dmg" buffs are flat amounts (CodeRabbit L1435).
+  for (const b of user.buffs) {
+    if (b.stat !== "dmg") continue;
+    if (b.percent) combat.damagePercent += b.amount;
+    else combat.flatDamage += b.amount;
+  }
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   // Ally-targeted abilities (Rising Hope, Primadonna, Crusade, Flower
@@ -467,6 +511,22 @@ function* resolveAttackFlow(
   const selfEffects = effects.filter(isSelfOnlyEffect);
   const targetEffects = effects.filter((e) => !isSelfOnlyEffect(e));
 
+  // Rerouted ally stat mods ("gain +4 MAG/1" for each ally) must apply ONCE
+  // per target per ability use, not once per hit: applyEffectStream runs
+  // inside the per-hit loop below, so leaving them in the per-hit list would
+  // push the buff onto each ally once per hit (getStatBonus sums buffs, so a
+  // Pierce 3 "gain +2 MAG/1" ally buff would become +6 MAG). Keep normal
+  // per-hit effects (damage, statuses, shields, ...) in the per-hit list.
+  let allyStatMods: Effect[] = [];
+  let perHitEffects = targetEffects;
+  if (
+    !/(^| )foe/i.test(ability.targetGroup) &&
+    /(^| )(allies|ally)/i.test(ability.targetGroup)
+  ) {
+    allyStatMods = targetEffects.filter(isStatModSubtree);
+    perHitEffects = targetEffects.filter((e) => !isStatModSubtree(e));
+  }
+
   for (const target of targets) {
     const userDefeated = yield* resolveTargetAction(
       game,
@@ -474,6 +534,7 @@ function* resolveAttackFlow(
       active,
       target,
       combat,
+      effects,
       effectiveHitCount,
       isAttack,
       isHeal,
@@ -526,6 +587,7 @@ function* resolveTargetAction(
   active: AbilityData,
   target: Entity,
   combat: CombatMetadata,
+  effects: Effect[],
   effectiveHitCount: number,
   isAttack: boolean,
   isHeal: boolean,
@@ -543,6 +605,7 @@ function* resolveTargetAction(
         active,
         target,
         combat,
+        effects,
         label,
         confusionApplied,
       );
@@ -574,6 +637,7 @@ function* resolveTargetAction(
       user,
       active,
       target,
+      effects,
     );
     result.messages.push(...statusResult.messages);
     result.deaths.push(...statusResult.deaths);

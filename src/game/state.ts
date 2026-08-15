@@ -210,7 +210,7 @@ export interface Entity {
   weaponLevel: number;
   abilities: AbilityData[];
   statuses: StatusEffect[];
-  buffs: { stat: string; amount: number; rounds: number }[];
+  buffs: { stat: string; amount: number; rounds: number; percent?: boolean }[];
   cooldowns: Record<string, number>;
   usesUsed: Record<string, number>;
   pendingAction: PendingAction | null;
