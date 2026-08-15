@@ -545,8 +545,8 @@ describe("getAoETargets", () => {
   });
 
   it("handles 'Tile or Foe' as foes", () => {
-    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
-    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
     const game = makeGame({ entities: [p1, p2] });
     const targets = getAoETargets(game, p1, "Burst 1", "Tile or Foe");
     expect(targets.map((t) => t.num)).toContain("P2");
