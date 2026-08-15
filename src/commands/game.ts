@@ -796,11 +796,6 @@ function handleAdvanceTurn(game: Game, user: User) {
   const entity = getCurrentEntity(game);
   if (!entity) return;
 
-  // True when the acting entity holds the last slot of the turn order. If it
-  // dies mid-turn, removeEntity wraps turnIndex back to 0 — a full cycle has
-  // completed, so nextTurn must advance the round counter (see nextTurn).
-  const actorWasLast = game.turnIndex === game.turnOrder.length - 1;
-
   pushSnapshot(game);
 
   let acted = "";
@@ -853,7 +848,7 @@ function handleAdvanceTurn(game: Game, user: User) {
   // repositioned turnIndex onto the next entity; tell nextTurn so it does
   // not advance past it a second time.
   const actorDied = entity.curhp <= 0 || !game.entities.includes(entity);
-  const result = nextTurn(game, { actorDied, actorWasLast });
+  const result = nextTurn(game, { actorDied });
   for (const msg of result.messages) {
     send(game.room, msg);
   }

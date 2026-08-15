@@ -102,6 +102,21 @@ describe("send queue", () => {
     expect(getSendQueueForTests()[1999].msg).toBe("msg-2004");
   });
 
+  it("caps the queue while a send is in flight, keeping the in-flight head", () => {
+    const sock = makeFakeSocketDeferred();
+    // The first send goes in flight (its callback stays pending), so the
+    // cap trim must preserve it and evict the oldest non-head entry.
+    send("battledome", "head");
+    for (let i = 0; i < 2005; i++) {
+      send("battledome", `msg-${i}`);
+    }
+    const q = getSendQueueForTests();
+    expect(q.length).toBe(2000);
+    expect(q[0].msg).toBe("head"); // in-flight head survives
+    expect(q[1].msg).toBe("msg-6"); // oldest non-head entries were dropped
+    expect(q[1999].msg).toBe("msg-2004"); // newest entries remain
+  });
+
   it("keeps a message queued when the socket is down, then flushes on resume", async () => {
     const sock = makeFakeSocket();
 
