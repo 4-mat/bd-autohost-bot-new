@@ -24,14 +24,21 @@ let drainTimer: ReturnType<typeof setTimeout> | null = null;
 // restart the drain, because the resumeSending() call itself was a no-op
 // at the time (sending was true).
 let resumeWhileSending = false;
+// True while a ws.send() is awaiting its callback. The cap trim must
+// never evict the in-flight head (its callback shift()s it), so send()
+// trims from index 1 instead of index 0 while this is set.
+let sendInFlight = false;
 
 /** Enqueue a message for a room; the queue drains on a 400ms chain and survives socket downtime. */
 export function send(room: string, msg: string) {
-  // Trim only while no send is in flight: the queue can only reach the cap
-  // during an outage (sending === false), and splicing the head mid-flight
-  // would let the drain callback's shift() drop the wrong message.
-  if (!sending && sendQueue.length >= MAX_SEND_QUEUE) {
-    sendQueue.splice(0, sendQueue.length - MAX_SEND_QUEUE + 1);
+  // Enforce the cap on every enqueue so a fast producer can't grow the
+  // queue past MAX_SEND_QUEUE while a send is in flight or the 400ms drain
+  // delay is pending. Never evict the message currently in flight — its
+  // drain callback shift()s the head on completion — so trim from index 1
+  // while a send is in flight and from index 0 otherwise.
+  const excess = sendQueue.length + 1 - MAX_SEND_QUEUE;
+  if (excess > 0) {
+    sendQueue.splice(sendInFlight ? 1 : 0, excess);
   }
   sendQueue.push({ room, msg });
   if (!sending) drain();
@@ -47,6 +54,7 @@ function drain() {
   const item = sendQueue[0];
   const prefix = item.room.startsWith("pm-") ? "" : `|`;
   const onSent = (err?: Error) => {
+    sendInFlight = false;
     if (err) {
       // Asynchronous send failure (socket dropped mid-flight): keep the
       // message at the front of the queue and stop draining. If the socket
@@ -62,15 +70,18 @@ function drain() {
       }
       return;
     }
+    sendInFlight = false;
     sendQueue.shift();
     resumeWhileSending = false;
     drainTimer = setTimeout(drain, 400);
   };
   try {
+    sendInFlight = true;
     ws.send(`${prefix}${item.msg}`, onSent);
   } catch {
     // Synchronous throw (socket not open / closed). Same retention contract
     // as the async error path: keep the head, stop draining.
+    sendInFlight = false;
     sending = false;
     drainTimer = null;
   }
@@ -97,6 +108,7 @@ export function resetSendQueueForTests() {
   sendQueue.length = 0;
   sending = false;
   resumeWhileSending = false;
+  sendInFlight = false;
 }
 
 /** Test-only: expose the current queue so tests can assert the cap. */

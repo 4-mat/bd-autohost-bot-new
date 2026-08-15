@@ -436,6 +436,14 @@ export function getReachableTiles(
       const terrain = game.map[nr][nc];
       // Obstructions + Broken (impassable) + Lava (damages on entry).
       if (!isStandable(terrain)) continue;
+      // A tile occupied by a living entity can't be entered (matches
+      // pushEntity/pullEntity via isPassable), so %move/%dash reject it.
+      if (
+        game.entities.some(
+          (e) => e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
+        )
+      )
+        continue;
 
       const tileCost = moveCost(terrain);
       const newCost = cost + tileCost;
@@ -1154,7 +1162,7 @@ export function processEndOfTurn(
   return { messages, died };
 }
 
-export function removeEntity(game: Game, entity: Entity) {
+export function removeEntity(game: Game, entity: Entity): boolean {
   const removedNum = entity.num;
   const oldIdx = game.turnOrder.indexOf(removedNum);
   game.entities = game.entities.filter((e) => e.num !== removedNum);
@@ -1163,9 +1171,19 @@ export function removeEntity(game: Game, entity: Entity) {
     game.turnIndex--;
   }
   if (game.turnIndex >= game.turnOrder.length) {
+    // The entity occupying the final slot was removed, so the turn pointer
+    // wrapped back to slot 0: a full cycle completed. Advance the round
+    // counter here so it can't go stale or get missed — this covers
+    // mid-turn actor deaths, start-of-turn deaths in the final slot, and
+    // removals of the current entity (%leave/%remp) during play.
     game.turnIndex = 0;
+    if (game.phase === "playing") {
+      game.round++;
+      return true;
+    }
   }
   delete game.votes[entity.id];
+  return false;
 }
 
 /** Check if the game is over. Returns the winner entity or null. */
@@ -1254,13 +1272,13 @@ export function calculateLoot(
 
 export function nextTurn(
   game: Game,
-  opts: { actorDied?: boolean; actorWasLast?: boolean } = {},
+  opts: { actorDied?: boolean } = {},
 ): {
   entity: Entity | null;
   messages: string[];
   died: boolean;
 } {
-  const { actorDied = false, actorWasLast = false } = opts;
+  const { actorDied = false } = opts;
   if (game.entities.length <= 1) {
     game.phase = "ended";
     return { entity: null, messages: [], died: false };
@@ -1305,13 +1323,9 @@ export function nextTurn(
   }
   // When the actor died mid-turn it was already removed from turnOrder and
   // turnIndex now points at the entity that shifted into its slot, so we must
-  // NOT advance past it again (that would skip that entity's turn).
-  // But if the actor held the LAST slot, removeEntity already wrapped
-  // turnIndex back to 0 — a full cycle completed, so advance round to
-  // match what the non-death path would have done on the wrap.
-  else if (actorWasLast) {
-    game.round++;
-  }
+  // NOT advance past it again (that would skip that entity's turn). If the
+  // removal wrapped the pointer (actor held the final slot), removeEntity
+  // already advanced the round for the completed cycle.
 
   // Start the turn of the entity at turnIndex, advancing past any entity
   // that dies when its turn starts (e.g. start-of-turn DoT), so a dead
