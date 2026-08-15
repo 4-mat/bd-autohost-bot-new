@@ -1,8 +1,9 @@
 # Discord Issue Bot
 
 A small Discord bot that creates GitHub issues on `4-mat/bd-autohost-bot-new` —
-plain issues **and** Ability Editor proposals (the `Ability: ...` issues that
-PR #181's `ability-pr.yml` workflow turns into PRs).
+plain issues, bug/feature reports, **and** Ability Editor proposals (the
+`Ability: ...` issues that PR #181's `ability-pr.yml` workflow turns into PRs)
+and map proposals (the `Map: ...` issues that `map-pr.yml` turns into PRs).
 
 It is completely separate from the Pokémon Showdown autohost bot.
 
@@ -12,11 +13,18 @@ It is completely separate from the Pokémon Showdown autohost bot.
 | --- | --- |
 | `/issue title: <t> [body: <b>] [labels: bug, enhancement]` | Creates a normal GitHub issue |
 | `!issue <title> \| <optional details>` | Text fallback for the above |
-| `/ability name: <n> [kind: class\|weapon] [mode: add\|update] entry: <json>` | Proposes a class/weapon entry — opens an `Ability: <n>` issue with the ```json payload the editor workflow consumes |
-| `!ability <Name> \| <entry JSON> \| add\|update \| class\|weapon` | Text fallback for the above |
+| `/bug title: <t> [body: <b>]` | Creates a GitHub issue labeled `bug` |
+| `/feature title: <t> [body: <b>]` | Creates a GitHub issue labeled `enhancement` |
+| `/ability name: <n> [kind: class\|weapon] [mode: add\|update] entry: <json>` | Proposes a class/weapon entry — shows a **preview + Confirm/Cancel buttons**, then opens an `Ability: <n>` issue with the ```json payload the editor workflow consumes |
+| `!ability <Name> \| <entry JSON> \| add\|update \| class\|weapon` | Text fallback for the above (creates immediately, no preview) |
+| `/map name: <id> [modes: ntr, ffa] grid: <rows>` | Proposes a new map — the grid is **validated with the same `mapcore.cjs` parser the CI uses**, then a preview + Confirm/Cancel is shown and a `Map: <id>` issue is opened for the map workflow |
 
 All commands require the configured Discord role (see `ROLE_ID` / `ROLE_NAME`
-below; default role name `super turbo`).
+below; default role name `super turbo`). A short per-user rate limit (10s)
+applies between issue-creating commands.
+
+`/ability` and `/map` previews expire after 2 minutes — run the command again
+if the buttons stop responding.
 
 ## Setup
 
@@ -53,19 +61,48 @@ below; default role name `super turbo`).
 | `ROLE_ID` | Role ID allowed to use the bot (takes precedence) |
 | `ROLE_NAME` | Role name allowed to use the bot, default `super turbo` |
 
+## Deploying 24/7 for free (Oracle Cloud)
+
+See **`DEPLOY_ORACLE.md`** — the only genuinely free, reliable 24/7
+option that keeps the `!` text commands (Render's free tier sleeps after
+15 minutes idle and its always-on worker plan costs $7/mo). After cloning
+the repo onto an Oracle Always Free Ubuntu VM, run:
+
+```bash
+bash deploy/oci-bootstrap.sh
+```
+
+## Deploying 24/7 for free (Oracle Cloud)
+
+See **`DEPLOY_ORACLE.md`** — the only genuinely free, reliable 24/7
+option that keeps the `!` text commands (Render's free tier sleeps after
+15 minutes idle and its always-on worker plan costs $7/mo). After cloning
+the repo onto an Oracle Always Free Ubuntu VM, run:
+
+```bash
+bash deploy/oci-bootstrap.sh
+```
+
 ## Deploying to Render
 
-Add a worker service pointing at the repo root (`render.yaml` already includes
-one):
+`render.yaml` already includes a **worker** service (`bd-discord-issue-bot`):
 
 - **Build:** `cd discord-issue-bot && npm install`
 - **Start:** `cd discord-issue-bot && npx tsx src/index.ts`
-- **Env vars:** the ones above (secrets marked *sync: false* in `render.yaml`).
+- **Env vars:** the ones above; secrets (`DISCORD_TOKEN`, `CLIENT_ID`,
+  `GUILD_ID`, `GITHUB_TOKEN`, `ROLE_ID`) are marked `sync: false` so they're
+  filled in from the Render dashboard and never read from the repo.
+- The bot folder must be committed to the repo for Render to pick it up (the
+  `mapeditor/` folder is already tracked and is required at runtime for map
+  validation).
 
 ## Notes
 
 - The proposal payload matches the format `scripts/apply-editor-proposal.ts`
   (PR #181) validates. The workflow still validates and rejects bad payloads —
   the bot just opens the issue.
-- Role gate is evaluated per command; there is no rate limiting — add some if
-  the server is large/public.
+- Map proposals are validated at submit time by the exact same
+  `mapeditor/mapcore.cjs` parser the `map-pr.yml` workflow and the bot's
+  `maps/` import use, so invalid maps are rejected in Discord before an issue
+  is ever created.
+- Role gate is evaluated per command; a 10s per-user rate limit prevents spam.

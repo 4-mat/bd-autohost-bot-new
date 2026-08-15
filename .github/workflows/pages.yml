@@ -1,0 +1,66 @@
+name: Deploy GitHub Pages site
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "index.html"
+      - "README.md"
+      - "scripts/render-readme.ts"
+      - "mapeditor/**"
+      - "maps/**"
+      - "abilityeditor/**"
+      - "scripts/build-editor-demo.ts"
+      - "scripts/apply-editor-proposal.ts"
+      - "src/data/index.ts"
+      - "src/data/overrides.ts"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      # Auto-render the homepage from README.md (Primer style), like the
+      # original Jekyll site did. Falls back to the committed index.html if
+      # the render fails so deploys never break.
+      - name: Render README homepage
+        run: bun scripts/render-readme.ts || true
+
+      # Build the self-contained Ability Editor demo. It embeds the current
+      # class/weapon data and runs fully in the browser (static mode).
+      - name: Build ability editor demo
+        run: bun scripts/build-editor-demo.ts
+
+      # Assemble the site: the repo-root index.html is the homepage at /,
+      # the map editor/browser/pools keep their /mapeditor/ and /maps/ URLs,
+      # and the ability editor demo lives at /ability-editor/.
+      - name: Assemble static site
+        run: |
+          mkdir -p dist-editor
+          cp index.html dist-editor/index.html
+          cp -r mapeditor dist-editor/mapeditor
+          cp -r maps dist-editor/maps
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-editor
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

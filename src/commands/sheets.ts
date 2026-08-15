@@ -1,12 +1,18 @@
 import { sendPm, sendPmChunks } from "../utils.js";
 import type { User } from "../users.js";
-import { checkAllUpdates } from "../sheets/scraper.js";
-import { checkSheet, checkAllSheets } from "../sheets/spec-checker.js";
+import { checkAllUpdates, approveAllUpdates } from "../sheets/scraper.js";
+import { checkSheet, checkAllSheets, rowName } from "../sheets/spec-checker.js";
 
 export async function sheetsCommand(user: User, cmd: string, args: string) {
   const target = user.name;
 
   if (cmd === "sheets") {
+    if (args === "approve") {
+      await approveAllUpdates();
+      sendPm(target, "Approved pending sheets — merged into local state.");
+      return;
+    }
+
     sendPm(target, "Fetching sheets from Google Sheets...");
     const { changed, results, diffs } = await checkAllUpdates();
 
@@ -51,18 +57,18 @@ export async function sheetsCommand(user: User, cmd: string, args: string) {
       const lines: string[] = [`=== ${diff.label} ===`];
       if (diff.added.length) {
         lines.push(
-          `  Added: ${diff.added.map((r) => r.Name || r["Ability Name"] || "?").join(", ")}`,
+          `  Added: ${diff.added.map((r) => rowName(r) || "?").join(", ")}`,
         );
       }
       if (diff.removed.length) {
         lines.push(
-          `  Removed: ${diff.removed.map((r) => r.Name || r["Ability Name"] || "?").join(", ")}`,
+          `  Removed: ${diff.removed.map((r) => rowName(r) || "?").join(", ")}`,
         );
       }
       if (diff.changed.length) {
         lines.push(`  Modified: ${diff.changed.length} row(s)`);
         for (const c of diff.changed) {
-          const name = c.row.Name || c.row["Ability Name"] || "?";
+          const name = rowName(c.row) || "?";
           lines.push(`    - ${name}:`);
           for (const [field, { from, to }] of Object.entries(c.changes)) {
             lines.push(`      ${field}: "${from}" -> "${to}"`);

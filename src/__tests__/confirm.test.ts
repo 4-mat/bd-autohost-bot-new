@@ -11,6 +11,7 @@ import {
   type AbilityData,
   Terrain,
 } from "../game/state.js";
+import type { GameVersion } from "../data/index.js";
 
 setWs({ send() {} });
 
@@ -49,7 +50,9 @@ function makeEntity(
   };
 }
 
-function makeGame(opts: { entities?: Entity[]; mode?: string } = {}): Game {
+function makeGame(
+  opts: { entities?: Entity[]; mode?: string; version?: GameVersion } = {},
+): Game {
   const size = 10;
   const map = Array.from({ length: size }, () =>
     Array(size).fill(Terrain.Normal),
@@ -71,6 +74,7 @@ function makeGame(opts: { entities?: Entity[]; mode?: string } = {}): Game {
     log: [],
     snapshots: [],
     mode: opts.mode ?? "ffa",
+    version: opts.version ?? "4.4",
     phase: "playing",
     started: true,
     kills: {},
@@ -137,6 +141,39 @@ describe("confirm", () => {
 
     expect(user.pendingAction).toBeNull();
     expect(target.curhp).toBeLessThan(100);
+  });
+
+  it("aborts a Varies attack that has no variants instead of resolving it", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+    });
+    const game = makeGame({ entities: [user, target] });
+    games.set(game.id, game);
+
+    const ability = makeAbility({
+      name: "Broken Varies",
+      mr: 0,
+      roll: "2d6+3",
+      damageType: "Varies",
+    });
+    user.pendingAction = { type: "attack", ability, target: "P2" };
+    user.standardUsed = true;
+
+    gameCommand(room, alice, "confirm", "", "");
+
+    expect(user.pendingAction).toBeNull();
+    expect(game.log.length).toBe(1);
+    expect(game.log[0].description).not.toContain("Broken Varies");
+    expect(target.curhp).toBe(100);
   });
 
   it("clears pendingAction even on miss", () => {

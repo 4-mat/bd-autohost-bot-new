@@ -20,6 +20,8 @@ import {
 } from "../game/state.js";
 import { classes, weapons, loadGameData } from "../data/index.js";
 import { normalizeSubweapon } from "../game/effects.js";
+import { getVersionData } from "../data/version43.js";
+import type { GameVersion } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
 import {
   GAMEMODE_MAPS,
@@ -55,9 +57,12 @@ function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
 
 // Recalculate an entity's maxhp/curhp, stats, and abilities from its current
 // class + weapon. Returns the new max HP.
-function recalcEntityStats(entity: Entity): number {
-  const classData = classes.get(toId(entity.className));
-  const weaponData = weapons.get(toId(entity.weaponName));
+function recalcEntityStats(
+  entity: Entity,
+  data: { classes: typeof classes; weapons: typeof weapons },
+): number {
+  const classData = data.classes.get(toId(entity.className));
+  const weaponData = data.weapons.get(toId(entity.weaponName));
   const sv = (s: string) => parseFloat(s) || 0;
   const newMaxhp =
     (classData ? parseInt(classData.stats.hp) : 0) +
@@ -130,7 +135,7 @@ export function hostCommand(
 
   switch (cmd) {
     case "host":
-      handleHost(room, user);
+      handleHost(room, user, args);
       break;
     case "dehost":
       handleDehost(room, user);
@@ -203,6 +208,9 @@ export function hostCommand(
     case "endvote":
       handleEndVote(room, user);
       break;
+    case "ffabtn":
+      handleFfaButton(room, user);
+      break;
     case "nudge":
       handleNudge(room, user);
       break;
@@ -226,7 +234,15 @@ function findGameForRoom(roomid: string): Game | null {
 
 // -- .host - Create a new game -------------------------------------------------
 
-function handleHost(room: Room, user: User) {
+function handleHost(room: Room, user: User, args: string) {
+  const version = parseVersion(args);
+  if (!version) {
+    return sendPm(
+      user.name,
+      "Invalid version. Use %host for BD 4.4 or %host 4.3 for BD 4.3.",
+    );
+  }
+
   const existing = findGameForRoom(room.id);
   if (existing) {
     return sendPm(
@@ -240,6 +256,7 @@ function handleHost(room: Room, user: User) {
     id,
     room: room.id,
     host: user.name,
+    version,
     entities: [],
     // A freshly hosted game has NO map — the host must pick one
     // (%setmap <name> or %setmap gen) before %start will work.
@@ -266,13 +283,23 @@ function handleHost(room: Room, user: User) {
   };
 
   games.set(id, game);
-  send(room.id, `**${user.name}** is now hosting! (Game ID: ${id})`);
+  send(
+    room.id,
+    `**${user.name}** is now hosting **BD ${version}**! (Game ID: ${id})`,
+  );
   sendPm(
     user.name,
     "Use %setgame, %addp, %setmap to configure, then %start. Pick a map with %setmap <name> (see %listmaps) or %setmap gen.",
   );
   // Push a fresh (empty) host page so the GUI never shows a previous game.
   broadcastPages(game);
+}
+
+function parseVersion(arg: string): GameVersion | null {
+  const v = arg.trim().toLowerCase();
+  if (v === "" || v === "4.4") return "4.4";
+  if (v === "4.3") return "4.3";
+  return null;
 }
 
 // -- .dehost - Remove the game -------------------------------------------------
@@ -350,12 +377,17 @@ function handleSetGame(room: Room, user: User, args: string) {
         `Map: ${poolDef.displayName} (random ${modeIdFor(mode)!.toUpperCase()} pick)`,
       );
     } else {
-      applyMap(game, {
-        grid: generateDefaultMap(),
-        displayName: "Procedural (12x12)",
-        rows: 12,
-        cols: 12,
-      }, "", true);
+      applyMap(
+        game,
+        {
+          grid: generateDefaultMap(),
+          displayName: "Procedural (12x12)",
+          rows: 12,
+          cols: 12,
+        },
+        "",
+        true,
+      );
       mapMsg.push("Map: Procedural (12x12)");
     }
   }
@@ -444,7 +476,7 @@ function handleClose(room: Room, user: User) {
       .join(", ");
     send(
       room.id,
-      `**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote [mode] (available: ${options || "no modes fit this lobby size (max 8p)"}). Use %wt modes to learn what each mode is.`, 
+      `**Signups are now closed.** Gamemode voting is open — vote in the GUI or with %vote [mode] (available: ${options || "no modes fit this lobby size (max 8p)"}). Use %wt modes to learn what each mode is.`,
     );
   } else {
     send(room.id, "**Signups are now closed.**");
@@ -462,7 +494,10 @@ function handleEndVote(room: Room, user: User) {
   }
   if (game.started) return sendPm(user.name, "Game already started.");
   if (!game.voteOpen) {
-    return sendPm(user.name, "No gamemode vote is open. Close signups with %close to start one.");
+    return sendPm(
+      user.name,
+      "No gamemode vote is open. Close signups with %close to start one.",
+    );
   }
 
   const wasRunoff = game.voteRunoff !== null;
@@ -510,6 +545,28 @@ function handleEndVote(room: Room, user: User) {
 }
 
 /**
+ * %ffabtn — host-only: toggle the Setup panel's always-available %setgame ffa
+ * shortcut. Some hosts never run FFA and prefer the panel to only show the
+ * vote-winner action; this lets them hide the extra button per game.
+ */
+function handleFfaButton(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %ffabtn.");
+  }
+
+  game.hideFfaShortcut = !game.hideFfaShortcut;
+  send(
+    room.id,
+    game.hideFfaShortcut
+      ? "The FFA shortcut is now hidden (use %ffabtn again to show it)."
+      : "The FFA shortcut is now shown.",
+  );
+  broadcastPages(game);
+}
+
+/**
  * %nudge — host-only: pings the players who haven't voted yet so the lobby
  * can finish the vote. Mentions them by name so the chat client highlights
  * them (@Name).
@@ -534,7 +591,10 @@ function handleNudge(room: Room, user: User) {
   );
 
   if (pending.length === 0) {
-    send(room.id, "Everyone has already voted! Run %endvote to apply the winning mode.");
+    send(
+      room.id,
+      "Everyone has already voted! Run %endvote to apply the winning mode.",
+    );
     return;
   }
 
@@ -550,7 +610,6 @@ function handleNudge(room: Room, user: User) {
   game.toasts.push({ user: game.host, message: msg });
   broadcastPages(game);
 }
-
 
 // -- .vote <mode> - Cast/change a gamemode vote (in game.ts via gameCommand) --
 
@@ -825,9 +884,10 @@ export function genTeamSlots(
   const bottomRow = Math.max(0, rows - 1);
   const rightCol = Math.max(0, cols - 1);
   const top = cornerCluster(a);
-  const bottom = cornerCluster(b).map(
-    ([r, c]): [number, number] => [bottomRow - r, rightCol - c],
-  );
+  const bottom = cornerCluster(b).map(([r, c]): [number, number] => [
+    bottomRow - r,
+    rightCol - c,
+  ]);
   return [top, bottom];
 }
 
@@ -839,10 +899,12 @@ export function placeTeamPlayers(
   game: Game,
   teamA: Entity[],
   teamB: Entity[],
-): [
-  placedA: [Entity, [number, number]][],
-  placedB: [Entity, [number, number]][],
-] | null {
+):
+  | [
+      placedA: [Entity, [number, number]][],
+      placedB: [Entity, [number, number]][],
+    ]
+  | null {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
   const [top, bottom] = genTeamSlots(rows, cols, teamA.length, teamB.length);
@@ -861,7 +923,13 @@ export function placeTeamPlayers(
     outA.push([teamA[i], pos]);
   }
   for (let i = 0; i < teamB.length; i++) {
-    const pos = findNearestOpenTile(game, bottom[i][0], bottom[i][1], used, placing);
+    const pos = findNearestOpenTile(
+      game,
+      bottom[i][0],
+      bottom[i][1],
+      used,
+      placing,
+    );
     if (!pos) return null;
     teamB[i].pos = pos;
     used.add(`${pos[0]},${pos[1]}`);
@@ -890,9 +958,7 @@ export function findNearestOpenTile(
       !used.has(`${cr},${cc}`) &&
       !game.entities.some(
         (e) =>
-          e.pos[0] === cr &&
-          e.pos[1] === cc &&
-          !(placing && placing.has(e.id)),
+          e.pos[0] === cr && e.pos[1] === cc && !(placing && placing.has(e.id)),
       )
     ) {
       return [cr, cc];
@@ -969,8 +1035,9 @@ function createPlayerEntity(
     return { err: `${name} is already in the game.` };
   }
 
-  const classData = classes.get(toId(className));
-  const weaponData = weapons.get(toId(weaponName));
+  const data = getVersionData(game.version);
+  const classData = data.classes.get(toId(className));
+  const weaponData = data.weapons.get(toId(weaponName));
 
   if (!classData) {
     return { err: `Unknown class: ${className}. Use %wt to look up.` };
@@ -1136,12 +1203,13 @@ function applyClassChange(
   entity: Entity,
   newClass: string,
 ): boolean {
-  const classData = classes.get(toId(newClass));
+  const data = getVersionData(game.version);
+  const classData = data.classes.get(toId(newClass));
   if (!classData) return false;
   pushSnapshot(game);
   const oldClass = entity.className;
   entity.className = classData.name;
-  const newMaxhp = recalcEntityStats(entity);
+  const newMaxhp = recalcEntityStats(entity, data);
   send(
     room.id,
     `${entity.num} (${entity.name}) class: ${oldClass} -> ${classData.name} (${newMaxhp} HP)`,
@@ -1156,7 +1224,8 @@ function applyWeaponChange(
   entity: Entity,
   newWeapon: string,
 ): boolean {
-  const weaponData = weapons.get(toId(newWeapon));
+  const data = getVersionData(game.version);
+  const weaponData = data.weapons.get(toId(newWeapon));
   if (!weaponData) return false;
   pushSnapshot(game);
   const oldWeapon = entity.weaponName;
@@ -1164,7 +1233,7 @@ function applyWeaponChange(
   // Only reset the subweapon on a pre-game weapon change. Mid-game, a host
   // re-equipping a weapon shouldn't silently wipe a swapped stance.
   if (!game.started) entity.subweapon = startingSubweapon(weaponData.name);
-  const newMaxhp = recalcEntityStats(entity);
+  const newMaxhp = recalcEntityStats(entity, data);
   send(
     room.id,
     `${entity.num} (${entity.name}) weapon: ${oldWeapon} -> ${weaponData.name} (${newMaxhp} HP)`,
@@ -1180,8 +1249,9 @@ function applyLoadoutChange(
   newClass: string,
   newWeapon: string,
 ): boolean {
-  const classData = classes.get(toId(newClass));
-  const weaponData = weapons.get(toId(newWeapon));
+  const data = getVersionData(game.version);
+  const classData = data.classes.get(toId(newClass));
+  const weaponData = data.weapons.get(toId(newWeapon));
   if (!classData || !weaponData) return false;
   pushSnapshot(game);
   const oldClass = entity.className;
@@ -1191,7 +1261,7 @@ function applyLoadoutChange(
   // Only reset the subweapon on a pre-game loadout change (see
   // applyWeaponChange).
   if (!game.started) entity.subweapon = startingSubweapon(weaponData.name);
-  const newMaxhp = recalcEntityStats(entity);
+  const newMaxhp = recalcEntityStats(entity, data);
   send(
     room.id,
     `${entity.num} (${entity.name}) loadout: ${oldClass}/${oldWeapon} -> ${classData.name}/${weaponData.name} (${newMaxhp} HP)`,
@@ -1320,9 +1390,13 @@ function handleSetEntityLoadout(room: Room, user: User, args: string) {
 
 // Set an entity's class/weapon level, recomputing HP and abilities. Returns
 // the previous level.
-function applyEntityLevel(entity: Entity, level: number): number {
-  const classData = classes.get(toId(entity.className));
-  const weaponData = weapons.get(toId(entity.weaponName));
+function applyEntityLevel(
+  entity: Entity,
+  level: number,
+  data: { classes: typeof classes; weapons: typeof weapons },
+): number {
+  const classData = data.classes.get(toId(entity.className));
+  const weaponData = data.weapons.get(toId(entity.weaponName));
   const maxhp =
     (classData ? parseInt(classData.stats.hp) : 0) +
     (weaponData ? parseInt(weaponData.stats.hp) : 0);
@@ -1371,8 +1445,9 @@ function handleSetLevel(room: Room, user: User, args: string) {
       return sendPm(user.name, "No players in the game.");
     }
     pushSnapshot(game);
+    const data = getVersionData(game.version);
     const rows = players.map((e) => {
-      const oldLvl = applyEntityLevel(e, level);
+      const oldLvl = applyEntityLevel(e, level, data);
       return `${e.num} (${e.name}) ${oldLvl} -> ${level}`;
     });
     send(
@@ -1387,7 +1462,8 @@ function handleSetLevel(room: Room, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
   pushSnapshot(game);
-  const oldLvl = applyEntityLevel(entity, level);
+  const data = getVersionData(game.version);
+  const oldLvl = applyEntityLevel(entity, level, data);
   send(
     room.id,
     `${entity.num} (${entity.name}) level: ${oldLvl} -> ${level} (${entity.maxhp} HP)`,
@@ -1438,8 +1514,9 @@ function handleSetJugg(room: Room, user: User, args: string) {
   entity.isJuggernaut = !entity.isJuggernaut;
 
   // Re-filter abilities to include/exclude EX
-  const classData = classes.get(toId(entity.className));
-  const weaponData = weapons.get(toId(entity.weaponName));
+  const data = getVersionData(game.version);
+  const classData = data.classes.get(toId(entity.className));
+  const weaponData = data.weapons.get(toId(entity.weaponName));
   const lvl = entity.classLevel;
   if (classData && weaponData) {
     entity.abilities = [

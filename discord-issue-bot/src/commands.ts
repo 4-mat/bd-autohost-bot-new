@@ -25,10 +25,65 @@ export const commandDefs = [
         .setRequired(false),
     ),
   new SlashCommandBuilder()
+    .setName("bug")
+    .setDescription("Report a bug (creates a labeled GitHub issue)")
+    .addStringOption((o) =>
+      o.setName("title").setDescription("Bug title").setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("body")
+        .setDescription("What happened / steps to reproduce")
+        .setRequired(false),
+    ),
+  new SlashCommandBuilder()
+    .setName("feature")
+    .setDescription("Request a feature (creates a labeled GitHub issue)")
+    .addStringOption((o) =>
+      o.setName("title").setDescription("Feature title").setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("body")
+        .setDescription("What should it do?")
+        .setRequired(false),
+    ),
+  new SlashCommandBuilder()
+    .setName("map")
+    .setDescription("Propose a new map (creates a 'Map: X' issue → PR via the map workflow)")
+    .addStringOption((o) =>
+      o
+        .setName("name")
+        .setDescription("Map id — lowercase letters, digits, - or _ (no spaces)")
+        .setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("grid")
+        .setDescription(
+          "The map grid — one row of terrain codes per line, e.g.\n..r..\n.....\n.w+w.\n.....\n..r..",
+        )
+        .setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("modes")
+        .setDescription("Comma-separated game modes (ffa, ntr, jugg, pvp, 1v1)")
+        .setRequired(false),
+    ),
+  new SlashCommandBuilder()
     .setName("ability")
     .setDescription("Propose an Ability Editor change (creates an 'Ability: ...' issue → PR)")
     .addStringOption((o) =>
       o.setName("name").setDescription("Class or weapon name").setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("entry")
+        .setDescription(
+          'JSON for the entry, e.g. {"stats":{"hp":"80","atk":"7"},"description":"...","abilities":[]}',
+        )
+        .setRequired(true),
     )
     .addStringOption((o) =>
       o
@@ -41,14 +96,6 @@ export const commandDefs = [
         .setName("mode")
         .setDescription("add (new entry) or update (existing entry) — default add")
         .setRequired(false),
-    )
-    .addStringOption((o) =>
-      o
-        .setName("entry")
-        .setDescription(
-          'JSON for the entry, e.g. {"stats":{"hp":"80","atk":"7"},"description":"...","abilities":[]}',
-        )
-        .setRequired(true),
     ),
 ].map((c) => c.toJSON());
 

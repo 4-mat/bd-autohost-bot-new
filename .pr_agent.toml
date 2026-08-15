@@ -1,0 +1,11 @@
+[config]
+model = "gemini/gemini-3.6-flash"
+fallback_models = ["gemini/gemini-3-flash-preview"]
+max_model_tokens = 32000
+
+[github_action_config]
+# Re-review on every push (synchronize), not just when the PR is opened.
+# Without this, PR-Agent logs "Skipping action: synchronize" and never
+# re-reviews a branch after its first review.
+handle_push_trigger = true
+push_commands = ["/review", "/improve"]

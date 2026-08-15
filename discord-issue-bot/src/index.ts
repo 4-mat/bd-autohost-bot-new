@@ -1,9 +1,15 @@
 import {
   Client,
   GatewayIntentBits,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
   type ChatInputCommandInteraction,
+  type ButtonInteraction,
   type Message,
 } from "discord.js";
+import { randomUUID } from "node:crypto";
 import { loadConfig, assertConfig } from "./config.js";
 import { createGithubClient, GithubError } from "./github.js";
 import { registerCommands } from "./commands.js";
@@ -15,6 +21,7 @@ import {
   proposalIssueBody,
   proposalTitle,
 } from "./proposal.js";
+import { buildMapProposal } from "./map.js";
 
 const cfg = assertConfig(loadConfig());
 const github = createGithubClient({
@@ -29,6 +36,53 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
   ],
 });
+
+// ---------------------------------------------------------------------------
+// Rate limiting (simple per-user cooldown between issue-creating commands)
+// ---------------------------------------------------------------------------
+
+const RATE_LIMIT_MS = 10_000;
+const lastCommandAt = new Map<string, number>();
+
+function rateLimited(userId: string): boolean {
+  const now = Date.now();
+  const last = lastCommandAt.get(userId) ?? 0;
+  if (now - last < RATE_LIMIT_MS) return true;
+  lastCommandAt.set(userId, now);
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Pending confirmations (preview embed + Confirm/Cancel buttons)
+// ---------------------------------------------------------------------------
+
+interface PendingAction {
+  ownerId: string; // Discord user id of the command invoker
+  run: () => Promise<string>; // returns the created issue URL
+}
+
+const PENDING_TTL_MS = 2 * 60_000;
+const pendingActions = new Map<string, PendingAction>();
+
+function stagePending(ownerId: string, action: () => Promise<string>): string {
+  const nonce = randomUUID();
+  pendingActions.set(nonce, { ownerId, run: action });
+  setTimeout(() => pendingActions.delete(nonce), PENDING_TTL_MS);
+  return nonce;
+}
+
+function confirmRow(nonce: string) {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`confirm:${nonce}`)
+      .setLabel("Confirm")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`cancel:${nonce}`)
+      .setLabel("Cancel")
+      .setStyle(ButtonStyle.Secondary),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Shared issue-creation logic (used by slash + text handlers)
@@ -72,6 +126,11 @@ async function createProposalIssue(
   return issue.html_url;
 }
 
+function friendlyError(e: unknown): string {
+  if (e instanceof GithubError) return e.detail || e.message;
+  return (e as Error).message;
+}
+
 // ---------------------------------------------------------------------------
 // Slash commands
 // ---------------------------------------------------------------------------
@@ -86,42 +145,175 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
     return;
   }
 
-  if (interaction.commandName === "issue") {
+  const userId = interaction.user.id;
+  if (rateLimited(userId)) {
+    await interaction.reply({
+      content: "⏳ Please wait a few seconds between commands.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const cmd = interaction.commandName;
+
+  // Plain issues (created immediately — low risk).
+  if (cmd === "issue" || cmd === "bug" || cmd === "feature") {
     const title = interaction.options.getString("title", true);
     const body = interaction.options.getString("body") ?? "";
-    const labelsRaw = interaction.options.getString("labels") ?? "";
-    const labels = labelsRaw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const labels = cmd === "issue"
+      ? (interaction.options.getString("labels") ?? "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : cmd === "bug"
+        ? ["bug"]
+        : ["enhancement"];
 
     await interaction.deferReply({ ephemeral: false });
     try {
       const url = await createPlainIssue(title, body, labels);
       await interaction.editReply(`✅ Created issue **${title}**\n${url}`);
     } catch (e) {
-      const msg = e instanceof GithubError ? e.detail || e.message : (e as Error).message;
-      await interaction.editReply(`❌ Could not create issue: ${msg}`);
+      await interaction.editReply(`❌ Could not create issue: ${friendlyError(e)}`);
     }
     return;
   }
 
-  if (interaction.commandName === "ability") {
+  // Ability proposals (preview + confirm).
+  if (cmd === "ability") {
     const name = interaction.options.getString("name", true);
-    const kind = interaction.options.getString("kind") ?? "";
-    const mode = interaction.options.getString("mode") ?? "";
-    const entry = interaction.options.getString("entry", true);
+    const kind = normalizeKind(interaction.options.getString("kind"));
+    const mode = normalizeMode(interaction.options.getString("mode"));
+    const entryRaw = interaction.options.getString("entry", true);
+
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(entryRaw) as Record<string, unknown>;
+    } catch {
+      await interaction.reply({
+        content:
+          "❌ The `entry` JSON didn't parse. Use valid JSON, e.g. {\"stats\":{\"hp\":\"80\"},\"abilities\":[]}",
+        ephemeral: true,
+      });
+      return;
+    }
 
     await interaction.deferReply({ ephemeral: false });
+    const nonce = stagePending(userId, () =>
+      createProposalIssue(name, kind, mode, entryRaw),
+    );
+    const embed = new EmbedBuilder()
+      .setTitle("Confirm ability proposal")
+      .setDescription(
+        `**${mode === "update" ? "Update" : "Add"}** ${kind} **${name}**\n\nThis opens an issue the editor workflow turns into a PR.`,
+      )
+      .addFields({
+        name: "Entry",
+        value: `\`\`\`json\n${JSON.stringify(entry, null, 2).slice(0, 1024)}\n\`\`\``,
+      })
+      .setColor(0x2b6cb0);
+    await interaction.editReply({
+      embeds: [embed],
+      components: [confirmRow(nonce)],
+    });
+    return;
+  }
+
+  // Map proposals (preview + confirm, validated server-side).
+  if (cmd === "map") {
+    const name = interaction.options.getString("name", true);
+    const modes = interaction.options.getString("modes") ?? "";
+    const grid = interaction.options.getString("grid", true);
+
+    let proposal;
     try {
-      const url = await createProposalIssue(name, kind, mode, entry);
-      await interaction.editReply(
-        `✅ Proposed **${name}** — this opens an issue that the workflow turns into a PR.\n${url}`,
-      );
+      proposal = buildMapProposal(name, modes, grid);
     } catch (e) {
-      const msg = e instanceof GithubError ? e.detail || e.message : (e as Error).message;
-      await interaction.editReply(`❌ Could not create proposal: ${msg}`);
+      await interaction.reply({
+        content: `❌ ${friendlyError(e)}`,
+        ephemeral: true,
+      });
+      return;
     }
+
+    await interaction.deferReply({ ephemeral: false });
+    const nonce = stagePending(userId, async () => {
+      const issue = await github.createIssue({
+        title: proposal.title,
+        body: proposal.body,
+      });
+      return issue.html_url;
+    });
+    const embed = new EmbedBuilder()
+      .setTitle("Confirm map proposal")
+      .setDescription(
+        `**${proposal.name}** (${proposal.rows}×${proposal.cols})${
+          proposal.modes.length ? ` · modes: ${proposal.modes.join(", ")}` : ""
+        }\n\nThis opens an issue the map workflow turns into a PR.`,
+      )
+      .addFields({ name: "Map", value: `\`\`\`txt\n${grid.slice(0, 1024)}\n\`\`\`` })
+      .setColor(0x38a169);
+    await interaction.editReply({
+      embeds: [embed],
+      components: [confirmRow(nonce)],
+    });
+    return;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Button confirmations
+// ---------------------------------------------------------------------------
+
+async function handleButton(interaction: ButtonInteraction): Promise<void> {
+  const [action, nonce] = interaction.customId.split(":");
+  const pending = pendingActions.get(nonce);
+  if (!pending) {
+    await interaction.reply({
+      content: "This confirmation expired (2 minutes). Please run the command again.",
+      ephemeral: true,
+    });
+    return;
+  }
+  // Only the invoker may confirm/cancel their own proposal; also enforce the
+  // role gate so a roleless bystander can't click Confirm on a public preview.
+  if (interaction.user.id !== pending.ownerId) {
+    await interaction.reply({
+      content: "Only the person who ran the command can confirm or cancel this.",
+      ephemeral: true,
+    });
+    return;
+  }
+  const member = interaction.member;
+  if (!hasAccessRole(cfg, member as never)) {
+    await interaction.reply({
+      content: unauthorizedReplyText(),
+      ephemeral: true,
+    });
+    return;
+  }
+  pendingActions.delete(nonce);
+  const { run } = pending;
+
+  if (action === "cancel") {
+    await interaction.update({ content: "❌ Cancelled.", embeds: [], components: [] });
+    return;
+  }
+
+  await interaction.deferUpdate();
+  try {
+    const url = await run();
+    await interaction.editReply({
+      content: `✅ Done — the workflow turns this into a PR.\n${url}`,
+      embeds: [],
+      components: [],
+    });
+  } catch (e) {
+    await interaction.editReply({
+      content: `❌ Could not create: ${friendlyError(e)}`,
+      embeds: [],
+      components: [],
+    });
   }
 }
 
@@ -132,11 +324,24 @@ async function handleSlash(interaction: ChatInputCommandInteraction): Promise<vo
 async function handleMessage(message: Message): Promise<void> {
   if (message.author.bot) return;
   const content = message.content.trim();
-  if (!content.startsWith("!issue") && !content.startsWith("!ability")) return;
+  if (!content.startsWith("!")) return;
+
+  // Unknown ! command — never leave the user without an answer.
+  if (!content.startsWith("!issue") && !content.startsWith("!ability")) {
+    await message.reply(
+      "🤖 I handle: `!issue <title> | <details>`, `!ability <Name> | <entry JSON> | add|update | class|weapon`, and the slash commands `/issue`, `/bug`, `/feature`, `/map`, `/ability`.",
+    );
+    return;
+  }
 
   const member = message.member;
   if (!hasAccessRole(cfg, member)) {
     await message.reply(unauthorizedReplyText());
+    return;
+  }
+
+  if (rateLimited(message.author.id)) {
+    await message.reply("⏳ Please wait a few seconds between commands.");
     return;
   }
 
@@ -153,7 +358,7 @@ async function handleMessage(message: Message): Promise<void> {
       const url = await createPlainIssue(title, details ?? "", []);
       await message.reply(`✅ Created issue **${title}**\n${url}`);
     } catch (e) {
-      await message.reply(`❌ Could not create issue: ${(e as Error).message}`);
+      await message.reply(`❌ Could not create issue: ${friendlyError(e)}`);
     }
     return;
   }
@@ -175,7 +380,7 @@ async function handleMessage(message: Message): Promise<void> {
         `✅ Proposed **${name}** — this opens an issue that the workflow turns into a PR.\n${url}`,
       );
     } catch (e) {
-      await message.reply(`❌ Could not create proposal: ${(e as Error).message}`);
+      await message.reply(`❌ Could not create proposal: ${friendlyError(e)}`);
     }
   }
 }
@@ -184,7 +389,7 @@ async function handleMessage(message: Message): Promise<void> {
 // Boot
 // ---------------------------------------------------------------------------
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`[bot] logged in as ${client.user?.tag}`);
   try {
     await registerCommands(cfg);
@@ -194,15 +399,25 @@ client.once("ready", async () => {
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
   try {
-    await handleSlash(interaction);
+    if (interaction.isButton()) {
+      await handleButton(interaction);
+    } else if (interaction.isChatInputCommand()) {
+      await handleSlash(interaction);
+    }
   } catch (e) {
-    console.error("[bot] slash handler error:", (e as Error).message);
-    if (!interaction.replied) {
-      await interaction
-        .reply({ content: "❌ Something went wrong.", ephemeral: true })
-        .catch(() => {});
+    console.error("[bot] interaction handler error:", (e as Error).message);
+    // Always tell the user the outcome — including when the handler threw
+    // after deferring (otherwise the interaction just hangs silently).
+    if (interaction.isRepliable()) {
+      const content = `❌ Something went wrong: ${friendlyError(e)}`;
+      if (interaction.deferred) {
+        await interaction.editReply({ content }).catch(() => {});
+      } else if (!interaction.replied) {
+        await interaction
+          .reply({ content, ephemeral: true })
+          .catch(() => {});
+      }
     }
   }
 });

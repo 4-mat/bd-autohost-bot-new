@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Discord bot that creates GitHub issues for bd-autohost-bot-new, incl. Ability Editor proposals",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
-    "register": "tsx src/register.ts",
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "start": "tsx --env-file=.env src/index.ts",
+    "register": "tsx --env-file=.env src/register.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
