@@ -38,7 +38,7 @@ export function handleCommand(
       "**In-Game (Player)**: %move, %use, %dash, %target, %choose, %confirm, %cancel, %endturn, %premove, %r, %vote, %votestatus, %unvote, %leave",
       "**Character**: %vs, %vl, %vi, %sc, %sw, %sco",
       "**Reference**: %wt, %rf, %wtm",
-      "**Sheets**: %sheets, %sheets all",
+      "**Sheets**: %sheets, %sheets all, %sheets approve",
     ];
     sendPm(user.name, help.join("\n"));
     return;
@@ -94,6 +94,7 @@ export function handleCommand(
     id === "openbsu" ||
     id === "close" ||
     id === "endvote" ||
+    id === "ffabtn" ||
     id === "nudge" ||
     id === "join" ||
     id === "genpos"

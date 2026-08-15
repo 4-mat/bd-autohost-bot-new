@@ -41,7 +41,7 @@
 		bone:   { color: '#CCCCAA', label: 'Bone',   code: 'b', dark: false },
 		stone:  { color: '#888888', label: 'Stone',  code: 'o', dark: true },
 		hearth: { color: '#FF6633', label: 'Hearth', code: 'h', dark: true },
-		boost:  { color: '#AAFFAA', label: 'Boost',  code: '+', dark: false }
+		boost:  { color: '#A855F7', label: 'Boost',  code: '+', dark: true }
 	};
 
 	// Default token colors (P1 green / P2 blue are the classic ones).
@@ -65,6 +65,32 @@
 
 	const MIN_DIM = 7;
 	const MAX_DIM = 60;
+
+	// Smallest allowed dimension per game mode (mirrors src/data/gamemodes.ts).
+	const GAMEMODE_MIN_SIZE = { ffa: 7, ntr: 5, jugg: 7, pvp: 7, '1v1': 7 };
+
+	// Resolve a free-form mode string to a canonical mode id (mirrors modeIdFor
+	// in src/data/gamemodes.ts — aliases like duel or 2v2 map to a pool mode).
+	const MODE_ALIASES = {
+		ffa: 'ffa', ntr: 'ntr', jugg: 'jugg', juggernaut: 'jugg', pvp: 'pvp',
+		duel: '1v1', '1v1': '1v1', '2vj': 'jugg', '3vj': 'jugg', '4vj': 'jugg',
+		pvpj: 'pvp', 'pvp juggernaut': 'pvp', pvpntr: 'ntr', 'pvp ntr': 'ntr',
+		'2v2v2': 'pvp', '4v4': 'pvp', '2v2v2v2': 'pvp'
+	};
+
+	function modeIdFor(mode) {
+		const key = String(mode).trim().toLowerCase().replace(/\s+/g, ' ');
+		if (MODE_ALIASES[key]) return MODE_ALIASES[key];
+		if (/^\d+v\d+$/.test(key)) return 'pvp';
+		return undefined;
+	}
+
+	// Smallest allowed dimension for a map declaring the given modes (mirrors
+	// minDimFor in src/data/parse-map-file.ts — NTR maps may be 5x5, others 7x7).
+	function minDimFor(modes) {
+		if (!modes || !modes.length) return MIN_DIM;
+		return Math.max(...modes.map((m) => GAMEMODE_MIN_SIZE[m] || MIN_DIM));
+	}
 
 	function rowLabel(i) {
 		return String.fromCharCode(65 + i);
@@ -138,7 +164,7 @@
 		let cols = Math.max(1, Math.min(MAX_DIM, Math.floor(map.cols) || 11));
 		const tiles = [];
 		for (let r = 0; r < rows; r++) {
-			const srcRow = Array.isArray(map.tiles) ? map.tiles[r] : [];
+			const srcRow = Array.isArray(map.tiles) && Array.isArray(map.tiles[r]) ? map.tiles[r] : [];
 			const row = [];
 			for (let c = 0; c < cols; c++) {
 				const t = String(srcRow[c] || 'normal').toLowerCase();
@@ -161,10 +187,15 @@
 			}
 		}
 		const name = sanitizeName(map.name);
+		const modes = Array.isArray(map.modes)
+			? map.modes.map(modeIdFor).filter(Boolean).filter((m, i, a) => a.indexOf(m) === i)
+			: [];
 		return {
 			name,
-			displayName: (map.displayName && String(map.displayName).trim()) || displayFromName(name),
-			rows, cols, tiles, tokens
+			// CR/LF are stripped like parseTxt does; cap at the same 60 chars.
+			displayName: (map.displayName && String(map.displayName).replace(/[\r\n]+/g, ' ').trim().slice(0, 60)) || displayFromName(name),
+			rows, cols, tiles, tokens,
+			modes
 		};
 	}
 
@@ -273,6 +304,7 @@
 		if (!text) throw new Error(file + ':0: no content');
 		let name = '';
 		let disp;
+		const modes = [];
 		const rows = [];
 		let n = 0;
 
@@ -281,7 +313,7 @@
 			const line = raw.trim();
 			if (!line || line.startsWith('#')) continue;
 
-			const head = line.match(/^(name|display)\s*:\s*(.*)$/);
+			const head = line.match(/^(name|display|modes)\s*:\s*(.*)$/);
 			if (head) {
 				const val = head[2].trim();
 				if (head[1] === 'name') {
@@ -292,9 +324,25 @@
 					if (/^gen\d*$/.test(name)) {
 						throw new Error(file + ':' + n + ': "' + name + '" is reserved for %setmap gen (procedural maps)');
 					}
-				} else {
+				} else if (head[1] === 'display') {
 					disp = val;
 					if (!disp || disp.length > 60) throw new Error(file + ':' + n + ': display name must be 1-60 chars');
+				} else {
+					for (const part of val.split(',')) {
+						const entry = part.trim();
+						if (!entry) continue;
+						const whole = modeIdFor(entry);
+						if (whole) {
+							if (modes.indexOf(whole) === -1) modes.push(whole);
+						} else {
+							for (const word of entry.split(/\s+/)) {
+								const id = modeIdFor(word);
+								if (!id) throw new Error(file + ':' + n + ': unknown game mode "' + word + '" — use ffa, ntr, jugg, pvp or 1v1');
+								if (modes.indexOf(id) === -1) modes.push(id);
+							}
+						}
+					}
+					if (!modes.length) throw new Error(file + ':' + n + ': modes list is empty');
 				}
 				continue;
 			}
@@ -303,13 +351,14 @@
 		}
 
 		if (!name) throw new Error(file + ':0: missing a `name: <id>` line');
-		if (rows.length < MIN_DIM || rows.length > MAX_DIM) {
-			throw new Error(file + ':0: map has ' + rows.length + ' row(s), need ' + MIN_DIM + '-' + MAX_DIM);
+		const minDim = minDimFor(modes);
+		if (rows.length < minDim || rows.length > MAX_DIM) {
+			throw new Error(file + ':0: map has ' + rows.length + ' row(s), need ' + minDim + '-' + MAX_DIM);
 		}
 
 		const cols = rows[0].text.length;
-		if (cols < MIN_DIM || cols > MAX_DIM) {
-			throw new Error(file + ':' + rows[0].line + ': map has ' + cols + ' columns, need ' + MIN_DIM + '-' + MAX_DIM);
+		if (cols < minDim || cols > MAX_DIM) {
+			throw new Error(file + ':' + rows[0].line + ': map has ' + cols + ' columns, need ' + minDim + '-' + MAX_DIM);
 		}
 
 		const tiles = rows.map(({ text, line }) => {
@@ -325,7 +374,7 @@
 			});
 		});
 
-		return normalizeMap({ name, displayName: disp || displayFromName(name), rows: tiles.length, cols, tiles, tokens: {} });
+		return normalizeMap({ name, displayName: disp || displayFromName(name), rows: tiles.length, cols, tiles, tokens: {}, modes });
 	}
 
 	// ------------------------------------------------------------------
@@ -341,13 +390,69 @@
 	}
 
 	/**
+	 * Move a rectangular block of tiles (and any tokens inside it) by (dr, dc).
+	 * Mutates `map` in place. Returns the selection box at its new position
+	 * ({r0, c0, r1, c1}, inclusive) or null if the move would go out of bounds.
+	 * A token from outside the block sitting on a destination cell is displaced
+	 * (the moved token wins).
+	 */
+	function translateBlock(map, sel, dr, dc) {
+		dr = Math.round(dr) || 0;
+		dc = Math.round(dc) || 0;
+		if (!dr && !dc) return { r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 };
+		const s = {
+			r0: Math.min(sel.r0, sel.r1), c0: Math.min(sel.c0, sel.c1),
+			r1: Math.max(sel.r0, sel.r1), c1: Math.max(sel.c0, sel.c1)
+		};
+		const hgt = s.r1 - s.r0 + 1, wid = s.c1 - s.c0 + 1;
+		const nr0 = s.r0 + dr, nc0 = s.c0 + dc;
+		if (nr0 < 0 || nc0 < 0 || nr0 + hgt > map.rows || nc0 + wid > map.cols) return null;
+
+		// Snapshot the block (tiles + tokens inside it).
+		const block = [];
+		for (let r = s.r0; r <= s.r1; r++)
+			for (let c = s.c0; c <= s.c1; c++)
+				block.push(map.tiles[r][c]);
+		const blockTokens = [];
+		for (const name in map.tokens) {
+			const t = map.tokens[name];
+			if (t.row >= s.r0 && t.row <= s.r1 && t.col >= s.c0 && t.col <= s.c1) {
+				blockTokens.push({ name, row: t.row - s.r0, col: t.col - s.c0, color: t.color });
+			}
+		}
+
+		// Cut: clear the source region.
+		for (let r = s.r0; r <= s.r1; r++)
+			for (let c = s.c0; c <= s.c1; c++)
+				map.tiles[r][c] = 'normal';
+		for (const bt of blockTokens) delete map.tokens[bt.name];
+
+		// Paste at the destination.
+		let i = 0;
+		for (let r = s.r0; r <= s.r1; r++)
+			for (let c = s.c0; c <= s.c1; c++)
+				map.tiles[nr0 + (r - s.r0)][nc0 + (c - s.c0)] = block[i++];
+		for (const bt of blockTokens) {
+			const tr = nr0 + bt.row, tc = nc0 + bt.col;
+			for (const name in map.tokens) {
+				const o = map.tokens[name];
+				if (o.row === tr && o.col === tc) delete map.tokens[name];
+			}
+			map.tokens[bt.name] = { row: tr, col: tc, color: bt.color || tokenColorFor(bt.name) };
+		}
+
+		return { r0: nr0, c0: nc0, r1: nr0 + hgt - 1, c1: nc0 + wid - 1 };
+	}
+
+	/**
 	 * Volunteer .txt format for maps/ in this repo. Note: player tokens are
 	 * editor-only and not representable in this format (they're ignored).
 	 */
 	function toTxt(map) {
 		map = normalizeMap(map);
-		if (map.rows < MIN_DIM || map.cols < MIN_DIM) {
-			throw new Error('Volunteer maps must be at least ' + MIN_DIM + 'x' + MIN_DIM + ' — this map is ' + map.rows + 'x' + map.cols);
+		const minDim = minDimFor(map.modes);
+		if (map.rows < minDim || map.cols < minDim) {
+			throw new Error('Volunteer maps must be at least ' + minDim + 'x' + minDim + ' — this map is ' + map.rows + 'x' + map.cols);
 		}
 		const name = sanitizeName(map.name);
 		const display = (map.displayName && String(map.displayName).trim()) || displayFromName(name);
@@ -355,6 +460,7 @@
 		lines.push('# Battle Dome volunteer map — made with the map editor');
 		lines.push('name: ' + name);
 		lines.push('display: ' + String(display).slice(0, 60));
+		if (map.modes && map.modes.length) lines.push('modes: ' + map.modes.join(', '));
 		for (let r = 0; r < map.rows; r++) {
 			let row = '';
 			for (let c = 0; c < map.cols; c++) {
@@ -371,7 +477,12 @@
 	 * <details><summary>Map</summary>…</details>). The bot's parser
 	 * (src/html/parse.ts) reads title="…" for terrain and <b>P#</b> for players.
 	 */
+function esc(s) {
+		return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+	}
+
 	function toHTML(map) {
+		map = normalizeMap(map);
 		const rows = map.rows, cols = map.cols, tiles = map.tiles;
 		let out = '<div class="infobox"><details open><summary>Map</summary><div style="overflow-x:auto">';
 		out += '<table align="center" style="border-spacing:0px;border-collapse:collapse;border:1px solid #888; background:rgba(120, 120, 225, 0.10)" border="1" bordercolor="#888">';
@@ -385,7 +496,7 @@
 				const color = TERRAINS[terrain].color;
 				const tok = tokenAt(map, r, c);
 				if (tok) {
-					out += '<td style="background:' + color + '" title="' + terrain + '" align="center"><b style="color:' + tok.color + '">' + tok.name + '</b></td>';
+					out += '<td style="background:' + color + '" title="' + terrain + '" align="center"><b style="color:' + tok.color + '">' + esc(tok.name) + '</b></td>';
 				} else {
 					out += '<td style="background:' + color + '" title="' + terrain + '"></td>';
 				}
@@ -418,6 +529,50 @@
 		return counts;
 	}
 
+	// Rotate the map 90° clockwise, turns times (1-3). Returns a new map object (tiles + tokens + dims).
+	function rotateMap(map, turns) {
+		const m = normalizeMap(map);
+		turns = ((Math.floor(turns) || 0) % 4 + 4) % 4;
+		let tiles = m.tiles, rows = m.rows, cols = m.cols, tokens = m.tokens;
+		for (let i = 0; i < turns; i++) {
+			const nt = [];
+			for (let c = 0; c < cols; c++) {
+				const row = [];
+				for (let r = rows - 1; r >= 0; r--) row.push(tiles[r][c]);
+				nt.push(row);
+			}
+			const ntoks = {};
+			for (const name in tokens) {
+				const t = tokens[name];
+				ntoks[name] = { row: t.col, col: rows - 1 - t.row, color: t.color };
+			}
+			tiles = nt; tokens = ntoks;
+			const oldRows = rows; rows = cols; cols = oldRows;
+		}
+		return normalizeMap({ name: m.name, displayName: m.displayName, rows, cols, tiles, tokens });
+	}
+
+	// Mirror the map: 'h' = left-right, 'v' = top-bottom. Returns a new map object.
+	function flipMap(map, axis) {
+		const m = normalizeMap(map);
+		const tiles = [];
+		const tokens = {};
+		if (axis === 'h') {
+			for (let r = 0; r < m.rows; r++) tiles.push(m.tiles[r].slice().reverse());
+			for (const name in m.tokens) {
+				const t = m.tokens[name];
+				tokens[name] = { row: t.row, col: m.cols - 1 - t.col, color: t.color };
+			}
+		} else {
+			for (let r = m.rows - 1; r >= 0; r--) tiles.push(m.tiles[r].slice());
+			for (const name in m.tokens) {
+				const t = m.tokens[name];
+				tokens[name] = { row: m.rows - 1 - t.row, col: t.col, color: t.color };
+			}
+		}
+		return normalizeMap({ name: m.name, displayName: m.displayName, rows: m.rows, cols: m.cols, tiles, tokens });
+	}
+
 	return {
 		TERRAINS,
 		DEFAULT_TOKEN_COLORS,
@@ -425,6 +580,9 @@
 		COLOR_TO_TERRAIN,
 		MIN_DIM,
 		MAX_DIM,
+		GAMEMODE_MIN_SIZE,
+		modeIdFor,
+		minDimFor,
 		rowLabel,
 		colLabel,
 		sanitizeName,
@@ -440,6 +598,9 @@
 		toJSON,
 		toTextGrid,
 		tileCounts,
-		tokenAt
+		tokenAt,
+		translateBlock,
+		rotateMap,
+		flipMap
 	};
 }));

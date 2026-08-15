@@ -505,9 +505,9 @@ describe("getAoETargets", () => {
   });
 
   it("'Self or Foe' excludes allies (no more tautology)", () => {
-    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
-    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
-    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 0 });
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 1 });
     const game = makeGame({ entities: [p1, p2, p3] });
     const targets = getAoETargets(game, p1, "Burst 2", "Self or Foe");
     const nums = targets.map((t) => t.num);
@@ -517,9 +517,9 @@ describe("getAoETargets", () => {
   });
 
   it("normalizes legacy 'Foe(s)' spelling", () => {
-    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
-    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
-    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 0 });
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 1 });
     const game = makeGame({ entities: [p1, p2, p3] });
     const targets = getAoETargets(game, p1, "Burst 2", "Foe(s)");
     const nums = targets.map((t) => t.num);
@@ -528,17 +528,17 @@ describe("getAoETargets", () => {
   });
 
   it("handles 'Tile or Foe' as foes", () => {
-    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
-    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
     const game = makeGame({ entities: [p1, p2] });
     const targets = getAoETargets(game, p1, "Burst 1", "Tile or Foe");
     expect(targets.map((t) => t.num)).toContain("P2");
   });
 
   it("handles 'Allies and Self' as team members", () => {
-    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
-    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
-    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 1 });
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 4], team: 2 });
     const game = makeGame({ entities: [p1, p2, p3] });
     const targets = getAoETargets(game, p1, "Burst 2", "Allies and Self");
     const nums = targets.map((t) => t.num);
@@ -1144,5 +1144,76 @@ describe("formatChatTime", () => {
   it("returns an empty string when no timestamp is present (old snapshots)", () => {
     expect(formatChatTime(undefined)).toBe("");
     expect(formatChatTime(0)).toBe("");
+  });
+});
+
+
+describe("getAoETargets FFA (team 0 = no teams)", () => {
+  it("hits every in-range player except the user", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [3, 2], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Foe");
+    expect(targets.map((t) => t.num).sort()).toEqual(["P2", "P3"]);
+    expect(targets.some((t) => t.num === "P1")).toBe(false);
+  });
+
+  it("finds no allies in FFA", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
+    const game = makeGame({ entities: [p1, p2] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Ally");
+    expect(targets.length).toBe(0);
+  });
+
+  it("Self and Ally AoE hits only the user in FFA (no others in-range qualify)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [3, 2], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self and Ally");
+    // The user is the only valid target and AoE results exclude the user.
+    expect(targets.length).toBe(0);
+    // Sanity: without the new branch this group would hit everyone in range.
+    expect(getAoETargets(game, p1, "Burst 1", "Any").map((t) => t.num).sort()).toEqual(["P2", "P3"]);
+  });
+
+  it("Allies and Self AoE hits nobody else in FFA (Weaver's Whirl)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
+    const game = makeGame({ entities: [p1, p2] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Allies and Self");
+    expect(targets.length).toBe(0);
+  });
+
+  it("Allies and Self AoE hits allies in team mode (user excluded from results)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [3, 2], team: 2 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Allies and Self");
+    expect(targets.map((t) => t.num)).toEqual(["P2"]);
+    // Before the fix this fell through to the default true: everyone in range.
+    expect(targets.some((t) => t.num === "P3")).toBe(false);
+  });
+
+  it("Self or Allies AoE hits allies in team mode (never foes)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [3, 2], team: 2 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self or Allies");
+    expect(targets.map((t) => t.num)).toEqual(["P2"]);
+    // Before the fix the plural form fell through to default true.
+    expect(targets.some((t) => t.num === "P3")).toBe(false);
+  });
+
+  it("Self or Allies AoE hits nobody else in FFA", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 0 });
+    const game = makeGame({ entities: [p1, p2] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self or Allies");
+    expect(targets.length).toBe(0);
   });
 });

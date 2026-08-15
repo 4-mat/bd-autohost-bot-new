@@ -1,0 +1,244 @@
+import * as XLSX from "xlsx";
+import { writeFileSync } from "node:fs";
+import type { AbilityData, ClassData, WeaponData } from "../src/data/index.js";
+
+// Reads the 4.3 homepage workbook (_data/BD 4.3 Homepage.xlsx) and writes the
+// literal data into src/data/version43.ts. Run from repo root:
+//   bun scripts/gen-43.ts
+
+const SRC = "_data/BD 4.3 Homepage.xlsx";
+const OUT = "src/data/version43.ts";
+
+const CLASS_TAB = "Classes";
+const WEAPON_TABS = [
+  "Archer",
+  "Celestial",
+  "Clairvoyant",
+  "Dark",
+  "Dueler",
+  "Fighter",
+  "Heavy",
+  "Regal",
+  "Sorcerer",
+];
+
+type Row = string[];
+
+function rows(tab: string): Row[] {
+  const wb = XLSX.readFile(SRC);
+  const sheet = wb.Sheets[tab];
+  if (!sheet) throw new Error(`Missing tab: ${tab}`);
+  const raw = XLSX.utils.sheet_to_json<Row>(sheet, { header: 1, raw: false });
+  return raw.map((r) => r.map((c) => String(c ?? "").trim()));
+}
+
+function stripQuotes(s: string): string {
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"'))
+    return s.slice(1, -1);
+  return s;
+}
+
+function num(s: string): number {
+  const n = parseInt(s);
+  return isNaN(n) ? 0 : n;
+}
+
+function parseStats(s: string) {
+  const parts = s.split("|").map((p) => p.trim());
+  const pick = (suffix: string) =>
+    (parts.find((p) => p.endsWith(` ${suffix}`)) ?? "").replace(
+      new RegExp(` ${suffix}$`),
+      "",
+    );
+  return {
+    hp: pick("HP") || "0",
+    atk: pick("ATK") || "0",
+    mag: pick("MAG") || "0",
+    pd: pick("PD") || "0",
+    md: pick("MD") || "0",
+    eva: "0",
+    mp: pick("MP") || "0",
+  };
+}
+
+// "Varies" damage type abilities let the user pick the damage type each use.
+// Each entry maps a base ability to its concrete variants. The variant effect
+// overrides the base effect so dice-damage rider clauses ("1d8+5 damage")
+// don't leak "+N DMG" stat mods into the direct attack via parseStatMods.
+const VARIANTS: Record<string, NonNullable<AbilityData["variants"]>> = {
+  "Yin Yang": [
+    {
+      id: "yin",
+      label: "Yin: Physical/Melee",
+      damageType: "Physical",
+      range: "Melee",
+      effect:
+        "If the target does not damage the user with attacks on their next turn, they take damage.",
+    },
+    {
+      id: "yang",
+      label: "Yang: Magical/Homing 4",
+      damageType: "Magical",
+      range: "Homing 4",
+      effect:
+        "For one round, foes take damage each time they damage the user with attacks.",
+    },
+  ],
+  Blackthorn: [
+    { id: "physical", label: "Physical", damageType: "Physical" },
+    { id: "magical", label: "Magical", damageType: "Magical" },
+  ],
+};
+
+function parseAbility(r: Row): AbilityData {
+  const level = num(r[1]);
+  const damageType = (() => {
+    const t = r[5];
+    if (t === "-" || t === "") return "";
+    return t;
+  })();
+  const actionType = (() => {
+    const a = r[6];
+    if (a === "-" || a === "") return "";
+    const idx = a.toLowerCase().indexOf(" or ");
+    return idx > 0 ? a.slice(0, idx).trim() : a;
+  })();
+  const targetAmount = (() => {
+    const a = r[7];
+    if (a === "AoE") return "AoE" as const;
+    if (a === "-" || a === "Varies" || a === "") return 1;
+    const idx = a.toLowerCase().indexOf(" or ");
+    return num(idx > 0 ? a.slice(0, idx) : a);
+  })();
+  const ability: AbilityData = {
+    name: r[0],
+    level,
+    frequency: r[2] || "",
+    mr: r[3] === "-" || r[3] === "X" || r[3] === "" ? 0 : num(r[3]),
+    roll: r[4] === "-" ? "" : r[4],
+    damageType: damageType as AbilityData["damageType"],
+    actionType: actionType as AbilityData["actionType"],
+    targetAmount,
+    targetGroup: r[8] === "-" ? "" : r[8],
+    range: r[9] === "-" ? "" : r[9],
+    effect: stripQuotes(r[10]),
+  };
+  const variants = VARIANTS[r[0]];
+  if (variants) ability.variants = variants;
+  return ability;
+}
+
+interface Item {
+  name: string;
+  stats: ReturnType<typeof parseStats>;
+  description: string;
+  abilities: AbilityData[];
+}
+
+function parseItems(tab: string): Item[] {
+  const all = rows(tab);
+  const start = all.findIndex((r) => r[0] === "Basic Abilities");
+  if (start < 0) throw new Error(`${tab}: no Basic Abilities header`);
+  let i = start + 1;
+  while (i < all.length && !/ Abilities$/.test(all[i][0])) i++;
+  const main = i < all.length ? all[i][0] : "";
+  i++;
+
+  const items: Item[] = [];
+  let cur: Item | null = null;
+  for (; i < all.length; i++) {
+    const r = all[i];
+    const c0 = r[0];
+    if (!c0 || c0 === "Basic Abilities" || c0 === main) continue;
+    if (c0.includes(" HP | ")) {
+      if (!cur) throw new Error(`${tab}: stat row before item`);
+      cur.stats = parseStats(c0);
+      cur.description = stripQuotes(r[6]);
+      continue;
+    }
+    if (/^\d+$/.test(r[1])) {
+      if (!cur) throw new Error(`${tab}: ability before item`);
+      cur.abilities.push(parseAbility(r));
+      continue;
+    }
+    if (cur) items.push(cur);
+    cur = {
+      name: c0,
+      stats: parseStats("0 HP | 0 ATK | 0 MAG | 0 PD | 0 MD | 0 MP"),
+      description: "",
+      abilities: [],
+    };
+  }
+  if (cur) items.push(cur);
+  return items;
+}
+
+function emitMap<T>(name: string, entries: [string, T][]) {
+  const body = entries
+    .map(([key, val]) => `  ["${key}", ${JSON.stringify(val)}],`)
+    .join("\n");
+  return `export const ${name} = new Map<string, ${valTypeName(name)}>([\n${body}\n]);\n`;
+}
+
+function valTypeName(mapName: string) {
+  return mapName === "classes43" ? "ClassData" : "WeaponData";
+}
+
+function writeModule(classes: ClassData[], weapons: WeaponData[]) {
+  const classEntries = classes.map(
+    (c) => [toKey(c.name), c] as [string, ClassData],
+  );
+  const weaponEntries = weapons.map(
+    (w) => [toKey(w.name), w] as [string, WeaponData],
+  );
+
+  const src = `import { classes as classes44, weapons as weapons44 } from "./index.js";
+import type { ClassData, WeaponData, GameVersion } from "./index.js";
+
+// GENERATED by scripts/gen-43.ts - do not edit by hand.
+// Source: _data/BD 4.3 Homepage.xlsx (Classes + branch tabs).
+// Normalizations: 4.3 stat rows have no EVA (eva:"0"); damageType
+// "-"/"" -> "" while "Varies" keeps variants (see VARIANTS); actionType
+// "X or Y" -> first word; targetAmount
+// "1 or 2"/"-"/"Varies" -> 1; MR "-"/"X" -> 0.
+
+${emitMap("classes43", classEntries)}
+${emitMap("weapons43", weaponEntries)}
+export function getVersionData(version: GameVersion) {
+  if (version === "4.3") return { classes: classes43, weapons: weapons43 };
+  return { classes: classes44, weapons: weapons44 };
+}
+
+export function loadGameData43() {
+  // 4.3 data is prebuilt statically in classes43/weapons43 by scripts/gen-43.ts.
+}
+`;
+
+  writeFileSync(OUT, src);
+  console.log(
+    `Wrote ${OUT} (${classes.length} classes, ${weapons.length} weapons)`,
+  );
+}
+
+function toKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Build data
+const classes = parseItems(CLASS_TAB).map((it) => ({
+  name: it.name,
+  stats: it.stats,
+  description: it.description,
+  abilities: it.abilities,
+}));
+const weapons = WEAPON_TABS.flatMap((tab) =>
+  parseItems(tab).map((it) => ({
+    name: it.name,
+    branch: tab,
+    stats: it.stats,
+    description: it.description,
+    abilities: it.abilities,
+  })),
+);
+
+writeModule(classes, weapons);
