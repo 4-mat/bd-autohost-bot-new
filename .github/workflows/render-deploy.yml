@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Commit SHA or branch to deploy (default: master head)"
+        description: "Commit SHA to deploy (full or short; default: master head)"
         required: false
 
 permissions:
@@ -30,6 +30,11 @@ jobs:
       - name: Trigger Render web deploy hook
         env:
           HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          # Passed through env, never interpolated into the shell source, so
+          # a crafted input can't execute on the runner. Validated below as
+          # a hex commit SHA (full or short).
+          REF_INPUT: ${{ inputs.ref }}
+          PUSH_SHA: ${{ github.sha }}
         run: |
           if [ -z "$HOOK_URL" ]; then
             echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set."
@@ -37,8 +42,23 @@ jobs:
             exit 1
           fi
           URL="$HOOK_URL"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.ref }}" ]; then
-            URL="${URL}&ref=${{ inputs.ref }}"
+          case "${{ github.event_name }}" in
+            push)
+              # Render deploy hooks accept commit SHAs (not branch names).
+              # Pin the deploy to the triggering commit so a queued run can't
+              # deploy a later push (CodeRabbit L6).
+              REF="$PUSH_SHA"
+              ;;
+            workflow_dispatch)
+              REF="${REF_INPUT:-}"
+              if [ -n "$REF" ] && ! printf '%s' "$REF" | grep -Eq '^[0-9a-f]{7,40}$'; then
+                echo "::error::ref must be a full or short commit SHA (hex), got: $REF"
+                exit 1
+              fi
+              ;;
+          esac
+          if [ -n "$REF" ]; then
+            URL="${URL}&ref=${REF}"
           fi
-          echo "Deploying web service (bd-autohost-test) to Render..."
-          curl -fsS -X POST "$URL"
+          echo "Deploying web service (bd-autohost-test) to Render (ref: ${REF:-master head})..."
+          curl -fsS --connect-timeout 10 --max-time 60 -X POST "$URL"
