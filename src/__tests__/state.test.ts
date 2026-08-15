@@ -1289,6 +1289,79 @@ describe("removeEntity", () => {
     removeEntity(game, p1);
     expect(game.votes).toEqual({ p2: "2v2" });
   });
+
+  it("drops the vote even when the wrap path returns early", () => {
+    // The removed entity holds the FINAL turn slot during play, so the
+    // wrap path (round++, early return) runs — the vote must still go.
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 2; // P3 is the current actor in the final slot
+    game.round = 1;
+    game.votes = { p1: "FFA", p2: "2v2", p3: "JUGG" };
+    const wrapped = removeEntity(game, p3);
+    expect(wrapped).toBe(true);
+    expect(game.round).toBe(2);
+    expect(game.votes).toEqual({ p1: "FFA", p2: "2v2" });
+  });
+
+  it("flags removal of the current actor so nextTurn skips no one", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 is the current actor
+    // P2 (the current actor) leaves mid-turn: P3 shifts into slot 1.
+    removeEntity(game, p2);
+    expect(game.turnIndex).toBe(1);
+    expect(getCurrentEntity(game)?.num).toBe("P3");
+    expect(game.removedCurrentActor).toBe(true);
+    // The next %endturn must hand the turn to P3 without double-advancing.
+    const result = nextTurn(game);
+    expect(game.removedCurrentActor).toBe(false);
+    expect(result.entity?.num).toBe("P3");
+  });
+
+  it("does not flag non-actor removals", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 is the current actor
+    // P1 (before the actor) is removed -> index shifts down, no flag.
+    removeEntity(game, p1);
+    expect(game.removedCurrentActor).toBeUndefined();
+    expect(game.turnIndex).toBe(0);
+  });
+
+  it("reports corpse removal through died so callers re-check game over", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 0 }); // corpse
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+      turnIndex: 0,
+      phase: "playing",
+    });
+    // Hand the turn to P1 (the corpse is at the END of the order, so it
+    // won't be visited) — instead drive the corpse path directly: put the
+    // corpse at the pointer and confirm nextTurn reports died.
+    game.turnOrder = ["P2", "P1"];
+    game.turnIndex = 0;
+    const result = nextTurn(game);
+    expect(result.died).toBe(true);
+    expect(result.entity?.num).toBe("P1");
+  });
 });
 
 describe("formatChatTime", () => {
