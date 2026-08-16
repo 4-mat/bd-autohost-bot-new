@@ -101,7 +101,7 @@ Pick whole groups (or individual features) with `[x]`.
 - [ ] 63. Editor `aliases` field on classes / weapons / abilities
 - [ ] 64. Items workflow (beta): `ItemData` model, editor section, `%wt <item>`, `%vi`
 
-### L. Loot, records & game flow (batch 11) — commit `2d1c914`
+### L. Loot, records & game flow (batch 11) — commit `96fbaee`
 - [ ] 65. `%loot [entity]`
 - [ ] 66. `%xp [entity]`
 - [ ] 67. `%gold [entity]`
