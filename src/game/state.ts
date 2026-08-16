@@ -229,9 +229,16 @@ export const DIRECTION_LABELS: Record<string, string> = {
 
 export function needsDirection(ability: AbilityData): boolean {
   const r = ability.range.toLowerCase().trim();
-  return false;
-  // return /^(cone|line|beam|pierce)\b/.test(r);
+  return /^(cone|line|beam|pierce)\b/.test(r);
 }
+
+// Cardinal direction -> (dr, dc) step vector, used to aim directional AoE.
+const DIR_VECS: Record<string, [number, number]> = {
+  up: [-1, 0],
+  down: [1, 0],
+  left: [0, -1],
+  right: [0, 1],
+};
 
 export function getDirectionCandidates(): string[] {
   return ["up", "down", "left", "right"];
@@ -437,6 +444,12 @@ export function getReachableTiles(
       const terrain = game.map[nr][nc];
       // Obstructions + Broken (impassable) + Lava (damages on entry).
       if (!isStandable(terrain)) continue;
+      // Cannot move onto a tile another living entity occupies.
+      const occupied = game.entities.some(
+        (e) =>
+          e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc && e !== entity,
+      );
+      if (occupied) continue;
 
       const tileCost = moveCost(terrain);
       const newCost = cost + tileCost;
@@ -703,14 +716,18 @@ export function getStarTiles(
 export function getConeTiles(
   from: [number, number],
   range: number,
+  dir?: string,
 ): [number, number][] {
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-  ];
+  const dirs: [number, number][] =
+    dir && DIR_VECS[dir]
+      ? [DIR_VECS[dir]]
+      : [
+          [0, 1],
+          [0, -1],
+          [1, 0],
+          [-1, 0],
+        ];
   for (const [dr, dc] of dirs) {
     for (let d = 1; d <= range; d++) {
       // At distance d, width extends d tiles perpendicular
@@ -736,18 +753,22 @@ export function getConeTiles(
 export function getLineTiles(
   from: [number, number],
   range: number,
+  dir?: string,
 ): [number, number][] {
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-    [1, 1],
-    [1, -1],
-    [-1, 1],
-    [-1, -1],
-  ];
+  const dirs: [number, number][] =
+    dir && DIR_VECS[dir]
+      ? [DIR_VECS[dir]]
+      : [
+          [0, 1],
+          [0, -1],
+          [1, 0],
+          [-1, 0],
+          [1, 1],
+          [1, -1],
+          [-1, 1],
+          [-1, -1],
+        ];
   for (const [dr, dc] of dirs) {
     for (let d = 1; d <= range; d++) {
       if (dr !== 0 && dc !== 0) {
@@ -764,22 +785,27 @@ export function getLineTiles(
 export function getPierceTiles(
   from: [number, number],
   range: number,
+  dir?: string,
 ): [number, number][] {
-  return getLineTiles(from, range);
+  return getLineTiles(from, range, dir);
 }
 
 // Get all tiles in a Beam (3 wide, X deep in each cardinal direction)
 export function getBeamTiles(
   from: [number, number],
   range: number,
+  dir?: string,
 ): [number, number][] {
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-  ];
+  const dirs: [number, number][] =
+    dir && DIR_VECS[dir]
+      ? [DIR_VECS[dir]]
+      : [
+          [0, 1],
+          [0, -1],
+          [1, 0],
+          [-1, 0],
+        ];
   for (const [dr, dc] of dirs) {
     for (let d = 1; d <= range; d++) {
       // 3 wide perpendicular
@@ -805,6 +831,7 @@ export function getAoETargets(
   user: Entity,
   range: string,
   group: string,
+  dir?: string,
 ): Entity[] {
   const rangeStr = range.toLowerCase().trim();
   let tiles: [number, number][] = [];
@@ -821,22 +848,22 @@ export function getAoETargets(
 
   const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
   if (coneMatch) {
-    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]));
+    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]), dir);
   }
 
   const lineMatch = rangeStr.match(/^line\s*(\d+)/);
   if (lineMatch) {
-    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]));
+    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]), dir);
   }
 
   const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
   if (pierceMatch) {
-    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]));
+    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]), dir);
   }
 
   const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
   if (beamMatch) {
-    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]));
+    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]), dir);
   }
 
   if (tiles.length === 0) return [];

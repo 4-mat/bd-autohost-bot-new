@@ -265,7 +265,7 @@ function* resolveAttackFlow(
     hits: hitCount,
     isAoE,
     targets: autoTargets,
-  } = prepareTargeting(game, user, active);
+  } = prepareTargeting(game, user, active, dir);
   let targets = autoTargets;
   if (targets.length === 0) {
     const candidates = getTargetCandidates(game, user, active);
@@ -617,6 +617,7 @@ function prepareTargeting(
   game: Game,
   user: Entity,
   ability: AbilityData,
+  dir?: string,
 ): { hits: number; isAoE: boolean; targets: Entity[] } {
   const hits = parseMultiHit(ability);
   const range = ability.range.toLowerCase().trim();
@@ -631,7 +632,7 @@ function prepareTargeting(
 
   let targets: Entity[] = [];
   if (isAoE) {
-    targets = getAoETargets(game, user, ability.range, ability.targetGroup);
+    targets = getAoETargets(game, user, ability.range, ability.targetGroup, dir);
   }
   return { hits, isAoE, targets };
 }
@@ -773,6 +774,8 @@ function* resolveSingleTarget(
     finalDamage = Math.max(0, finalDamage - bleed);
 
     const dmgResult = dealDamage(target, finalDamage);
+    // Being hit arms the target's Reaction abilities this turn.
+    if (finalDamage > 0) target.triggered = true;
     const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
     result.messages.push(
       `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,

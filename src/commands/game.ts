@@ -21,6 +21,8 @@ import {
   removeEntity,
   checkGameOver,
   calculateLoot,
+  moveCost,
+  TERRAIN_NAMES,
   dist,
   manhattan,
   chebyshev,
@@ -184,6 +186,21 @@ export function gameCommand(
     case "cds":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleCooldowns(game, user, full);
+      break;
+
+    case "terrain":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleTerrain(game, user, full);
+      break;
+
+    case "los":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleLos(game, user, full);
+      break;
+
+    case "moves":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleMoves(game, user, full);
       break;
 
     case "hp":
@@ -1578,6 +1595,57 @@ function handleRegp(game: Game, user: User, args: string) {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// %terrain <pos> - report a tile's terrain type and move cost.
+function handleTerrain(game: Game, user: User, args: string) {
+  const pos = parsePos(args);
+  if (!pos) return sendPm(user.name, "Usage: %terrain <pos> (e.g. %terrain e4)");
+  const t = game.map[pos[0]]?.[pos[1]];
+  if (t === undefined) return sendPm(user.name, `Out of bounds: ${args}`);
+  const name = TERRAIN_NAMES[t] ?? String(t);
+  sendPm(
+    user.name,
+    `${posToStr(pos[0], pos[1])} is ${name} (move cost ${moveCost(t)}).`
+  );
+}
+
+// %los <a>,<b> - check line of sight between two positions or entities.
+function handleLos(game: Game, user: User, args: string) {
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %los <a>, <b> (e.g. %los P1, e4)");
+  }
+  const a = resolvePos(game, parts[0]);
+  const b = resolvePos(game, parts[1]);
+  if (!a || !b) return sendPm(user.name, "Could not resolve a position.");
+  const clear = hasLineOfSight(game, a, b);
+  sendPm(
+    user.name,
+    `LOS ${posToStr(a[0], a[1])} -> ${posToStr(b[0], b[1])}: ${clear ? "clear" : "blocked"}.`
+  );
+}
+
+// Resolve an entity ref or tile coordinate to a [row, col] position.
+function resolvePos(game: Game, ref: string): [number, number] | null {
+  const entity = getEntity(game, ref);
+  if (entity) return entity.pos;
+  return parsePos(ref);
+}
+
+// %moves [entity] - list an entity's abilities with roll/type/range.
+function handleMoves(game: Game, user: User, args: string) {
+  const ref = args.trim();
+  const entity = ref ? getEntity(game, ref) : getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No entity found.");
+  const lines = entity.abilities.map(
+    (a) =>
+      `  Lv.${a.level} ${a.name} (${a.actionType}/${a.frequency}) ${a.roll || "-"} ${a.damageType || "-"} ${a.range || "-"}: ${a.effect}`
+  );
+  sendPm(
+    user.name,
+    `${entity.num} abilities:\n${lines.join("\n") || "  (none)"}`
+  );
 }
 
 // %cooldowns [entity] - show ability cooldown counts for an entity (or all).
