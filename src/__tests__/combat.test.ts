@@ -178,7 +178,7 @@ describe("isValidTarget", () => {
 
   it("rejects dead targets", () => {
     expect(
-      isValidTarget(user(), makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }), "Foe"),
+      isValidTarget(user(), makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 2 }), "Foe"),
     ).toBe(false);
   });
 

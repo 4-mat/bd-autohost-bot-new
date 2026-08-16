@@ -1396,6 +1396,10 @@ export function nextTurn(
     died = died || startDied;
     if (startDied) {
       // entity was removed; the next entity shifted into this slot
+      // The shift-in is handled right here, so don't let removeEntity's
+      // current-actor flag leak into a FUTURE nextTurn call and skip that
+      // entity.
+      game.removedCurrentActor = false;
       entity = getCurrentEntity(game);
       continue;
     }

@@ -1248,6 +1248,11 @@ describe("nextTurn end-of-turn death", () => {
     expect(result.entity?.num).toBe("P3");
     expect(result.died).toBe(true);
     expect(game.entities.find((x) => x.num === "P2")).toBeUndefined();
+    // processStartOfTurn's removeEntity flagged the current actor; the
+    // startDied branch must clear it so the next nextTurn advances normally
+    // instead of re-hitting P3 (round stall).
+    expect(game.removedCurrentActor).toBe(false);
+    expect(nextTurn(game).entity?.num).toBe("P1");
   });
 
   it("ends the game when the last survivors die across the turn transition", () => {
@@ -1364,16 +1369,13 @@ describe("removeEntity", () => {
     const p2 = makeEntity({ num: "P2", name: "B", curhp: 0 }); // corpse
     const game = makeGame({
       entities: [p1, p2],
-      turnOrder: ["P1", "P2"],
-      turnIndex: 0,
-      phase: "playing",
+      turnOrder: ["P2", "P1"],
     });
-    // Hand the turn to P1 (the corpse is at the END of the order, so it
-    // won't be visited) — instead drive the corpse path directly: put the
-    // corpse at the pointer and confirm nextTurn reports died.
-    game.turnOrder = ["P2", "P1"];
+    // Drive the corpse path directly: put the corpse at the pointer and skip
+    // the end-of-turn block (actorDied), so nextTurn must remove the corpse
+    // in its own loop and report died.
     game.turnIndex = 0;
-    const result = nextTurn(game);
+    const result = nextTurn(game, { actorDied: true });
     expect(result.died).toBe(true);
     expect(result.entity?.num).toBe("P1");
   });
