@@ -909,6 +909,7 @@
       return (
         '<div class="grid ability-grid">' +
         field("name", "Name", a.name) +
+        field("aliases", "Aliases (comma-separated)", Array.isArray(a.aliases) ? a.aliases.join(", ") : "") +
         '<div class="field"><label>Level</label><select data-f="level">' +
         lv +
         "</select></div>" +
@@ -1018,6 +1019,7 @@
           : "") +
         "</div>" +
         field("name", "Name", item.name) +
+        field("aliases", "Aliases (comma-separated)", Array.isArray(item.aliases) ? item.aliases.join(", ") : "") +
         (state.kind === "weapon"
           ? field("branch", "Branch", item.branch || "")
           : "") +
@@ -1076,6 +1078,12 @@
         }
       } else {
         delete a.choices;
+      }
+      const al = card.querySelector('[data-f="aliases"]');
+      if (al && al.value.trim()) {
+        a.aliases = al.value.split(",").map((s) => s.trim()).filter(Boolean);
+      } else {
+        delete a.aliases;
       }
       return a;
     }
@@ -1300,6 +1308,7 @@
       }
       const f = t.dataset.f;
       if (f === "name") onItemEdit({ name: t.value });
+      else if (f === "aliases") onItemEdit({ aliases: t.value.split(",").map((s) => s.trim()).filter(Boolean) });
       else if (f === "description" || f === "branch") onItemEdit({ [f]: t.value });
     }
     $("#editor").addEventListener("input", onEditEvent);
