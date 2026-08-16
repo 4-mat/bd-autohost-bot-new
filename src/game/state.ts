@@ -339,6 +339,8 @@ export interface Game {
   surrenderVotes?: Record<string, string[]>;
   /** Paused games block turn advancement until %resume. */
   paused?: boolean;
+  /** Entities removed from the game (defeated/left/kicked). */
+  graveyard?: { num: string; name: string }[];
 }
 
 export const games = new Map<string, Game>();
@@ -1210,6 +1212,10 @@ export function removeEntity(game: Game, entity: Entity) {
   game.turnOrder = game.turnOrder.filter((n) => n !== entity.num);
   if (game.turnIndex >= game.turnOrder.length) {
     game.turnIndex = 0;
+  }
+  const grave = game.graveyard ?? (game.graveyard = []);
+  if (!grave.some((g) => g.num === entity.num)) {
+    grave.push({ num: entity.num, name: entity.name });
   }
   // Drop any gamemode vote the removed entity had cast.
   delete game.votes[entity.id];

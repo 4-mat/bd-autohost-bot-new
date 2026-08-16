@@ -9,6 +9,8 @@ import { playerCommand } from "./player.js";
 import { sheetsCommand } from "./sheets.js";
 import { calcCommand } from "./calc.js";
 
+const START = Date.now();
+
 // One-line help for common commands, shown by `%help <command>`.
 const COMMAND_HELP: Record<string, string> = {
   move: "Move your entity to a reachable tile (%move e4).",
@@ -60,6 +62,15 @@ const COMMAND_HELP: Record<string, string> = {
   kick: "Host: remove an entity (%kick <entity>).",
   transfer: "Host: hand off host role (%transfer <user>).",
   roominfo: "Show room/game status (%roominfo).",
+  kills: "Kill leaderboard (%kills).",
+  dead: "List defeated/removed entities (%dead).",
+  alive: "List living entities (%alive).",
+  items: "List/filter the item catalog (%items [query]).",
+  classes: "List all classes (%classes).",
+  weapons: "List all weapons (%weapons).",
+  abilities: "List a class/weapon/entity's abilities (%abilities <ref>).",
+  mapinfo: "Map size + terrain counts (%mapinfo).",
+  uptime: "Bot uptime (%uptime).",
 };
 
 export function handleCommand(
@@ -98,6 +109,15 @@ export function handleCommand(
       return sendPm(user.name, "Usage: %pick <a>, <b>, <c>");
     }
     sendPm(user.name, `Picked: **${options[Math.floor(Math.random() * options.length)]}**`);
+    return;
+  }
+
+  if (id === "uptime") {
+    const secs = Math.floor((Date.now() - START) / 1000);
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    sendPm(user.name, `Uptime: ${d}d ${h}h ${m}m`);
     return;
   }
 
@@ -153,7 +173,10 @@ export function handleCommand(
     id === "wtm" ||
     id === "data" ||
     id === "freq" ||
-    id === "find"
+    id === "find" ||
+    id === "items" ||
+    id === "classes" ||
+    id === "weapons"
   ) {
     infoCommand(user, id, args || val);
     return;
@@ -288,7 +311,12 @@ export function handleCommand(
     id === "damage" ||
     id === "afk" ||
     id === "return" ||
-    id === "roominfo"
+    id === "roominfo" ||
+    id === "kills" ||
+    id === "dead" ||
+    id === "alive" ||
+    id === "abilities" ||
+    id === "mapinfo"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;

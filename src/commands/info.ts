@@ -1,4 +1,4 @@
-import { send, sendPm, toId } from "../utils.js";
+import { send, sendPm, sendPmChunks, toId } from "../utils.js";
 import type { User } from "../users.js";
 import {
   classes,
@@ -158,6 +158,37 @@ export function infoCommand(user: User, cmd: string, args: string) {
       target,
       `Matches for "${args}" (${matches.length}):\n${capped.join("\n")}${more}`,
     );
+    return;
+  }
+
+  if (cmd === "items") {
+    const q = toId(args);
+    const list = [...items.values()].filter(
+      (it) => !q || toId(it.name).includes(q),
+    );
+    if (list.length === 0) {
+      return sendPm(
+        target,
+        q ? `No items match "${args}".` : "Items (beta): none defined yet.",
+      );
+    }
+    const lines = list.map(
+      (it) =>
+        `${it.name} (${it.rank || "-"}) — ${it.slots} slot${it.slots === 1 ? "" : "s"}${it.effect ? ", " + it.effect : ""}`,
+    );
+    sendPmChunks(target, lines.join("\n"));
+    return;
+  }
+
+  if (cmd === "classes") {
+    const list = [...classes.values()].map((c) => c.name);
+    sendPm(target, `Classes (${list.length}):\n${list.join(", ")}`);
+    return;
+  }
+
+  if (cmd === "weapons") {
+    const list = [...weapons.values()].map((w) => w.name);
+    sendPm(target, `Weapons (${list.length}):\n${list.join(", ")}`);
     return;
   }
 
