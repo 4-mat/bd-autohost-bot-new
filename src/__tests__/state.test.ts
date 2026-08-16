@@ -548,6 +548,21 @@ describe("getAoETargets", () => {
     const targets = getAoETargets(game, p1, "Burst 1", "Tile or Foe");
     expect(targets.map((t) => t.num)).toEqual(["P2"]);
   });
+
+  it("group 'All' + Global range targets every living entity (Tarot Card's Dealer)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [4, 4], team: 2 });
+    const p3 = makeEntity({
+      num: "P3",
+      name: "C",
+      pos: [0, 0],
+      team: 1,
+      curhp: 0,
+    });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Global", "All");
+    expect(targets.map((t) => t.num).sort()).toEqual(["P1", "P2"]); // dead P3 excluded
+  });
 });
 
 describe("getSplashTargets", () => {

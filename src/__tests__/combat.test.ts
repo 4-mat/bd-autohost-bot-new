@@ -169,6 +169,13 @@ describe("isValidTarget", () => {
     expect(isValidTarget(u, ally(), "Self, Foes, Allies")).toBe(true);
   });
 
+  it("'All' accepts the user, foes, and allies (Tarot Card's Dealer)", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "All")).toBe(true);
+    expect(isValidTarget(u, foe(), "All")).toBe(true);
+    expect(isValidTarget(u, ally(), "All")).toBe(true);
+  });
+
   it("rejects dead targets", () => {
     expect(
       isValidTarget(user(), makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }), "Foe"),

@@ -722,7 +722,7 @@ export function isValidTarget(
   if (g === "self") return target.num === user.num;
   if (g === "ally") return allyCheck;
   if (g === "foe") return foeCheck;
-  if (g === "any") return true;
+  if (g === "any" || g === "all") return true;
   if (g === "tile") return false;
 
   // Unknown group: reject, matching isValidGroupTarget in state.ts, so a

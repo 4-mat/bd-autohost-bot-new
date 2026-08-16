@@ -929,7 +929,8 @@ function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
     if (
       e.num === user.num &&
       ab.targetGroup !== "Self" &&
-      ab.targetGroup !== "Any"
+      ab.targetGroup !== "Any" &&
+      ab.targetGroup !== "All"
     )
       return false;
     if (e.curhp <= 0) return false;
@@ -951,6 +952,8 @@ function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
         if (e.num !== user.num) return false;
         break;
       case "Any":
+        break;
+      case "All":
         break;
       case "Foe or Ally":
         break;

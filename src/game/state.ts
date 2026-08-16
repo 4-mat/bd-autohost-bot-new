@@ -855,6 +855,13 @@ export function getAoETargets(
     tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]));
   }
 
+  if (rangeStr === "global") {
+    // Global AoE: every map tile is in range (e.g. Tarot Card's Dealer).
+    tiles = game.map.flatMap((row, r) =>
+      row.map((_, c) => [r, c] as [number, number]),
+    );
+  }
+
   if (tiles.length === 0) return [];
 
   const tileSet = new Set(tiles.map(([r, c]) => posToStr(r, c)));
@@ -917,7 +924,7 @@ function isValidGroupTarget(
   if (g === "self") return target.num === user.num;
   if (g === "ally") return allyCheck;
   if (g === "foe") return foeCheck;
-  if (g === "any") return true;
+  if (g === "any" || g === "all") return true;
   if (g === "tile") return false;
   if (g.includes("self and ally")) return selfOrAllyCheck;
   if (g.includes("self or ally")) return selfOrAllyCheck;
