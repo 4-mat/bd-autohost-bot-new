@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature PR Prompt Builder</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f6f6f7; color: #1b1b1f; }
+  header { padding: 20px 24px; background: #fff; border-bottom: 1px solid #e2e2e5; }
+  header h1 { margin: 0 0 4px; font-size: 20px; }
+  header p { margin: 0; color: #555; font-size: 14px; }
+  .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 24px; align-items: start; }
+  @media (max-width: 800px) { .wrap { grid-template-columns: 1fr; } }
+  .checklist, .output { background: #fff; border: 1px solid #e2e2e5; border-radius: 8px; padding: 16px; }
+  .checklist { max-height: 80vh; overflow: auto; }
+  h2 { font-size: 16px; margin: 16px 0 8px; }
+  section { margin-bottom: 12px; }
+  h3 { font-size: 14px; margin: 0 0 6px; }
+  .commit { font-weight: normal; color: #888; font-size: 12px; }
+  .item { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 14px; cursor: pointer; }
+  .item code { background: #ececf1; padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
+  button { padding: 8px 14px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; }
+  button.primary { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+  textarea { width: 100%; min-height: 60vh; box-sizing: border-box; border: 1px solid #e2e2e5; border-radius: 6px; padding: 10px; font: 12px/1.5 ui-monospace, monospace; resize: vertical; }
+  #status { margin-top: 8px; font-size: 13px; color: #555; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #18181b; color: #e8e8ea; }
+    header, .checklist, .output { background: #232327; border-color: #333; }
+    .item code { background: #333; }
+    button { background: #232327; border-color: #444; color: #e8e8ea; }
+    button.primary { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+    textarea { background: #1b1b1f; border-color: #333; color: #e8e8ea; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Feature PR Prompt Builder</h1>
+  <p>Check the features you want to ship, then copy the generated prompt.</p>
+</header>
+<div class="wrap">
+  <div class="checklist">
+    <h2>Features (already implemented)</h2>
+    <div id="groups"></div>
+    <h2>Deferred ideas (implement new)</h2>
+    <div id="deferred"></div>
+  </div>
+  <div class="output">
+    <div class="toolbar">
+      <button id="gen" class="primary">Generate prompt</button>
+      <button id="copy">Copy</button>
+      <button id="clear">Clear all</button>
+    </div>
+    <textarea id="out" readonly placeholder="Check items and click Generate prompt"></textarea>
+    <div id="status"></div>
+  </div>
+</div>
+<script>
+const DATA = {"groups":[{"title":"A. Engine correctness","commits":["e4b0062"],"items":[{"num":"1","desc":"Clamp HP at 0 in `dealDamage`"},{"num":"2","desc":"Push/pull blocks when the destination tile is occupied"},{"num":"3","desc":"Declare Attack phase message"},{"num":"4","desc":"On Miss effect phase"},{"num":"5","desc":"Before Damage effect phase"},{"num":"6","desc":"Unify win-condition logic"}]},{"title":"B. BDLang parser","commits":["bba6a18"],"items":[{"num":"7","desc":"Colon syntax `If COND: EFFECT`"},{"num":"8","desc":"`Spend 2+ Qi` amounts"},{"num":"9","desc":"Phase markers (New/Waxing/Full/Waning)"},{"num":"10","desc":"`Per hit` clauses"},{"num":"11","desc":"`When X` trigger clauses"}]},{"title":"C. UX / commands","commits":["b4ea9fe"],"items":[{"num":"12","desc":"Team indicators in `%pl`"},{"num":"13","desc":"No-viable-target `%cancel` hint"},{"num":"14","desc":"`%choose` shows `id = label`"},{"num":"15","desc":"`%wt <ability>` targeted lookup"},{"num":"16","desc":"Spectator welcome on join"},{"num":"17","desc":"Kill-feed announcements"},{"num":"18","desc":"10s shot-clock warning"}]},{"title":"D. Quality / perf / config","commits":["262ae31"],"items":[{"num":"19","desc":"Bound send queue (cap + expiry)"},{"num":"20","desc":"Memoized effect parsing"},{"num":"21","desc":"`config.devs` → `%dev`"},{"num":"22","desc":"`turnTimerSeconds` config"},{"num":"23","desc":"`announcements.{kills,timer,join}` toggles"},{"num":"24","desc":"Docstrings on core utils"}]},{"title":"E. New gameplay","commits":["f8ca0de"],"items":[{"num":"25","desc":"Basic Attack + Rest for every entity"},{"num":"26","desc":"Lava entry damage (already present; documented)"},{"num":"27","desc":"DoT summary at turn start"},{"num":"28","desc":"`%turnorder` alias"},{"num":"29","desc":"`%cooldowns` command"},{"num":"30","desc":"`%help <command>`"}]},{"title":"F. Combat & targeting","commits":["eb06ad1"],"items":[{"num":"31","desc":"Directional AoE aiming"},{"num":"32","desc":"Block movement onto occupied tiles"},{"num":"33","desc":"`%terrain <pos>`"},{"num":"34","desc":"`%los <a>,<b>`"},{"num":"35","desc":"Auto-trigger reactions on hit"},{"num":"36","desc":"`%moves [entity]`"}]},{"title":"G. Resources & status","commits":["5564905"],"items":[{"num":"37","desc":"`%resources [entity]`"},{"num":"38","desc":"`%resource <entity>,<name>,<delta>`"},{"num":"39","desc":"`%mp <delta>[,entity]`"},{"num":"40","desc":"`%uses [entity]`"},{"num":"41","desc":"`%buffs [entity]`"},{"num":"42","desc":"`%cure <entity>`"}]},{"title":"H. Team / spectate / chat","commits":["4bf98da"],"items":[{"num":"43","desc":"`%teams`"},{"num":"44","desc":"`%spectate`"},{"num":"45","desc":"`%chat <msg>`"},{"num":"46","desc":"`%premove list`"},{"num":"47","desc":"`%round`"},{"num":"48","desc":"`%undo` alias"}]},{"title":"I. Robustness & UX","commits":["f679227","ceab7f8"],"items":[{"num":"49","desc":"`%log tail <N>` / `%log clear`"},{"num":"50","desc":"Cap chat (200) / toasts (20)"},{"num":"51","desc":"`%pl` stable sort"},{"num":"52","desc":"`%info` cooldowns + uses"},{"num":"53","desc":"`%data` counts"},{"num":"54","desc":"**Routing fix** — 20 game commands were dead; now routed"}]},{"title":"J. Data / mechanics","commits":["5683418"],"items":[{"num":"55","desc":"`%rollstats <formula>`"},{"num":"56","desc":"`%freq <ability>`"},{"num":"57","desc":"`%version`"},{"num":"58","desc":"`%statuses`"},{"num":"59","desc":"`%summary`"},{"num":"60","desc":"`%standings`"}]},{"title":"K. Aliases & items (was PRs #245–#248)","commits":["a596b32","367905e","3332e78","6ba8422","8735e45"],"items":[{"num":"61","desc":"`%j` alias for `%join`"},{"num":"62","desc":"Short class/weapon name lookups (`resolveName`: exact → alias → unique prefix)"},{"num":"63","desc":"Editor `aliases` field on classes / weapons / abilities"},{"num":"64","desc":"Items workflow (beta): `ItemData` model, editor section, `%wt <item>`, `%vi`"}]},{"title":"L. Loot, records & game flow (batch 11)","commits":["96fbaee"],"items":[{"num":"65","desc":"`%loot [entity]`"},{"num":"66","desc":"`%xp [entity]`"},{"num":"67","desc":"`%gold [entity]`"},{"num":"68","desc":"`%gems [entity]`"},{"num":"69","desc":"`%records [N]` lifetime leaderboard (`src/records.ts`, in-memory)"},{"num":"70","desc":"`%surrender` / `%forfeit`"},{"num":"71","desc":"`%rematch`"},{"num":"72","desc":"`%coin`"},{"num":"73","desc":"`%pick`"}]}],"deferred":["Persist `%records` to disk across bot restarts","`%records reset` (clear the leaderboard)","Item equip / slot / `%buyitem` runtime (items are data + lookup only)","Ability-alias *consumption* at runtime (`findAbility` lives on this branch;","AFK / timeout detection","Surrender vote (majority) vs individual concede"]};
+// Runtime logic for prompt.html — inlined by scripts/build-prompt-page.mjs.
+// Expects a global `DATA = { groups: [{ title, commits, items: [{ num, desc }] }], deferred: [desc] }`.
+(function () {
+  const groupsEl = document.getElementById("groups");
+  const deferredEl = document.getElementById("deferred");
+  const out = document.getElementById("out");
+  const status = document.getElementById("status");
+
+  function md(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+  }
+
+  function row(label, data) {
+    const lab = document.createElement("label");
+    lab.className = "item";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.dataset.kind = data.kind;
+    box.dataset.num = data.num || "";
+    box.dataset.desc = data.desc;
+    box.dataset.commits = data.commits ? data.commits.join(",") : "";
+    const span = document.createElement("span");
+    span.innerHTML = md(label);
+    lab.appendChild(box);
+    lab.appendChild(span);
+    return lab;
+  }
+
+  for (const g of DATA.groups) {
+    const sec = document.createElement("section");
+    const h = document.createElement("h3");
+    h.appendChild(document.createTextNode(g.title));
+    if (g.commits.length) {
+      const c = document.createElement("span");
+      c.className = "commit";
+      c.textContent = " · commit " + g.commits.join(", ");
+      h.appendChild(c);
+    }
+    sec.appendChild(h);
+    for (const it of g.items) {
+      sec.appendChild(
+        row(it.num + ". " + it.desc, {
+          kind: "feature",
+          num: it.num,
+          desc: it.desc,
+          commits: g.commits,
+        }),
+      );
+    }
+    groupsEl.appendChild(sec);
+  }
+
+  for (const d of DATA.deferred) {
+    deferredEl.appendChild(
+      row(d, { kind: "deferred", num: "", desc: d, commits: null }),
+    );
+  }
+
+  function selected() {
+    const sel = [];
+    const def = [];
+    document.querySelectorAll("input[type=checkbox]:checked").forEach((box) => {
+      if (box.dataset.kind === "feature") {
+        sel.push({
+          num: box.dataset.num,
+          desc: box.dataset.desc,
+          commits: box.dataset.commits ? box.dataset.commits.split(",") : [],
+        });
+      } else {
+        def.push(box.dataset.desc);
+      }
+    });
+    return { sel, def };
+  }
+
+  function build() {
+    const { sel, def } = selected();
+    if (sel.length === 0 && def.length === 0) {
+      out.value = "";
+      status.textContent = "Nothing selected — check some features first.";
+      return;
+    }
+    const lines = [];
+    const push = (...parts) => {
+      if (parts.length === 0) lines.push("");
+      else parts.forEach((p) => lines.push(p));
+    };
+
+    push(
+      "You are working in the git repo `4-mat/bd-autohost-bot-new`. A finished, unpushed branch",
+      "`feat/feature-sprint` (worktree `bd-autohost-bot-new-wtfs`) holds committed features that are",
+      "not on `origin/master`. Ship the checked features below as focused DRAFT PRs targeting `master`.",
+    );
+
+    if (sel.length) {
+      push();
+      push("## Selected features (already implemented — cherry-pick, don't reimplement)");
+      push();
+      sel.forEach((f) => {
+        const sha = f.commits.length
+          ? " — commit `" + f.commits.join("`, `") + "`"
+          : "";
+        push("- " + f.num + ". " + f.desc + sha);
+      });
+      push();
+      push(
+        "Group features that share a commit into a single PR; otherwise split by concern. Prefer",
+        "`git cherry-pick <sha>` (or `git diff origin/master..<sha>` applied to a fresh branch) so the",
+        "already-tested code is shipped as-is rather than reimplemented.",
+      );
+    }
+
+    if (def.length) {
+      push();
+      push("## New work to implement (not built yet)");
+      push();
+      def.forEach((d) => push("- " + d));
+      push();
+      push(
+        "Implement these from scratch in additional draft PRs, following the same codebase conventions.",
+      );
+    }
+
+    push();
+    push("## Rules (repo AGENTS.md — non-negotiable)");
+    push();
+    push(
+      "1. Every PR targeting `master` MUST stay DRAFT until BOTH review bots approve:",
+      "   CodeRabbit (`coderabbitai[bot]`, review state APPROVED) AND the PR Agent",
+      "   (`github-actions[bot]`, review completed with no blocking findings).",
+      "2. NEVER push to `master` or merge/un-draft a PR without both approvals.",
+      "3. NEVER mention tests, test counts, or test results in PR titles, descriptions,",
+      "   commit messages, or any chat output. Run `bun test` and typecheck internally only.",
+      "4. When resolving an abstraction, inline duplicated expressions and extract a shared",
+      "   helper or a loop over identically-shaped items (per the AGENTS.md abstraction lens).",
+    );
+    push();
+    push("## Deliverable");
+    push();
+    push(
+      "For each PR: report its number, source branch, target (`master`), and a one-line summary.",
+      "Keep PRs small, single-purpose, and in DRAFT.",
+    );
+
+    out.value = lines.join("\n") + "\n";
+    status.textContent =
+      "Prompt ready (" +
+      sel.length +
+      " feature" +
+      (sel.length === 1 ? "" : "s") +
+      (def.length ? ", " + def.length + " new" : "") +
+      ").";
+  }
+
+  function fallbackCopy() {
+    out.focus();
+    out.select();
+    try {
+      document.execCommand("copy");
+      status.textContent = "Copied to clipboard.";
+    } catch {
+      status.textContent = "Copy failed — select the text and copy manually.";
+    }
+  }
+
+  function copy() {
+    if (!out.value) build();
+    if (!out.value) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(out.value).then(
+        () => (status.textContent = "Copied to clipboard."),
+        () => fallbackCopy(),
+      );
+    } else {
+      fallbackCopy();
+    }
+  }
+
+  document.getElementById("gen").addEventListener("click", build);
+  document.getElementById("copy").addEventListener("click", copy);
+  document.getElementById("clear").addEventListener("click", () => {
+    document
+      .querySelectorAll("input[type=checkbox]:checked")
+      .forEach((b) => (b.checked = false));
+    out.value = "";
+    status.textContent = "Cleared.";
+  });
+})();
+
+</script>
+</body>
+</html>
