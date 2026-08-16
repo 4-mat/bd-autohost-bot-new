@@ -6,6 +6,7 @@ import {
   branches,
   type ClassData,
   type WeaponData,
+  type AbilityData,
 } from "../data/index.js";
 import { WhatIs, Reference } from "../data/index.js";
 import { modeDescription, describeModes } from "../data/gamemodes.js";
@@ -59,6 +60,19 @@ export function infoCommand(user: User, cmd: string, args: string) {
       return;
     }
 
+    // Specific ability lookup (e.g. %wt Duet) - targeted, less chat flood.
+    const found = findAbility(id);
+    if (found) {
+      const ab = found.ability;
+      const lines = [
+        `**${ab.name}** (Lv.${ab.level}) - ${found.source}`,
+        `${ab.frequency} | MR ${ab.mr} | ${ab.roll || "-"} | ${ab.damageType || "-"} ${ab.actionType} | ${ab.targetAmount} ${ab.targetGroup} | ${ab.range || "-"}`,
+        ab.effect,
+      ];
+      sendPm(target, lines.join("\n"));
+      return;
+    }
+
     sendPm(target, `No data found for "${args}".`);
     return;
   }
@@ -73,6 +87,18 @@ export function infoCommand(user: User, cmd: string, args: string) {
     }
     return;
   }
+}
+
+function findAbility(id: string): { source: string; ability: AbilityData } | null {
+  for (const cls of classes.values()) {
+    const ab = cls.abilities.find((a) => toId(a.name) === id);
+    if (ab) return { source: `Class ${cls.name}`, ability: ab };
+  }
+  for (const wpn of weapons.values()) {
+    const ab = wpn.abilities.find((a) => toId(a.name) === id);
+    if (ab) return { source: `Weapon ${wpn.name}`, ability: ab };
+  }
+  return null;
 }
 
 function buildAbilityLine(ab: {

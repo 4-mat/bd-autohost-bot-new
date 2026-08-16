@@ -315,7 +315,7 @@ export interface Game {
    */
   voteRunoff: string[] | null;
   /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
-  timer?: { entity: string | null; endAt: number } | null;
+  timer?: { entity: string | null; endAt: number; warned?: boolean } | null;
 }
 
 export const games = new Map<string, Game>();

@@ -550,6 +550,20 @@ function syncTimerState(force = false) {
 setInterval(() => {
   for (const game of games.values()) {
     if (!game.timer) continue;
+    const remaining = game.timer.endAt - Date.now();
+    // One-time warning when 10s remain so players can act before expiry.
+    if (!game.timer.warned && remaining <= 10_000 && remaining > 0) {
+      game.timer.warned = true;
+      const entity = game.timer.entity
+        ? game.entities.find((e) => e.num === game.timer.entity)
+        : null;
+      broadcast(
+        JSON.stringify({
+          type: "chat",
+          text: `⏰ **10 seconds remaining!**${entity ? ` ${entity.num} (${entity.name})` : ""}`,
+        }),
+      );
+    }
     if (Date.now() >= game.timer.endAt) {
       const entity = game.timer.entity
         ? game.entities.find((e) => e.num === game.timer.entity)

@@ -90,6 +90,24 @@ bot.on("j", (parts: string[]) => {
   const rank = username.startsWith(" ") ? " " : username.charAt(0);
   user.rooms[roomid] = rank;
   user.last = Date.now();
+
+  // Spectator welcome: greet non-players joining a room with a live game.
+  if (toId(username) !== toId(config.username)) {
+    const game = Array.from(games.values()).find(
+      (g) => g.room === roomid && g.started,
+    );
+    if (game) {
+      const isPlayer = game.entities.some(
+        (e) => !e.isMonster && toId(e.name) === uid,
+      );
+      if (!isPlayer) {
+        sendPm(
+          username,
+          `Welcome to ${roomid}! **${game.id}** is in progress (${game.mode}, Round ${game.round}). You are spectating - %pl and %info to follow along.`,
+        );
+      }
+    }
+  }
 });
 
 bot.on("l", (parts: string[]) => {

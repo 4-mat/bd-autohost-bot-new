@@ -722,14 +722,21 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
 
     if (step.prompt.kind === "target") {
-      send(
-        game.room,
-        `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
-      );
+      if (step.prompt.candidates.length === 0) {
+        send(
+          game.room,
+          `${entity.num} has no valid targets - use %cancel to cancel.`,
+        );
+      } else {
+        send(
+          game.room,
+          `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
+        );
+      }
     } else if (step.prompt.kind === "selection") {
       send(
         game.room,
-        `Use %choose <option>. Options: ${step.prompt.options.map((o) => o.id).join(", ")}`,
+        `Use %choose <option>. Options: ${step.prompt.options.map((o) => `${o.id} = ${o.label}`).join(" | ")}`,
       );
     } else if (step.prompt.kind === "direction") {
       send(
@@ -822,8 +829,9 @@ function handleAdvanceTurn(game: Game, user: User) {
 
     acted = summarizeResult(game, entity, step.result.messages);
 
-    for (const _ of step.result.deaths) {
+    for (const dead of step.result.deaths) {
       game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+      send(game.room, `**${entity.num} eliminated ${dead.num} (${dead.name})!**`);
     }
 
     const winner = checkGameOver(game);
@@ -1390,8 +1398,9 @@ function buildPlayerList(game: Game): string {
     const hpPct = Math.max(0, (e.curhp / e.maxhp) * 100);
     const marker = isCur ? " " : "";
     const hpColor = hpPct > 50 ? "[+]" : hpPct > 25 ? "[~]" : "[-]";
+    const teamTag = e.team > 0 ? ` | T${e.team}` : "";
     lines.push(
-      `${hpColor} **${e.num}** ${e.name} -- ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel}) | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${marker}`,
+      `${hpColor} **${e.num}** ${e.name} -- ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel}) | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${teamTag}${marker}`,
     );
   }
 
