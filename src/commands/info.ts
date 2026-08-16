@@ -1,4 +1,4 @@
-import { send, sendPm, sendPmChunks, toId } from "../utils.js";
+import { send, sendPm, toId } from "../utils.js";
 import type { User } from "../users.js";
 import {
   abilities,
@@ -15,13 +15,12 @@ export function infoCommand(user: User, cmd: string, args: string) {
   const target = user.name;
 
   if (cmd === "wt") {
-    const lines = wtLookup(args);
-    // Single lookups go out as one PM; class/weapon dumps exceed Discord's
-    // ~2000-char limit, so they're chunked (which is also what stops the
-    // flooding %wt used to cause).
-    const body = lines.join("\n");
-    if (body.length > 900) sendPmChunks(target, body);
-    else sendPm(target, body);
+    // wtLookup returns atomic blocks (each <details> element is indivisible).
+    // Chunk at block boundaries so a PM never splits a block mid-tag, which
+    // would render as broken HTML in the client.
+    for (const chunk of chunkBlocks(wtLookup(args))) {
+      sendPm(target, chunk);
+    }
     return;
   }
 
@@ -37,16 +36,18 @@ export function infoCommand(user: User, cmd: string, args: string) {
   }
 }
 
-// Pure lookup: returns the lines %wt should reply with, so the command
-// handler stays a thin send wrapper and the logic is unit-testable without
-// touching the process-wide send queue.
+// Pure lookup: returns the atomic blocks %wt should reply with (each
+// <details> ability/mode block is one block), so the command handler stays
+// a thin send wrapper and the logic is unit-testable without touching the
+// process-wide send queue.
 export function wtLookup(args: string): string[] {
   const id = toId(args);
   if (!id) return ["Usage: %wt [ability/item/status/tile/mode] or %wt <class/weapon> <ability>"];
 
-  // List every game mode (the doc's "/rfaq modes").
+  // List every game mode (the doc's "/rfaq modes"). describeModes joins
+  // per-mode <details> blocks with a blank line — split back into atoms.
   if (id === "modes" || id === "gamemodes") {
-    return [describeModes()];
+    return describeModes().split(/\n\s*\n/).filter(Boolean);
   }
 
   // Check WhatIs database
@@ -64,13 +65,13 @@ export function wtLookup(args: string): string[] {
   // Check weapons
   const weapon = weapons.get(id);
   if (weapon) {
-    return [buildItemDump(weapon.name, weapon.branch, weapon.abilities)];
+    return buildItemDump(weapon.name, weapon.branch, weapon.abilities);
   }
 
   // Check classes
   const cls = classes.get(id);
   if (cls) {
-    return [buildItemDump(cls.name, "", cls.abilities)];
+    return buildItemDump(cls.name, "", cls.abilities);
   }
 
   // Check specific abilities: "%wt <class/weapon> <ability>" filters to
@@ -100,9 +101,9 @@ export function wtLookup(args: string): string[] {
   return [`No data for "${args}".`];
 }
 
-// One class/weapon's full ability list (chunked — large classes would
-// otherwise exceed Discord's ~2000-char PM limit and get truncated, which
-// is what originally drove the %wt flooding).
+// One class/weapon's full ability list, one block per ability. Large
+// classes exceed Discord's ~2000-char PM limit and would be truncated (the
+// original %wt flooding), so the caller chunks the blocks — see chunkBlocks.
 function buildItemDump(
   name: string,
   branch: string,
@@ -117,12 +118,31 @@ function buildItemDump(
     range: string;
     effect: string;
   }[],
-): string {
-  const lines = [
+): string[] {
+  return [
     `**${name}**` + (branch ? ` (${branch})` : ""),
     ...abilities.map((ab) => buildAbilityDropdown(ab)),
   ];
-  return lines.join("\n");
+}
+
+// Group atomic blocks into PM-sized messages without ever splitting a
+// block. Each <details> element must stay whole or its HTML breaks when
+// rendered; a single block longer than the limit is sent intact (Discord's
+// hard limit is 2000, so an oversized block still fits one PM).
+export function chunkBlocks(blocks: string[], limit = 900): string[] {
+  const out: string[] = [];
+  let cur = "";
+  for (const b of blocks) {
+    const next = cur ? cur + "\n" + b : b;
+    if (cur && next.length > limit) {
+      out.push(cur);
+      cur = b;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
 }
 
 function buildAbilityDropdown(ab: {
