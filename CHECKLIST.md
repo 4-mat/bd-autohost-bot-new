@@ -120,12 +120,22 @@ Pick whole groups (or individual features) with `[x]`.
 - [ ] 78. `%find <query>` — search classes/weapons/abilities/items
 - [ ] 79. `%export` — full action-log replay transcript
 
+### N. Item equip & usage (batch 13) — commit `c5364de`
+- [ ] 80. `parseItemStats` — stat-mod parsing (`ATK +2` / `+2 ATK`)
+- [ ] 81. Entity inventory fields (`inventory` / `equipped` / `maxSlots`)
+- [ ] 82. `%giveitem <entity>, <item>` — host grants an item
+- [ ] 83. `%takeitem <entity>, <item>` — host removes an item
+- [ ] 84. `%equip <item>` — equip with slot enforcement + stat mods
+- [ ] 85. `%unequip <item>` — revert stat mods
+- [ ] 86. `%inventory [entity]` — list items + slot usage
+- [ ] 87. `%useitem <item>` — consume an item (heals if the effect implies one)
+
 ## Deferred ideas (not implemented)
-- [ ] Item equip / slot / `%buyitem` runtime (items are data + lookup only)
+- [ ] `%buyitem` / gold economy (items are granted + equipped, not bought)
 - [ ] AFK / timeout detection
 - [ ] Surrender vote (majority) vs individual concede
 - [ ] Per-player cumulative damage dealt/taken tracking
 
 ## Verification state (at time of writing)
 - `tsc --noEmit` clean
-- 442/442 tests pass (19 files)
+- 450/450 tests pass (20 files)
