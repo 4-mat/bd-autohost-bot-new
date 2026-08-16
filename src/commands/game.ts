@@ -38,7 +38,7 @@ import {
   type Entity,
   type AbilityData,
 } from "../game/state.js";
-import { rollDice } from "../utils.js";
+import { rollDice, diceStats } from "../utils.js";
 import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
 import {
   resolveAction,
@@ -51,6 +51,7 @@ import {
   type AttackStep,
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
+import { getVersionData } from "../data/version43.js";
 import {    normalizeVoteMode,
     pendingVoterIds,
     runoffOptions,
@@ -292,6 +293,30 @@ export function gameCommand(
     case "tile":
       if (!game) return sendPm(user.name, "No active game.");
       handleTileChoice(game, user, full);
+      break;
+
+    case "rollstats":
+      handleRollStats(user.name, args);
+      break;
+
+    case "version":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleVersion(game, user);
+      break;
+
+    case "statuses":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleStatuses(game, user);
+      break;
+
+    case "summary":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleSummary(game, user);
+      break;
+
+    case "standings":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleStandings(game, user);
       break;
 
     default:
@@ -1113,6 +1138,72 @@ function handleRoll(target: string, args: string) {
   const detail = result.rolls.join("+");
   const msg = `[roll] ${formula}: **${result.total}** (${detail})`;
   sendPm(target, msg);
+}
+
+// %rollstats <formula> - min/avg/max of a dice formula (no RNG).
+function handleRollStats(target: string, args: string) {
+  const formula = args.trim() || "1d20";
+  const stats = diceStats(formula);
+  if (!stats) return sendPm(target, `Invalid dice formula: ${formula}`);
+  sendPm(
+    target,
+    `[stats] ${formula}: min ${stats.min} | avg ${stats.avg} | max ${stats.max}`,
+  );
+}
+
+// %version - which BD data version the active game uses.
+function handleVersion(game: Game, user: User) {
+  const data = getVersionData(game.version);
+  sendPm(
+    user.name,
+    `BD data version: ${game.version} (${data.classes.size} classes, ${data.weapons.size} weapons).`,
+  );
+}
+
+// %statuses - every entity's statuses + buffs at a glance.
+function handleStatuses(game: Game, user: User) {
+  const lines = game.entities.map((e) => {
+    const s = e.statuses.length
+      ? e.statuses
+          .map((x) => `${x.name}${x.damage > 0 ? " " + x.damage + "/" : ""}${x.rounds}`)
+          .join(", ")
+      : "none";
+    const b = e.buffs.length
+      ? " | buffs: " +
+        e.buffs.map((x) => `${x.amount > 0 ? "+" : ""}${x.amount} ${x.stat}`).join(", ")
+      : "";
+    return `${e.num}: ${s}${b}`;
+  });
+  sendPm(user.name, lines.join("\n") || "No entities.");
+}
+
+// %summary - one line per entity (HP, statuses, kills).
+function handleSummary(game: Game, user: User) {
+  const lines = game.entities.map((e) => {
+    const kills = game.kills[e.num] ?? 0;
+    const s = e.statuses.length
+      ? ` | ${e.statuses.map((x) => x.name).join(",")}`
+      : "";
+    return `${e.num} ${e.name}: HP ${e.curhp}/${e.maxhp}${s} | kills: ${kills}`;
+  });
+  sendPm(user.name, lines.join("\n") || "No entities.");
+}
+
+// %standings - kills + HP leaderboard.
+function handleStandings(game: Game, user: User) {
+  const rows = game.entities
+    .map((e) => ({
+      num: e.num,
+      name: e.name,
+      kills: game.kills[e.num] ?? 0,
+      hp: e.curhp,
+    }))
+    .sort((a, b) => b.kills - a.kills || b.hp - a.hp);
+  const lines = rows.map(
+    (r, i) =>
+      `${i + 1}. ${r.num} (${r.name}) — ${r.kills} kill${r.kills === 1 ? "" : "s"}, HP ${r.hp}`,
+  );
+  sendPm(user.name, lines.join("\n") || "No entities.");
 }
 
 function handlePremove(game: Game, user: User, args: string) {

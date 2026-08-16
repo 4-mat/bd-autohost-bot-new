@@ -101,7 +101,7 @@ export function handleCommand(
   }
 
   // Info/reference commands
-  if (id === "wt" || id === "rf" || id === "wtm" || id === "data") {
+  if (id === "wt" || id === "rf" || id === "wtm" || id === "data" || id === "freq") {
     infoCommand(user, id, args || val);
     return;
   }
@@ -207,7 +207,12 @@ export function handleCommand(
     id === "chat" ||
     id === "round" ||
     id === "dir" ||
-    id === "tile"
+    id === "tile" ||
+    id === "rollstats" ||
+    id === "statuses" ||
+    id === "summary" ||
+    id === "standings" ||
+    id === "version"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;

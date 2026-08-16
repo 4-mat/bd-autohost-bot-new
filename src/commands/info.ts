@@ -10,6 +10,7 @@ import {
 } from "../data/index.js";
 import { WhatIs, Reference } from "../data/index.js";
 import { modeDescription, describeModes } from "../data/gamemodes.js";
+import { parseFrequency } from "../game/state.js";
 
 export function infoCommand(user: User, cmd: string, args: string) {
   const target = user.name;
@@ -24,6 +25,24 @@ export function infoCommand(user: User, cmd: string, args: string) {
         `Classes: ${classes.size} | Weapons: ${weapons.size} | Branches: ${branches.size}`,
         `Abilities: ${abilityCount} | WhatIs entries: ${WhatIs.size} | References: ${Reference.size}`,
       ].join("\n"),
+    );
+    return;
+  }
+
+  if (cmd === "freq") {
+    const id = toId(args);
+    if (!id) return sendPm(target, "Usage: %freq <ability>");
+    const found = findAbility(id);
+    if (!found) return sendPm(target, `No ability found for "${args}".`);
+    const ab = found.ability;
+    const f = parseFrequency(ab.frequency);
+    const max = ab.maxUses ?? f.uses;
+    const cd =
+      f.cooldown > 0 ? `${f.cooldown} turn${f.cooldown > 1 ? "s" : ""}` : "none";
+    const uses = max > 0 ? `${max} per encounter` : "unlimited";
+    sendPm(
+      target,
+      `**${ab.name}** (${found.source}) frequency "${ab.frequency}": ${uses}, cooldown ${cd}.`,
     );
     return;
   }

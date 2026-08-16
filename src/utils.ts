@@ -129,6 +129,24 @@ export function rollDice(formula: string): {
   return { total: base + mod, rolls, base };
 }
 
+// Dice statistics: min / average / max for a formula, without rolling.
+export function diceStats(formula: string): {
+  min: number;
+  max: number;
+  avg: number;
+} | null {
+  const m = formula.match(/^(\d+)d(\d+)([+-]\d+)?$/);
+  if (!m) return null;
+  const count = parseInt(m[1]);
+  const sides = parseInt(m[2]);
+  const mod = m[3] ? parseInt(m[3]) : 0;
+  return {
+    min: count + mod,
+    max: count * sides + mod,
+    avg: (count * (sides + 1)) / 2 + mod,
+  };
+}
+
 let ws: { send: (msg: string) => void };
 /** Register the WebSocket used by send() to transmit messages. */
 export function setWs(w: { send: (msg: string) => void }) {
