@@ -33,6 +33,7 @@ import {
   getCurrentEntity,
   getEntity,
   removeEntity,
+  needsDirection,
   type Game,
   type Entity,
   type AbilityData,
@@ -121,6 +122,65 @@ function makeGame(
     voteRunoff: null,
   };
 }
+
+function makeAbility(overrides: Partial<AbilityData> & { range: string }) {
+  return {
+    name: "Test",
+    level: 1,
+    frequency: "Every Turn",
+    mr: 0,
+    roll: "",
+    damageType: "",
+    actionType: "Standard",
+    targetAmount: 1,
+    targetGroup: "Foe",
+    effect: "",
+    ...overrides,
+  } as AbilityData;
+}
+
+// ---------------------------------------------------------------------------
+// needsDirection
+// ---------------------------------------------------------------------------
+
+describe("needsDirection", () => {
+  // Directional line-shapes: the four matched prefixes, including the real
+  // range vocabulary from src/data/index.ts.
+  it("returns true for cone/line/beam/pierce (incl. suffixes and hybrids)", () => {
+    expect(needsDirection(makeAbility({ range: "Cone 2" }))).toBe(true);
+    expect(needsDirection(makeAbility({ range: "Line 3" }))).toBe(true);
+    expect(needsDirection(makeAbility({ range: "Beam 2" }))).toBe(true);
+    expect(needsDirection(makeAbility({ range: "Pierce 3" }))).toBe(true);
+    expect(needsDirection(makeAbility({ range: "Cone 2\n(Push 2)" }))).toBe(true);
+    expect(needsDirection(makeAbility({ range: "Line 1\n(Push 1)" }))).toBe(true);
+    // Hybrid written in the data as a single range string.
+    expect(needsDirection(makeAbility({ range: "Pierce 5 or Burst 1" }))).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(needsDirection(makeAbility({ range: "CONe 2" }))).toBe(true);
+    expect(needsDirection(makeAbility({ range: "  line 3  " }))).toBe(true);
+  });
+
+  // Non-directional ranges: origin-emanating or point-target shapes. These
+  // skip the up/down/left/right prompt and are handled by inRange/AoETargets.
+  it("returns false for burst/star/range/homing/melee/global/varies", () => {
+    expect(needsDirection(makeAbility({ range: "Burst 1" }))).toBe(false);
+    expect(needsDirection(makeAbility({ range: "Star 4" }))).toBe(false);
+    expect(needsDirection(makeAbility({ range: "Range 3" }))).toBe(false);
+    expect(needsDirection(makeAbility({ range: "Homing 2" }))).toBe(false);
+    expect(needsDirection(makeAbility({ range: "Melee" }))).toBe(false);
+    expect(needsDirection(makeAbility({ range: "Global" }))).toBe(false);
+    expect(needsDirection(makeAbility({ range: "Varies" }))).toBe(false);
+  });
+
+  // Regression guard for the regex word boundary: "linetrap" must not match
+  // "line" because e/t are both word characters.
+  it("does not false-match shapes that merely start with a keyword", () => {
+    expect(needsDirection(makeAbility({ range: "linetrap 3" }))).toBe(false);
+    expect(needsDirection(makeAbility({ range: "piercing 2" }))).toBe(false);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Terrain
@@ -510,6 +570,15 @@ describe("getAoETargets", () => {
     const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 1 });
     const game = makeGame({ entities: [p1, p2, p3] });
     const targets = getAoETargets(game, p1, "Burst 1", "Self, Foes, Allies");
+    expect(targets.map((t) => t.num).sort()).toEqual(["P2", "P3"]);
+  });
+
+  it("group 'Self, Foes, and Allies' (with 'and') matches the single-target path", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 1 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self, Foes, and Allies");
     expect(targets.map((t) => t.num).sort()).toEqual(["P2", "P3"]);
   });
 

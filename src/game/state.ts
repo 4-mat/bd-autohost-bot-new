@@ -227,6 +227,18 @@ export const DIRECTION_LABELS: Record<string, string> = {
   right: "\u2192 Right",
 };
 
+/**
+ * Whether an ability's range is a directional shape that needs the caster to
+ * pick up/down/left/right before targeting resolves.
+ *
+ * Verified against the live `src/data/index.ts` range vocabulary: only the four
+ * directional line-shapes match (Beam, Cone, Line, Pierce), including their
+ * (Push N) / (Pull N) / (Splash N) suffixes and the "Pierce N or Burst 1"
+ * hybrid. Burst, Star, Range, Homing, Melee, Global, and Varies do NOT match,
+ * so they skip the direction prompt. This is consistent with
+ * `prepareTargeting`'s `isAoE` classification, which also treats Burst/Star
+ * as origin-emanating (no direction needed).
+ */
 export function needsDirection(ability: AbilityData): boolean {
   const r = ability.range.toLowerCase().trim();
   return /^(cone|line|beam|pierce)\b/.test(r);
@@ -932,7 +944,7 @@ function isValidGroupTarget(
     return target.num === user.num || foeCheck;
   if (g.includes("foe or ally")) return target.num !== user.num;
   if (g.includes("tile or foe")) return foeCheck;
-  if (g.includes("self, foe, ally")) return true;
+  if (g.includes("self, foe, ally") || g.includes("self, foe, and ally")) return true;
   // Unknown group: reject, matching isValidTarget in resolve.ts, so a
   // malformed targetGroup cannot select arbitrary living entities here
   // while selecting nothing in the single-target path.
