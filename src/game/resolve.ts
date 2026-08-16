@@ -188,7 +188,7 @@ function* resolveAttackFlow(
   const result = newResult();
 
   // --- Declare Attack ---
-  // result.messages.push(`/me declares ${ability.name}`);
+  // (emitted after costs/variant selection — see below)
 
   // --- Auto-deduct non-prompted costs ---
   if (ability.cost && !ability.cost.prompt) {
@@ -244,6 +244,9 @@ function* resolveAttackFlow(
       effect: variant.effect ?? ability.effect,
     };
   }
+
+  // --- Declare Attack (after costs/variant selection) ---
+  result.messages.push(`${user.num} declares ${active.name}.`);
 
   // --- Direction prompt for AoE abilities ---
   const needsDir = needsDirection(active);
@@ -952,15 +955,14 @@ function setCooldown(entity: Entity, ability: AbilityData) {
 }
 
 function isWinCondition(game: Game): boolean {
-  if (game.mode.includes("ffa") || game.mode.includes("pvp")) {
-    return game.entities.filter((e) => e.curhp > 0).length <= 1;
+  // Mirrors checkGameOver in state.ts so resolve and end-of-turn agree.
+  const alive = game.entities.filter((e) => e.curhp > 0);
+  if (alive.length <= 1) return true;
+  const mode = game.mode.toLowerCase();
+  if (mode.includes("v")) {
+    return new Set(alive.map((e) => e.team)).size <= 1;
   }
-  const teams = new Map<number, boolean>();
-  for (const e of game.entities) {
-    if (!teams.has(e.team)) teams.set(e.team, false);
-    if (e.curhp > 0) teams.set(e.team, true);
-  }
-  return [...teams.values()].filter(Boolean).length <= 1;
+  return false;
 }
 
 function parseMultiHit(ability: AbilityData): number {

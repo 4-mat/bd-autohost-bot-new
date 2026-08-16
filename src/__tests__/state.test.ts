@@ -576,7 +576,7 @@ describe("dealDamage", () => {
     const e = makeEntity({ num: "P1", name: "T", curhp: 10 });
     const result = dealDamage(e, 50);
     expect(result.actual).toBe(50);
-    expect(e.curhp).toBe(-40);
+    expect(e.curhp).toBe(0);
   });
 
   it("negative damage is clamped to 0", () => {
@@ -968,7 +968,7 @@ describe("processStartOfTurn", () => {
     });
     const game = makeGame();
     const { died, messages } = processStartOfTurn(game, e);
-    expect(e.curhp).toBe(-5);
+    expect(e.curhp).toBe(0);
     expect(died).toBe(true);
     expect(messages.some((m) => m.includes("defeated"))).toBe(true);
     // Entity should be removed from game
@@ -981,7 +981,7 @@ describe("processStartOfTurn", () => {
     const game = makeGame({ terrain: map });
     const e = makeEntity({ num: "P1", name: "A", curhp: 20, pos: [2, 2] });
     const { died } = processEndOfTurn(game, e);
-    expect(e.curhp).toBe(-10);
+    expect(e.curhp).toBe(0);
     expect(died).toBe(true);
     expect(game.entities.find((x) => x.num === "P1")).toBeUndefined();
   });

@@ -982,7 +982,10 @@ function moveEntityInLine(
 function isPassable(game: Game, r: number, c: number): boolean {
   if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length)
     return false;
-  return isStandable(game.map[r][c]);
+  if (!isStandable(game.map[r][c])) return false;
+  if (game.entities.some((e) => e.curhp > 0 && e.pos[0] === r && e.pos[1] === c))
+    return false;
+  return true;
 }
 
 // Roll accuracy check
@@ -1062,7 +1065,7 @@ export function dealDamage(
   }
 
   const actual = remaining;
-  entity.curhp -= remaining;
+  entity.curhp = Math.max(0, entity.curhp - remaining);
   return { actual, shieldAbsorbed, shieldBreaks };
 }
 
