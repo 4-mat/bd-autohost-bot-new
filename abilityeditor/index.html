@@ -677,8 +677,18 @@
       const abilities = item.abilities || (item.abilities = []);
       if (body.action === "save") {
         const i = abilities.findIndex((x) => x.name === body.name);
-        if (i >= 0) abilities[i] = body.ability;
-        else abilities.push(body.ability);
+        if (i < 0) return Promise.reject(new Error("Ability not found: " + body.name));
+        // Mirror the server's rename-collision check: renaming into an id
+        // another ability already uses must be rejected in the demo too.
+        const newName = String(body.ability && body.ability.name || "").trim();
+        if (
+          newName &&
+          toId(newName) !== toId(body.name) &&
+          abilities.some((x, j) => j !== i && toId(String(x.name)) === toId(newName))
+        ) {
+          return Promise.reject(new Error('An ability named "' + newName + '" already exists on ' + item.name));
+        }
+        abilities[i] = body.ability;
       } else if (body.action === "add") {
         abilities.push(body.ability);
       } else if (body.action === "remove") {
@@ -700,6 +710,7 @@
           for (let n = 2; abilities.some((x) => x.name === nm); n++) nm = base + " " + n;
           copy.name = nm;
           abilities.splice(i + 1, 0, copy);
+          return Promise.resolve({ ok: true, name: nm });
         }
       }
       // Persist custom entries so their edits survive a reload in demo mode.
@@ -750,8 +761,13 @@
       for (const kind of ["class", "weapon"]) {
         const cur = state.data[kind === "class" ? "classes" : "weapons"];
         const baseList = base[kind === "class" ? "classes" : "weapons"];
+        // Per-kind custom ids: an item is an "add" only when its id is in the
+        // custom list for ITS OWN kind — not the currently selected tab's
+        // list (isCustomName is tab-scoped, so it can't classify the other
+        // kind's customs).
+        const customList = kind === "class" ? state.data.customClasses : state.data.customWeapons;
         for (const item of cur) {
-          if (isCustomName(item.name)) {
+          if (customList.includes(toId(item.name))) {
             adds.push({ kind, entry: item });
           } else {
             const b = baseList.find((x) => x.name === item.name);
@@ -1367,15 +1383,15 @@
       const ab = item.abilities[idx];
       if (!ab) return;
       try {
-        await api("/api/ability", {
+        const r = await api("/api/ability", {
           kind: state.kind,
           owner: item.name,
           action: "duplicate",
           name: ab.name,
         });
-        // The copy is inserted right after the original; its name is the
-        // original's with a " Copy" suffix (or " Copy N" when taken).
-        state.openAbility = ab.name + " Copy";
+        // Open the actual copy — the server returns its real name ("X Copy",
+        // or "X Copy N" when taken), not a guessed one.
+        state.openAbility = (r && r.name) || ab.name + " Copy";
         await fetchData();
         renderDetail();
       } catch (e) {
@@ -1446,6 +1462,13 @@
           }
           const newName = patch.name ? String(patch.name).trim() : prevName;
           if (newName !== prevName) {
+            // Keep the per-kind custom id list in sync when a custom is
+            // renamed (the server does this for local mode; the demo must do
+            // it here, or the entry loses its CUSTOM badge and stops being
+            // persisted under its new id).
+            const renameList = customListFor(state.kind);
+            const oldIdx = renameList.indexOf(toId(prevName));
+            if (oldIdx !== -1) renameList[oldIdx] = toId(newName);
             state.selected = newName;
             renderList();
           }

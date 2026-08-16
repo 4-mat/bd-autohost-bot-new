@@ -90,6 +90,20 @@ describe("duplicateAbility", () => {
 // sanitizeAbility: maxUses and choices edge cases (GUI clear + structured rows)
 // ---------------------------------------------------------------------------
 
+describe("duplicateAbility naming", () => {
+  it("returns the copy name the GUI can open directly", () => {
+    const arr = [ab("A")];
+    const copy = duplicateAbility(arr, "A");
+    expect(String((copy as { name?: unknown }).name)).toBe("A Copy");
+  });
+
+  it("numbers the copy when the plain Copy name is taken", () => {
+    const arr = [ab("A"), ab("A Copy")];
+    const copy = duplicateAbility(arr, "A");
+    expect(String((copy as { name?: unknown }).name)).toBe("A Copy 2");
+  });
+});
+
 describe("sanitizeAbility maxUses", () => {
   it("drops an empty maxUses instead of coercing it to 1", () => {
     const clean = sanitizeAbility({ name: "X", maxUses: "" });
