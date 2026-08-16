@@ -65,7 +65,8 @@ abilityeditor/
 | `/api/data` | GET | full class/weapon snapshot + custom name list |
 | `/api/status` | GET | pending-regen flag, custom count |
 | `/api/update` | POST | patch a class/weapon (name, stats, description, branch) |
-| `/api/ability` | POST | add / save / remove an ability |
+| `/api/ability` | POST | add / save / remove / **move** / **duplicate** an ability |
+| `/api/validate` | POST | run the game's BD Lang parser over an effect; return unparsed clauses |
 | `/api/custom` | POST | add a custom class/weapon |
 | `/api/custom/remove` | POST | remove a custom class/weapon |
 | `/api/regenerate` | POST | rewrite `src/data/index.ts` (minimal diff) |
@@ -79,6 +80,12 @@ Mutations are only accepted from a `localhost` origin matching the server port.
   frequency, MR, roll, damage type, action type, target amount (number or
   `AoE`), target group, range, effect (BD Lang), optional max uses, cost and
   choices.
+- Ability cards have **▲/▼ reorder** buttons (order is what the game uses),
+  a **Duplicate** button (names the copy "… Copy" / "… Copy 2"), and live
+  **effect parsing**: unparsed BD Lang clauses are shown under the Effect box.
+  Clearing the **Max Uses** field removes the key rather than saving a 1.
+- **Choices** are edited as structured id/label rows (incomplete rows are
+  dropped); each editor also has an **edit as JSON** escape hatch.
 - `cost` is serialized inline (`cost: { type: "Resource", resource: "Qi",
   amount: 2, prompt: true }`) and `choices` as a multi-line array, matching
   the existing file style.

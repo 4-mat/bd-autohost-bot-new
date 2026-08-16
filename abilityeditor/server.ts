@@ -32,6 +32,7 @@ import {
   type WeaponData,
 } from "../src/data/index.js";
 import { writeEditorSnapshot } from "../src/data/overrides.js";
+import { parseEffects } from "../src/game/effects.js";
 import {
   readSourceText,
   writeSourceText,
@@ -41,6 +42,8 @@ import {
   toId,
   STAT_KEYS,
   isPlainObject,
+  moveAbility,
+  duplicateAbility,
   type EntryLike,
 } from "./serializer.js";
 
@@ -375,12 +378,40 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
           return;
         }
         abilities[idx] = clean as unknown as (typeof abilities)[number];
+      } else if (action === "move") {
+        // dir: -1 = up (earlier in the list), 1 = down. Order is meaningful —
+        // it is the order abilities are listed/offered in the game.
+        const dir = body.dir === -1 ? -1 : 1;
+        const to = moveAbility(abilities as unknown as { name?: unknown }[], String(name ?? ""), dir);
+        if (to === -1) {
+          send(res, 404, { error: `ability '${name ?? "?"}' not found or already at the edge` });
+          return;
+        }
+      } else if (action === "duplicate") {
+        const copy = duplicateAbility(abilities as unknown as { name?: unknown }[], String(name ?? ""));
+        if (!copy) {
+          send(res, 404, { error: `ability '${name ?? "?"}' not found` });
+          return;
+        }
       } else {
-        send(res, 400, { error: "action must be add|save|remove" });
+        send(res, 400, { error: "action must be add|save|remove|move|duplicate" });
         return;
       }
       touch();
       send(res, 200, { ok: true });
+      return;
+    }
+
+    if (p === "/api/validate" && req.method === "POST") {
+      // Live BD Lang check: clauses the game's parser can't interpret come
+      // back as {type:"unknown"} — surface them so a typo is caught in the
+      // editor instead of silently no-opping in battle.
+      const effect = String(body.effect ?? "");
+      const parsed = parseEffects(effect);
+      const unknown = parsed
+        .filter((e) => e.type === "unknown")
+        .map((e) => (e as { text: string }).text);
+      send(res, 200, { ok: true, unknown });
       return;
     }
 
