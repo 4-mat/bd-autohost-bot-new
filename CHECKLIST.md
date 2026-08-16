@@ -130,12 +130,21 @@ Pick whole groups (or individual features) with `[x]`.
 - [ ] 86. `%inventory [entity]` — list items + slot usage
 - [ ] 87. `%useitem <item>` — consume an item (heals if the effect implies one)
 
+### O. Damage, team surrender & AFK (batch 14) — commit `f5c4944`
+- [ ] 88. Damage tracking (`damageDealt` / `damageTaken` entity fields)
+- [ ] 89. `%damage [entity]` — show damage dealt/taken
+- [ ] 90. `%forfeit` — individual concede
+- [ ] 91. `%surrender` — team majority vote (individual forfeit in FFA)
+- [ ] 92. `%afk [entity]` — mark an entity away
+- [ ] 93. `%return [entity]` + AFK auto-skip + "(AFK)" in `%summary`
+
 ## Deferred ideas (not implemented)
-- [ ] `%buyitem` / gold economy (items are granted + equipped, not bought)
-- [ ] AFK / timeout detection
-- [ ] Surrender vote (majority) vs individual concede
-- [ ] Per-player cumulative damage dealt/taken tracking
+- [ ] Auto-skip on shot-clock expiry (timeout → auto-AFK; AFK is currently manual)
+- [ ] Cross-game player profiles (carry records/xp/gold into a persistent account)
+- [ ] Replay export to a shareable paste/file
+
+> `%buyitem` / gold economy is intentionally out of scope (per request).
 
 ## Verification state (at time of writing)
 - `tsc --noEmit` clean
-- 450/450 tests pass (20 files)
+- 451/451 tests pass (20 files)
