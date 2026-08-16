@@ -371,6 +371,11 @@ export function gameCommand(
       handleReturn(game, user, full);
       break;
 
+    case "roominfo":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleRoomInfo(game, user);
+      break;
+
     default:
       sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
       break;
@@ -1058,6 +1063,9 @@ function handleAdvanceTurn(game: Game, user: User) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can advance turns.");
   }
+  if (game.paused) {
+    return sendPm(user.name, "Game is paused. Use %resume to continue.");
+  }
 
   const entity = getCurrentEntity(game);
   if (!entity) return;
@@ -1516,6 +1524,17 @@ function handleReturn(game: Game, user: User, args: string) {
   entity.afk = false;
   send(game.room, `**${entity.num} (${entity.name})** is back.`);
   broadcastPages(game);
+}
+
+// %roominfo - room/game status summary.
+function handleRoomInfo(game: Game, user: User) {
+  const lines = [
+    `Room: ${game.room} | ID: ${game.id}`,
+    `Host: ${game.host} | Mode: ${game.mode} | Version: ${game.version}`,
+    `Map: ${game.mapName || "(none)"} | Phase: ${game.phase}${game.paused ? " (paused)" : ""}`,
+    `Players: ${game.entities.length} | Round: ${game.round}`,
+  ];
+  sendPm(user.name, lines.join("\n"));
 }
 
 function handlePremove(game: Game, user: User, args: string) {

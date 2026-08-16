@@ -337,6 +337,8 @@ export interface Game {
   timer?: { entity: string | null; endAt: number; warned?: boolean } | null;
   /** Team surrender votes: team id -> entity nums that voted. */
   surrenderVotes?: Record<string, string[]>;
+  /** Paused games block turn advancement until %resume. */
+  paused?: boolean;
 }
 
 export const games = new Map<string, Game>();

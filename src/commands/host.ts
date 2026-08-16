@@ -9,6 +9,7 @@ import {
   pushSnapshot,
   nextTurn,
   removeEntity,
+  checkGameOver,
   type Game,
   type Entity,
   Terrain,
@@ -31,7 +32,7 @@ import {
   voteOptionsFor,
 } from "../data/gamemodes.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
-import { broadcastPages } from "./game.js";
+import { broadcastPages, announceGameOver } from "./game.js";
 import { findItem, applyItemMods } from "../game/items.js";
 import type { AbilityData } from "../data/index.js";
 
@@ -179,6 +180,30 @@ export function hostCommand(
       break;
     case "takeitem":
       handleTakeItem(room, user, full);
+      break;
+    case "kill":
+      handleKill(room, user, full);
+      break;
+    case "kick":
+      handleKick(room, user, full);
+      break;
+    case "heal":
+      handleHeal(room, user, full);
+      break;
+    case "setpos":
+      handleSetPos(room, user, full);
+      break;
+    case "announce":
+      handleAnnounce(room, user, full);
+      break;
+    case "pause":
+      handlePause(room, user);
+      break;
+    case "resume":
+      handleResume(room, user);
+      break;
+    case "transfer":
+      handleTransfer(room, user, full);
       break;
     case "sc":
       handleSwitchClass(room, user, full);
@@ -1937,6 +1962,153 @@ function handleTakeItem(room: Room, user: User, args: string) {
     );
   }
   send(game.room, `**${item.name}** removed from ${entity.num}.`);
+  broadcastPages(game);
+}
+
+// %kill <entity> - force-defeat an entity (host).
+function handleKill(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %kill.");
+  }
+  const entity = getEntity(game, args.trim());
+  if (!entity) return sendPm(user.name, `Unknown entity: ${args}`);
+  pushSnapshot(game);
+  send(game.room, `**${entity.num} (${entity.name})** was defeated by the host.`);
+  removeEntity(game, entity);
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return;
+  }
+  broadcastPages(game);
+}
+
+// %kick <entity> - remove an entity entirely (host).
+function handleKick(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %kick.");
+  }
+  const entity = getEntity(game, args.trim());
+  if (!entity) return sendPm(user.name, `Unknown entity: ${args}`);
+  pushSnapshot(game);
+  send(game.room, `**${entity.num} (${entity.name})** was kicked.`);
+  removeEntity(game, entity);
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return;
+  }
+  broadcastPages(game);
+}
+
+// %heal <entity>[,amount] - heal (host, default full).
+function handleHeal(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %heal.");
+  }
+  const parts = args.split(",").map((s) => s.trim());
+  const entity = getEntity(game, parts[0] ?? "");
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+  const amount = parts[1] ? parseInt(parts[1]) : entity.maxhp - entity.curhp;
+  if (isNaN(amount) || amount < 0) {
+    return sendPm(user.name, "Amount must be a non-negative number.");
+  }
+  pushSnapshot(game);
+  const before = entity.curhp;
+  entity.curhp = Math.min(entity.maxhp, entity.curhp + amount);
+  send(
+    game.room,
+    `**${entity.num}** healed ${entity.curhp - before} HP (${entity.curhp}/${entity.maxhp}).`,
+  );
+  broadcastPages(game);
+}
+
+// %setpos <entity>,<tile> - relocate an entity (host).
+function handleSetPos(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %setpos.");
+  }
+  const parts = args.split(",").map((s) => s.trim());
+  const entity = getEntity(game, parts[0] ?? "");
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+  const pos = parsePos(parts[1] ?? "");
+  if (!pos) {
+    return sendPm(user.name, "Usage: %setpos <entity>, <tile> (e.g. %setpos P1, b3)");
+  }
+  const [r, c] = pos;
+  if (r < 0 || r >= game.map.length || c < 0 || c >= (game.map[0]?.length ?? 0)) {
+    return sendPm(user.name, "Tile out of bounds.");
+  }
+  if (!isStandable(game.map[r][c])) {
+    return sendPm(user.name, "Tile is not standable.");
+  }
+  if (
+    game.entities.some(
+      (e) => e !== entity && e.curhp > 0 && e.pos[0] === r && e.pos[1] === c,
+    )
+  ) {
+    return sendPm(user.name, "Tile is occupied.");
+  }
+  pushSnapshot(game);
+  entity.pos = [r, c];
+  send(game.room, `**${entity.num}** moved to ${posToStr(r, c)}.`);
+  broadcastPages(game);
+}
+
+// %announce <msg> - room-wide announcement (host).
+function handleAnnounce(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %announce.");
+  }
+  const msg = args.trim();
+  if (!msg) return sendPm(user.name, "Usage: %announce <message>");
+  send(game.room, `**Announcement**: ${msg}`);
+}
+
+// %pause / %resume
+function handlePause(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can pause.");
+  }
+  if (game.paused) return sendPm(user.name, "Game is already paused.");
+  game.paused = true;
+  send(game.room, "**Game paused.** Use %resume to continue.");
+}
+
+function handleResume(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can resume.");
+  }
+  if (!game.paused) return sendPm(user.name, "Game is not paused.");
+  game.paused = false;
+  send(game.room, "**Game resumed.**");
+}
+
+// %transfer <user> - hand off the host role.
+function handleTransfer(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can transfer.");
+  }
+  const name = args.trim();
+  if (!name) return sendPm(user.name, "Usage: %transfer <user>");
+  game.host = name;
+  send(game.room, `**${name}** is now the host.`);
   broadcastPages(game);
 }
 

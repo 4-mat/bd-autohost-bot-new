@@ -51,6 +51,15 @@ const COMMAND_HELP: Record<string, string> = {
   damage: "Show damage dealt/taken (%damage [entity]).",
   afk: "Mark yourself away; your turns are auto-skipped (%afk).",
   return: "Clear your AFK flag (%return).",
+  kill: "Host: force-defeat an entity (%kill <entity>).",
+  heal: "Host: heal an entity (%heal <entity>[,amount]).",
+  setpos: "Host: relocate an entity (%setpos <entity>, <tile>).",
+  announce: "Host: broadcast an announcement (%announce <msg>).",
+  pause: "Host: pause turn advancement (%pause).",
+  resume: "Host: resume a paused game (%resume).",
+  kick: "Host: remove an entity (%kick <entity>).",
+  transfer: "Host: hand off host role (%transfer <user>).",
+  roominfo: "Show room/game status (%roominfo).",
 };
 
 export function handleCommand(
@@ -196,6 +205,14 @@ export function handleCommand(
     id === "rematch" ||
     id === "giveitem" ||
     id === "takeitem" ||
+    id === "kill" ||
+    id === "heal" ||
+    id === "setpos" ||
+    id === "announce" ||
+    id === "pause" ||
+    id === "resume" ||
+    id === "kick" ||
+    id === "transfer" ||
     id === "genpos"
   ) {
     hostCommand(room, user, id, args, val, pm);
@@ -270,7 +287,8 @@ export function handleCommand(
     id === "inventory" ||
     id === "damage" ||
     id === "afk" ||
-    id === "return"
+    id === "return" ||
+    id === "roominfo"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;
