@@ -188,8 +188,26 @@ export function handleCommand(
     id === "pass" ||
     id === "status" ||
     id === "regp" ||
-    id === "target" ||
-    id === "choose"
+    id === "undo" ||
+    id === "log" ||
+    id === "turnorder" ||
+    id === "cooldowns" ||
+    id === "cds" ||
+    id === "terrain" ||
+    id === "los" ||
+    id === "moves" ||
+    id === "resources" ||
+    id === "resource" ||
+    id === "mp" ||
+    id === "uses" ||
+    id === "buffs" ||
+    id === "cure" ||
+    id === "teams" ||
+    id === "spectate" ||
+    id === "chat" ||
+    id === "round" ||
+    id === "dir" ||
+    id === "tile"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;
