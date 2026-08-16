@@ -95,6 +95,13 @@ const COMMAND_HELP: Record<string, string> = {
   note: "Save a private note (%note <text>, %note, %note clear).",
   motd: "Room message of the day (%motd, host sets %motd <text>).",
   mode: "Current mode and phase (%mode).",
+  me: "Your own entity's full info (%me).",
+  pos: "An entity's board position (%pos [entity]).",
+  team: "Your team's roster with status (%team).",
+  targets: "Living entities by distance from the current turn (%targets).",
+  hint: "Contextual suggestion for the current player (%hint).",
+  history: "Last N action-log entries (%history [N]).",
+  turn: "Whose turn it is (alias: %round).",
 };
 
 export function handleCommand(
@@ -449,7 +456,14 @@ export function handleCommand(
     id === "alive" ||
     id === "abilities" ||
     id === "mapinfo" ||
-    id === "mode"
+    id === "mode" ||
+    id === "me" ||
+    id === "pos" ||
+    id === "team" ||
+    id === "targets" ||
+    id === "hint" ||
+    id === "history" ||
+    id === "turn"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;
