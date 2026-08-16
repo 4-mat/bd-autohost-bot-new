@@ -14,7 +14,7 @@ import {
   Terrain,
   isStandable,
 } from "../game/state.js";
-import { classes, weapons, loadGameData } from "../data/index.js";
+import { classes, weapons, loadGameData, resolveName } from "../data/index.js";
 import { getVersionData } from "../data/version43.js";
 import type { GameVersion } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
@@ -1034,15 +1034,17 @@ function createPlayerEntity(
   }
 
   const data = getVersionData(game.version);
-  const classData = data.classes.get(toId(className));
-  const weaponData = data.weapons.get(toId(weaponName));
+  const classFound = resolveName(data.classes, className);
+  const weaponFound = resolveName(data.weapons, weaponName);
 
-  if (!classData) {
-    return { err: `Unknown class: ${className}. Use %wt to look up.` };
+  if (!classFound.value) {
+    return { err: nameError("class", className, classFound) };
   }
-  if (!weaponData) {
-    return { err: `Unknown weapon: ${weaponName}. Use %wt to look up.` };
+  if (!weaponFound.value) {
+    return { err: nameError("weapon", weaponName, weaponFound) };
   }
+  const classData = classFound.value;
+  const weaponData = weaponFound.value;
 
   if (isNaN(team) || team < 0) {
     return { err: "Team must be a non-negative number (0 = FFA)." };
@@ -1192,17 +1194,32 @@ function handleAddMonster(room: Room, user: User, args: string) {
 }
 
 // Shared loadout-application helpers. Announce the change and refresh the GUI;
-// return false when the requested class/weapon name is unknown.
+// return an error message when the requested class/weapon name is unknown.
+
+// Shared error message for class/weapon name resolution (unknown vs ambiguous).
+function nameError(
+  kind: string,
+  input: string,
+  found: { matches: string[] },
+): string {
+  if (found.matches.length > 1) {
+    const preview = found.matches.slice(0, 6).join(", ");
+    const more = found.matches.length > 6 ? ", ..." : "";
+    return `"${input}" is ambiguous (${found.matches.length} matches): ${preview}${more}.`;
+  }
+  return `Unknown ${kind}: ${input}. Use %wt to look up.`;
+}
 
 function applyClassChange(
   game: Game,
   room: Room,
   entity: Entity,
   newClass: string,
-): boolean {
+): string | null {
   const data = getVersionData(game.version);
-  const classData = data.classes.get(toId(newClass));
-  if (!classData) return false;
+  const found = resolveName(data.classes, newClass);
+  if (!found.value) return nameError("class", newClass, found);
+  const classData = found.value;
   pushSnapshot(game);
   const oldClass = entity.className;
   entity.className = classData.name;
@@ -1212,7 +1229,7 @@ function applyClassChange(
     `${entity.num} (${entity.name}) class: ${oldClass} -> ${classData.name} (${newMaxhp} HP)`,
   );
   broadcastPages(game);
-  return true;
+  return null;
 }
 
 function applyWeaponChange(
@@ -1220,10 +1237,11 @@ function applyWeaponChange(
   room: Room,
   entity: Entity,
   newWeapon: string,
-): boolean {
+): string | null {
   const data = getVersionData(game.version);
-  const weaponData = data.weapons.get(toId(newWeapon));
-  if (!weaponData) return false;
+  const found = resolveName(data.weapons, newWeapon);
+  if (!found.value) return nameError("weapon", newWeapon, found);
+  const weaponData = found.value;
   pushSnapshot(game);
   const oldWeapon = entity.weaponName;
   entity.weaponName = weaponData.name;
@@ -1233,7 +1251,7 @@ function applyWeaponChange(
     `${entity.num} (${entity.name}) weapon: ${oldWeapon} -> ${weaponData.name} (${newMaxhp} HP)`,
   );
   broadcastPages(game);
-  return true;
+  return null;
 }
 
 function applyLoadoutChange(
@@ -1242,11 +1260,14 @@ function applyLoadoutChange(
   entity: Entity,
   newClass: string,
   newWeapon: string,
-): boolean {
+): string | null {
   const data = getVersionData(game.version);
-  const classData = data.classes.get(toId(newClass));
-  const weaponData = data.weapons.get(toId(newWeapon));
-  if (!classData || !weaponData) return false;
+  const classFound = resolveName(data.classes, newClass);
+  const weaponFound = resolveName(data.weapons, newWeapon);
+  if (!classFound.value) return nameError("class", newClass, classFound);
+  if (!weaponFound.value) return nameError("weapon", newWeapon, weaponFound);
+  const classData = classFound.value;
+  const weaponData = weaponFound.value;
   pushSnapshot(game);
   const oldClass = entity.className;
   const oldWeapon = entity.weaponName;
@@ -1258,7 +1279,7 @@ function applyLoadoutChange(
     `${entity.num} (${entity.name}) loadout: ${oldClass}/${oldWeapon} -> ${classData.name}/${weaponData.name} (${newMaxhp} HP)`,
   );
   broadcastPages(game);
-  return true;
+  return null;
 }
 
 // -- .sc <class> - Switch your class (self-service) ---------------------------
@@ -1275,9 +1296,8 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
   }
-  if (!applyClassChange(game, room, entity, parts[0])) {
-    return sendPm(user.name, `Unknown class: ${parts[0]}. Use %wt to look up.`);
-  }
+  const err = applyClassChange(game, room, entity, parts[0]);
+  if (err) return sendPm(user.name, err);
 }
 
 // -- .sw <weapon> - Switch your weapon (self-service) -------------------------
@@ -1294,12 +1314,8 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
   }
-  if (!applyWeaponChange(game, room, entity, parts[0])) {
-    return sendPm(
-      user.name,
-      `Unknown weapon: ${parts[0]}. Use %wt to look up.`,
-    );
-  }
+  const err = applyWeaponChange(game, room, entity, parts[0]);
+  if (err) return sendPm(user.name, err);
 }
 
 /**
@@ -1319,12 +1335,8 @@ function handleSelfLoadout(room: Room, user: User, args: string) {
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
   }
-  if (!applyLoadoutChange(game, room, entity, parts[0], parts[1])) {
-    return sendPm(
-      user.name,
-      `Unknown class or weapon: ${parts[0]}/${parts[1]}. Use %wt to look up.`,
-    );
-  }
+  const err = applyLoadoutChange(game, room, entity, parts[0], parts[1]);
+  if (err) return sendPm(user.name, err);
 }
 
 // -- .setclass <entity>, <class> - Host-only: set any entity's class ----------
@@ -1341,9 +1353,8 @@ function handleSetClass(room: Room, user: User, args: string) {
   }
   const entity = getEntity(game, parts[0]);
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-  if (!applyClassChange(game, room, entity, parts[1])) {
-    return sendPm(user.name, `Unknown class: ${parts[1]}. Use %wt to look up.`);
-  }
+  const err = applyClassChange(game, room, entity, parts[1]);
+  if (err) return sendPm(user.name, err);
 }
 
 // -- .setweapon <entity>, <weapon> - Host-only: set any entity's weapon --------
@@ -1360,12 +1371,8 @@ function handleSetWeapon(room: Room, user: User, args: string) {
   }
   const entity = getEntity(game, parts[0]);
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-  if (!applyWeaponChange(game, room, entity, parts[1])) {
-    return sendPm(
-      user.name,
-      `Unknown weapon: ${parts[1]}. Use %wt to look up.`,
-    );
-  }
+  const err = applyWeaponChange(game, room, entity, parts[1]);
+  if (err) return sendPm(user.name, err);
 }
 
 // -- .setloadout <entity>, <class>, <weapon> - Host-only ----------------------
@@ -1382,12 +1389,8 @@ function handleSetEntityLoadout(room: Room, user: User, args: string) {
   }
   const entity = getEntity(game, parts[0]);
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
-  if (!applyLoadoutChange(game, room, entity, parts[1], parts[2])) {
-    return sendPm(
-      user.name,
-      `Unknown class or weapon: ${parts[1]}/${parts[2]}. Use %wt to look up.`,
-    );
-  }
+  const err = applyLoadoutChange(game, room, entity, parts[1], parts[2]);
+  if (err) return sendPm(user.name, err);
 }
 
 // -- .setlevel <entity>, <level> - Set entity level ----------------------------

@@ -4,6 +4,7 @@ import {
   classes,
   weapons,
   branches,
+  resolveName,
   type ClassData,
   type WeaponData,
   type AbilityData,
@@ -71,8 +72,8 @@ export function infoCommand(user: User, cmd: string, args: string) {
       return;
     }
 
-    // Check weapons
-    const weapon = weapons.get(id);
+    // Check weapons (exact, then alias, then unique prefix)
+    const weapon = resolveName(weapons, args).value;
     if (weapon) {
       const lines = [`**${weapon.name}** (${weapon.branch})`];
       for (const ab of weapon.abilities) {
@@ -82,8 +83,8 @@ export function infoCommand(user: User, cmd: string, args: string) {
       return;
     }
 
-    // Check classes
-    const cls = classes.get(id);
+    // Check classes (exact, then alias, then unique prefix)
+    const cls = resolveName(classes, args).value;
     if (cls) {
       const lines = [`**${cls.name}**`];
       for (const ab of cls.abilities) {
