@@ -116,6 +116,24 @@ export interface PhaseEffect {
   phase: string;
 }
 
+export interface PhaseConditionalEffect {
+  type: "phaseConditional";
+  phases: string[];
+  effects: Effect[];
+}
+
+export interface PerHitEffect {
+  type: "perHit";
+  per: string;
+  effects: Effect[];
+}
+
+export interface WhenEffect {
+  type: "when";
+  trigger: string;
+  effects: Effect[];
+}
+
 export interface DelayLandEffect {
   type: "delayLand";
 }
@@ -153,6 +171,9 @@ export type Effect =
   | ChooseEffect
   | ChannelEffect
   | PhaseEffect
+  | PhaseConditionalEffect
+  | PerHitEffect
+  | WhenEffect
   | DelayLandEffect
   | MultiHitMod
   | TileEffect
@@ -239,7 +260,7 @@ export function parseEffects(text: string): Effect[] {
   // optional trailing period at the end of the else-branch.
   const lowerFull = normalized.toLowerCase();
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?),\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,:]?\s+otherwise[,:]?\s*(.+?))?[.,]?$/,
   );
   if (fullIfMatch) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
@@ -326,7 +347,7 @@ function parseClause(clause: string): Effect[] {
 
   // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
   const ifMatch = lower.match(
-    /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:\s+otherwise[,:]?\s*(.+))?$/,
   );
   if (ifMatch) {
     const thenEffects = parseEffects(ifMatch[2]);
@@ -394,6 +415,43 @@ function parseClause(clause: string): Effect[] {
   );
   if (phaseMatch) {
     effects.push({ type: "phase", phase: phaseMatch[1] });
+    return effects;
+  }
+
+  // Phase-conditional: "New Moon: EFFECT" / "Waxing/Waning: EFFECT" etc.
+  const phaseCondMatch = lower.match(
+    /^(new moon|full moon|waxing|waning)(?:\s*[/,]\s*(new moon|full moon|waxing|waning))?:\s*(.+)$/,
+  );
+  if (phaseCondMatch) {
+    const phases = [phaseCondMatch[1]];
+    if (phaseCondMatch[2]) phases.push(phaseCondMatch[2]);
+    effects.push({
+      type: "phaseConditional",
+      phases,
+      effects: parseEffects(phaseCondMatch[3]),
+    });
+    return effects;
+  }
+
+  // Per-hit: "Per hit: EFFECT" / "Per attack: EFFECT"
+  const perHitMatch = lower.match(/^per\s+(\w+):\s*(.+)$/);
+  if (perHitMatch) {
+    effects.push({
+      type: "perHit",
+      per: perHitMatch[1],
+      effects: parseEffects(perHitMatch[2]),
+    });
+    return effects;
+  }
+
+  // When trigger: "When X: EFFECT"
+  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
+  if (whenMatch) {
+    effects.push({
+      type: "when",
+      trigger: whenMatch[1].trim(),
+      effects: parseEffects(whenMatch[2]),
+    });
     return effects;
   }
 
@@ -703,7 +761,7 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+(\d+(?:-\d+)?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+(\d+(?:-\d+)?\+?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
@@ -1419,6 +1477,29 @@ export function* applyEffectStream(
         break;
       }
 
+      case "phaseConditional": {
+        // Moon-phase state is not modelled yet; log the gate and apply the
+        // sub-effects optimistically so the clause still resolves.
+        messages.push("  [Phase " + effect.phases.join("/") + "] effects applied.");
+        const sub = yield* applyEffectStream(game, user, target, effect.effects, ability);
+        messages.push(...sub.map((m) => "    " + m));
+        break;
+      }
+
+      case "perHit": {
+        messages.push("  [Per " + effect.per + "]");
+        const sub = yield* applyEffectStream(game, user, target, effect.effects, ability);
+        messages.push(...sub.map((m) => "    " + m));
+        break;
+      }
+
+      case "when": {
+        messages.push("  [When " + effect.trigger + "]");
+        const sub = yield* applyEffectStream(game, user, target, effect.effects, ability);
+        messages.push(...sub.map((m) => "    " + m));
+        break;
+      }
+
       case "unknown": {
         messages.push(`  ${effect.text}`);
         break;
@@ -1701,6 +1782,12 @@ function summariseEffect(eff: Effect): string {
       return `channel ${eff.stat} for ${eff.rounds}r`;
     case "phase":
       return `phase ${eff.phase}`;
+    case "phaseConditional":
+      return "phase " + eff.phases.join("/") + " (...)";
+    case "perHit":
+      return "per " + eff.per + " (...)";
+    case "when":
+      return "when [" + eff.trigger + "]";
     case "multiHit":
       return `multi-hit ${eff.hits}`;
     case "apex":

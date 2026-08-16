@@ -1309,3 +1309,53 @@ describe("applyEffects: regressions for non-apex effects", () => {
     expect(bleed?.rounds).toBe(3);
   });
 });
+
+describe("parseEffects: BDLang extras", () => {
+  it("parses colon-syntax conditionals", () => {
+    const effects = parseEffects("If target in melee: +1 damage.");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("conditional");
+    if (effects[0].type !== "conditional") return;
+    expect(effects[0].condition).toBe("target in melee");
+    expect(effects[0].thenEffects.length).toBeGreaterThan(0);
+  });
+
+  it("recognises 'Spend 2+ Qi' resource amounts", () => {
+    const effects = parseEffects("Spend 2+ Qi");
+    expect(effects[0].type).toBe("resource");
+    if (effects[0].type !== "resource") return;
+    expect(effects[0].amount).toBe("2+");
+    expect(effects[0].resource).toBe("qi");
+  });
+
+  it("recognises phase markers with sub-effects", () => {
+    const effects = parseEffects("New Moon: Homing 4");
+    expect(effects[0].type).toBe("phaseConditional");
+    if (effects[0].type !== "phaseConditional") return;
+    expect(effects[0].phases).toEqual(["new moon"]);
+    expect(effects[0].effects.length).toBeGreaterThan(0);
+  });
+
+  it("recognises combined phase markers", () => {
+    const effects = parseEffects("Waxing/Waning: inflict 2d6 Poison/1");
+    expect(effects[0].type).toBe("phaseConditional");
+    if (effects[0].type !== "phaseConditional") return;
+    expect(effects[0].phases).toEqual(["waxing", "waning"]);
+  });
+
+  it("recognises 'Per hit' clauses", () => {
+    const effects = parseEffects("Per hit: lose 2 Blood");
+    expect(effects[0].type).toBe("perHit");
+    if (effects[0].type !== "perHit") return;
+    expect(effects[0].per).toBe("hit");
+    expect(effects[0].effects[0].type).toBe("resource");
+  });
+
+  it("recognises 'When X' trigger clauses", () => {
+    const effects = parseEffects("When foe dies to Delay damage: heal half overkill");
+    expect(effects[0].type).toBe("when");
+    if (effects[0].type !== "when") return;
+    expect(effects[0].trigger).toContain("foe dies");
+    expect(effects[0].effects.length).toBeGreaterThan(0);
+  });
+});
