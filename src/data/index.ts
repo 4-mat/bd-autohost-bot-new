@@ -82,6 +82,25 @@ export const branches = new Map<string, string[]>();
 export const WhatIs = new Map<string, string>();
 export const Reference = new Map<string, string>();
 
+/**
+ * Resolve a name against a data map. Exact (normalized) matches win; otherwise
+ * a unique prefix match is accepted (e.g. "kat" -> "katana"). Returns the value
+ * when unambiguous and the candidate keys for messaging otherwise.
+ */
+export function resolveName<T>(
+  map: Map<string, T>,
+  name: string,
+): { value?: T; matches: string[] } {
+  const id = toId(name);
+  if (!id) return { matches: [] };
+  const exact = map.get(id);
+  if (exact) return { value: exact, matches: [id] };
+  const matches = [...map.keys()].filter((k) => k.startsWith(id));
+  return matches.length === 1
+    ? { value: map.get(matches[0]), matches }
+    : { matches };
+}
+
 export function loadGameData() {
   loadBasicClasses();
   loadBasicWeapons();
