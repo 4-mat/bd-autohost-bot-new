@@ -135,6 +135,7 @@ export function gameCommand(
       break;
 
     case "back":
+    case "undo":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleBack(game, user);
       break;
@@ -157,7 +158,7 @@ export function gameCommand(
 
     case "premove":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handlePremove(game, user);
+      handlePremove(game, user, full);
       break;
 
     case "passmove":
@@ -231,6 +232,26 @@ export function gameCommand(
     case "cure":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleCure(game, user, full);
+      break;
+
+    case "teams":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleTeams(game, user);
+      break;
+
+    case "spectate":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleSpectate(game, user);
+      break;
+
+    case "chat":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleChat(game, user, full);
+      break;
+
+    case "round":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleRound(game, user);
       break;
 
     case "hp":
@@ -1072,8 +1093,18 @@ function handleRoll(target: string, args: string) {
   sendPm(target, msg);
 }
 
-function handlePremove(game: Game, user: User) {
+function handlePremove(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
+
+  if (args.trim().toLowerCase() === "list") {
+    const list = [...premoveSet];
+    return sendPm(
+      user.name,
+      list.length
+        ? `Pre-move view: ${list.join(", ")}`
+        : "No entities are viewing pre-move abilities."
+    );
+  }
 
   let entity: Entity | null = null;
   if (isHost) {
@@ -1625,6 +1656,58 @@ function handleRegp(game: Game, user: User, args: string) {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// %teams - group entities by team.
+function handleTeams(game: Game, user: User) {
+  const byTeam = new Map<number, Entity[]>();
+  for (const e of game.entities) {
+    const list = byTeam.get(e.team) ?? [];
+    list.push(e);
+    byTeam.set(e.team, list);
+  }
+  const lines = [...byTeam.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([t, es]) => `Team ${t}: ${es.map((e) => e.num).join(", ")}`);
+  sendPm(user.name, lines.join("\n") || "No teams.");
+}
+
+// %spectate - spectator-oriented game summary.
+function handleSpectate(game: Game, user: User) {
+  const cur = getCurrentEntity(game);
+  const lines = [
+    `Game ${game.id} | Mode: ${game.mode} | Round: ${game.round} | Players: ${game.entities.length} | Map: ${game.mapName || "(none)"}`,
+    cur ? `Current turn: ${cur.num} (${cur.name})` : "No active turn.",
+    "You are spectating (not a player).",
+  ];
+  sendPm(user.name, lines.join("\n"));
+}
+
+// %chat <message> - team-only chat (same-team entities + host).
+function handleChat(game: Game, user: User, args: string) {
+  const msg = args.trim();
+  if (!msg) return sendPm(user.name, "Usage: %chat <message>");
+  const self = game.entities.find(
+    (e) => !e.isMonster && toId(e.name) === toId(user.name)
+  );
+  if (!self) return sendPm(user.name, "You are not in this game.");
+  const label = `[Team ${self.team}] ${user.name}: ${msg}`;
+  sendPm(user.name, label);
+  for (const t of game.entities) {
+    if (t.isMonster || toId(t.name) === toId(user.name)) continue;
+    if (t.team !== self.team) continue;
+    sendPm(t.name, label);
+  }
+  if (toId(user.name) !== toId(game.host)) sendPm(game.host, label);
+}
+
+// %round - round / turn / index info.
+function handleRound(game: Game, user: User) {
+  const cur = getCurrentEntity(game);
+  sendPm(
+    user.name,
+    `Round ${game.round} | Turn ${game.turnIndex}/${game.turnOrder.length}${cur ? ` | Current: ${cur.num} (${cur.name})` : ""}`,
+  );
 }
 
 // %resources [entity] - show resource pools (Qi/Blood/Rage/etc).
