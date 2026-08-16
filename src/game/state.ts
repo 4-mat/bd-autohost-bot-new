@@ -1077,13 +1077,19 @@ export function processStartOfTurn(
   const messages: string[] = [];
 
   // Apply status damage (DoT)
-  for (const status of [...entity.statuses]) {
-    if (status.damage > 0) {
-      dealDamage(entity, status.damage);
-      messages.push(
-        `  ${entity.num} takes **${status.damage}** ${status.name} damage (${entity.curhp}/${entity.maxhp} HP).`,
-      );
-    }
+  const dots = entity.statuses.filter((s) => s.damage > 0);
+  let dotTotal = 0;
+  for (const status of dots) {
+    dealDamage(entity, status.damage);
+    dotTotal += status.damage;
+    messages.push(
+      `  ${entity.num} takes **${status.damage}** ${status.name} damage (${entity.curhp}/${entity.maxhp} HP).`,
+    );
+  }
+  if (dots.length > 1) {
+    messages.push(
+      `  ${entity.num} status tick: **${dotTotal}** total DoT (${dots.map((s) => `${s.name} ${s.damage}`).join(", ")}).`,
+    );
   }
 
   // Announce status restrictions

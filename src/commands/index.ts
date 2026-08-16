@@ -9,6 +9,30 @@ import { playerCommand } from "./player.js";
 import { sheetsCommand } from "./sheets.js";
 import { calcCommand } from "./calc.js";
 
+// One-line help for common commands, shown by `%help <command>`.
+const COMMAND_HELP: Record<string, string> = {
+  move: "Move your entity to a reachable tile (%move e4).",
+  dash: "Spend MP to move up to 1.5x tiles as a Full action (%dash e4).",
+  use: "Use an ability (%use Fireball @ P2).",
+  attack: "Alias for %use.",
+  target: "Pick a target for a pending attack (%target P2).",
+  choose: "Pick an option for a pending choice (%choose <id>).",
+  confirm: "Confirm and resolve the pending action.",
+  cancel: "Cancel the pending action.",
+  endturn: "Pass to the next entity in turn order.",
+  premove: "Queue a move to run at the start of your turn.",
+  info: "Show game or entity info (%info [entity]).",
+  pl: "List all players and their stats.",
+  to: "Show the turn order (alias: %turnorder).",
+  turnorder: "Show the turn order (alias: %to).",
+  cooldowns: "Show ability cooldown counts (%cooldowns [entity]).",
+  wt: "Look up an ability, item, status, tile, or mode.",
+  timer: "Start a global shot clock (%timer 60).",
+  cut: "Put a shot clock on a player (%cut P1 60).",
+  vote: "Vote for a gamemode (%vote <mode>).",
+  leave: "Leave the game.",
+};
+
 export function handleCommand(
   room: Room | null,
   user: User | null,
@@ -48,6 +72,17 @@ export function handleCommand(
   }
 
   if (id === "help" || id === "h") {
+    const topic = toId((args || val).trim());
+    if (topic) {
+      const entry = COMMAND_HELP[topic];
+      sendPm(
+        user.name,
+        entry
+          ? `**%${topic}** - ${entry}`
+          : `No help for "%${topic}". Use %help for the command list.`,
+      );
+      return;
+    }
     const help = [
       "**Host Commands**: %host, %setgame, %addp, %addm, %remp, %setmap, %setlevel, %setteam, %setjugg, %gento, %start, %dehost, %listmaps, %close, %endvote, %nudge, %setclass, %setweapon, %setloadout",
       "**In-Game (Host)**: %info, %map, %pl, %to, %status, %regp, %hp, %cut, %cr, %timer",

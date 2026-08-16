@@ -34,6 +34,7 @@ import {
   parseFrequency,
   type Game,
   type Entity,
+  type AbilityData,
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
 import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
@@ -174,8 +175,15 @@ export function gameCommand(
       break;
 
     case "to":
+    case "turnorder":
       if (!game) return sendPm(user.name, "No active game in this room.");
       sendPm(user.name, buildTurnOrder(game));
+      break;
+
+    case "cooldowns":
+    case "cds":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleCooldowns(game, user, full);
       break;
 
     case "hp":
@@ -348,6 +356,43 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   broadcastPages(game);
 }
 
+// Generic "Basic Abilities" available to every entity alongside their class
+// and weapon kits: a melee Basic Attack and a self-healing Rest.
+function getBasicAbility(name: string): AbilityData | null {
+  const id = toId(name);
+  if (id === "basicattack") {
+    return {
+      name: "Basic Attack",
+      level: 1,
+      frequency: "Every Turn",
+      mr: 10,
+      roll: "2d6",
+      damageType: "Physical",
+      actionType: "Standard",
+      targetAmount: 1,
+      targetGroup: "Foe",
+      range: "Melee",
+      effect: "",
+    };
+  }
+  if (id === "rest") {
+    return {
+      name: "Rest",
+      level: 1,
+      frequency: "Every Turn",
+      mr: 0,
+      roll: "2d6",
+      damageType: "",
+      actionType: "Standard",
+      targetAmount: 1,
+      targetGroup: "Self",
+      range: "Global",
+      effect: "heal 2d6 HP",
+    };
+  }
+  return null;
+}
+
 function handleAttack(game: Game, user: User, cmd: string, args: string) {
   const isHost = toId(user.name) === toId(game.host);
 
@@ -404,9 +449,9 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (!abilityName)
     return sendPm(user.name, "Specify an ability. Use: %use Ability @ Target");
 
-  const ability = entity.abilities.find(
-    (a) => toId(a.name) === toId(abilityName),
-  );
+  const ability =
+    entity.abilities.find((a) => toId(a.name) === toId(abilityName)) ??
+    getBasicAbility(abilityName);
   if (!ability) return sendPm(user.name, `Unknown ability: ${abilityName}`);
 
   // Cooldown check
@@ -1533,6 +1578,27 @@ function handleRegp(game: Game, user: User, args: string) {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// %cooldowns [entity] - show ability cooldown counts for an entity (or all).
+function handleCooldowns(game: Game, user: User, args: string) {
+  const ref = args.trim();
+  if (ref) {
+    const entity = getEntity(game, ref);
+    if (!entity) return sendPm(user.name, `Unknown entity: ${ref}`);
+    return sendPm(user.name, formatCooldowns(entity));
+  }
+  const lines = game.entities
+    .filter((e) => Object.keys(e.cooldowns).length > 0)
+    .map(formatCooldowns);
+  sendPm(user.name, lines.length ? lines.join("\n") : "No cooldowns active.");
+}
+
+function formatCooldowns(entity: Entity): string {
+  const cds = Object.entries(entity.cooldowns)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(", ");
+  return `${entity.num} cooldowns: ${cds || "none"}`;
 }
 
 function buildTurnOrder(game: Game): string {

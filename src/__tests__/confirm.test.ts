@@ -1283,3 +1283,31 @@ describe("action log", () => {
     expect(user.dashUsed).toBe(true);
   });
 });
+
+describe("basic abilities", () => {
+  beforeEach(() => games.clear());
+
+  it("recognises Basic Attack as a usable ability", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 1 });
+    const game = makeGame({ entities: [user, target] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Basic Attack @ P2", "", "");
+
+    expect(user.pendingAction?.ability.name).toBe("Basic Attack");
+    expect(user.pendingAction?.ability.damageType).toBe("Physical");
+  });
+
+  it("Rest heals the user", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0, curhp: 50 });
+    const other = makeEntity({ num: "P2", name: "Bob", pos: [5, 5], team: 1 });
+    const game = makeGame({ entities: [user, other] });
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Rest @ P1", "", "");
+    gameCommand(room, alice, "confirm", "", "", "");
+
+    expect(user.curhp).toBeGreaterThan(50);
+  });
+});
