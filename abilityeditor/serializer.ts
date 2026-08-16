@@ -6,6 +6,7 @@
 //   - scripts/apply-editor-proposal.ts -> "Ability: ..." issue -> PR
 
 import fs from "fs";
+import type { Effect } from "../src/game/effects.js";
 
 export interface Block {
   varName: string;
@@ -348,6 +349,19 @@ export function moveAbility<T extends { name?: unknown }>(
 }
 
 /**
+ * Find a unique "<base> Copy" / "<base> Copy 2" name given a taken-check.
+ * Shared by duplicateAbility (abilities) and the server's duplicate-as-custom
+ * (whole class/weapon entries) so both follow the same naming rules.
+ */
+export function uniqueCopyName(
+  base: string,
+  taken: (name: string) => boolean,
+): string {
+  if (!taken(base)) return base;
+  for (let n = 2; ; n++) if (!taken(base + " " + n)) return base + " " + n;
+}
+
+/**
  * Duplicate an ability, inserting the copy right after the original and
  * naming it "<original> Copy" (then "Copy 2", "Copy 3", ... to stay unique).
  * Returns the copy, or null when the source name is unknown.
@@ -361,11 +375,113 @@ export function duplicateAbility<T extends { name?: unknown }>(
   const src = arr[idx];
   const copy = JSON.parse(JSON.stringify(src)) as T;
   const base = String((src as { name?: unknown }).name ?? "") + " Copy";
-  let nm = base;
-  for (let n = 2; arr.some((x) => toId(String(x.name)) === toId(nm)); n++) nm = base + " " + n;
+  const nm = uniqueCopyName(base, (n) =>
+    arr.some((x) => toId(String(x.name)) === toId(n)),
+  );
   (copy as { name?: unknown }).name = nm;
   arr.splice(idx + 1, 0, copy);
   return copy;
+}
+
+/**
+ * Check a Frequency string against the vocabulary parseFrequency understands
+ * (state.ts). Returns a human warning when something in it is unrecognized, or
+ * null when it parses cleanly. Unlike a raw parseFrequency null-check this does
+ * NOT flag "Every Turn" or "Passive" — those legitimately have no use limit or
+ * cooldown, so they must stay valid.
+ */
+export function validateFrequency(frequency: string): string | null {
+  const f = frequency.trim();
+  if (!f) return null;
+  const norm = f
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "") // "Once (Permanent)" -> "Once"
+    .replace(/\s*,\s*/g, "/")
+    .trim();
+  const parts = norm
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.length) return null;
+  const known = (p: string) =>
+    p === "once" ||
+    p === "twice" ||
+    p === "thrice" ||
+    p === "eot" ||
+    p === "e3t" ||
+    p === "every turn" ||
+    p === "every other turn" ||
+    p === "every third turn" ||
+    p === "passive" ||
+    p === "permanent" ||
+    /^\d+ per game(?:: \d+)?$/.test(p);
+  const bad = parts.filter((p) => !known(p));
+  return bad.length ? `unrecognized frequency: ${bad.join(", ")}` : null;
+}
+
+// ---------------------------------------------------------------------------
+// Effect summary (for the editor's live parse preview)
+// ---------------------------------------------------------------------------
+
+/** Render one parsed effect as a short human-readable string. */
+export function summarizeEffect(e: Effect): string {
+  switch (e.type) {
+    case "status":
+      return `status ${e.name} (${e.damage}/${e.rounds}r)`;
+    case "buff":
+    case "debuff":
+      return `${e.type === "buff" ? "+" : "-"}${e.amount} ${e.stat.toUpperCase()}` +
+        (e.rounds ? ` (${e.rounds}r)` : "");
+    case "push":
+    case "pull":
+      return `${e.type} ${e.amount ?? ""}`.trim() + (e.toward ? ` toward ${e.toward}` : "");
+    case "teleport":
+      return "teleport";
+    case "swap":
+      return "swap";
+    case "move":
+      return `move ${e.amount ?? ""}`.trim() || "move";
+    case "resource":
+      return `${e.action} ${e.amount} ${e.resource}`;
+    case "heal":
+      return `heal ${e.roll ?? e.amount ?? "?"} (${e.target})`;
+    case "shield":
+      return `shield ${e.amount} (${e.rounds}r)`;
+    case "delay":
+      return `delay ${e.rounds}`;
+    case "damageMod":
+      return `dmg ${e.percent ? e.percent + "%" : ""}${e.flat ? "+" + e.flat : ""}`.replace(/\s+/g, " ").trim() || "dmg mod";
+    case "recoil":
+      return `recoil ${e.percent}%`;
+    case "ignore":
+      return `ignore ${e.what}`;
+    case "conditional":
+      return `if ${e.condition}: ${summarizeEffects(e.thenEffects).join("; ")}` +
+        (e.elseEffects?.length ? ` else: ${summarizeEffects(e.elseEffects).join("; ")}` : "");
+    case "thirst":
+      return `thirst ${e.threshold}: ${summarizeEffects(e.effects).join("; ")}`;
+    case "apex":
+      return `apex: ${summarizeEffects(e.effects).join("; ")}`;
+    case "choose":
+      return `choose: ${e.options.map((o) => summarizeEffects(o).join(", ") || "—").join(" | ")}`;
+    case "channel":
+      return `channel ${e.stat} (${e.rounds}r)`;
+    case "phase":
+      return `phase: ${e.phase}`;
+    case "delayLand":
+      return "delayed landing";
+    case "multiHit":
+      return `multi-hit ${e.hits}x`;
+    case "tile":
+      return `place tile (r${e.range})`;
+    case "unknown":
+      return `unparsed: ${e.text}`;
+  }
+}
+
+/** Render parsed effects as one short string per top-level clause. */
+export function summarizeEffects(effects: Effect[]): string[] {
+  return effects.map(summarizeEffect);
 }
 
 export function normalizeLevel(v: unknown): number | "EX1" | "EX2" {

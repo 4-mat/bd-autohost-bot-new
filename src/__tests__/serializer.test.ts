@@ -3,6 +3,9 @@ import {
   moveAbility,
   duplicateAbility,
   sanitizeAbility,
+  uniqueCopyName,
+  validateFrequency,
+  summarizeEffects,
 } from "../../abilityeditor/serializer.js";
 
 // ---------------------------------------------------------------------------
@@ -148,5 +151,109 @@ describe("sanitizeAbility choices", () => {
       choices: [{ id: "", label: "" }],
     });
     expect(clean).not.toHaveProperty("choices");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// uniqueCopyName (shared by duplicateAbility and duplicate-as-custom)
+// ---------------------------------------------------------------------------
+
+describe("uniqueCopyName", () => {
+  it("returns the base name when free", () => {
+    const taken = (n: string) => n === "X Copy";
+    expect(uniqueCopyName("Bard Copy", taken)).toBe("Bard Copy");
+  });
+
+  it("numbers up when the base is taken", () => {
+    const taken = (n: string) => n === "Bard Copy" || n === "Bard Copy 2";
+    expect(uniqueCopyName("Bard Copy", taken)).toBe("Bard Copy 3");
+  });
+
+  it("stops at the first free number", () => {
+    const taken = (n: string) => n === "Bard Copy" || n === "Bard Copy 3";
+    expect(uniqueCopyName("Bard Copy", taken)).toBe("Bard Copy 2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateFrequency (GUI frequency field check)
+// ---------------------------------------------------------------------------
+
+describe("validateFrequency", () => {
+  it("accepts the compact data forms", () => {
+    for (const f of ["Once", "Twice", "Thrice", "EoT", "E3T", "Twice/EoT", "Twice/E3T", "Thrice/EoT"]) {
+      expect(validateFrequency(f), f).toBeNull();
+    }
+  });
+
+  it("accepts Every Turn and Passive (no use limit or cooldown)", () => {
+    expect(validateFrequency("Every Turn")).toBeNull();
+    expect(validateFrequency("Passive")).toBeNull();
+  });
+
+  it("accepts spec forms: commas, parens, per-game limits", () => {
+    expect(validateFrequency("Twice, Every Other Turn")).toBeNull();
+    expect(validateFrequency("Once (Permanent)")).toBeNull();
+    expect(validateFrequency("3 per Game: 4")).toBeNull();
+  });
+
+  it("flags unknown tokens", () => {
+    expect(validateFrequency("Twcie/EoT")).toBe("unrecognized frequency: twcie");
+    expect(validateFrequency("Every Turnz")).toContain("turnz");
+  });
+
+  it("accepts an empty frequency (no limit set)", () => {
+    expect(validateFrequency("")).toBeNull();
+    expect(validateFrequency("  ")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// summarizeEffects (live parse preview under the Effect textarea)
+// ---------------------------------------------------------------------------
+
+describe("summarizeEffects", () => {
+  it("summarizes a status inflict", () => {
+    expect(summarizeEffects([{ type: "status", name: "poison", damage: 2, rounds: 3 }])).toEqual([
+      "status poison (2/3r)",
+    ]);
+  });
+
+  it("summarizes buffs/debuffs with rounds", () => {
+    expect(
+      summarizeEffects([
+        { type: "buff", stat: "atk", amount: 2, rounds: 2 },
+        { type: "debuff", stat: "eva", amount: 3 },
+      ]),
+    ).toEqual(["+2 ATK (2r)", "-3 EVA"]);
+  });
+
+  it("summarizes heals, shields, and resource changes", () => {
+    expect(
+      summarizeEffects([
+        { type: "heal", roll: "2d6", target: "self" },
+        { type: "shield", amount: 5, rounds: 2 },
+        { type: "resource", action: "gain", amount: 3, resource: "MP" },
+      ]),
+    ).toEqual(["heal 2d6 (self)", "shield 5 (2r)", "gain 3 MP"]);
+  });
+
+  it("recurses into conditionals", () => {
+    expect(
+      summarizeEffects([
+        {
+          type: "conditional",
+          condition: "hp < 50%",
+          thenEffects: [{ type: "heal", amount: 10, target: "self" }],
+          elseEffects: [{ type: "buff", stat: "atk", amount: 1 }],
+        },
+      ]),
+    ).toEqual(["if hp < 50%: heal 10 (self) else: +1 ATK"]);
+  });
+
+  it("labels unparsed text", () => {
+    expect(summarizeEffects([{ type: "unknown", text: "Wat" }])).toEqual([
+      "unparsed: Wat",
+    ]);
   });
 });
