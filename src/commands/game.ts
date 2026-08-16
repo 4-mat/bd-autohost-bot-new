@@ -51,6 +51,7 @@ import {
   type AttackStep,
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
+import { recordGame } from "../records.js";
 import { getVersionData } from "../data/version43.js";
 import {    normalizeVoteMode,
     pendingVoterIds,
@@ -127,6 +128,12 @@ export function gameCommand(
     case "leave":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleLeave(game, user);
+      break;
+
+    case "surrender":
+    case "forfeit":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleSurrender(game, user);
       break;
 
     case "endturn":
@@ -815,6 +822,27 @@ function handleLeave(game: Game, user: User) {
   }
   removeEntity(game, entity);
   send(game.room, `**${entity.num} (${entity.name})** has left the game.`);
+  broadcastPages(game);
+}
+
+function handleSurrender(game: Game, user: User) {
+  const entity = game.entities.find(
+    (e) => !e.isMonster && toId(e.name) === toId(user.name),
+  );
+  if (!entity) {
+    return sendPm(user.name, "You're not a player in this game.");
+  }
+  if (game.phase !== "playing") {
+    return sendPm(user.name, "The game is not in progress.");
+  }
+  pushSnapshot(game);
+  send(game.room, `**${entity.num} (${entity.name})** surrenders!`);
+  removeEntity(game, entity);
+  const winner = checkGameOver(game);
+  if ((game.phase as Game["phase"]) === "ended") {
+    announceGameOver(game, winner);
+    return;
+  }
   broadcastPages(game);
 }
 
@@ -2051,7 +2079,9 @@ function buildTurnOrder(game: Game): string {
 }
 
 export function announceGameOver(game: Game, winner: Entity | null) {
+  const first = game.phase !== "ended";
   game.phase = "ended";
+  if (first) recordGame(game);
 
   if (winner) {
     send(

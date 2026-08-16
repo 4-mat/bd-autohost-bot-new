@@ -3,10 +3,12 @@ import type { User } from "../users.js";
 import {
   games,
   parseFrequency,
+  calculateLoot,
   type Game,
   type Entity,
 } from "../game/state.js";
 import { items } from "../data/index.js";
+import { getRecords } from "../records.js";
 
 function findGameForUser(userName: string): Game | null {
   for (const game of games.values()) {
@@ -25,6 +27,14 @@ function findEntityInGames(
     if (entity) return { game, entity };
   }
   return null;
+}
+
+function findGameForLoot(userName: string, args: string): Game | null {
+  const byUser = findGameForUser(userName);
+  if (byUser) return byUser;
+  const name = args.trim();
+  if (!name) return null;
+  return findEntityInGames(name)?.game ?? null;
 }
 
 export function playerCommand(user: User, cmd: string, args: string) {
@@ -159,18 +169,55 @@ export function playerCommand(user: User, cmd: string, args: string) {
       break;
     }
 
-    case "loot": {
-      send(target, `Loot: (not yet implemented)`);
+    case "loot":
+    case "xp":
+    case "gold":
+    case "gems": {
+      const game = findGameForLoot(user.name, args);
+      if (!game) {
+        return sendPm(
+          target,
+          "You are not in an active game (or no entity matched).",
+        );
+      }
+      const name = args.trim();
+      const loot = calculateLoot(game);
+      const rows = name
+        ? loot.filter(
+            (l) =>
+              toId(l.entity.num) === toId(name) ||
+              toId(l.entity.name) === toId(name),
+          )
+        : loot;
+      if (rows.length === 0) {
+        return sendPm(target, `No entity found for "${name}".`);
+      }
+      const lines = rows.map((l) => {
+        if (cmd === "xp") return `${l.entity.num} ${l.entity.name}: +${l.xp} XP`;
+        if (cmd === "gold")
+          return `${l.entity.num} ${l.entity.name}: +${l.gold} Gold`;
+        if (cmd === "gems")
+          return `${l.entity.num} ${l.entity.name}: +${l.gems} Gems`;
+        return `${l.entity.num} ${l.entity.name}: +${l.xp} XP, +${l.gold} Gold, +${l.gems} Gems`;
+      });
+      sendPm(target, lines.join("\n"));
       break;
     }
 
-    case "xp": {
-      sendPm(target, `XP: (not yet implemented)`);
-      break;
-    }
-
-    case "gold": {
-      sendPm(target, `Gold: (not yet implemented)`);
+    case "records": {
+      const n = parseInt(args.trim(), 10) || 10;
+      const rows = getRecords(n);
+      if (rows.length === 0) {
+        return sendPm(
+          target,
+          "No records yet. Finish a game to start the leaderboard.",
+        );
+      }
+      const lines = rows.map(
+        (r, i) =>
+          `${i + 1}. ${r.name} — ${r.wins}W / ${r.kills}K / ${r.games} games`,
+      );
+      sendPm(target, lines.join("\n"));
       break;
     }
 

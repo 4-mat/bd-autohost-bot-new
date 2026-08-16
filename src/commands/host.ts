@@ -167,6 +167,9 @@ export function hostCommand(
     case "start":
       handleStart(room, user);
       break;
+    case "rematch":
+      handleRematch(room, user);
+      break;
     case "addm":
       handleAddMonster(room, user, full);
       break;
@@ -1807,6 +1810,56 @@ function handleStart(room: Room, user: User) {
     send(room.id, `**${first.num}'s turn!** (${first.name})`);
   }
 
+  broadcastPages(game);
+}
+
+function handleRematch(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %rematch.");
+  }
+  if (game.entities.length < 2) {
+    return sendPm(user.name, "Need at least 2 players to rematch.");
+  }
+
+  for (const e of game.entities) {
+    e.curhp = e.maxhp;
+    e.statuses = [];
+    e.buffs = [];
+    e.cooldowns = {};
+    e.usesUsed = {};
+    e.pendingAction = null;
+    e.pendingResolution = undefined;
+    e.pendingPromptKind = undefined;
+    e.pendingPrompt = undefined;
+    e.dashUsed = false;
+    e.standardUsed = false;
+    e.movementUsed = false;
+    e.swiftUsed = false;
+    e.triggered = false;
+  }
+
+  game.turnIndex = 0;
+  game.round = 1;
+  game.kills = {};
+  game.winner = null;
+  game.log = [];
+  game.snapshots = [];
+  game.chatLog = [];
+  game.toasts = [];
+  game.votes = {};
+  game.voteOpen = false;
+  game.voteRunoff = null;
+  game.timer = null;
+  game.started = true;
+  game.phase = "playing";
+
+  send(room.id, "**Rematch!** Scores reset, same map and loadouts.");
+  const first = getCurrentEntity(game);
+  if (first) {
+    send(room.id, `**${first.num}'s turn!** (${first.name})`);
+  }
   broadcastPages(game);
 }
 

@@ -31,6 +31,15 @@ const COMMAND_HELP: Record<string, string> = {
   cut: "Put a shot clock on a player (%cut P1 60).",
   vote: "Vote for a gamemode (%vote <mode>).",
   leave: "Leave the game.",
+  loot: "Show XP/gold/gems earned this game (%loot [entity]).",
+  xp: "Show XP earned this game (%xp [entity]).",
+  gold: "Show gold earned this game (%gold [entity]).",
+  gems: "Show gems earned this game (%gems [entity]).",
+  records: "Lifetime leaderboard (%records [top N]).",
+  surrender: "Concede and leave the game (alias: %forfeit).",
+  rematch: "Host: reset the board and restart (%rematch).",
+  coin: "Flip a coin.",
+  pick: "Pick one option at random (%pick a, b, c).",
 };
 
 export function handleCommand(
@@ -52,6 +61,23 @@ export function handleCommand(
       pm ? `pm-${user.id}` : (room?.id ?? ""),
       pm ? `|/pm ${user.name}, pong!` : "|pong!",
     );
+    return;
+  }
+
+  if (id === "coin") {
+    sendPm(user.name, `Coin flip: **${Math.random() < 0.5 ? "Heads" : "Tails"}**.`);
+    return;
+  }
+
+  if (id === "pick") {
+    const options = (args || val)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (options.length === 0) {
+      return sendPm(user.name, "Usage: %pick <a>, <b>, <c>");
+    }
+    sendPm(user.name, `Picked: **${options[Math.floor(Math.random() * options.length)]}**`);
     return;
   }
 
@@ -149,6 +175,7 @@ export function handleCommand(
     id === "nudge" ||
     id === "join" ||
     id === "j" ||
+    id === "rematch" ||
     id === "genpos"
   ) {
     hostCommand(room, user, id, args, val, pm);
@@ -190,6 +217,8 @@ export function handleCommand(
     id === "status" ||
     id === "regp" ||
     id === "undo" ||
+    id === "surrender" ||
+    id === "forfeit" ||
     id === "log" ||
     id === "turnorder" ||
     id === "cooldowns" ||
@@ -220,7 +249,14 @@ export function handleCommand(
   }
 
   // Loot/progression
-  if (id === "loot" || id === "xp" || id === "gold" || id === "score") {
+  if (
+    id === "loot" ||
+    id === "xp" ||
+    id === "gold" ||
+    id === "gems" ||
+    id === "records" ||
+    id === "score"
+  ) {
     playerCommand(user, id, args || val);
     return;
   }
