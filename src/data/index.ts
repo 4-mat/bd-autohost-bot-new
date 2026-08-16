@@ -14,6 +14,7 @@ export interface AbilityChoice {
 
 export interface AbilityData {
   name: string;
+  aliases?: string[];
   level: number | "EX1" | "EX2";
   frequency: string;
   mr: number;
@@ -47,6 +48,7 @@ export interface AbilityData {
 
 export interface ClassData {
   name: string;
+  aliases?: string[];
   stats: {
     hp: string;
     atk: string;
@@ -62,6 +64,7 @@ export interface ClassData {
 
 export interface WeaponData {
   name: string;
+  aliases?: string[];
   branch: string;
   stats: {
     hp: string;

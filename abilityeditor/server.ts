@@ -143,8 +143,12 @@ function defaultClass(name: string, item: Record<string, unknown>): ClassData {
   const s = isPlainObject(item.stats) ? item.stats : {};
   const stats: ClassData["stats"] = { hp: "0", atk: "0", mag: "0", pd: "0", md: "0", eva: "0", mp: "0" };
   for (const k of STAT_KEYS) if (s[k] !== undefined) stats[k] = String(s[k]);
+  const aliases = Array.isArray(item.aliases)
+    ? item.aliases.map((x) => String(x).trim()).filter(Boolean)
+    : [];
   return {
     name,
+    ...(aliases.length ? { aliases } : {}),
     stats,
     abilities: (Array.isArray(item.abilities) ? item.abilities : []) as ClassData["abilities"],
     description: String(item.description ?? ""),
@@ -159,6 +163,7 @@ function defaultWeapon(name: string, item: Record<string, unknown>): WeaponData 
     stats: w.stats,
     abilities: w.abilities,
     description: String(item.description ?? ""),
+    ...(w.aliases?.length ? { aliases: w.aliases } : {}),
   };
 }
 
@@ -299,6 +304,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
             (entry as unknown as Record<string, unknown>)[k] = String(v);
           } else if (k === "abilities" && Array.isArray(v)) {
             entry.abilities = v.map(sanitizeAbility) as unknown as ClassData["abilities"];
+          } else if (k === "aliases" && Array.isArray(v)) {
+            entry.aliases = v.map((x) => String(x).trim()).filter(Boolean);
           }
         }
       }
