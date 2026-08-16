@@ -2,9 +2,9 @@
 
 Everything below is **already implemented and committed** on the branch
 `feat/feature-sprint` (worktree `bd-autohost-bot-new-wtfs`). The branch is
-**22 commits ahead of `origin/master`** and **not pushed**; `master` is
-untouched. The four earlier draft PRs (#245–#248) were closed and their remote
-branches deleted.
+**ahead of `origin/master`** and **not pushed**; `master` is untouched. The
+four earlier draft PRs (#245–#248) were closed and their remote branches
+deleted.
 
 > How to use this: check the features you want to ship, then ask an agent to
 > split the corresponding commits from `feat/feature-sprint` into focused
