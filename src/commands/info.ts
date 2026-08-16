@@ -3,6 +3,7 @@ import type { User } from "../users.js";
 import {
   classes,
   weapons,
+  items,
   branches,
   type ClassData,
   type WeaponData,
@@ -55,6 +56,21 @@ export function infoCommand(user: User, cmd: string, args: string) {
       for (const ab of cls.abilities) {
         lines.push(buildAbilityLine(ab));
       }
+      sendPm(target, lines.join("\n"));
+      return;
+    }
+
+    // Check items (beta)
+    const it = items.get(id);
+    if (it) {
+      const lines = [
+        `**${it.name}** (${it.rank || "-"}) — ${it.slots} slot${it.slots === 1 ? "" : "s"}, ${it.gold} gold`,
+        it.materials ? `Materials: ${it.materials}` : "",
+        it.statBoosts ? `Boosts: ${it.statBoosts}` : "",
+        it.statNerfs ? `Nerfs: ${it.statNerfs}` : "",
+        it.frequency || it.actionType ? `${it.frequency} ${it.actionType}`.trim() : "",
+        it.effect,
+      ].filter(Boolean);
       sendPm(target, lines.join("\n"));
       return;
     }

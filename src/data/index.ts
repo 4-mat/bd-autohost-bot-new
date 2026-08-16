@@ -76,8 +76,24 @@ export interface WeaponData {
   description: string;
 }
 
+// Item system (beta). Items are authored in the ability editor and written
+// here by "Save to Bot". Schema mirrors the "bd-items" sheet.
+export interface ItemData {
+  name: string;
+  slots: number;
+  rank: string;
+  gold: number;
+  materials: string;
+  statBoosts: string;
+  statNerfs: string;
+  frequency: string;
+  actionType: string;
+  effect: string;
+}
+
 export const classes = new Map<string, ClassData>();
 export const weapons = new Map<string, WeaponData>();
+export const items = new Map<string, ItemData>();
 export const branches = new Map<string, string[]>();
 export const WhatIs = new Map<string, string>();
 export const Reference = new Map<string, string>();
@@ -86,7 +102,9 @@ export function loadGameData() {
   loadBasicClasses();
   loadBasicWeapons();
   loadReferences();
-  console.log(`Loaded ${classes.size} classes, ${weapons.size} weapons`);
+  console.log(
+    `Loaded ${classes.size} classes, ${weapons.size} weapons, ${items.size} items`,
+  );
 }
 
 function loadBasicClasses() {
