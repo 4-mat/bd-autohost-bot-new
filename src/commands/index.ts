@@ -101,7 +101,7 @@ export function handleCommand(
   }
 
   // Info/reference commands
-  if (id === "wt" || id === "rf" || id === "wtm") {
+  if (id === "wt" || id === "rf" || id === "wtm" || id === "data") {
     infoCommand(user, id, args || val);
     return;
   }

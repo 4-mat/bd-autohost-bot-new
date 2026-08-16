@@ -1042,9 +1042,31 @@ function handleBack(game: Game, user: User) {
 }
 
 function handleLog(game: Game, user: User, args: string) {
+  const a = args.trim();
+
+  // %log clear - host clears the action log.
+  if (a === "clear" || a === "reset") {
+    if (toId(user.name) !== toId(game.host)) {
+      return sendPm(user.name, "Only the host can clear the action log.");
+    }
+    game.log.length = 0;
+    return sendPm(user.name, "Action log cleared.");
+  }
+
   if (game.log.length === 0) {
     sendPm(user.name, "Action log is empty.");
     return;
+  }
+
+  // %log tail <N> - last N entries.
+  const tail = a.match(/^(?:tail|last)\s+(\d+)$/i);
+  if (tail) {
+    const n = parseInt(tail[1]);
+    const lines = game.log
+      .slice(-n)
+      .map((e) => `[R${e.turn}] ${e.entity}: ${e.description}`)
+      .join("\n");
+    return sendPmChunks(user.name, lines || "Action log is empty.");
   }
 
   const text = game.log
@@ -1234,6 +1256,21 @@ function handleInfo(game: Game, user: User, args: string) {
     lines.push(
       `Buffs: ${entity.buffs.map((b) => `${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat} (${b.rounds}r)`).join(", ")}`,
     );
+  }
+
+  const cds = Object.entries(entity.cooldowns);
+  if (cds.length > 0) {
+    lines.push(`Cooldowns: ${cds.map(([k, v]) => `${k} (${v})`).join(", ")}`);
+  }
+  const used = entity.abilities
+    .map((a) => {
+      const max = a.maxUses ?? parseFrequency(a.frequency).uses;
+      const count = entity.usesUsed[a.name] ?? 0;
+      return max > 0 && count > 0 ? `${a.name} ${count}/${max}` : "";
+    })
+    .filter(Boolean);
+  if (used.length > 0) {
+    lines.push(`Uses: ${used.join(", ")}`);
   }
 
   sendPm(user.name, lines.join("\n"));
@@ -1518,8 +1555,15 @@ function handleCheckRange(game: Game, user: User, args: string) {
 function buildPlayerList(game: Game): string {
   const curNum = game.turnOrder[game.turnIndex];
   const lines: string[] = [];
+  const sorted = [...game.entities].sort((a, b) => {
+    if (a.team !== b.team) return a.team - b.team;
+    const na = parseInt(a.num.replace(/\D/g, "")) || 0;
+    const nb = parseInt(b.num.replace(/\D/g, "")) || 0;
+    if (na !== nb) return na - nb;
+    return a.num.localeCompare(b.num);
+  });
 
-  for (const e of game.entities) {
+  for (const e of sorted) {
     const isCur = e.num === curNum;
     const hpPct = Math.max(0, (e.curhp / e.maxhp) * 100);
     const marker = isCur ? " " : "";

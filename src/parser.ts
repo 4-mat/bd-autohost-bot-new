@@ -39,6 +39,8 @@ function handleChatMessage(roomid: string, username: string, message: string) {
         const entry = { user: username, message, time: Date.now() };
         game.chatLog.push(entry);
         game.toasts.push(entry);
+        if (game.chatLog.length > 200) game.chatLog.shift();
+        if (game.toasts.length > 20) game.toasts.shift();
         break;
       }
     }

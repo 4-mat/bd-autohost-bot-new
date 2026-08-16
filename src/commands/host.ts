@@ -604,6 +604,7 @@ function handleNudge(room: Room, user: User) {
   const msg = `${names} — you haven't voted yet! Vote in the GUI or with %vote [mode].`;
   send(room.id, msg);
   game.toasts.push({ user: game.host, message: msg });
+  if (game.toasts.length > 20) game.toasts.shift();
   broadcastPages(game);
 }
 

@@ -14,6 +14,20 @@ import { modeDescription, describeModes } from "../data/gamemodes.js";
 export function infoCommand(user: User, cmd: string, args: string) {
   const target = user.name;
 
+  if (cmd === "data") {
+    const abilityCount =
+      [...classes.values()].reduce((n, c) => n + c.abilities.length, 0) +
+      [...weapons.values()].reduce((n, w) => n + w.abilities.length, 0);
+    sendPm(
+      target,
+      [
+        `Classes: ${classes.size} | Weapons: ${weapons.size} | Branches: ${branches.size}`,
+        `Abilities: ${abilityCount} | WhatIs entries: ${WhatIs.size} | References: ${Reference.size}`,
+      ].join("\n"),
+    );
+    return;
+  }
+
   if (cmd === "wt") {
     const id = toId(args);
     if (!id) return sendPm(target, "Usage: %wt [ability/item/status/tile/mode]");
