@@ -402,6 +402,11 @@ export function gameCommand(
       handleMapInfo(game, user);
       break;
 
+    case "mode":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleMode(game, user);
+      break;
+
     default:
       sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
       break;
@@ -1561,6 +1566,14 @@ function handleRoomInfo(game: Game, user: User) {
     `Players: ${game.entities.length} | Round: ${game.round}`,
   ];
   sendPm(user.name, lines.join("\n"));
+}
+
+// %mode - current mode and phase.
+function handleMode(game: Game, user: User) {
+  sendPm(
+    user.name,
+    `Mode: ${game.mode} | Phase: ${game.phase}${game.paused ? " (paused)" : ""} | Round: ${game.round}`,
+  );
 }
 
 // %kills - kill leaderboard.

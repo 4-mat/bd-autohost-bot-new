@@ -10,6 +10,14 @@ import { sheetsCommand } from "./sheets.js";
 import { calcCommand } from "./calc.js";
 
 const START = Date.now();
+const MOTD = new Map<string, string>();
+const NOTES = new Map<string, string>();
+
+function roomGame(roomId?: string): Game | null {
+  if (!roomId) return null;
+  for (const g of games.values()) if (g.room === roomId) return g;
+  return null;
+}
 
 // One-line help for common commands, shown by `%help <command>`.
 const COMMAND_HELP: Record<string, string> = {
@@ -71,6 +79,22 @@ const COMMAND_HELP: Record<string, string> = {
   abilities: "List a class/weapon/entity's abilities (%abilities <ref>).",
   mapinfo: "Map size + terrain counts (%mapinfo).",
   uptime: "Bot uptime (%uptime).",
+  fullheal: "Host: restore HP to full (%fullheal [entity]).",
+  restoremp: "Host: restore MP to max (%restoremp [entity]).",
+  clearstatus: "Host: clear all statuses (%clearstatus [entity]).",
+  clearbuffs: "Host: clear all buffs (%clearbuffs [entity]).",
+  clearcooldowns: "Host: clear cooldowns (%clearcooldowns [entity]).",
+  clearuses: "Host: reset ability uses (%clearuses [entity]).",
+  setterrain: "Host: override a tile's terrain (%setterrain <pos>, <terrain>).",
+  reset: "Host: full stat/status reset (%reset [entity]).",
+  "8ball": "Ask the magic 8-ball (%8ball <question>).",
+  rps: "Rock/paper/scissors vs the bot (%rps <move>).",
+  time: "Current local and UTC time.",
+  rand: "Random integer (%rand <n> or %rand <min>, <max>).",
+  shuffle: "Shuffle a comma-separated list (%shuffle a, b, c).",
+  note: "Save a private note (%note <text>, %note, %note clear).",
+  motd: "Room message of the day (%motd, host sets %motd <text>).",
+  mode: "Current mode and phase (%mode).",
 };
 
 export function handleCommand(
@@ -118,6 +142,105 @@ export function handleCommand(
     const h = Math.floor((secs % 86400) / 3600);
     const m = Math.floor((secs % 3600) / 60);
     sendPm(user.name, `Uptime: ${d}d ${h}h ${m}m`);
+    return;
+  }
+  if (id === "8ball") {
+    const question = (args || val).trim();
+    if (!question) return sendPm(user.name, "Ask a yes/no question: %8ball <question>");
+    const answers = [
+      "It is certain.",
+      "Without a doubt.",
+      "Yes, definitely.",
+      "You may rely on it.",
+      "Reply hazy, try again.",
+      "Ask again later.",
+      "Cannot predict now.",
+      "Don't count on it.",
+      "My sources say no.",
+      "Very doubtful.",
+    ];
+    sendPm(user.name, `8-ball: ${answers[Math.floor(Math.random() * answers.length)]}`);
+    return;
+  }
+
+  if (id === "rps") {
+    const map: Record<string, string> = { r: "rock", p: "paper", s: "scissors" };
+    const player = map[toId((args || val).trim())] ?? toId((args || val).trim());
+    if (!["rock", "paper", "scissors"].includes(player)) {
+      return sendPm(user.name, "Usage: %rps <rock|paper|scissors> (r/p/s work too)");
+    }
+    const bot = ["rock", "paper", "scissors"][Math.floor(Math.random() * 3)];
+    const beats: Record<string, string> = { rock: "scissors", scissors: "paper", paper: "rock" };
+    const result = player === bot ? "tie" : beats[player] === bot ? "win" : "lose";
+    const label = { win: "You win!", lose: "You lose!", tie: "It's a tie!" }[result];
+    sendPm(user.name, `You threw ${player}, bot threw ${bot}. ${label}`);
+    return;
+  }
+
+  if (id === "time") {
+    const now = new Date();
+    sendPm(user.name, `Local: ${now.toLocaleString()} | UTC: ${now.toUTCString()}`);
+    return;
+  }
+
+  if (id === "rand") {
+    const parts = (args || val).split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length === 1) {
+      const n = parseInt(parts[0], 10);
+      if (isNaN(n) || n < 1) return sendPm(user.name, "Usage: %rand <n> or %rand <min>, <max>");
+      return sendPm(user.name, `Rolled ${Math.floor(Math.random() * n) + 1} (1-${n})`);
+    }
+    if (parts.length >= 2) {
+      const a = parseInt(parts[0], 10);
+      const b = parseInt(parts[1], 10);
+      if (isNaN(a) || isNaN(b) || a > b) return sendPm(user.name, "Usage: %rand <min>, <max>");
+      return sendPm(user.name, `Rolled ${Math.floor(Math.random() * (b - a + 1)) + a} (${a}-${b})`);
+    }
+    return sendPm(user.name, "Usage: %rand <n> or %rand <min>, <max>");
+  }
+
+  if (id === "shuffle") {
+    const list = (args || val).split(",").map((s) => s.trim()).filter(Boolean);
+    if (list.length < 2) return sendPm(user.name, "Usage: %shuffle <a>, <b>, <c>");
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    sendPm(user.name, `Shuffled: ${list.join(", ")}`);
+    return;
+  }
+
+  if (id === "note") {
+    const text = (args || val).trim();
+    if (text.toLowerCase() === "clear") {
+      NOTES.delete(user.id);
+      sendPm(user.name, "Note cleared.");
+      return;
+    }
+    if (!text) {
+      const saved = NOTES.get(user.id);
+      sendPm(user.name, saved ? `Your note: ${saved}` : "No note saved. Use %note <text>.");
+      return;
+    }
+    NOTES.set(user.id, text);
+    sendPm(user.name, "Note saved.");
+    return;
+  }
+
+  if (id === "motd") {
+    const text = (args || val).trim();
+    if (!text) {
+      const saved = room?.id ? MOTD.get(room.id) : undefined;
+      sendPm(user.name, saved ? `**MOTD**: ${saved}` : "No MOTD set.");
+      return;
+    }
+    if (!room?.id) return sendPm(user.name, "MOTD requires a room.");
+    const g = roomGame(room.id);
+    if (g && toId(g.host) !== toId(user.name)) {
+      return sendPm(user.name, "Only the host can set the MOTD.");
+    }
+    MOTD.set(room.id, text);
+    sendPm(user.name, "MOTD set.");
     return;
   }
 
@@ -236,6 +359,15 @@ export function handleCommand(
     id === "resume" ||
     id === "kick" ||
     id === "transfer" ||
+    id === "fullheal" ||
+    id === "restoremp" ||
+    id === "clearstatus" ||
+    id === "clearbuffs" ||
+    id === "clearcooldowns" ||
+    id === "clearcds" ||
+    id === "clearuses" ||
+    id === "setterrain" ||
+    id === "reset" ||
     id === "genpos"
   ) {
     hostCommand(room, user, id, args, val, pm);
@@ -316,7 +448,8 @@ export function handleCommand(
     id === "dead" ||
     id === "alive" ||
     id === "abilities" ||
-    id === "mapinfo"
+    id === "mapinfo" ||
+    id === "mode"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;
