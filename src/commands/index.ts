@@ -36,7 +36,8 @@ const COMMAND_HELP: Record<string, string> = {
   gold: "Show gold earned this game (%gold [entity]).",
   gems: "Show gems earned this game (%gems [entity]).",
   records: "Lifetime leaderboard (%records [N | <name> | reset]).",
-  surrender: "Concede and leave the game (alias: %forfeit).",
+  surrender: "Team vote to surrender (%surrender).",
+  forfeit: "Concede and leave the game (%forfeit).",
   rematch: "Host: reset the board and restart (%rematch).",
   coin: "Flip a coin.",
   pick: "Pick one option at random (%pick a, b, c).",
@@ -47,6 +48,9 @@ const COMMAND_HELP: Record<string, string> = {
   useitem: "Use a consumable item (%useitem <item>).",
   inventory: "List your items (%inventory [entity]).",
   giveitem: "Host: grant an item (%giveitem <entity>, <item>).",
+  damage: "Show damage dealt/taken (%damage [entity]).",
+  afk: "Mark yourself away; your turns are auto-skipped (%afk).",
+  return: "Clear your AFK flag (%return).",
 };
 
 export function handleCommand(
@@ -263,7 +267,10 @@ export function handleCommand(
     id === "equip" ||
     id === "unequip" ||
     id === "useitem" ||
-    id === "inventory"
+    id === "inventory" ||
+    id === "damage" ||
+    id === "afk" ||
+    id === "return"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;

@@ -570,6 +570,7 @@ describe("dealDamage", () => {
     expect(result.actual).toBe(30);
     expect(result.shieldAbsorbed).toBe(0);
     expect(e.curhp).toBe(70);
+    expect(e.damageTaken).toBe(30);
   });
 
   it("clamps to 0", () => {
@@ -577,6 +578,13 @@ describe("dealDamage", () => {
     const result = dealDamage(e, 50);
     expect(result.actual).toBe(50);
     expect(e.curhp).toBe(0);
+  });
+
+  it("tracks cumulative damage taken", () => {
+    const e = makeEntity({ num: "P1", name: "T", curhp: 100 });
+    dealDamage(e, 30);
+    dealDamage(e, 20);
+    expect(e.damageTaken).toBe(50);
   });
 
   it("negative damage is clamped to 0", () => {

@@ -774,6 +774,7 @@ function* resolveSingleTarget(
     finalDamage = Math.max(0, finalDamage - bleed);
 
     const dmgResult = dealDamage(target, finalDamage);
+    user.damageDealt = (user.damageDealt ?? 0) + finalDamage;
     // Being hit arms the target's Reaction abilities this turn.
     if (finalDamage > 0) target.triggered = true;
     const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
@@ -1122,6 +1123,7 @@ function resolveSplash(
     const bleed = hasStatus(user, "bleed") ? 5 : 0;
     finalDamage = Math.max(0, finalDamage - bleed);
     const dmgResult = dealDamage(target, finalDamage);
+    user.damageDealt = (user.damageDealt ?? 0) + finalDamage;
     result.messages.push(
       `  **Splash Damage**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - half DEF(${targetDef})${formatDamageModsLine(combat)} -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**${bleed > 0 ? ` (Bleed -${bleed})` : ""}`,
     );

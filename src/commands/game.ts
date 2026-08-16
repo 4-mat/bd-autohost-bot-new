@@ -132,9 +132,13 @@ export function gameCommand(
       break;
 
     case "surrender":
-    case "forfeit":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleSurrender(game, user);
+      break;
+
+    case "forfeit":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleForfeit(game, user);
       break;
 
     case "endturn":
@@ -350,6 +354,21 @@ export function gameCommand(
     case "inventory":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleInventory(game, user, full);
+      break;
+
+    case "damage":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleDamage(game, user, full);
+      break;
+
+    case "afk":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleAfk(game, user, full);
+      break;
+
+    case "return":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleReturn(game, user, full);
       break;
 
     default:
@@ -851,7 +870,7 @@ function handleLeave(game: Game, user: User) {
   broadcastPages(game);
 }
 
-function handleSurrender(game: Game, user: User) {
+function handleForfeit(game: Game, user: User) {
   const entity = game.entities.find(
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
@@ -862,8 +881,55 @@ function handleSurrender(game: Game, user: User) {
     return sendPm(user.name, "The game is not in progress.");
   }
   pushSnapshot(game);
-  send(game.room, `**${entity.num} (${entity.name})** surrenders!`);
+  send(game.room, `**${entity.num} (${entity.name})** forfeits!`);
   removeEntity(game, entity);
+  const winner = checkGameOver(game);
+  if ((game.phase as Game["phase"]) === "ended") {
+    announceGameOver(game, winner);
+    return;
+  }
+  broadcastPages(game);
+}
+
+// %surrender - team majority vote (individual forfeit in FFA).
+function handleSurrender(game: Game, user: User) {
+  const entity = game.entities.find(
+    (e) => !e.isMonster && toId(e.name) === toId(user.name),
+  );
+  if (!entity) {
+    return sendPm(user.name, "You're not a player in this game.");
+  }
+  if (game.phase !== "playing") {
+    return sendPm(user.name, "The game is not in progress.");
+  }
+  if (entity.team === 0) {
+    handleForfeit(game, user);
+    return;
+  }
+  const team = String(entity.team);
+  const votes = game.surrenderVotes ?? (game.surrenderVotes = {});
+  const list = votes[team] ?? (votes[team] = []);
+  if (list.includes(entity.num)) {
+    return sendPm(user.name, "You already voted to surrender.");
+  }
+  list.push(entity.num);
+  const living = game.entities.filter(
+    (e) => !e.isMonster && e.team === entity.team && e.curhp > 0,
+  );
+  const needed = Math.floor(living.length / 2) + 1;
+  if (list.length < needed) {
+    send(
+      game.room,
+      `**${entity.num}** votes to surrender (${list.length}/${needed}).`,
+    );
+    broadcastPages(game);
+    return;
+  }
+  pushSnapshot(game);
+  send(game.room, `**Team ${entity.team} surrenders!**`);
+  for (const e of game.entities.filter((x) => x.team === entity.team)) {
+    removeEntity(game, e);
+  }
   const winner = checkGameOver(game);
   if ((game.phase as Game["phase"]) === "ended") {
     announceGameOver(game, winner);
@@ -1000,8 +1066,12 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   let acted = "";
 
-  // Stunned entities can't act — skip their action and clear pending
-  if (isStunned(entity)) {
+  // AFK entities auto-skip their turn.
+  if (entity.afk) {
+    send(game.room, `**${entity.num} (${entity.name})** is AFK — turn skipped.`);
+    if (entity.pendingAction) entity.pendingAction = null;
+  } else if (isStunned(entity)) {
+    // Stunned entities can't act — skip their action and clear pending
     if (entity.pendingAction) {
       send(game.room, `${entity.num} is **Stunned** — action wasted!`);
       entity.pendingAction = null;
@@ -1238,7 +1308,8 @@ function handleSummary(game: Game, user: User) {
     const s = e.statuses.length
       ? ` | ${e.statuses.map((x) => x.name).join(",")}`
       : "";
-    return `${e.num} ${e.name}: HP ${e.curhp}/${e.maxhp}${s} | kills: ${kills}`;
+    const afk = e.afk ? " | AFK" : "";
+    return `${e.num} ${e.name}: HP ${e.curhp}/${e.maxhp}${s}${afk} | kills: ${kills}`;
   });
   sendPm(user.name, lines.join("\n") || "No entities.");
 }
@@ -1377,6 +1448,74 @@ function handleInventory(game: Game, user: User, args: string) {
     user.name,
     `**${entity.num} ${entity.name}** — ${usedSlots(entity)}/${max} slots used\n${list}`,
   );
+}
+
+// %damage [entity] - cumulative damage dealt/taken.
+function handleDamage(game: Game, user: User, args: string) {
+  const ref = args.trim();
+  const entity = ref ? getEntity(game, ref) : selfEntity(game, user);
+  if (!entity) {
+    return sendPm(
+      user.name,
+      ref ? `Unknown entity: ${ref}` : "You're not a player in this game.",
+    );
+  }
+  const rows = ref
+    ? [entity]
+    : game.entities.filter(
+        (e) => e.curhp > 0 || e.damageDealt || e.damageTaken,
+      );
+  const lines = rows.map(
+    (e) =>
+      `${e.num} ${e.name}: dealt ${e.damageDealt ?? 0}, taken ${e.damageTaken ?? 0}`,
+  );
+  sendPm(user.name, lines.join("\n") || "No entities.");
+}
+
+// %afk [entity] - mark yourself (or any entity, host-only) as away.
+function handleAfk(game: Game, user: User, args: string) {
+  const ref = args.trim();
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = ref
+    ? isHost
+      ? getEntity(game, ref)
+      : null
+    : selfEntity(game, user);
+  if (!entity) {
+    return sendPm(
+      user.name,
+      ref
+        ? "Only the host can set another entity's AFK."
+        : "You're not a player in this game.",
+    );
+  }
+  if (entity.afk) return sendPm(user.name, `${entity.num} is already AFK.`);
+  entity.afk = true;
+  send(game.room, `**${entity.num} (${entity.name})** is now AFK.`);
+  broadcastPages(game);
+}
+
+// %return [entity] - clear an entity's AFK flag.
+function handleReturn(game: Game, user: User, args: string) {
+  const ref = args.trim();
+  const isHost = toId(user.name) === toId(game.host);
+  const entity = ref
+    ? isHost
+      ? getEntity(game, ref)
+      : null
+    : selfEntity(game, user);
+  if (!entity) {
+    return sendPm(
+      user.name,
+      ref
+        ? "Only the host can clear another entity's AFK."
+        : "You're not a player in this game.",
+    );
+  }
+  if (!entity.afk) return sendPm(user.name, `${entity.num} is not AFK.`);
+  entity.afk = false;
+  send(game.room, `**${entity.num} (${entity.name})** is back.`);
+  broadcastPages(game);
 }
 
 function handlePremove(game: Game, user: User, args: string) {

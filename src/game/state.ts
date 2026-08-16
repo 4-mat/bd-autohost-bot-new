@@ -211,6 +211,12 @@ export interface Entity {
   equipped?: string[];
   /** Max equip slots (default 2). */
   maxSlots?: number;
+  /** Cumulative damage dealt this game. */
+  damageDealt?: number;
+  /** Cumulative damage taken this game. */
+  damageTaken?: number;
+  /** Away-from-keyboard; the entity's turn is auto-skipped. */
+  afk?: boolean;
   triggered?: boolean;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
@@ -329,6 +335,8 @@ export interface Game {
   voteRunoff: string[] | null;
   /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
   timer?: { entity: string | null; endAt: number; warned?: boolean } | null;
+  /** Team surrender votes: team id -> entity nums that voted. */
+  surrenderVotes?: Record<string, string[]>;
 }
 
 export const games = new Map<string, Game>();
@@ -1105,6 +1113,7 @@ export function dealDamage(
 
   const actual = remaining;
   entity.curhp = Math.max(0, entity.curhp - remaining);
+  entity.damageTaken = (entity.damageTaken ?? 0) + actual;
   return { actual, shieldAbsorbed, shieldBreaks };
 }
 

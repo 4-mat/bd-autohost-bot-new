@@ -1111,6 +1111,8 @@ function createPlayerEntity(
     inventory: [],
     equipped: [],
     maxSlots: 2,
+    damageDealt: 0,
+    damageTaken: 0,
     pendingAction: null,
     dashUsed: false,
     standardUsed: false,
@@ -1194,6 +1196,8 @@ function handleAddMonster(room: Room, user: User, args: string) {
     inventory: [],
     equipped: [],
     maxSlots: 2,
+    damageDealt: 0,
+    damageTaken: 0,
     pendingAction: null,
     dashUsed: false,
     standardUsed: false,
@@ -1851,6 +1855,9 @@ function handleRematch(room: Room, user: User) {
     e.movementUsed = false;
     e.swiftUsed = false;
     e.triggered = false;
+    e.damageDealt = 0;
+    e.damageTaken = 0;
+    e.afk = false;
   }
 
   game.turnIndex = 0;
@@ -1865,6 +1872,7 @@ function handleRematch(room: Room, user: User) {
   game.voteOpen = false;
   game.voteRunoff = null;
   game.timer = null;
+  game.surrenderVotes = {};
   game.started = true;
   game.phase = "playing";
 
