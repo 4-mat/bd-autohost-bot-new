@@ -14,6 +14,7 @@ export interface AbilityChoice {
 
 export interface AbilityData {
   name: string;
+  aliases?: string[];
   level: number | "EX1" | "EX2";
   frequency: string;
   mr: number;
@@ -47,6 +48,7 @@ export interface AbilityData {
 
 export interface ClassData {
   name: string;
+  aliases?: string[];
   stats: {
     hp: string;
     atk: string;
@@ -62,6 +64,7 @@ export interface ClassData {
 
 export interface WeaponData {
   name: string;
+  aliases?: string[];
   branch: string;
   stats: {
     hp: string;
@@ -83,11 +86,11 @@ export const WhatIs = new Map<string, string>();
 export const Reference = new Map<string, string>();
 
 /**
- * Resolve a name against a data map. Exact (normalized) matches win; otherwise
- * a unique prefix match is accepted (e.g. "kat" -> "katana"). Returns the value
- * when unambiguous and the candidate keys for messaging otherwise.
+ * Resolve a name against a data map. Exact (normalized) matches win, then an
+ * explicit alias, then a unique prefix match (e.g. "kat" -> "katana"). Returns
+ * the value when unambiguous and the candidate keys for messaging otherwise.
  */
-export function resolveName<T>(
+export function resolveName<T extends { aliases?: string[] }>(
   map: Map<string, T>,
   name: string,
 ): { value?: T; matches: string[] } {
@@ -95,6 +98,9 @@ export function resolveName<T>(
   if (!id) return { matches: [] };
   const exact = map.get(id);
   if (exact) return { value: exact, matches: [id] };
+  for (const v of map.values()) {
+    if (v.aliases?.some((a) => toId(a) === id)) return { value: v, matches: [id] };
+  }
   const matches = [...map.keys()].filter((k) => k.startsWith(id));
   return matches.length === 1
     ? { value: map.get(matches[0]), matches }
