@@ -42,6 +42,11 @@ const COMMAND_HELP: Record<string, string> = {
   pick: "Pick one option at random (%pick a, b, c).",
   find: "Search classes/weapons/abilities/items (%find <query>).",
   export: "Dump the full action log as a replay transcript.",
+  equip: "Equip an item from your inventory (%equip <item>).",
+  unequip: "Unequip an item (%unequip <item>).",
+  useitem: "Use a consumable item (%useitem <item>).",
+  inventory: "List your items (%inventory [entity]).",
+  giveitem: "Host: grant an item (%giveitem <entity>, <item>).",
 };
 
 export function handleCommand(
@@ -185,6 +190,8 @@ export function handleCommand(
     id === "join" ||
     id === "j" ||
     id === "rematch" ||
+    id === "giveitem" ||
+    id === "takeitem" ||
     id === "genpos"
   ) {
     hostCommand(room, user, id, args, val, pm);
@@ -252,7 +259,11 @@ export function handleCommand(
     id === "summary" ||
     id === "standings" ||
     id === "version" ||
-    id === "export"
+    id === "export" ||
+    id === "equip" ||
+    id === "unequip" ||
+    id === "useitem" ||
+    id === "inventory"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;

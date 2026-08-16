@@ -205,6 +205,12 @@ export interface Entity {
   movementUsed: boolean;
   swiftUsed: boolean;
   resources: Record<string, number>;
+  /** Owned item names (granted by the host). */
+  inventory?: string[];
+  /** Equipped item names (stat mods applied). */
+  equipped?: string[];
+  /** Max equip slots (default 2). */
+  maxSlots?: number;
   triggered?: boolean;
   pendingResolution?: Generator<AttackPrompt, ResolutionResult, PromptResponse>;
   pendingPromptKind?: AttackPrompt["kind"];
@@ -345,6 +351,9 @@ function serializeState(game: Game): string {
       movementUsed: e.movementUsed,
       swiftUsed: e.swiftUsed,
       triggered: e.triggered,
+      inventory: e.inventory ?? [],
+      equipped: e.equipped ?? [],
+      maxSlots: e.maxSlots ?? 2,
     })),
     turnIndex: game.turnIndex,
     round: game.round,
@@ -377,6 +386,9 @@ export function popSnapshot(game: Game): boolean {
       ent.movementUsed = e.movementUsed;
       ent.swiftUsed = e.swiftUsed;
       ent.triggered = e.triggered;
+      ent.inventory = e.inventory ?? [];
+      ent.equipped = e.equipped ?? [];
+      ent.maxSlots = e.maxSlots ?? 2;
     }
   }
   game.turnIndex = data.turnIndex;

@@ -32,6 +32,7 @@ import {
 } from "../data/gamemodes.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
+import { findItem, applyItemMods } from "../game/items.js";
 import type { AbilityData } from "../data/index.js";
 
 // Modes in which someone must be designated the Juggernaut (%setjugg).
@@ -172,6 +173,12 @@ export function hostCommand(
       break;
     case "addm":
       handleAddMonster(room, user, full);
+      break;
+    case "giveitem":
+      handleGiveItem(room, user, full);
+      break;
+    case "takeitem":
+      handleTakeItem(room, user, full);
       break;
     case "sc":
       handleSwitchClass(room, user, full);
@@ -1101,6 +1108,9 @@ function createPlayerEntity(
     cooldowns: {},
     usesUsed: {},
     resources: {},
+    inventory: [],
+    equipped: [],
+    maxSlots: 2,
     pendingAction: null,
     dashUsed: false,
     standardUsed: false,
@@ -1181,6 +1191,9 @@ function handleAddMonster(room: Room, user: User, args: string) {
     cooldowns: {},
     usesUsed: {},
     resources: {},
+    inventory: [],
+    equipped: [],
+    maxSlots: 2,
     pendingAction: null,
     dashUsed: false,
     standardUsed: false,
@@ -1860,6 +1873,62 @@ function handleRematch(room: Room, user: User) {
   if (first) {
     send(room.id, `**${first.num}'s turn!** (${first.name})`);
   }
+  broadcastPages(game);
+}
+
+// %giveitem <entity>, <item> - grant an item (host only).
+function handleGiveItem(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %giveitem.");
+  }
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %giveitem <entity>, <item>");
+  }
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+  const item = findItem(parts[1]);
+  if (!item) return sendPm(user.name, `Unknown item: ${parts[1]}`);
+  const inv = entity.inventory ?? (entity.inventory = []);
+  if (inv.some((n) => toId(n) === toId(item.name))) {
+    return sendPm(user.name, `${entity.num} already has ${item.name}.`);
+  }
+  pushSnapshot(game);
+  inv.push(item.name);
+  send(game.room, `**${entity.num}** received **${item.name}**.`);
+  broadcastPages(game);
+}
+
+// %takeitem <entity>, <item> - remove an item, unequipping if needed.
+function handleTakeItem(room: Room, user: User, args: string) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %takeitem.");
+  }
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return sendPm(user.name, "Usage: %takeitem <entity>, <item>");
+  }
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+  const item = findItem(parts[1]);
+  if (!item) return sendPm(user.name, `Unknown item: ${parts[1]}`);
+  const inv = entity.inventory ?? [];
+  if (!inv.some((n) => toId(n) === toId(item.name))) {
+    return sendPm(user.name, `${entity.num} doesn't have ${item.name}.`);
+  }
+  pushSnapshot(game);
+  entity.inventory = inv.filter((n) => toId(n) !== toId(item.name));
+  if ((entity.equipped ?? []).some((n) => toId(n) === toId(item.name))) {
+    applyItemMods(entity, item, -1);
+    entity.equipped = (entity.equipped ?? []).filter(
+      (n) => toId(n) !== toId(item.name),
+    );
+  }
+  send(game.room, `**${item.name}** removed from ${entity.num}.`);
   broadcastPages(game);
 }
 

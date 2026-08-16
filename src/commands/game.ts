@@ -52,6 +52,7 @@ import {
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
 import { recordGame, saveRecords } from "../records.js";
+import { findItem, applyItemMods, usedSlots, parseHeal } from "../game/items.js";
 import { getVersionData } from "../data/version43.js";
 import {    normalizeVoteMode,
     pendingVoterIds,
@@ -329,6 +330,26 @@ export function gameCommand(
     case "export":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleExport(game, user);
+      break;
+
+    case "equip":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleEquip(game, user, full);
+      break;
+
+    case "unequip":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleUnequip(game, user, full);
+      break;
+
+    case "useitem":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleUseItem(game, user, full);
+      break;
+
+    case "inventory":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleInventory(game, user, full);
       break;
 
     default:
@@ -1249,6 +1270,113 @@ function handleExport(game: Game, user: User) {
     .map((e) => `[T${e.turn}] ${e.entity}: ${e.description}`)
     .join("\n");
   sendPmChunks(user.name, `**Replay ${game.id}**\n${header}\n\n${body}`);
+}
+
+function selfEntity(game: Game, user: User): Entity | null {
+  return (
+    game.entities.find(
+      (e) => !e.isMonster && toId(e.name) === toId(user.name),
+    ) ?? null
+  );
+}
+
+// %equip <item> - equip from your inventory, applying stat mods.
+function handleEquip(game: Game, user: User, args: string) {
+  const entity = selfEntity(game, user);
+  if (!entity) return sendPm(user.name, "You're not a player in this game.");
+  if (game.phase !== "playing") {
+    return sendPm(user.name, "The game is not in progress.");
+  }
+  const item = findItem(args);
+  if (!item) return sendPm(user.name, `Unknown item: ${args}`);
+  const inv = entity.inventory ?? [];
+  if (!inv.some((n) => toId(n) === toId(item.name))) {
+    return sendPm(user.name, `You don't have ${item.name}.`);
+  }
+  if ((entity.equipped ?? []).some((n) => toId(n) === toId(item.name))) {
+    return sendPm(user.name, `${item.name} is already equipped.`);
+  }
+  const max = entity.maxSlots ?? 2;
+  if (usedSlots(entity) + item.slots > max) {
+    return sendPm(user.name, `Not enough slots (${max} max). Unequip something first.`);
+  }
+  pushSnapshot(game);
+  applyItemMods(entity, item, 1);
+  entity.equipped = [...(entity.equipped ?? []), item.name];
+  send(game.room, `**${entity.num}** equips **${item.name}**.`);
+  broadcastPages(game);
+}
+
+// %unequip <item> - revert an item's stat mods.
+function handleUnequip(game: Game, user: User, args: string) {
+  const entity = selfEntity(game, user);
+  if (!entity) return sendPm(user.name, "You're not a player in this game.");
+  if (game.phase !== "playing") {
+    return sendPm(user.name, "The game is not in progress.");
+  }
+  const item = findItem(args);
+  if (!item) return sendPm(user.name, `Unknown item: ${args}`);
+  const eq = entity.equipped ?? [];
+  if (!eq.some((n) => toId(n) === toId(item.name))) {
+    return sendPm(user.name, `${item.name} is not equipped.`);
+  }
+  pushSnapshot(game);
+  applyItemMods(entity, item, -1);
+  entity.equipped = eq.filter((n) => toId(n) !== toId(item.name));
+  send(game.room, `**${entity.num}** unequips **${item.name}**.`);
+  broadcastPages(game);
+}
+
+// %useitem <item> - consume an item, applying its heal (if any).
+function handleUseItem(game: Game, user: User, args: string) {
+  const entity = selfEntity(game, user);
+  if (!entity) return sendPm(user.name, "You're not a player in this game.");
+  if (game.phase !== "playing") {
+    return sendPm(user.name, "The game is not in progress.");
+  }
+  const item = findItem(args);
+  if (!item) return sendPm(user.name, `Unknown item: ${args}`);
+  const inv = entity.inventory ?? [];
+  if (!inv.some((n) => toId(n) === toId(item.name))) {
+    return sendPm(user.name, `You don't have ${item.name}.`);
+  }
+  pushSnapshot(game);
+  const heal = parseHeal(item.effect);
+  const parts = [`**${entity.num}** uses **${item.name}**.`];
+  if (heal > 0) {
+    const before = entity.curhp;
+    entity.curhp = Math.min(entity.maxhp, entity.curhp + heal);
+    parts.push(
+      `${entity.num} recovers ${entity.curhp - before} HP (${entity.curhp}/${entity.maxhp}).`,
+    );
+  }
+  if (item.effect) parts.push(`Effect: ${item.effect}`);
+  entity.inventory = inv.filter((n) => toId(n) !== toId(item.name));
+  send(game.room, parts.join(" "));
+  broadcastPages(game);
+}
+
+// %inventory [entity] - list owned/equipped items and slot usage.
+function handleInventory(game: Game, user: User, args: string) {
+  const ref = args.trim();
+  const entity = ref ? getEntity(game, ref) : selfEntity(game, user);
+  if (!entity) {
+    return sendPm(user.name, ref ? `Unknown entity: ${ref}` : "You're not a player in this game.");
+  }
+  const inv = entity.inventory ?? [];
+  const eq = entity.equipped ?? [];
+  const max = entity.maxSlots ?? 2;
+  const list = inv.length
+    ? inv
+        .map((n) =>
+          eq.some((x) => toId(x) === toId(n)) ? `[equipped] ${n}` : n,
+        )
+        .join(", ")
+    : "(empty)";
+  sendPm(
+    user.name,
+    `**${entity.num} ${entity.name}** — ${usedSlots(entity)}/${max} slots used\n${list}`,
+  );
 }
 
 function handlePremove(game: Game, user: User, args: string) {
