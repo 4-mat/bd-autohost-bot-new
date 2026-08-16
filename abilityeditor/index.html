@@ -564,6 +564,70 @@
     const DAMAGE_TYPES = ["Physical", "Magical", ""];
     const STATS = ["hp", "atk", "mag", "pd", "md", "eva", "mp"];
 
+    // BD Lang clause templates, grouped by category. Every template is
+    // verified to parse with the game's real parser (src/game/effects.ts),
+    // so inserting one is always a valid starting point — tweak the numbers.
+    const EFFECT_TEMPLATES = [
+      {
+        group: "Stats",
+        items: [
+          ["Buff stat", "+3 ATK/1"],
+          ["Debuff stat", "-2 DEF/1"],
+          ["Percent damage buff", "+20% damage"],
+          ["Gain MP", "Gain +3 MP"],
+          ["Gain resource", "Gain 2 Rage"],
+          ["Spend resource", "Spend 2 Rage"],
+        ],
+      },
+      {
+        group: "Status",
+        items: [
+          ["Inflict status with damage", "inflict 2 Poison/3"],
+          ["Inflict status", "inflict Slow/1"],
+        ],
+      },
+      {
+        group: "Flow",
+        items: [
+          ["Conditional", "If target HP < 50%: +5 DMG Otherwise: +2 DMG"],
+          ["Choose one", "Choose: +2 ATK or +2 DEF"],
+          ["Thirst", "Thirst 3: +3 DMG"],
+          ["Apex", "Apex: +4 DMG"],
+          ["Channel stat", "Channel ATK for 2 rounds"],
+        ],
+      },
+      {
+        group: "Combat",
+        items: [
+          ["Multi-hit", "Multi-Hit: 2"],
+          ["Delay", "Delay 1 round"],
+          ["Recoil", "Recoil 10%"],
+          ["Ignores", "Ignores Shield"],
+          ["Heal", "Heal 10 HP"],
+        ],
+      },
+    ];
+
+    function effectTemplateOptions() {
+      return EFFECT_TEMPLATES.map(
+        (g) =>
+          '<optgroup label="' +
+          esc(g.group) +
+          '">' +
+          g.items
+            .map(
+              (it) =>
+                '<option value="' +
+                esc(it[1]) +
+                '">' +
+                esc(it[0]) +
+                "</option>",
+            )
+            .join("") +
+          "</optgroup>",
+      ).join("");
+    }
+
     function list() {
       return state.data[state.kind === "class" ? "classes" : "weapons"];
     }
@@ -1137,6 +1201,11 @@
         field("maxUses", "Max Uses (per battle)", a.maxUses === undefined ? "" : a.maxUses) +
         "</div>" +
         field("effect", "Effect (BD Lang)", a.effect, { textarea: true, full: true }) +
+        '<div class="full inline" style="margin-top:2px">' +
+        '<label class="inline-label">Insert template</label>' +
+        '<select data-tpl-select title="Start from a known-good BD Lang clause, then tweak the numbers">' +
+        effectTemplateOptions() +
+        '</select><button class="mini" data-act="tpl-insert" title="Insert the selected clause into the Effect box">Insert</button></div>' +
         '<div class="effect-validate" data-idx="' +
         idx +
         '"></div>' +
@@ -1253,7 +1322,15 @@
         statsHtml +
         '<div class="section-title">Abilities <span class="count">(' +
         abilities.length +
-        ')</span><span class="spacer"></span><button class="mini" data-act="add-ability">＋ Add ability</button></div>' +
+        ')</span><span class="spacer"></span>' +
+        (abilities.length
+          ? '<select data-bulk-level title="Set every ability on this entry to one level">' +
+            LEVELS.map(
+              (l) => '<option value="' + esc(l) + '">Lv ' + esc(l) + "</option>",
+            ).join("") +
+            '</select><button class="mini" data-act="bulk-level" title="Apply the chosen level to all abilities">Set all</button>'
+          : "") +
+        '<button class="mini" data-act="add-ability">＋ Add ability</button></div>' +
         (cards || '<div class="hint">No abilities yet.</div>');
       $("#detail").innerHTML = detail;
       $("#detail").style.display = "";
@@ -1521,6 +1598,60 @@
       return open ? item.abilities[Number(open.dataset.idx)] : null;
     }
 
+    // Insert the selected BD Lang template into the card's Effect box, then
+    // re-validate (the parse preview updates live). Appends with "; " when the
+    // box already has content so clauses stay combinable.
+    async function insertEffectTemplate(btn) {
+      const card = btn.closest(".ability-card");
+      if (!card) return;
+      const sel = card.querySelector("[data-tpl-select]");
+      if (!sel || !sel.value) return;
+      const ta = card.querySelector('[data-f="effect"]');
+      if (!ta) return;
+      const existing = (ta.value || "").trim();
+      ta.value = existing ? existing + "; " + sel.value : sel.value;
+      onAbilityEdit(card);
+      await validateEffect(card);
+      ta.focus();
+    }
+
+    // "Set all abilities to Lv N": applies the chosen level to every ability
+    // on the current item at once (handy for bulk-tuning a class), then
+    // re-renders so the chips update. Saves each ability through the same
+    // /api/ability path the per-card editor uses, so it works in both server
+    // and static-demo mode (and respects the server's rename/validation rules).
+    async function setAllAbilityLevels() {
+      const item = currentItem();
+      if (!item || !item.abilities || !item.abilities.length) return;
+      const sel = document.querySelector("[data-bulk-level]");
+      const level = sel && sel.value;
+      if (!level) return;
+      if (
+        !confirm(
+          "Set all " + item.abilities.length + " abilities to Lv " + level + "?",
+        )
+      )
+        return;
+      try {
+        for (const ab of item.abilities) {
+          const patch = JSON.parse(JSON.stringify(ab));
+          patch.level = level;
+          await api("/api/ability", {
+            kind: state.kind,
+            owner: item.name,
+            action: "save",
+            name: ab.name,
+            ability: patch,
+          });
+          ab.level = level;
+        }
+        toast("All " + item.abilities.length + " abilities set to Lv " + level + ".", "ok");
+        renderDetail();
+      } catch (e) {
+        toast(e.message, "err");
+      }
+    }
+
     function addChoice() {
       const ab = activeAbility();
       if (!ab) return;
@@ -1719,6 +1850,8 @@
       else if (act === "move-ability")
         moveAbility(Number(actEl.dataset.idx), Number(actEl.dataset.dir));
       else if (act === "dup-ability") duplicateAbility(Number(actEl.dataset.idx));
+      else if (act === "tpl-insert") insertEffectTemplate(actEl);
+      else if (act === "bulk-level") setAllAbilityLevels();
       else if (act === "add-choice") addChoice();
       else if (act === "del-choice") removeChoice(Number(actEl.dataset.idx));
       else if (act === "choices-json") {
