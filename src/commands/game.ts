@@ -203,6 +203,36 @@ export function gameCommand(
       handleMoves(game, user, full);
       break;
 
+    case "resources":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleResources(game, user, full);
+      break;
+
+    case "resource":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleResource(game, user, full);
+      break;
+
+    case "mp":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleMp(game, user, full);
+      break;
+
+    case "uses":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleUses(game, user, full);
+      break;
+
+    case "buffs":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleBuffs(game, user, full);
+      break;
+
+    case "cure":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleCure(game, user, full);
+      break;
+
     case "hp":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleHp(game, user, full);
@@ -1595,6 +1625,122 @@ function handleRegp(game: Game, user: User, args: string) {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// %resources [entity] - show resource pools (Qi/Blood/Rage/etc).
+function handleResources(game: Game, user: User, args: string) {
+  const ref = args.trim();
+  const entity = ref ? getEntity(game, ref) : getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No entity found.");
+  const entries = Object.entries(entity.resources).filter(([, v]) => v !== 0);
+  sendPm(
+    user.name,
+    entries.length
+      ? `${entity.num} resources: ${entries.map(([k, v]) => `${k} ${v}`).join(", ")}`
+      : `${entity.num} has no resources.`
+  );
+}
+
+// %resource <entity>,<name>,<delta> - host adjusts a resource pool.
+function handleResource(game: Game, user: User, args: string) {
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %resource.");
+  }
+  const parts = args.split(",").map((s) => s.trim());
+  if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) {
+    return sendPm(
+      user.name,
+      "Usage: %resource <entity>, <name>, <delta> (e.g. %resource P1, qi, +2)"
+    );
+  }
+  const entity = getEntity(game, parts[0]);
+  if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
+  const name = toId(parts[1]);
+  const delta = parseInt(parts[2]);
+  if (isNaN(delta)) return sendPm(user.name, "Invalid delta.");
+  pushSnapshot(game);
+  const cur = entity.resources[name] ?? 0;
+  entity.resources[name] = Math.max(0, cur + delta);
+  send(
+    game.room,
+    `${entity.num} ${name}: ${cur} -> ${entity.resources[name]} (${delta >= 0 ? "+" : ""}${delta})`
+  );
+  broadcastPages(game);
+}
+
+// %mp <delta>[,entity] - host adjusts MP.
+function handleMp(game: Game, user: User, args: string) {
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %mp.");
+  }
+  const parts = args.split(",").map((s) => s.trim());
+  let entity: Entity | null = null;
+  let amount: number;
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    amount = parseInt(parts[0]);
+    entity = getEntity(game, parts[1]);
+  } else if (parts.length === 1) {
+    amount = parseInt(parts[0]);
+    entity = getCurrentEntity(game);
+  } else {
+    return sendPm(user.name, "Usage: %mp <delta>[,entity]");
+  }
+  if (!entity) return sendPm(user.name, "No active entity.");
+  if (isNaN(amount)) return sendPm(user.name, "Invalid MP amount.");
+  pushSnapshot(game);
+  entity.mp = Math.max(0, entity.mp + amount);
+  send(game.room, `${entity.num} MP: ${entity.mp} (${amount >= 0 ? "+" : ""}${amount})`);
+  broadcastPages(game);
+}
+
+// %uses [entity] - show remaining ability uses.
+function handleUses(game: Game, user: User, args: string) {
+  const ref = args.trim();
+  const entity = ref ? getEntity(game, ref) : getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No entity found.");
+  const lines = entity.abilities
+    .map((a) => {
+      const maxUses = a.maxUses ?? parseFrequency(a.frequency).uses;
+      if (!maxUses) return null;
+      const used = entity.usesUsed[a.name] ?? 0;
+      return `  ${a.name}: ${maxUses - used}/${maxUses}`;
+    })
+    .filter((x): x is string => x !== null);
+  sendPm(
+    user.name,
+    lines.length
+      ? `${entity.num} uses:\n${lines.join("\n")}`
+      : `${entity.num} has no limited-use abilities.`
+  );
+}
+
+// %buffs [entity] - show active buffs.
+function handleBuffs(game: Game, user: User, args: string) {
+  const ref = args.trim();
+  const entity = ref ? getEntity(game, ref) : getCurrentEntity(game);
+  if (!entity) return sendPm(user.name, "No entity found.");
+  if (entity.buffs.length === 0) return sendPm(user.name, `${entity.num} has no buffs.`);
+  const lines = entity.buffs.map(
+    (b) => `  ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat} (${b.rounds}r)`
+  );
+  sendPm(user.name, `${entity.num} buffs:\n${lines.join("\n")}`);
+}
+
+// %cure <entity> - clear removable statuses (host).
+function handleCure(game: Game, user: User, args: string) {
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %cure.");
+  }
+  const entity = getEntity(game, args.trim());
+  if (!entity) return sendPm(user.name, "Usage: %cure <entity>");
+  const removed = entity.statuses.filter((s) => s.removable);
+  if (removed.length === 0) {
+    return sendPm(user.name, `${entity.num} has no removable statuses.`);
+  }
+  pushSnapshot(game);
+  entity.statuses = entity.statuses.filter((s) => !s.removable);
+  send(game.room, `${entity.num} cured of ${removed.map((s) => s.name).join(", ")}.`);
+  broadcastPages(game);
 }
 
 // %terrain <pos> - report a tile's terrain type and move cost.
