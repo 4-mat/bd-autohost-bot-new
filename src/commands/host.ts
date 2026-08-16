@@ -211,6 +211,7 @@ export function hostCommand(
       handleNudge(room, user);
       break;
     case "join":
+    case "j":
       handleJoin(room, user, full);
       break;
     case "genpos":

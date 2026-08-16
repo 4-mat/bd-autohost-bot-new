@@ -97,6 +97,7 @@ export function handleCommand(
     id === "ffabtn" ||
     id === "nudge" ||
     id === "join" ||
+    id === "j" ||
     id === "genpos"
   ) {
     hostCommand(room, user, id, args, val, pm);
