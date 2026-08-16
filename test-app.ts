@@ -11,6 +11,7 @@ import { rooms, type Room } from "./src/rooms.js";
 import { users } from "./src/users.js";
 import { handleCommand } from "./src/commands/index.js";
 import { setWs, toId } from "./src/utils.js";
+import config from "./src/config.js";
 import {
   games,
   getCurrentEntity,
@@ -552,7 +553,7 @@ setInterval(() => {
     if (!game.timer) continue;
     const remaining = game.timer.endAt - Date.now();
     // One-time warning when 10s remain so players can act before expiry.
-    if (!game.timer.warned && remaining <= 10_000 && remaining > 0) {
+    if (config.announcements.timer && !game.timer.warned && remaining <= 10_000 && remaining > 0) {
       game.timer.warned = true;
       const entity = game.timer.entity
         ? game.entities.find((e) => e.num === game.timer.entity)

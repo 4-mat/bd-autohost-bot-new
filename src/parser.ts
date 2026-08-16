@@ -100,7 +100,7 @@ bot.on("j", (parts: string[]) => {
       const isPlayer = game.entities.some(
         (e) => !e.isMonster && toId(e.name) === uid,
       );
-      if (!isPlayer) {
+      if (!isPlayer && config.announcements.join) {
         sendPm(
           username,
           `Welcome to ${roomid}! **${game.id}** is in progress (${game.mode}, Round ${game.round}). You are spectating - %pl and %info to follow along.`,

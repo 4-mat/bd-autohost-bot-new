@@ -1,4 +1,4 @@
-import { send, sendPm, toId } from "../utils.js";
+import { send, sendPm, toId, isDev } from "../utils.js";
 import { games, type Game } from "../game/state.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
@@ -28,6 +28,22 @@ export function handleCommand(
       pm ? `pm-${user.id}` : (room?.id ?? ""),
       pm ? `|/pm ${user.name}, pong!` : "|pong!",
     );
+    return;
+  }
+
+  // Dev-only diagnostics: active game list. Restricted to config.devs.
+  if (id === "dev") {
+    if (!isDev(user.name)) return;
+    const active = [...games.values()];
+    const lines = [
+      `Active games: ${active.length}`
+    ];
+    for (const g of active) {
+      lines.push(
+        `  ${g.id} (${g.room}) mode=${g.mode} phase=${g.phase} round=${g.round} players=${g.entities.length}`
+      );
+    }
+    sendPm(user.name, lines.join("\n"));
     return;
   }
 

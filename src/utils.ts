@@ -1,3 +1,6 @@
+import config from "./config.js";
+
+/** Normalize a username/term to its PS id form: lowercase alphanumerics only. */
 export function toId(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -6,15 +9,31 @@ export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const sendQueue: Array<{ room: string; msg: string }> = [];
+/** True when the given username is in config.devs (id-normalized). */
+export function isDev(username: string): boolean {
+  const id = toId(username);
+  return config.devs.some((d) => toId(d) === id);
+}
+
+// Bound the outgoing queue so a burst or a stalled socket cannot
+// accumulate unbounded stale messages. Oldest messages drop first.
+const MAX_QUEUE = 100;
+const MAX_AGE_MS = 30_000;
+
+const sendQueue: Array<{ room: string; msg: string; at: number }> = [];
 let sending = false;
 
+/** Queue a room message, throttling sends and capping queue size/age. */
 export function send(room: string, msg: string) {
-  sendQueue.push({ room, msg });
+  sendQueue.push({ room, msg, at: Date.now() });
+  if (sendQueue.length > MAX_QUEUE) sendQueue.shift();
   if (!sending) drain();
 }
 
 function drain() {
+  while (sendQueue.length && Date.now() - sendQueue[0].at > MAX_AGE_MS) {
+    sendQueue.shift();
+  }
   if (!sendQueue.length) {
     sending = false;
     return;
@@ -26,6 +45,7 @@ function drain() {
   setTimeout(drain, 400);
 }
 
+/** Send a private message to a PS user (via the pm- room). */
 export function sendPm(user: string, msg: string) {
   send(`pm-${toId(user)}`, `|/pm ${user}, ${msg}`);
 }
@@ -110,6 +130,7 @@ export function rollDice(formula: string): {
 }
 
 let ws: { send: (msg: string) => void };
+/** Register the WebSocket used by send() to transmit messages. */
 export function setWs(w: { send: (msg: string) => void }) {
   ws = w;
 }

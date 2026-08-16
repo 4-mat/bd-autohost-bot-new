@@ -242,6 +242,8 @@ function canonicalResource(name: string): string | null {
   return null;
 }
 
+const effectsCache = new Map<string, Effect[]>();
+
 export function parseEffects(text: string): Effect[] {
   if (!text || !text.trim()) return [];
 
@@ -252,6 +254,16 @@ export function parseEffects(text: string): Effect[] {
     .replace(/\s+/g, " ")
     .trim();
 
+  const cached = effectsCache.get(normalized);
+  if (cached) return cached;
+
+  const result = parseEffectsUncached(normalized);
+  if (effectsCache.size > 5000) effectsCache.clear();
+  effectsCache.set(normalized, result);
+  return result;
+}
+
+function parseEffectsUncached(normalized: string): Effect[] {
   // Conditional statements span multiple splitClauses pieces, so try the
   // whole normalized text as a single conditional effect first. If the WHOLE
   // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return

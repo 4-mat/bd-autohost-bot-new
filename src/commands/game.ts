@@ -7,6 +7,7 @@ import {
   parsePos,
   posToStr,
 } from "../utils.js";
+import config from "../config.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
 import {
@@ -831,7 +832,9 @@ function handleAdvanceTurn(game: Game, user: User) {
 
     for (const dead of step.result.deaths) {
       game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
-      send(game.room, `**${entity.num} eliminated ${dead.num} (${dead.name})!**`);
+      if (config.announcements.kills) {
+        send(game.room, `**${entity.num} eliminated ${dead.num} (${dead.name})!**`);
+      }
     }
 
     const winner = checkGameOver(game);
@@ -1166,7 +1169,7 @@ function handleHp(game: Game, user: User, args: string) {
 
 // Active shot-clock timers. %cut puts one on a player, %timer starts a global
 // countdown; the test-app server ticks the countdown and announces expiry.
-const DEFAULT_TIMER_SECONDS = 120;
+const DEFAULT_TIMER_SECONDS = config.turnTimerSeconds;
 
 // %cut 1 -> P1, %cut 2 -> M2, etc.: match an entity by bare digits.
 // When digits are ambiguous (P2 vs M2), prefer the player entity.
