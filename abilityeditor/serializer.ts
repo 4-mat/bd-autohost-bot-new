@@ -9,14 +9,14 @@ import fs from "fs";
 
 export interface Block {
   varName: string;
-  type: "ClassData" | "WeaponData";
+  type: EntryType;
   name: string;
   chunkStart: number;
   chunkEnd: number;
   literalText: string;
 }
 
-export type EntryType = "ClassData" | "WeaponData";
+export type EntryType = "ClassData" | "WeaponData" | "ItemData";
 
 export interface EntryLike {
   name: string;
@@ -36,6 +36,10 @@ export const STAT_KEYS = ["hp", "atk", "mag", "pd", "md", "eva", "mp"];
 export const ABILITY_KEYS = [
   "name", "aliases", "level", "frequency", "mr", "roll", "damageType", "actionType",
   "targetAmount", "targetGroup", "range", "effect", "maxUses", "cost", "choices",
+];
+export const ITEM_KEYS = [
+  "name", "slots", "rank", "gold", "materials", "statBoosts",
+  "statNerfs", "frequency", "actionType", "effect",
 ];
 export const COST_KEYS = ["type", "resource", "amount", "prompt"];
 export const CHOICE_KEYS = ["id", "label"];
@@ -123,8 +127,10 @@ export function serializeBlock(
   type: EntryType,
   varName: string,
 ): string {
-  const keys = type === "ClassData" ? CLASS_KEYS : WEAPON_KEYS;
-  const setter = type === "ClassData" ? "classes" : "weapons";
+  const keys =
+    type === "ClassData" ? CLASS_KEYS : type === "WeaponData" ? WEAPON_KEYS : ITEM_KEYS;
+  const setter =
+    type === "ClassData" ? "classes" : type === "WeaponData" ? "weapons" : "items";
   const body = serializeObject(entry, keys, 2);
   // The name is emitted via JSON.stringify so quotes/backslashes can never
   // break out of the string literal (arbitrary names must stay inert).
@@ -172,7 +178,7 @@ function uniqueVar(base: string, used: Set<string>): string {
 /** Locate every `const x: ClassData = { ... }; classes.set(...)` chunk. */
 export function findBlocks(text: string): Block[] {
   const blocks: Block[] = [];
-  const re = /\n  const ([A-Za-z0-9_]+): (ClassData|WeaponData) = \{/g;
+  const re = /\n  const ([A-Za-z0-9_]+): (ClassData|WeaponData|ItemData) = \{/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const varName = m[1];
@@ -207,7 +213,7 @@ export function findBlocks(text: string): Block[] {
     if (text[chunkEnd] === ";") chunkEnd++;
     const rest = text.slice(chunkEnd);
     const setMatch = rest.match(
-      /^\n[ \t]*(?:classes|weapons)\.set\(toId\("(?:[^"\\]|\\.)*"\),[ \t]*\w+\);/,
+      /^\n[ \t]*(?:classes|weapons|items)\.set\(toId\("(?:[^"\\]|\\.)*"\),[ \t]*\w+\);/,
     );
     let name = "";
     if (setMatch) {

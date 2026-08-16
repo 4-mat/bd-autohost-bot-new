@@ -27,9 +27,11 @@ import {
   loadGameData,
   classes,
   weapons,
+  items,
   branches,
   type ClassData,
   type WeaponData,
+  type ItemData,
 } from "../src/data/index.js";
 import { writeEditorSnapshot } from "../src/data/overrides.js";
 import {
@@ -121,6 +123,9 @@ function regenerateSource(): { changed: string[]; inserted: string[]; out: strin
       entries.push({ name: w.name, sourceName: sourceNames.get(toId(w.name)), type: "WeaponData", entry: w as unknown as Record<string, unknown> });
     }
   }
+  for (const it of items.values()) {
+    entries.push({ name: it.name, type: "ItemData", entry: it as unknown as Record<string, unknown> });
+  }
   return regenerateSourceText(text, entries);
 }
 
@@ -133,9 +138,10 @@ function touch() {
   writeEditorSnapshot();
 }
 
-function entryMap(kind: string): Map<string, ClassData | WeaponData> | null {
+function entryMap(kind: string): Map<string, ClassData | WeaponData | ItemData> | null {
   if (kind === "class") return classes;
   if (kind === "weapon") return weapons;
+  if (kind === "item") return items;
   return null;
 }
 
@@ -164,6 +170,21 @@ function defaultWeapon(name: string, item: Record<string, unknown>): WeaponData 
     abilities: w.abilities,
     description: String(item.description ?? ""),
     ...(w.aliases?.length ? { aliases: w.aliases } : {}),
+  };
+}
+
+function defaultItem(name: string, item: Record<string, unknown>): ItemData {
+  return {
+    name,
+    slots: Number(item.slots) || 1,
+    rank: String(item.rank ?? ""),
+    gold: Number(item.gold) || 0,
+    materials: String(item.materials ?? ""),
+    statBoosts: String(item.statBoosts ?? ""),
+    statNerfs: String(item.statNerfs ?? ""),
+    frequency: String(item.frequency ?? ""),
+    actionType: String(item.actionType ?? ""),
+    effect: String(item.effect ?? ""),
   };
 }
 
@@ -215,6 +236,7 @@ function snapshot() {
   return {
     classes: [...classes.values()],
     weapons: [...weapons.values()],
+    items: [...items.values()],
     customs: [...customClassIds, ...customWeaponIds],
   };
 }
@@ -298,14 +320,20 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
           if (k === "name") continue;
           if (k === "stats" && isPlainObject(v)) {
             for (const sk of STAT_KEYS) {
-              if (v[sk] !== undefined) entry.stats[sk] = String(v[sk]);
+              if (v[sk] !== undefined) (entry as ClassData | WeaponData).stats[sk] = String(v[sk]);
             }
           } else if (k === "description" || k === "branch") {
             (entry as unknown as Record<string, unknown>)[k] = String(v);
           } else if (k === "abilities" && Array.isArray(v)) {
-            entry.abilities = v.map(sanitizeAbility) as unknown as ClassData["abilities"];
+            (entry as ClassData | WeaponData).abilities = v.map(sanitizeAbility) as unknown as ClassData["abilities"];
           } else if (k === "aliases" && Array.isArray(v)) {
-            entry.aliases = v.map((x) => String(x).trim()).filter(Boolean);
+            (entry as ClassData | WeaponData).aliases = v.map((x) => String(x).trim()).filter(Boolean);
+          } else if (k === "slots" || k === "gold") {
+            (entry as unknown as Record<string, unknown>)[k] = Number(v) || 0;
+          } else if (
+            ["rank", "materials", "statBoosts", "statNerfs", "frequency", "actionType", "effect"].includes(k)
+          ) {
+            (entry as unknown as Record<string, unknown>)[k] = String(v);
           }
         }
       }
@@ -322,7 +350,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         send(res, 404, { error: `${kind ?? "?"} '${owner ?? "?"}' not found` });
         return;
       }
-      const abilities = entry.abilities ?? (entry.abilities = []);
+      const abilities =
+        (entry as ClassData | WeaponData).abilities ??
+        ((entry as ClassData | WeaponData).abilities = []);
       if (action === "add") {
         const a = sanitizeAbility(ability ?? {});
         if (!a.name) {
@@ -381,10 +411,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         send(res, 400, { error: `A ${kind} named '${nm}' already exists` });
         return;
       }
-      const built = kind === "class" ? defaultClass(nm, item) : defaultWeapon(nm, item);
+      const built =
+        kind === "class"
+          ? defaultClass(nm, item)
+          : kind === "weapon"
+            ? defaultWeapon(nm, item)
+            : defaultItem(nm, item);
       map.set(toId(nm), built);
-      customSetFor(kind)!.add(toId(nm));
-      saveCustoms();
+      const cs = customSetFor(kind);
+      if (cs) {
+        cs.add(toId(nm));
+        saveCustoms();
+      }
       touch();
       send(res, 200, { ok: true, name: nm });
       return;
@@ -394,8 +432,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       const { kind, name } = body;
       const map = entryMap(kind);
       const key = toId(name);
+      if (!map) {
+        send(res, 400, { error: `'${name ?? "?"}' not found` });
+        return;
+      }
+      if (kind === "item") {
+        map.delete(key);
+        touch();
+        send(res, 200, { ok: true });
+        return;
+      }
       const cs = customSetFor(kind);
-      if (!map || !cs || !cs.has(key)) {
+      if (!cs || !cs.has(key)) {
         send(res, 400, { error: `'${name ?? "?"}' is not a custom ${kind ?? "item"}` });
         return;
       }
@@ -425,6 +473,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       // loadGameData would otherwise leave behind are dropped too.
       classes.clear();
       weapons.clear();
+      items.clear();
       branches.clear();
       sourceNames.clear();
       loadGameData();
