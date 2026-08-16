@@ -127,6 +127,40 @@ export function infoCommand(user: User, cmd: string, args: string) {
     return;
   }
 
+  if (cmd === "find") {
+    const q = toId(args);
+    if (!q) return sendPm(target, "Usage: %find <query>");
+    const matches: string[] = [];
+    for (const cls of classes.values()) {
+      if (toId(cls.name).includes(q)) matches.push(`[class] ${cls.name}`);
+      for (const ab of cls.abilities) {
+        if (toId(ab.name).includes(q))
+          matches.push(`[ability] ${ab.name} (Class ${cls.name})`);
+      }
+    }
+    for (const wpn of weapons.values()) {
+      if (toId(wpn.name).includes(q)) matches.push(`[weapon] ${wpn.name}`);
+      for (const ab of wpn.abilities) {
+        if (toId(ab.name).includes(q))
+          matches.push(`[ability] ${ab.name} (Weapon ${wpn.name})`);
+      }
+    }
+    for (const it of items.values()) {
+      if (toId(it.name).includes(q)) matches.push(`[item] ${it.name}`);
+    }
+    if (matches.length === 0) return sendPm(target, `No matches for "${args}".`);
+    const capped = matches.slice(0, 20);
+    const more =
+      matches.length > capped.length
+        ? `\n…and ${matches.length - capped.length} more`
+        : "";
+    sendPm(
+      target,
+      `Matches for "${args}" (${matches.length}):\n${capped.join("\n")}${more}`,
+    );
+    return;
+  }
+
   if (cmd === "rf") {
     const id = toId(args);
     const link = Reference.get(id);
@@ -140,15 +174,29 @@ export function infoCommand(user: User, cmd: string, args: string) {
 }
 
 function findAbility(id: string): { source: string; ability: AbilityData } | null {
+  const all: { source: string; ability: AbilityData }[] = [];
   for (const cls of classes.values()) {
-    const ab = cls.abilities.find((a) => toId(a.name) === id);
-    if (ab) return { source: `Class ${cls.name}`, ability: ab };
+    for (const ab of cls.abilities) {
+      all.push({ source: `Class ${cls.name}`, ability: ab });
+    }
   }
   for (const wpn of weapons.values()) {
-    const ab = wpn.abilities.find((a) => toId(a.name) === id);
-    if (ab) return { source: `Weapon ${wpn.name}`, ability: ab };
+    for (const ab of wpn.abilities) {
+      all.push({ source: `Weapon ${wpn.name}`, ability: ab });
+    }
   }
-  return null;
+
+  // Exact name wins, then an explicit alias, then a unique prefix.
+  const exact = all.filter((x) => toId(x.ability.name) === id);
+  if (exact.length > 0) return exact[0];
+
+  const alias = all.filter((x) =>
+    x.ability.aliases?.some((a) => toId(a) === id),
+  );
+  if (alias.length === 1) return alias[0];
+
+  const prefix = all.filter((x) => toId(x.ability.name).startsWith(id));
+  return prefix.length === 1 ? prefix[0] : null;
 }
 
 function buildAbilityLine(ab: {

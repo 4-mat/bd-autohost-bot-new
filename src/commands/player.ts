@@ -1,4 +1,4 @@
-import { send, sendPm, sendPmChunks, toId, posToStr } from "../utils.js";
+import { send, sendPm, sendPmChunks, toId, posToStr, isDev } from "../utils.js";
 import type { User } from "../users.js";
 import {
   games,
@@ -8,7 +8,7 @@ import {
   type Entity,
 } from "../game/state.js";
 import { items } from "../data/index.js";
-import { getRecords } from "../records.js";
+import { getRecords, getRecord, resetRecords } from "../records.js";
 
 function findGameForUser(userName: string): Game | null {
   for (const game of games.values()) {
@@ -205,7 +205,23 @@ export function playerCommand(user: User, cmd: string, args: string) {
     }
 
     case "records": {
-      const n = parseInt(args.trim(), 10) || 10;
+      const q = args.trim();
+      if (q === "reset") {
+        if (!isDev(user.name)) {
+          return sendPm(target, "Only devs can reset records.");
+        }
+        resetRecords();
+        return sendPm(target, "Records cleared.");
+      }
+      if (q && !/^\d+$/.test(q)) {
+        const rec = getRecord(q);
+        if (!rec) return sendPm(target, `No records for "${q}".`);
+        return sendPm(
+          target,
+          `${rec.name} — ${rec.wins}W / ${rec.kills}K / ${rec.games} games`,
+        );
+      }
+      const n = q ? parseInt(q, 10) : 10;
       const rows = getRecords(n);
       if (rows.length === 0) {
         return sendPm(

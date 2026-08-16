@@ -51,7 +51,7 @@ import {
   type AttackStep,
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
-import { recordGame } from "../records.js";
+import { recordGame, saveRecords } from "../records.js";
 import { getVersionData } from "../data/version43.js";
 import {    normalizeVoteMode,
     pendingVoterIds,
@@ -324,6 +324,11 @@ export function gameCommand(
     case "standings":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleStandings(game, user);
+      break;
+
+    case "export":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleExport(game, user);
       break;
 
     default:
@@ -1234,6 +1239,18 @@ function handleStandings(game: Game, user: User) {
   sendPm(user.name, lines.join("\n") || "No entities.");
 }
 
+// %export - full action-log transcript, ready to paste as a replay.
+function handleExport(game: Game, user: User) {
+  if (game.log.length === 0) {
+    return sendPm(user.name, "No action log yet.");
+  }
+  const header = `${game.mode} on ${game.mapName || "(no map)"} — ${game.round} round(s), ${game.log.length} entries`;
+  const body = game.log
+    .map((e) => `[T${e.turn}] ${e.entity}: ${e.description}`)
+    .join("\n");
+  sendPmChunks(user.name, `**Replay ${game.id}**\n${header}\n\n${body}`);
+}
+
 function handlePremove(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
 
@@ -2081,7 +2098,10 @@ function buildTurnOrder(game: Game): string {
 export function announceGameOver(game: Game, winner: Entity | null) {
   const first = game.phase !== "ended";
   game.phase = "ended";
-  if (first) recordGame(game);
+  if (first) {
+    recordGame(game);
+    saveRecords();
+  }
 
   if (winner) {
     send(

@@ -35,11 +35,13 @@ const COMMAND_HELP: Record<string, string> = {
   xp: "Show XP earned this game (%xp [entity]).",
   gold: "Show gold earned this game (%gold [entity]).",
   gems: "Show gems earned this game (%gems [entity]).",
-  records: "Lifetime leaderboard (%records [top N]).",
+  records: "Lifetime leaderboard (%records [N | <name> | reset]).",
   surrender: "Concede and leave the game (alias: %forfeit).",
   rematch: "Host: reset the board and restart (%rematch).",
   coin: "Flip a coin.",
   pick: "Pick one option at random (%pick a, b, c).",
+  find: "Search classes/weapons/abilities/items (%find <query>).",
+  export: "Dump the full action log as a replay transcript.",
 };
 
 export function handleCommand(
@@ -127,7 +129,14 @@ export function handleCommand(
   }
 
   // Info/reference commands
-  if (id === "wt" || id === "rf" || id === "wtm" || id === "data" || id === "freq") {
+  if (
+    id === "wt" ||
+    id === "rf" ||
+    id === "wtm" ||
+    id === "data" ||
+    id === "freq" ||
+    id === "find"
+  ) {
     infoCommand(user, id, args || val);
     return;
   }
@@ -242,7 +251,8 @@ export function handleCommand(
     id === "statuses" ||
     id === "summary" ||
     id === "standings" ||
-    id === "version"
+    id === "version" ||
+    id === "export"
   ) {
     gameCommand(room, user, id, args, val, pm);
     return;

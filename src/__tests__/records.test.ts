@@ -1,5 +1,16 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { recordGame, getRecords, resetRecords } from "../records.js";
+import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  recordGame,
+  getRecords,
+  getRecord,
+  resetRecords,
+  setRecordsFile,
+  saveRecords,
+  loadRecords,
+} from "../records.js";
 
 describe("records", () => {
   beforeEach(() => resetRecords());
@@ -57,5 +68,36 @@ describe("records", () => {
     }
     expect(getRecords(2)).toHaveLength(2);
     expect(getRecords()).toHaveLength(5);
+  });
+
+  it("looks up a single player", () => {
+    recordGame({
+      winner: "P1",
+      kills: { P1: 4 },
+      entities: [{ num: "P1", name: "Dana", isMonster: false }],
+    });
+    expect(getRecord("dana")?.kills).toBe(4);
+    expect(getRecord("nobody")).toBeNull();
+  });
+
+  it("persists and reloads", () => {
+    const tmp = join(
+      tmpdir(),
+      `records-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
+    setRecordsFile(tmp);
+    resetRecords();
+    recordGame({
+      winner: "P1",
+      kills: { P1: 3 },
+      entities: [{ num: "P1", name: "Carol", isMonster: false }],
+    });
+    saveRecords();
+    resetRecords();
+    expect(getRecords()).toHaveLength(0);
+    loadRecords();
+    expect(getRecord("Carol")?.kills).toBe(3);
+    expect(getRecord("Carol")?.wins).toBe(1);
+    rmSync(tmp, { force: true });
   });
 });
