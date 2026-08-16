@@ -30,11 +30,11 @@ export function toId(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-export const CLASS_KEYS = ["name", "stats", "description", "abilities"];
-export const WEAPON_KEYS = ["name", "branch", "stats", "description", "abilities"];
+export const CLASS_KEYS = ["name", "aliases", "stats", "description", "abilities"];
+export const WEAPON_KEYS = ["name", "aliases", "branch", "stats", "description", "abilities"];
 export const STAT_KEYS = ["hp", "atk", "mag", "pd", "md", "eva", "mp"];
 export const ABILITY_KEYS = [
-  "name", "level", "frequency", "mr", "roll", "damageType", "actionType",
+  "name", "aliases", "level", "frequency", "mr", "roll", "damageType", "actionType",
   "targetAmount", "targetGroup", "range", "effect", "maxUses", "cost", "choices",
 ];
 export const COST_KEYS = ["type", "resource", "amount", "prompt"];
@@ -68,6 +68,9 @@ function inlineObj(o: Record<string, unknown>, keys: string[]): string {
 
 function fieldValue(key: string, v: unknown, indent: number): string {
   if (key === "cost" && isPlainObject(v)) return inlineObj(v, COST_KEYS);
+  if (key === "aliases" && Array.isArray(v)) {
+    return JSON.stringify(v.map((x) => String(x)));
+  }
   if (key === "choices" && Array.isArray(v)) {
     const items = v.map(
       (c) => `${indentStr(indent + 2)}${inlineObj(c, CHOICE_KEYS)},`,
@@ -342,7 +345,7 @@ export function sanitizeAbility(raw: unknown): Record<string, unknown> {
     let v = raw[k];
     if (v === undefined || v === null || v === "") {
       if (k === "name") continue;
-      if (k === "cost" || k === "choices") continue;
+      if (k === "cost" || k === "choices" || k === "aliases") continue;
       if (k === "maxUses") continue;
     }
     if (k === "level") v = normalizeLevel(v);
@@ -361,6 +364,10 @@ export function sanitizeAbility(raw: unknown): Record<string, unknown> {
         .map((c) => ({ id: String(c.id), label: String(c.label) }));
       if (!ch.length) continue;
       v = ch;
+    } else if (k === "aliases" && Array.isArray(v)) {
+      const al = v.map((x) => String(x).trim()).filter(Boolean);
+      if (!al.length) continue;
+      v = al;
     }
     clean[k] = v;
   }
@@ -391,6 +398,9 @@ export function normalizeProposalEntry(
   entry.abilities = Array.isArray(raw.abilities)
     ? raw.abilities.map(sanitizeAbility).filter((a) => a.name)
     : [];
+  if (Array.isArray(raw.aliases)) {
+    entry.aliases = raw.aliases.map((x) => String(x).trim()).filter(Boolean);
+  }
   entry.description = String(raw.description ?? "");
   return entry;
 }
