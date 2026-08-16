@@ -472,6 +472,7 @@
         <div id="tabs">
           <button data-kind="class" class="active">Classes</button>
           <button data-kind="weapon">Weapons</button>
+          <button data-kind="item">Items (beta)</button>
         </div>
         <input id="search" type="text" placeholder="Search…" spellcheck="false" />
         <div id="item-list"></div>
@@ -520,7 +521,13 @@
     const STATS = ["hp", "atk", "mag", "pd", "md", "eva", "mp"];
 
     function list() {
-      return state.data[state.kind === "class" ? "classes" : "weapons"];
+      return state.data[
+        state.kind === "class"
+          ? "classes"
+          : state.kind === "weapon"
+            ? "weapons"
+            : "items"
+      ];
     }
     function isCustomName(name) {
       return state.data.customs.includes(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
@@ -562,6 +569,7 @@
       const data = {
         classes: (base.classes || []).map((c) => JSON.parse(JSON.stringify(c))),
         weapons: (base.weapons || []).map((w) => JSON.parse(JSON.stringify(w))),
+        items: (base.items || []).map((c) => JSON.parse(JSON.stringify(c))),
         customs: [],
       };
       try {
@@ -642,12 +650,27 @@
     }
 
     function staticAddCustom(body) {
-      const kind = body.kind === "weapon" ? "weapon" : "class";
-      const arr = state.data[kind === "class" ? "classes" : "weapons"];
+      const kind = body.kind === "item" ? "item" : body.kind === "weapon" ? "weapon" : "class";
+      const arr = state.data[kind === "class" ? "classes" : kind === "weapon" ? "weapons" : "items"];
       const name = String((body.item && body.item.name) || "").trim();
       if (!name) return Promise.reject(new Error("Name is required."));
       if (arr.some((x) => x.name === name)) {
         return Promise.reject(new Error('An entry named "' + name + '" already exists.'));
+      }
+      if (kind === "item") {
+        arr.push({
+          name,
+          slots: 1,
+          rank: "",
+          gold: 0,
+          materials: "",
+          statBoosts: "",
+          statNerfs: "",
+          frequency: "",
+          actionType: "",
+          effect: "",
+        });
+        return Promise.resolve({ ok: true });
       }
       const entry = { name };
       if (kind === "weapon") entry.branch = "Bow";
@@ -663,12 +686,14 @@
     }
 
     function staticRemoveCustom(body) {
-      const kind = body.kind === "weapon" ? "weapon" : "class";
-      const arr = state.data[kind === "class" ? "classes" : "weapons"];
+      const kind = body.kind === "item" ? "item" : body.kind === "weapon" ? "weapon" : "class";
+      const arr = state.data[kind === "class" ? "classes" : kind === "weapon" ? "weapons" : "items"];
       const i = arr.findIndex((x) => x.name === body.name);
       if (i >= 0) arr.splice(i, 1);
-      state.data.customs = state.data.customs.filter((id) => id !== toId(body.name));
-      persistCustoms();
+      if (kind !== "item") {
+        state.data.customs = state.data.customs.filter((id) => id !== toId(body.name));
+        persistCustoms();
+      }
       return Promise.resolve({ ok: true });
     }
 
@@ -801,7 +826,7 @@
       document.querySelectorAll("#tabs button").forEach((b) =>
         b.classList.toggle("active", b.dataset.kind === state.kind),
       );
-      $("#btn-new").textContent = "＋ New " + (state.kind === "class" ? "Class" : "Weapon");
+      $("#btn-new").textContent = "＋ New " + (state.kind === "class" ? "Class" : state.kind === "weapon" ? "Weapon" : "Item");
     }
 
     // ---------- status ----------
@@ -966,9 +991,37 @@
       );
     }
 
+    function renderItemDetail(item) {
+      const detail =
+        '<div class="detail-head"><h2>' +
+        esc(item.name) +
+        '</h2><span class="sub">Item (beta)</span><span class="spacer"></span>' +
+        '<button class="danger mini" data-act="del-item">Delete item</button>' +
+        "</div>" +
+        field("name", "Name", item.name) +
+        '<div class="grid stats">' +
+        field("slots", "Slots", item.slots) +
+        field("rank", "Rank (C/B/A/S)", item.rank) +
+        field("gold", "Gold", item.gold) +
+        "</div>" +
+        field("materials", "Materials (e.g. 1 Ruby, 1 Topaz)", item.materials) +
+        field("statBoosts", "Stat Boosts (e.g. +2 ATK)", item.statBoosts) +
+        field("statNerfs", "Stat Nerfs", item.statNerfs) +
+        field("frequency", "Frequency", item.frequency) +
+        field("actionType", "Action Type", item.actionType) +
+        field("effect", "Effect (BD Lang)", item.effect, { textarea: true, full: true });
+      $("#detail").innerHTML = detail;
+      $("#detail").style.display = "";
+      $("#empty-state").style.display = "none";
+    }
+
     function renderDetail() {
       const item = getItem(state.selected);
       if (!item) return;
+      if (state.kind === "item") {
+        renderItemDetail(item);
+        return;
+      }
       const custom = isCustomName(item.name);
       const stats = item.stats || {};
       const statsHtml =
@@ -1300,7 +1353,8 @@
       }
       const f = t.dataset.f;
       if (f === "name") onItemEdit({ name: t.value });
-      else if (f === "description" || f === "branch") onItemEdit({ [f]: t.value });
+      else if (f === "slots" || f === "gold") onItemEdit({ [f]: Number(t.value) || 0 });
+      else if (f === "description" || f === "branch" || f === "rank" || f === "materials" || f === "statBoosts" || f === "statNerfs" || f === "frequency" || f === "actionType" || f === "effect") onItemEdit({ [f]: t.value });
     }
     $("#editor").addEventListener("input", onEditEvent);
     $("#editor").addEventListener("change", onEditEvent);
@@ -1321,6 +1375,7 @@
       if (act === "add-ability") addAbility();
       else if (act === "del-ability") deleteAbility(Number(actEl.dataset.idx));
       else if (act === "del-custom") deleteCustom();
+      else if (act === "del-item") deleteItem();
     });
 
     // ---------- global actions ----------
@@ -1395,9 +1450,9 @@
 
     function newCustom() {
       promptModal(
-        "New " + (state.kind === "class" ? "Class" : "Weapon"),
+        "New " + (state.kind === "class" ? "Class" : state.kind === "weapon" ? "Weapon" : "Item"),
         "Name",
-        "e.g. Test " + (state.kind === "class" ? "Class" : "Weapon"),
+        "e.g. Test " + (state.kind === "class" ? "Class" : state.kind === "weapon" ? "Weapon" : "Item"),
         async (name) => {
           try {
             await api("/api/custom", { kind: state.kind, item: { name } });
@@ -1420,6 +1475,29 @@
           }
         },
       );
+    }
+
+    async function deleteItem() {
+      const item = currentItem();
+      if (!item) return;
+      if (
+        !confirm(
+          'Delete item "' +
+            item.name +
+            '"? After Save to Bot it will be removed from src/data/index.ts.',
+        )
+      )
+        return;
+      try {
+        await api("/api/custom/remove", { kind: "item", name: item.name });
+        state.selected = null;
+        await fetchData();
+        $("#empty-state").style.display = "";
+        $("#detail").style.display = "none";
+        toast("Item removed.", "ok");
+      } catch (e) {
+        toast(e.message, "err");
+      }
     }
 
     async function deleteCustom() {

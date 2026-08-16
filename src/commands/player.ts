@@ -1,4 +1,4 @@
-import { send, sendPm, toId, posToStr } from "../utils.js";
+import { send, sendPm, sendPmChunks, toId, posToStr } from "../utils.js";
 import type { User } from "../users.js";
 import {
   games,
@@ -6,6 +6,7 @@ import {
   type Game,
   type Entity,
 } from "../game/state.js";
+import { items } from "../data/index.js";
 
 function findGameForUser(userName: string): Game | null {
   for (const game of games.values()) {
@@ -102,11 +103,15 @@ export function playerCommand(user: User, cmd: string, args: string) {
 
     case "vi":
     case "viewitems": {
-      const name = args.trim() || user.name;
-      const result = findEntityInGames(name);
-      if (!result) return sendPm(target, `No character found for ${name}.`);
-
-      sendPm(target, `Items for ${name}: (item system not yet implemented)`);
+      const list = [...items.values()];
+      if (list.length === 0) {
+        return sendPm(target, "Items (beta): none defined yet. Add them in the ability editor.");
+      }
+      const lines = list.map(
+        (it) =>
+          `${it.name} (${it.rank || "-"}) — ${it.slots} slot${it.slots === 1 ? "" : "s"}, ${it.gold} gold${it.materials ? ", " + it.materials : ""}`,
+      );
+      sendPmChunks(target, `Items (beta):\n${lines.join("\n")}`);
       break;
     }
 
