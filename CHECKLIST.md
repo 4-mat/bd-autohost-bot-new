@@ -106,21 +106,26 @@ Pick whole groups (or individual features) with `[x]`.
 - [ ] 66. `%xp [entity]`
 - [ ] 67. `%gold [entity]`
 - [ ] 68. `%gems [entity]`
-- [ ] 69. `%records [N]` lifetime leaderboard (`src/records.ts`, in-memory)
+- [ ] 69. `%records [N]` lifetime leaderboard (`src/records.ts`)
 - [ ] 70. `%surrender` / `%forfeit`
 - [ ] 71. `%rematch`
 - [ ] 72. `%coin`
 - [ ] 73. `%pick`
 
+### M. Records, lookups & export (batch 12) — commit `f5f43cf`
+- [ ] 74. Records persistence to `records.json` (load on boot, save on game over)
+- [ ] 75. `%records <name>` — one player's record
+- [ ] 76. `%records reset` — dev-only clear
+- [ ] 77. Ability alias/prefix resolution in `%wt` / `%freq`
+- [ ] 78. `%find <query>` — search classes/weapons/abilities/items
+- [ ] 79. `%export` — full action-log replay transcript
+
 ## Deferred ideas (not implemented)
-- [ ] Persist `%records` to disk across bot restarts
-- [ ] `%records reset` (clear the leaderboard)
 - [ ] Item equip / slot / `%buyitem` runtime (items are data + lookup only)
-- [ ] Ability-alias *consumption* at runtime (`findAbility` lives on this branch;
-      plugs into `resolveName` once merged)
 - [ ] AFK / timeout detection
 - [ ] Surrender vote (majority) vs individual concede
+- [ ] Per-player cumulative damage dealt/taken tracking
 
 ## Verification state (at time of writing)
 - `tsc --noEmit` clean
-- 440/440 tests pass (19 files)
+- 442/442 tests pass (19 files)
