@@ -1,8 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { loadGameData } from "../data/index.js";
-import { wtLookup } from "../commands/info.js";
+import { wtLookup, chunkBlocks } from "../commands/info.js";
 
 loadGameData();
+
+// Every <details> block is atomic: chunks must never split one mid-tag, and
+// each sent chunk must have balanced open/close tags.
+function assertBalanced(chunks: string[]) {
+  for (const c of chunks) {
+    const open = (c.match(/<details>/g) || []).length;
+    const close = (c.match(/<\/details>/g) || []).length;
+    expect(open, `chunk has unbalanced <details>:\n${c.slice(0, 120)}`).toBe(close);
+  }
+}
 
 describe("wtLookup %wt two-token lookup", () => {
   test("class + ability prints only that ability", () => {
@@ -40,27 +50,36 @@ describe("wtLookup %wt lookups", () => {
     expect(out[0]).toContain("<b>Dissonance</b>");
   });
 
-  test("class dump is chunked and every chunk stays under the PM limit", () => {
-    const out = wtLookup("bard");
-    expect(out).toHaveLength(1);
-    expect(out[0].length).toBeGreaterThan(900);
-    // sendPmChunks splits on newlines into <=900-char pieces — verify the
-    // dump would actually chunk (the anti-truncation requirement).
-    const chunks: string[] = [];
-    let start = 0;
-    while (start < out[0].length) {
-      let end = start + 900;
-      if (end < out[0].length) {
-        const newline = out[0].lastIndexOf("\n", end);
-        if (newline > start) end = newline + 1;
-      }
-      chunks.push(out[0].slice(start, end).trim());
-      start = end;
+  test("class dump blocks are atomic and chunked without splitting <details>", () => {
+    const blocks = wtLookup("bard");
+    // Header + one block per ability.
+    expect(blocks.length).toBeGreaterThan(3);
+    for (const b of blocks) {
+      expect(b.match(/<details>/g)?.length ?? 0).toBe(b.match(/<\/details>/g)?.length ?? 0);
     }
+    const chunks = chunkBlocks(blocks);
     expect(chunks.length).toBeGreaterThan(1);
     for (const c of chunks) {
       expect(c.length).toBeLessThanOrEqual(900);
     }
+    assertBalanced(chunks);
+  });
+
+  test("single oversized ability block stays intact in one chunk", () => {
+    const blocks = wtLookup("cards");
+    const dump = blocks.find((b) => b.length > 900);
+    if (dump) {
+      const chunks = chunkBlocks(blocks);
+      expect(chunks.some((c) => c === dump || c.includes(dump))).toBe(true);
+      assertBalanced(chunks);
+    }
+  });
+
+  test("modes listing chunks keep each mode's <details> whole", () => {
+    const blocks = wtLookup("modes");
+    expect(blocks.length).toBeGreaterThan(1);
+    const chunks = chunkBlocks(blocks);
+    assertBalanced(chunks);
   });
 
   test("unknown single token reports no data", () => {
