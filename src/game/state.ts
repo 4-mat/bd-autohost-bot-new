@@ -333,7 +333,11 @@ export interface Game {
    * pointer then already sits on the entity that shifted into the removed
    * slot, so the next nextTurn() must behave like an actor-death transition
    * (no buff tick / no advance) or that entity's turn gets skipped. Cleared
-   * by nextTurn when consumed.
+   * by nextTurn when consumed. Commands that remove the current actor outside
+   * nextTurn must advance the turn immediately (advanceAfterActorRemoval) so
+   * the flag cannot linger into a later %endturn after the shifted-in entity
+   * has acted — a stale flag there would skip end-of-turn processing and
+   * hand the same entity the turn again (a double turn).
    */
   removedCurrentActor?: boolean;
 }
@@ -454,19 +458,12 @@ export function getReachableTiles(
       if (nr < 0 || nr >= game.map.length || nc < 0 || nc >= game.map[0].length)
         continue;
 
-      const terrain = game.map[nr][nc];
-      // Obstructions + Broken (impassable) + Lava (damages on entry).
-      if (!isStandable(terrain)) continue;
-      // A tile occupied by a living entity can't be entered (matches
-      // pushEntity/pullEntity via isPassable), so %move/%dash reject it.
-      if (
-        game.entities.some(
-          (e) => e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
-        )
-      )
-        continue;
+      // Obstructions + Broken (impassable) + Lava (damages on entry) and
+      // living-entity occupancy all make a tile impassable — reuse isPassable
+      // so %move/%dash stay consistent with pushEntity/pullEntity.
+      if (!isPassable(game, nr, nc)) continue;
 
-      const tileCost = moveCost(terrain);
+      const tileCost = moveCost(game.map[nr][nc]);
       const newCost = cost + tileCost;
       if (newCost > finalMp) continue;
 

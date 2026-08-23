@@ -31,7 +31,7 @@ import {
   voteOptionsFor,
 } from "../data/gamemodes.js";
 import { buildHostPage, buildPlayerPage } from "../html/pages.js";
-import { broadcastPages } from "./game.js";
+import { broadcastPages, advanceAfterActorRemoval } from "./game.js";
 import type { AbilityData } from "../data/index.js";
 
 // Modes in which someone must be designated the Juggernaut (%setjugg).
@@ -1555,6 +1555,7 @@ function handleRemPlayer(room: Room, user: User, args: string) {
 
   removeEntity(game, entity);
   send(room.id, `**${entity.num} (${entity.name})** has been removed.`);
+  if (advanceAfterActorRemoval(game)) return;
   broadcastPages(game);
 }
 

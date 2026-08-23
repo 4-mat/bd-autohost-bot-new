@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { gameCommand } from "../commands/game.js";
 import { getEffectiveStat, getStatBonus } from "../game/resolve.js";
-import { games } from "../game/state.js";
+import { games, getCurrentEntity } from "../game/state.js";
 import { setWs } from "../utils.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
@@ -1281,5 +1281,69 @@ describe("action log", () => {
     const entry = game.log[game.log.length - 1];
     expect(entry.description).toContain("dashes to");
     expect(user.dashUsed).toBe(true);
+  });
+});
+// ---------------------------------------------------------------------------
+// Mid-turn removal of the current actor (%leave / %hp / %remp / finishStep)
+// ---------------------------------------------------------------------------
+
+describe("mid-turn removal of the current actor", () => {
+  beforeEach(() => games.clear());
+
+  const bob: User = { id: "bob", name: "Bob", rooms: {}, last: 0 };
+  const charlie: User = { id: "charlie", name: "Charlie", rooms: {}, last: 0 };
+
+  it("%leave hands the turn to the shifted-in entity so the next %endturn moves on", () => {
+    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 0 });
+    const p3 = makeEntity({ num: "P3", name: "Charlie", pos: [0, 2], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    games.set(game.id, game);
+    game.turnIndex = 1; // P2 is the current actor
+
+    // The current actor leaves mid-turn; the shifted-in P3's turn starts
+    // immediately and the transient flag is consumed on the spot.
+    gameCommand(room, bob, "leave", "", "");
+    expect(game.removedCurrentActor).toBeFalsy();
+    expect(game.turnIndex).toBe(1);
+    expect(getCurrentEntity(game)?.num).toBe("P3");
+
+    // P3 can still act in its (now formally started) turn ...
+    gameCommand(room, charlie, "pass", "", "");
+
+    // ... and P3's %endturn must advance on — never hand P3 the turn again.
+    gameCommand(room, host, "next", "", "");
+    expect(getCurrentEntity(game)?.num).toBe("P1");
+    expect(game.round).toBe(2);
+  });
+
+  it("does not advance when the leaving player is not the current actor", () => {
+    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 0 });
+    const game = makeGame({ entities: [p1, p2] });
+    games.set(game.id, game);
+    game.turnIndex = 0; // P1 is the current actor
+
+    gameCommand(room, bob, "leave", "", "");
+
+    // Non-actor removal: no turn transition; P1 keeps the turn.
+    expect(game.removedCurrentActor).toBeUndefined();
+    expect(getCurrentEntity(game)?.num).toBe("P1");
+    expect(game.turnIndex).toBe(0);
+  });
+
+  it("%hp killing a non-current entity does not advance the turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 0 });
+    const p3 = makeEntity({ num: "P3", name: "Charlie", pos: [0, 2], team: 0 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    games.set(game.id, game);
+    game.turnIndex = 1; // P2 is the current actor
+
+    gameCommand(room, host, "hp", "-9999,P3", "");
+
+    expect(game.entities.find((e) => e.num === "P3")).toBeUndefined();
+    expect(game.removedCurrentActor).toBeUndefined();
+    expect(getCurrentEntity(game)?.num).toBe("P2");
   });
 });

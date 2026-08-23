@@ -1416,6 +1416,11 @@ describe("removeEntity", () => {
     const result = nextTurn(game);
     expect(game.removedCurrentActor).toBe(false);
     expect(result.entity?.num).toBe("P3");
+    // Once P3's %endturn consumes the flag, the FOLLOWING %endturn must
+    // advance past P3 to P1 — it must never re-give P3 the turn (the
+    // stale-flag double-turn bug: commands like %leave/%hp/%remp must
+    // advance right away or the next %endturn would restart P3).
+    expect(nextTurn(game).entity?.num).toBe("P1");
   });
 
   it("does not flag non-actor removals", () => {

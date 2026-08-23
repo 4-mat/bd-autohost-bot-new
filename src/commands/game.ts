@@ -511,6 +511,8 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
     entity.pendingAction = null;
     send(game.room, `**${ability.name}** resolved. Use %back to undo.`);
+    // A no-dice Free/Swift can kill the actor (recoil/confusion): advance now.
+    if (advanceAfterActorRemoval(game)) return;
     broadcastPages(game);
     return;
   }
@@ -676,6 +678,7 @@ function handleLeave(game: Game, user: User) {
   }
   removeEntity(game, entity);
   send(game.room, `**${entity.num} (${entity.name})** has left the game.`);
+  if (advanceAfterActorRemoval(game)) return;
   broadcastPages(game);
 }
 
@@ -759,6 +762,9 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
     return;
   }
 
+  // The step can kill the actor (recoil/confusion): advance now so the
+  // shifted-in entity's turn starts here, not at a later %endturn.
+  if (advanceAfterActorRemoval(game)) return;
   broadcastPages(game);
 }
 
@@ -848,7 +854,16 @@ function handleAdvanceTurn(game: Game, user: User) {
   // repositioned turnIndex onto the next entity; tell nextTurn so it does
   // not advance past it a second time.
   const actorDied = entity.curhp <= 0 || !game.entities.includes(entity);
-  const result = nextTurn(game, { actorDied });
+  doNextTurn(game, { actorDied });
+}
+
+/**
+ * Advance the turn (nextTurn), announce its messages, and run transition
+ * deaths, retries, and game-over checks. Shared by %endturn and by the
+ * commands that remove the current actor mid-turn.
+ */
+function doNextTurn(game: Game, opts: { actorDied?: boolean } = {}) {
+  const result = nextTurn(game, opts);
   for (const msg of result.messages) {
     send(game.room, msg);
   }
@@ -878,6 +893,27 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+/**
+ * Start the turn of the entity that shifted into a removed actor's slot
+ * right where the removal happened — %leave, %hp, %remp, and no-dice
+ * Free/Swift resolutions can remove the CURRENT actor without going through
+ * %endturn, and leave the transient removedCurrentActor flag pending.
+ *
+ * If that flag survived until the shifted-in entity's %endturn, the flag
+ * would be consumed there as if it were a removal transition: nextTurn skips
+ * end-of-turn processing, leaves turnIndex unchanged, and hands the same
+ * entity the turn AGAIN (a double turn). Advancing right now consumes the
+ * flag at the point the shift-in is handled. Returns true when the turn was
+ * advanced and announced.
+ */
+export function advanceAfterActorRemoval(game: Game): boolean {
+  if (game.phase !== "playing" || game.removedCurrentActor !== true) {
+    return false;
+  }
+  doNextTurn(game);
+  return true;
 }
 
 function summarizeResult(
@@ -1147,6 +1183,7 @@ function handleHp(game: Game, user: User, args: string) {
       announceGameOver(game, winner);
       return;
     }
+    if (advanceAfterActorRemoval(game)) return;
   }
 
   broadcastPages(game);
