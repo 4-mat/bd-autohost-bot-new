@@ -84,7 +84,10 @@ function allowOrigin(origin) {
 			o.hostname === 'localhost' ||
 			o.hostname === '127.0.0.1' ||
 			o.hostname === '::1';
-		const portOk = !o.port || o.port === String(PORT);
+		// An origin with no explicit port means the protocol default (80/443);
+		// resolve it so a default-port origin can't bypass the PORT check.
+		const effectivePort = o.port || (o.protocol === 'https:' ? '443' : '80');
+		const portOk = effectivePort === String(PORT);
 		if (loop && portOk) return true;
 		const allowed = (process.env.ALLOWED_ORIGINS || '')
 			.split(',')
