@@ -130,6 +130,19 @@ describe("parseEffects", () => {
     // fresh array per call (PR-Agent #184).
     expect(parseEffects("")).toBe(parseEffects(""));
     expect(parseEffects("   \n ")).toBe(parseEffects(""));
+  });
+
+  it("evicts the oldest entry once the bounded cache overflows", () => {
+    // 2048 unique entries fill the cache; the 2049th evicts the first, so
+    // the first text's array is freed and gets re-parsed as a fresh entry
+    // (still referentially stable for the SAME input at any moment).
+    const first = parseEffects("unique effect 0");
+    for (let i = 1; i <= 2048; i++) {
+      parseEffects(`unique effect ${i}`);
+    }
+    const again = parseEffects("unique effect 0");
+    expect(again).toBeDefined();
+    expect(again).not.toBe(first); // evicted old entry, then re-parsed
     // Different text is a different entry.
     expect(parseEffects("+1 dice.")).not.toBe(a);
   });
