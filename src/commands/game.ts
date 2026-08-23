@@ -792,7 +792,8 @@ function handleCancel(game: Game, user: User) {
  */
 function landQueuedDelays(game: Game, entity: Entity | null): boolean {
   if (!entity) return false;
-  const delayMsgs = landDelayedAttacks(game, entity);
+  const delayedDeaths: Entity[] = [];
+  const delayMsgs = landDelayedAttacks(game, entity, delayedDeaths);
   if (delayMsgs.length === 0) return false;
   for (const msg of delayMsgs) {
     send(game.room, msg);

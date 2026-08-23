@@ -1057,7 +1057,11 @@ function parseDelayChoice(
  * effects against the landing-time board state, so gated clauses
  * (Apex/Thirst/Conditional) evaluate when the attack actually lands.
  */
-export function landDelayedAttacks(game: Game, entity: Entity): string[] {
+export function landDelayedAttacks(
+  game: Game,
+  entity: Entity,
+  deaths: Entity[] = [],
+): string[] {
   const messages: string[] = [];
   const pending = entity.delayedAttacks ?? [];
   if (pending.length === 0) return messages;
@@ -1103,18 +1107,31 @@ export function landDelayedAttacks(game: Game, entity: Entity): string[] {
     );
     messages.push(...effectMsgs);
 
-    if (target.curhp <= 0) {
-      messages.push(
-        `  **${target.num} (${target.name}) has been defeated!**`,
-      );
-      removeEntity(game, target);
-      // Credit the kill to the attack's owner, matching normal resolve.
-      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
-    }
+    // Same defeat handling as the immediate-attack path (recordDefeat):
+    // announce, remove, and credit the kill to the attack's owner.
+    const removed = recordDefeat(game, messages, target, entity.num);
+    if (removed) deaths.push(removed);
   }
 
   entity.delayedAttacks = remaining;
   return messages;
+}
+
+/**
+ * Shared defeat bookkeeping for the immediate-hit path and the delayed-landing
+ * path. Returns the removed target, or null if it survived.
+ */
+function recordDefeat(
+  game: Game,
+  messages: string[],
+  target: Entity,
+  killerNum: string,
+): Entity | null {
+  if (target.curhp > 0) return null;
+  messages.push(`  **${target.num} (${target.name}) has been defeated!**`);
+  removeEntity(game, target);
+  game.kills[killerNum] = (game.kills[killerNum] ?? 0) + 1;
+  return target;
 }
 
 function resolveHeal(
