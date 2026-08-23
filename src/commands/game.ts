@@ -197,7 +197,7 @@ export function gameCommand(
 
     case "dashmode":
       if (!game) return sendPm(user.name, "No active game in this room.");
-      handleDashMode(game, user);
+      handleDashMode(game, user, full);
       break;
 
     case "pl":
@@ -1353,9 +1353,18 @@ function handleViewReach(game: Game, user: User, args: string) {
   broadcastPages(game);
 }
 
-function handleDashMode(game: Game, user: User) {
+function handleDashMode(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
-  const entity = getCurrentEntity(game);
+  let entity = getCurrentEntity(game);
+  const name = args.trim();
+  // Host may toggle dash mode for a named entity (the GUI button emits
+  // %dashmode <name>); fall back to the current entity like other movement
+  // commands.
+  if (isHost && name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    entity = named;
+  }
 
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
