@@ -145,6 +145,16 @@ describe("interactive movement pathing", () => {
     expect(pathState.get(key1(game))?.length).toBe(2);
   });
 
+  it("allows pathing back through the mover's own tile", () => {
+    const game = freshGame();
+    gameCommand(room, alice, "pathstep", "a", "2,P1"); // [0,1]
+    expect(pathState.get(key1(game))?.length).toBe(1);
+    // [0,0] is the mover's own start tile — not a foreign occupant, so the
+    // path can pass back through it (PR-Agent on #188).
+    gameCommand(room, alice, "pathstep", "a", "1,P1");
+    expect(pathState.get(key1(game))?.length).toBe(2);
+  });
+
   it("over-MP step is rejected and truncates back", () => {
     const game = freshGame();
     const p1 = game.entities[0];

@@ -288,6 +288,32 @@ describe("getReachableTiles", () => {
     expect(reachable.size).toBe(0);
   });
 
+  it("does not treat the moving entity's own tile as occupied", () => {
+    // When reachability is computed from an intermediate path step (entity
+    // passed), the tile the entity physically stands on is not a blocker —
+    // pathing back through the start is allowed (PR-Agent on #188).
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0, mp: 8 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 1 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [4, 4], 6, game.entities[0]);
+    expect(reachable.has(posToStr(2, 2))).toBe(true); // self's tile
+    expect(reachable.has(posToStr(2, 3))).toBe(false); // foreign tile still blocked
+  });
+
+  it("keeps blocking foreign entities when no entity is passed", () => {
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(0, 1))).toBe(false);
+  });
+
   it("treats tiles occupied by dead entities as traversable", () => {
     const game = makeGame({
       entities: [

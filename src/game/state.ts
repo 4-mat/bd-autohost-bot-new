@@ -465,7 +465,7 @@ export function getReachableTiles(
       // in handleMove/handlePathStep.
       if (
         game.entities.some(
-          (e) => e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
+          (e) => e !== entity && e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
         )
       )
         continue;

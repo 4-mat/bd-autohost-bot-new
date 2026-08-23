@@ -1176,7 +1176,7 @@ function handlePathStep(game: Game, user: User, args: string) {
     return sendPm(user.name, "That tile cannot be moved onto.");
   }
   const occupied = game.entities.some(
-    (e) => e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
+    (e) => e !== entity && e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
   );
   if (occupied) return sendPm(user.name, "That tile is occupied.");
 
