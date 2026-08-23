@@ -641,6 +641,12 @@
       const abilities = item.abilities || (item.abilities = []);
       if (body.action === "save") {
         const i = abilities.findIndex((x) => x.name === body.name);
+        // Renaming into an id another ability already uses must be rejected
+        // (mirrors the server-side guard in abilityeditor/server.ts).
+        const newId = toId(String(body.ability && body.ability.name));
+        if (i >= 0 && newId !== toId(String(body.name)) && abilities.some((x) => toId(String(x.name)) === newId)) {
+          return Promise.reject(new Error("An ability with that name already exists"));
+        }
         if (i >= 0) abilities[i] = body.ability;
         else abilities.push(body.ability);
       } else if (body.action === "add") {
