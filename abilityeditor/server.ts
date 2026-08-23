@@ -321,7 +321,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
           } else if (k === "description" || k === "branch") {
             (entry as unknown as Record<string, unknown>)[k] = String(v);
           } else if (k === "abilities" && Array.isArray(v)) {
-            entry.abilities = v.map(sanitizeAbility) as unknown as ClassData["abilities"];
+            // Same strict validation as every other write path: non-string,
+            // blank, and whitespace-only names are dropped rather than
+            // coerced into valid-looking entries (CodeRabbit L324).
+            entry.abilities = v
+              .map(cleanNamedAbility)
+              .filter((a): a is Record<string, unknown> => a !== null) as unknown as ClassData["abilities"];
           }
         }
       }
