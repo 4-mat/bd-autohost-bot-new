@@ -380,6 +380,7 @@ function serializeState(game: Game): string {
       swiftUsed: e.swiftUsed,
       triggered: e.triggered,
       delayedAttacks: e.delayedAttacks,
+      resources: e.resources ? { ...e.resources } : {},
     })),
     turnIndex: game.turnIndex,
     round: game.round,
@@ -413,6 +414,9 @@ export function popSnapshot(game: Game): boolean {
       ent.swiftUsed = e.swiftUsed;
       ent.triggered = e.triggered;
       ent.delayedAttacks = e.delayedAttacks;
+      // Restore resources only when the snapshot captured them, so older
+      // snapshots (pre-resource era) don't clobber the live pool.
+      if (e.resources) ent.resources = { ...e.resources };
     }
   }
   game.turnIndex = data.turnIndex;
