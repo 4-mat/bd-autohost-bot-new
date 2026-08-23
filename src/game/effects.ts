@@ -2636,24 +2636,19 @@ function walkPhaseAware(
   effects: Effect[],
   moonPhase: string | undefined,
   visit: (e: Effect) => void,
-  phaseChoice?: string,
 ): void {
   const phase = moonPhase?.toLowerCase().trim();
-  const choice = phaseChoice?.toLowerCase().trim();
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
       const want = e.condition
         .slice("phase is ".length)
         .split(" or ")
         .map((s) => s.trim());
-      if (
-        (phase && want.includes(phase)) ||
-        (choice && want.includes(choice))
-      ) {
-        walkPhaseAware(e.thenEffects, phase, visit, choice);
-      } else if ((phase || choice) && e.elseEffects) {
+      if (phase && want.includes(phase)) {
+        walkPhaseAware(e.thenEffects, phase, visit);
+      } else if (phase && e.elseEffects) {
         // "Otherwise:" branch applies when the active phase doesn't match.
-        walkPhaseAware(e.elseEffects, phase, visit, choice);
+        walkPhaseAware(e.elseEffects, phase, visit);
       }
       continue;
     }
@@ -2685,7 +2680,7 @@ export function getPassiveRangeBonus(
     if (a.actionType !== "Passive") continue;
     walkPhaseAware(parseEffects(a.effect), moonPhase, (e) => {
       if (e.type === "rangeMod") bonus += e.amount;
-    }, user.phaseChoice);
+    });
   }
   return bonus;
 }
@@ -2705,7 +2700,7 @@ export function getDefenderDiceMods(
     if (a.actionType !== "Passive") continue;
     walkPhaseAware(parseEffects(a.effect), moonPhase, (e) => {
       if (e.type === "targetingDiceMod") mod += e.amount;
-    }, entity.phaseChoice);
+    });
   }
   return mod;
 }
