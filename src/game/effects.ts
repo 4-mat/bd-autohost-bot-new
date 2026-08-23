@@ -470,7 +470,7 @@ function parseEffectsUncached(normalized: string): Effect[] {
  * and DEF" stay whole instead of fragmenting into orphan tokens.
  */
 function looksLikeEffectStart(text: string): boolean {
-  return /^(?:gain|gains|lose|loses|take|takes|inflict|inflicts|deal|deals|heal|heals|push|pulls?|add|adds|reduce|reduces|remove|removes|become|becomes|treat|treated|convert|converts|double|halve|grant|grants|spend|spends|swap|swaps|shield|ignore|ignores|attack|attacks|regain|recover|cleanse|reset|recharge|restore|sacrifice|designate|channel|reroll|roll|start|starts|end|ends|prevent|cannot|may|also|next|this|until|while|per\b|when\b|if\b|crit\b|requir|once|for\s+\d+|[+\-]|x|×|\d)/i.test(
+  return /^(?:gain|gains|lose|loses|take|takes|inflict|inflicts|deal|deals|heal|heals|push|pulls?|add|adds|reduce|reduces|remove|removes|become|becomes|treat|treated|convert|converts|double|halve|grant|grants|spend|spends|swap|swaps|switch|switches|shield|ignore|ignores|attack|attacks|regain|recover|cleanse|reset|recharge|restore|sacrifice|designate|channel|reroll|roll|start|starts|end|ends|prevent|cannot|may|also|next|this|until|while|per\b|when\b|if\b|crit\b|requir|once|for\s+\d+|[+\-]|x|×|\d)/i.test(
     text.trim(),
   );
 }
@@ -2646,6 +2646,9 @@ function walkPhaseAware(
         .map((s) => s.trim());
       if (phase && want.includes(phase)) {
         walkPhaseAware(e.thenEffects, phase, visit);
+      } else if (phase && e.elseEffects) {
+        // "Otherwise:" branch applies when the active phase doesn't match.
+        walkPhaseAware(e.elseEffects, phase, visit);
       }
       continue;
     }

@@ -1837,6 +1837,16 @@ describe("parseEffects: subweapon clauses", () => {
     }
   });
 
+  it("recognizes 'and Switch to X' as a clause boundary", () => {
+    // "and switch to Pilum" must split as its own clause rather than being
+    // absorbed into the previous effect (PR-Agent on #169).
+    const effects = parseEffects("Pilum: steal targets' buffs (duration 1). and switch to Scutum");
+    const sw = effects.find((e) => e.type === "switchWeapon");
+    expect(sw).toBeDefined();
+    if (sw?.type !== "switchWeapon") return;
+    expect(sw.to).toEqual(["scutum"]);
+  });
+
   it("parses 'Swap subweapons (Standard)' as a free-form switch", () => {
     const effects = parseEffects("Swap subweapons (Standard)");
     expect(effects).toHaveLength(1);
@@ -2075,6 +2085,20 @@ describe("getPassiveRangeBonus", () => {
     expect(getPassiveRangeBonus(e, "new moon")).toBe(1);
     expect(getPassiveRangeBonus(e, "waning")).toBe(0);
     expect(getPassiveRangeBonus(e)).toBe(0); // no phase -> branch not entered
+  });
+
+  it("applies the Otherwise branch when the active phase mismatches", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range. Otherwise: +2 Range.",
+      }),
+    ];
+    expect(getPassiveRangeBonus(e, "new moon")).toBe(1);
+    expect(getPassiveRangeBonus(e, "waning")).toBe(2);
+    expect(getPassiveRangeBonus(e)).toBe(0); // no phase -> neither branch
   });
 
   it("is case/whitespace-insensitive to the phase value ('New Moon' still counts)", () => {
