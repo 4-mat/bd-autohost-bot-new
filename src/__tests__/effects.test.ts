@@ -2101,6 +2101,37 @@ describe("getPassiveRangeBonus", () => {
     expect(getPassiveRangeBonus(e)).toBe(0); // no phase -> neither branch
   });
 
+  it("counts the user's chosen second phase like the active phase", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Full Moon: +3 Range.",
+      }),
+    ];
+    e.phaseChoice = "full moon";
+    // The chosen 2nd phase fires its branch no matter what the active
+    // phase is ("two effects if user has 2 Phases"), matching
+    // evaluateCondition / mergeCombatMetadata.
+    expect(getPassiveRangeBonus(e, "new moon")).toBe(3);
+    expect(getPassiveRangeBonus(e, "full moon")).toBe(3);
+    expect(getPassiveRangeBonus(e, "waning")).toBe(3);
+
+    // Otherwise branch applies only when NEITHER active nor chosen phase
+    // matches the condition.
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Waxing: +3 Range. Otherwise: +1 Range.",
+      }),
+    ];
+    expect(getPassiveRangeBonus(e, "waning")).toBe(1); // else
+    expect(getPassiveRangeBonus(e, "waxing")).toBe(3); // active match
+    expect(getPassiveRangeBonus(e, "full moon")).toBe(1); // choice doesn't match
+  });
+
   it("is case/whitespace-insensitive to the phase value ('New Moon' still counts)", () => {
     const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
     e.abilities = [
