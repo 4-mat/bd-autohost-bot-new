@@ -439,22 +439,11 @@ export function getReachableTiles(
     for (const [dr, dc] of dirs) {
       const nr = pos[0] + dr;
       const nc = pos[1] + dc;
-      if (nr < 0 || nr >= game.map.length || nc < 0 || nc >= game.map[0].length)
-        continue;
+      // Bounds + standable terrain + living-entity occupancy, identical to the
+      // push/pull rule, so %move/%dash reject the same tiles.
+      if (!isPassable(game, nr, nc)) continue;
 
-      const terrain = game.map[nr][nc];
-      // Obstructions + Broken (impassable) + Lava (damages on entry).
-      if (!isStandable(terrain)) continue;
-      // A tile occupied by a living entity can't be entered (matches
-      // pushEntity/pullEntity via isPassable), so %move/%dash reject it.
-      if (
-        game.entities.some(
-          (e) => e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
-        )
-      )
-        continue;
-
-      const tileCost = moveCost(terrain);
+      const tileCost = moveCost(game.map[nr][nc]);
       const newCost = cost + tileCost;
       if (newCost > finalMp) continue;
 
