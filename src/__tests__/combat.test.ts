@@ -334,6 +334,28 @@ describe("extractCombatMetadata", () => {
     expect(meta.extraDiceFaces).toBe(0);
   });
 
+  it("descends into the Otherwise branch on a subweapon mismatch", () => {
+    const meta = extractCombatMetadata(
+      parseEffects("Gladius: +1 dice. Otherwise: +2 dice faces."),
+      "pilum",
+    );
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraDiceFaces).toBe(2);
+    // Matching subweapon still takes the then-branch.
+    const matched = extractCombatMetadata(
+      parseEffects("Gladius: +1 dice. Otherwise: +2 dice faces."),
+      "gladius",
+    );
+    expect(matched.extraDice).toBe(1);
+    expect(matched.extraDiceFaces).toBe(0);
+    // No subweapon: not knowable, so nothing counts.
+    const none = extractCombatMetadata(
+      parseEffects("Gladius: +1 dice. Otherwise: +2 dice faces."),
+    );
+    expect(none.extraDice).toBe(0);
+    expect(none.extraDiceFaces).toBe(0);
+  });
+
   it("leaves subweapon branches unmerged when no subweapon is passed", () => {
     const meta = extractCombatMetadata(parseEffects("Gladius: +1 dice."));
     expect(meta.extraDice).toBe(0);
@@ -351,6 +373,13 @@ describe("extractCombatMetadata", () => {
     const meta = extractCombatMetadata(effects, undefined, "New Moon");
     expect(meta.extraDice).toBe(1);
     expect(meta.extraDiceFaces).toBe(0);
+  });
+
+  it("descends into the Otherwise branch of a phase mismatch", () => {
+    const effects = parseEffects("New Moon: +1 dice. Otherwise: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "full moon");
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraDiceFaces).toBe(2);
   });
 
   it("ignores phase branches that do NOT match the current moon phase", () => {
