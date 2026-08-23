@@ -151,7 +151,9 @@ function defaultClass(name: string, item: Record<string, unknown>): ClassData {
     // malformed AbilityData.
     abilities: (
       Array.isArray(item.abilities)
-        ? (item.abilities.map(sanitizeAbility).filter((a) => a.name) as unknown as ClassData["abilities"])
+        ? (item.abilities
+            .map((a) => cleanNamedAbility(a))
+            .filter((a): a is Record<string, unknown> => a !== null) as unknown as ClassData["abilities"])
         : []
     ),
     description: String(item.description ?? ""),
