@@ -2616,19 +2616,24 @@ function walkPhaseAware(
   effects: Effect[],
   moonPhase: string | undefined,
   visit: (e: Effect) => void,
+  phaseChoice?: string,
 ): void {
   const phase = moonPhase?.toLowerCase().trim();
+  const choice = phaseChoice?.toLowerCase().trim();
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
       const want = e.condition
         .slice("phase is ".length)
         .split(" or ")
         .map((s) => s.trim());
-      if (phase && want.includes(phase)) {
-        walkPhaseAware(e.thenEffects, phase, visit);
-      } else if (phase && e.elseEffects) {
+      if (
+        (phase && want.includes(phase)) ||
+        (choice && want.includes(choice))
+      ) {
+        walkPhaseAware(e.thenEffects, phase, visit, choice);
+      } else if ((phase || choice) && e.elseEffects) {
         // "Otherwise:" branch applies when the active phase doesn't match.
-        walkPhaseAware(e.elseEffects, phase, visit);
+        walkPhaseAware(e.elseEffects, phase, visit, choice);
       }
       continue;
     }
@@ -2660,7 +2665,7 @@ export function getPassiveRangeBonus(
     if (a.actionType !== "Passive") continue;
     walkPhaseAware(parseEffects(a.effect), moonPhase, (e) => {
       if (e.type === "rangeMod") bonus += e.amount;
-    });
+    }, user.phaseChoice);
   }
   return bonus;
 }
@@ -2680,7 +2685,7 @@ export function getDefenderDiceMods(
     if (a.actionType !== "Passive") continue;
     walkPhaseAware(parseEffects(a.effect), moonPhase, (e) => {
       if (e.type === "targetingDiceMod") mod += e.amount;
-    });
+    }, entity.phaseChoice);
   }
   return mod;
 }
@@ -2732,10 +2737,13 @@ function mergeCombatMetadata(
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("subweapon is ")) {
       // Only the matching branch's sub-effects count; the non-matching
-      // branches are dead code for this user's equipped subweapon.
+      // branches are dead code for this user's equipped subweapon — unless
+      // there's an "Otherwise:" branch, which applies on a mismatch.
       const want = e.condition.slice("subweapon is ".length);
       if (subweapon && subweapon === want) {
         mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
+      } else if (subweapon && e.elseEffects) {
+        mergeCombatMetadata(out, e.elseEffects, subweapon, phase, choice);
       }
       continue;
     }
@@ -2757,6 +2765,9 @@ function mergeCombatMetadata(
         (choice && want.includes(choice))
       ) {
         mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
+      } else if ((phase || choice) && e.elseEffects) {
+        // "Otherwise:" branch applies when neither phase matches.
+        mergeCombatMetadata(out, e.elseEffects, subweapon, phase, choice);
       }
       continue;
     }
