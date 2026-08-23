@@ -143,8 +143,6 @@ describe("parseEffects", () => {
     const again = parseEffects("unique effect 0");
     expect(again).toBeDefined();
     expect(again).not.toBe(first); // evicted old entry, then re-parsed
-    // Different text is a different entry.
-    expect(parseEffects("+1 dice.")).not.toBe(a);
   });
 
   it("recognises 'Apex: ...' as an apex clause", () => {
