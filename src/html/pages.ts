@@ -698,7 +698,7 @@ function buildEntityStats(entity: Entity, game?: Game): string {
   html += ` <b>MD:</b> ${entity.md}`;
   html += ` <b>EVA:</b> ${entity.eva}`;
   html += ` <b>MP:</b> <b style="color:#08c">${entity.mp}</b>`;
-  if (entity.subweapon) html += ` <b>Sub:</b> ${formatSubweapon(entity.subweapon)}`;
+  if (formatSubweapon(entity.subweapon)) html += ` <b>Sub:</b> ${formatSubweapon(entity.subweapon)}`;
   if (game?.moonPhase) {
     html += ` <b>Phase:</b> \u{1F319}${formatPhase(game.moonPhase)}`;
     if (entity.phaseChoice) {
