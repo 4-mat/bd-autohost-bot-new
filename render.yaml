@@ -3,7 +3,11 @@ services:
     name: bd-autohost-test
     env: node
     plan: free
-    autoDeploy: true
+    # Deploys are driven by .github/workflows/render-deploy.yml (deploy hook,
+    # concurrency-gated, supports [skip render]); autoDeploy is deprecated in
+    # favor of autoDeployTrigger, and hook deploys with a ref disable auto
+    # deploys anyway, so keep the trigger manual to avoid double deploys.
+    autoDeployTrigger: manual
     buildCommand: npm install && npm run build
     startCommand: node dist/test-app.js
     envVars:
