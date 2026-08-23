@@ -230,7 +230,10 @@ function snapshot() {
 
 function cleanNamedAbility(raw: unknown): Record<string, unknown> | null {
   const a = sanitizeAbility(raw);
-  a.name = String(a.name ?? "").trim();
+  // Only string names are valid: String() would coerce 123 / false / objects
+  // into non-empty names and smuggle malformed abilities past the guard.
+  if (typeof a.name !== "string") return null;
+  a.name = a.name.trim();
   return a.name ? a : null;
 }
 
