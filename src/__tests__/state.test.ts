@@ -271,6 +271,35 @@ describe("getReachableTiles", () => {
     expect(reachable.has(posToStr(1, 0))).toBe(false);
   });
 
+  it("does not move through or onto tiles occupied by a living entity", () => {
+    // P2 and P3 wall off the corner at [0,0]: both exits are occupied, so
+    // nothing beyond them may be reached — matching %pathstep/%confirmmove.
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 }),
+        makeEntity({ num: "P3", name: "Cara", pos: [1, 0], team: 1 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(0, 1))).toBe(false); // occupied
+    expect(reachable.has(posToStr(1, 0))).toBe(false); // occupied
+    expect(reachable.has(posToStr(0, 2))).toBe(false); // beyond the occupied wall
+    expect(reachable.size).toBe(0);
+  });
+
+  it("treats tiles occupied by dead entities as traversable", () => {
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1, curhp: 0 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(0, 1))).toBe(true);
+    expect(reachable.has(posToStr(0, 2))).toBe(true);
+  });
+
   it("sticky terrain costs 2 MP", () => {
     const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
     map[0][1] = Terrain.Sticky;

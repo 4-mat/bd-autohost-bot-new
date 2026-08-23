@@ -459,6 +459,16 @@ export function getReachableTiles(
       const terrain = game.map[nr][nc];
       // Obstructions + Broken (impassable) + Lava (damages on entry).
       if (!isStandable(terrain)) continue;
+      // Tiles occupied by a living entity cannot be entered or passed
+      // through, matching %pathstep/%confirmmove (and the Revealed map).
+      // Dead entities do not obstruct, consistent with the occupancy checks
+      // in handleMove/handlePathStep.
+      if (
+        game.entities.some(
+          (e) => e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
+        )
+      )
+        continue;
 
       const tileCost = moveCost(terrain);
       const newCost = cost + tileCost;
