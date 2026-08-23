@@ -254,8 +254,13 @@ function cachedParseEffects(normalized: string): Effect[] {
   return parsed;
 }
 
+// Referentially stable empty result: parseEffects is memoized, and callers
+// may rely on identical inputs yielding the identical array rather than a
+// fresh allocation per call (PR-Agent on #184).
+const EMPTY_EFFECTS: Effect[] = [];
+
 export function parseEffects(text: string): Effect[] {
-  if (!text || !text.trim()) return [];
+  if (!text || !text.trim()) return EMPTY_EFFECTS;
 
   const normalized = text
     .replace(/\n/g, " ")

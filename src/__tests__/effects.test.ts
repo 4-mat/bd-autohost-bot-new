@@ -126,6 +126,10 @@ describe("parseEffects", () => {
     expect(a).toBe(b);
     // Whitespace-only / newline variants normalize to the same key.
     expect(parseEffects("\n  +1 dice.\n +2 dice faces. ")).toBe(a);
+    // Empty / whitespace-only input: referentially stable singleton, not a
+    // fresh array per call (PR-Agent #184).
+    expect(parseEffects("")).toBe(parseEffects(""));
+    expect(parseEffects("   \n ")).toBe(parseEffects(""));
     // Different text is a different entry.
     expect(parseEffects("+1 dice.")).not.toBe(a);
   });
