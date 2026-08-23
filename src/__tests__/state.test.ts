@@ -883,6 +883,31 @@ describe("Snapshots", () => {
     expect(game.turnOrder).toEqual(["P1", "P2"]);
   });
 
+  it("restores kill counts from the snapshot", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const game = makeGame({ entities: [p1] });
+    game.kills = { P1: 2, P2: 0 };
+
+    pushSnapshot(game);
+    game.kills = { P1: 5, P2: 4 };
+
+    popSnapshot(game);
+    expect(game.kills).toEqual({ P1: 2, P2: 0 });
+  });
+
+  it("restores entities in snapshot order after reordering", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 40, pos: [1, 1] });
+    const game = makeGame({ entities: [p1, p2] });
+
+    pushSnapshot(game);
+    // Simulate an undo-visible reordering (e.g. death -> new join order).
+    game.entities = [p2, p1];
+
+    popSnapshot(game);
+    expect(game.entities.map((e) => e.num)).toEqual(["P1", "P2"]);
+  });
+
   it("returns false when no snapshots", () => {
     const game = makeGame();
     expect(popSnapshot(game)).toBe(false);

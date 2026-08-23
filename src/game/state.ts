@@ -346,6 +346,7 @@ function serializeState(game: Game): string {
     round: game.round,
     log: game.log,
     votes: game.votes,
+    kills: game.kills,
   });
 }
 
@@ -359,24 +360,26 @@ export function popSnapshot(game: Game): boolean {
   if (!snap) return false;
   const data = JSON.parse(snap);
 
-  const byNum = new Set<string>(data.entities.map((e: Entity) => e.num));
-  game.entities = game.entities.filter((e) => byNum.has(e.num));
-
-  for (const e of data.entities) {
+  // Rebuild the array in snapshot order so consumers that iterate
+  // game.entities directly (or index into it, e.g. game.entities[0]) observe
+  // the pre-undo order, not the filtered+appended current order. Live entity
+  // objects are kept where possible so references stay valid.
+  game.entities = data.entities.map((e: Entity) => {
     const ent = game.entities.find((x) => x.num === e.num);
     if (ent) {
       Object.assign(ent, e);
       ent.pendingResolution = undefined;
-    } else {
-      game.entities.push(e as Entity);
+      return ent;
     }
-  }
+    return e as Entity;
+  });
 
   game.turnOrder = data.turnOrder;
   game.turnIndex = data.turnIndex;
   game.round = data.round;
   if (data.log) game.log = data.log;
   if (data.votes) game.votes = data.votes;
+  if (data.kills) game.kills = data.kills;
   return true;
 }
 
