@@ -354,11 +354,15 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
   const dash = cmd === "dash";
   const mp = dash ? Math.floor(getEffectiveMp(entity) * 1.5) : entity.mp;
+  // Pass the mover for dash too so its own tile is never treated as an
+  // occupied foreign tile; the 1.5x dash budget avoids the effective-MP
+  // clamp by requesting clampToEffective=false.
   const reachable = getReachableTiles(
     game,
     entity.pos,
     mp,
-    dash ? undefined : entity,
+    entity,
+    !dash,
   );
   const key = posToStr(pos[0], pos[1]);
 
