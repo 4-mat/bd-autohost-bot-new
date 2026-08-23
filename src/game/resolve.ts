@@ -20,6 +20,7 @@ import {
   placeTerrain,
   TERRAIN_NAMES,
   Terrain,
+  isObstruction,
 } from "./state.js";
 import {
   parseEffects,
@@ -27,6 +28,7 @@ import {
   applyEffectStream,
   extractCombatMetadata,
   type CombatMetadata,
+  type Effect,
   type EffectChoosePrompt,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
@@ -288,8 +290,20 @@ function* resolveAttackFlow(
   // no tile clause (Bloom, Mantrap, ...) fall through to entity targeting.
   const isTileAbility = /^tiles?$/i.test(active.targetGroup);
   const effects = parseEffects(active.effect);
-  const shouldPromptTile =
-    isTileAbility && effects.some((e) => e.type === "tile");
+  // Tile effects nested inside conditional branches also need the tile prompt
+  // (e.g. "If target is under Range 3: create Totem tile on target"); the
+  // top-level scan alone would miss them and fall through to entity targeting.
+  const hasTileEffect = (list: Effect[]): boolean =>
+    list.some(
+      (e) =>
+        e.type === "tile" ||
+        (e.type === "conditional" &&
+          hasTileEffect([
+            ...e.thenEffects,
+            ...(e.elseEffects ?? []),
+          ])),
+    );
+  const shouldPromptTile = isTileAbility && hasTileEffect(effects);
   let tilePos: [number, number] | null = null;
   let targets: Entity[] = [];
   let hitCount = 0;
@@ -669,6 +683,10 @@ function getTileCandidates(
       const d = Math.abs(r - user.pos[0]) + Math.abs(c - user.pos[1]);
       if (d === 0) continue;
       if (d > range) continue;
+      // Obstruction tiles (Stop/Bone/Ice/Stone/Hearth) cannot be targeted by
+      // tile abilities; offering them lets a player pick a tile the ability
+      // will never be allowed to replace.
+      if (isObstruction(game.map[r][c])) continue;
       tiles.push(posToStr(r, c));
     }
   }

@@ -736,6 +736,60 @@ describe("tile-targeting abilities", () => {
     expect(game.map[2][3]).toBe(Terrain.Lava);
   });
 
+  it("prompts for a tile when the tile effect is inside a conditional", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const conditionalTile = makeAbility({
+      name: "Grove",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect:
+        "If target is under Range 3: create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [conditionalTile];
+    const game = makeGame({ entities: [caster] });
+
+    const step = startAttack(game, caster, conditionalTile);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    // Nested tile effect must still produce a tile prompt, not entity targeting.
+    expect(step.prompt.kind).toBe("tile");
+  });
+
+  it("offers no obstruction tiles as tile candidates", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 1",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game3 = makeGame({ entities: [caster] });
+    // Stop tile adjacent to the caster; nothing else in range.
+    game3.map[2][3] = Terrain.Stop;
+
+    const step = startAttack(game3, caster, whittle);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+    if (step.prompt.kind !== "tile") return;
+    expect(step.prompt.candidates).not.toContain("c,4");
+  });
+
   it("rejects an in-bounds tile that is outside the ability range", () => {
     const caster = makeEntity({
       num: "P1",
