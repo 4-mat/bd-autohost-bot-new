@@ -1697,57 +1697,37 @@ function drainApplyStream(
 }
 
 function summariseEffect(eff: Effect): string {
-  switch (eff.type) {
-    case "status":
-      return `inflict ${eff.damage || 0} ${eff.name}/${eff.rounds}`;
-    case "buff":
-      return `+${eff.amount} ${eff.stat}${eff.rounds ? `/${eff.rounds}` : ""}`;
-    case "debuff":
-      return `${eff.amount} ${eff.stat}${eff.rounds ? `/${eff.rounds}` : ""}`;
-    case "heal":
-      return `heal ${eff.amount ?? "?"} HP`;
-    case "shield":
-      return `Shield ${eff.amount}/${eff.rounds}`;
-    case "push":
-      return `push ${eff.amount ?? 1}`;
-    case "pull":
-      return `pull ${eff.amount ?? 1}${eff.toward === "user" ? " toward user" : ""}`;
-    case "swap":
-      return "swap positions";
-    case "teleport":
-      return `teleport${eff.range ? ` to ${eff.range}` : ""}`;
-    case "move":
-      return `move up to ${eff.amount}`;
-    case "resource":
-      return `${eff.action} ${eff.amount} ${eff.resource}`;
-    case "damageMod":
-      return `${eff.percent ?? ""}${eff.flat != null ? eff.flat + " DMG" : ""}`;
-    case "delay":
-      return `delay ${eff.rounds}r`;
-    case "recoil":
-      return `recoil ${eff.percent}%`;
-    case "ignore":
-      return `ignore ${eff.what}`;
-    case "channel":
-      return `channel ${eff.stat} for ${eff.rounds}r`;
-    case "phase":
-      return `phase ${eff.phase}`;
-    case "multiHit":
-      return `multi-hit ${eff.hits}`;
-    case "apex":
-      return "apex (...)";
-    case "thirst":
-      return `thirst ${eff.threshold} (...)`;
-    case "choose":
-      return "choose (...)";
-    case "conditional":
-      return `if [${eff.condition}]`;
-    case "delayLand":
-      return "delay attacks always land";
-    case "unknown":
-      return eff.text.slice(0, 40);
-  }
+  const fn = SUMMARISE[eff.type];
+  return fn ? fn(eff as any) : "";
 }
+
+/** Per-effect-type one-line summary, used in choose-prompt option labels. */
+const SUMMARISE: Record<string, (eff: any) => string> = {
+  status: (e) => `inflict ${e.damage || 0} ${e.name}/${e.rounds}`,
+  buff: (e) => `+${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
+  debuff: (e) => `${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
+  heal: (e) => `heal ${e.amount ?? "?"} HP`,
+  shield: (e) => `Shield ${e.amount}/${e.rounds}`,
+  push: (e) => `push ${e.amount ?? 1}`,
+  pull: (e) => `pull ${e.amount ?? 1}${e.toward === "user" ? " toward user" : ""}`,
+  swap: () => "swap positions",
+  teleport: (e) => `teleport${e.range ? ` to ${e.range}` : ""}`,
+  move: (e) => `move up to ${e.amount}`,
+  resource: (e) => `${e.action} ${e.amount} ${e.resource}`,
+  damageMod: (e) => `${e.percent ?? ""}${e.flat != null ? e.flat + " DMG" : ""}`,
+  delay: (e) => `delay ${e.rounds}r`,
+  recoil: (e) => `recoil ${e.percent}%`,
+  ignore: (e) => `ignore ${e.what}`,
+  channel: (e) => `channel ${e.stat} for ${e.rounds}r`,
+  phase: (e) => `phase ${e.phase}`,
+  multiHit: (e) => `multi-hit ${e.hits}`,
+  apex: () => "apex (...)",
+  thirst: (e) => `thirst ${e.threshold} (...)`,
+  choose: () => "choose (...)",
+  conditional: (e) => `if [${e.condition}]`,
+  delayLand: () => "delay attacks always land",
+  unknown: (e) => e.text.slice(0, 40),
+};
 
 function parseChosenIdx(chosenId: string, total: number): number {
   const m = chosenId.match(/:(\d+)$/);
