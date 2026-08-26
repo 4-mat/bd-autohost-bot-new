@@ -266,6 +266,17 @@ export function parseEffects(text: string): Effect[] {
   return effects;
 }
 
+/** Whether position `i` ends a clause: a period/comma/" and " at depth 0,
+ * excluding periods and commas inside dice notation like 2d6+1 or 1d8,2. */
+function isClauseBoundary(text: string, i: number): boolean {
+  if (isInsideDice(text, i)) return false;
+  const ch = text[i];
+  if (ch === ".") return true;
+  if (ch === "," && !text.slice(i).match(/^,\s*(?:and|or)\s/i)) return true;
+  if (ch === " " && text.slice(i).match(/^ and /i)) return true;
+  return false;
+}
+
 function splitClauses(text: string): string[] {
   const clauses: string[] = [];
   let depth = 0;
@@ -276,27 +287,12 @@ function splitClauses(text: string): string[] {
 
     if (ch === "(" || ch === "[") depth++;
     else if (ch === ")" || ch === "]") depth--;
-    else if (depth === 0) {
-      if (ch === "." && !isInsideDice(text, i)) {
-        if (current.trim()) clauses.push(current.trim());
-        current = "";
-        continue;
-      }
-      if (
-        ch === "," &&
-        !isInsideDice(text, i) &&
-        !text.slice(i).match(/^,\s*(?:and|or)\s/i)
-      ) {
-        if (current.trim()) clauses.push(current.trim());
-        current = "";
-        continue;
-      }
-      if (text.slice(i).match(/^ and /i) && !isInsideDice(text, i)) {
-        if (current.trim()) clauses.push(current.trim());
-        current = "";
-        i += 4;
-        continue;
-      }
+    else if (depth === 0 && isClauseBoundary(text, i)) {
+      if (current.trim()) clauses.push(current.trim());
+      current = "";
+      // " and " is 5 chars: skip past it so it isn't re-scanned.
+      if (/^ and /i.test(text.slice(i))) i += 4;
+      continue;
     }
     current += ch;
   }
