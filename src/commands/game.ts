@@ -164,36 +164,9 @@ function failAct(game: Game, entity: Entity, reason: string) {
 }
 
 function handleMove(game: Game, user: User, cmd: string, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
+  const { entity, rest: posStr } = resolveActor(game, user, args);
+  if (!entity) return;
 
-  let entityName = "";
-  let posStr = args;
-
-  const parts = args.split(",").map((s) => s.trim());
-  if (parts.length >= 3) {
-    entityName = parts[parts.length - 1];
-    posStr = parts.slice(0, -1).join(",");
-  } else if (
-    parts.length === 2 &&
-    (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
-  ) {
-    entityName = parts[1];
-    posStr = parts[0];
-  }
-
-  let entity: Entity | null = null;
-  if (entityName && isHost) {
-    entity = getEntity(game, entityName);
-    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
-  } else {
-    entity = getCurrentEntity(game);
-  }
-
-  if (!entity) return sendPm(user.name, "No active turn.");
-
-  if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
-  }
   if (isStunned(entity)) {
     failAct(game, entity, "Stunned");
     return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
@@ -268,26 +241,36 @@ type ValidatedAttack = {
  * type. Returns the validated target or sends the failure to the user
  * and returns null.
  */
-function validateAttack(
+type ResolvedActor = {
+  entity: Entity;
+  /** Remaining argument text after any "..., entityName" suffix is stripped. */
+  rest: string;
+};
+
+/**
+ * Resolve who acts (host may name another entity) and run the turn-guard
+ * checks shared by move/attack. Sends the failure message and returns null
+ * when the actor can't act.
+ */
+function resolveActor(
   game: Game,
   user: User,
   args: string,
-): ValidatedAttack | null {
+): ResolvedActor | null {
   const isHost = toId(user.name) === toId(game.host);
 
-  // Host may pass "ability @ target, entityName" to act for another entity.
   let entityName = "";
-  let abilityTarget = args;
+  let rest = args;
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length >= 3) {
     entityName = parts[parts.length - 1];
-    abilityTarget = parts.slice(0, -1).join(",");
+    rest = parts.slice(0, -1).join(",");
   } else if (
     parts.length === 2 &&
     (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
   ) {
     entityName = parts[1];
-    abilityTarget = parts[0];
+    rest = parts[0];
   }
 
   let entity: Entity | null = null;
@@ -304,11 +287,23 @@ function validateAttack(
     sendPm(user.name, "No active turn.");
     return null;
   }
-
   if (!isHost && toId(entity.name) !== toId(user.name)) {
     sendPm(user.name, "It's not your turn.");
     return null;
   }
+
+  return { entity, rest };
+}
+
+function validateAttack(
+  game: Game,
+  user: User,
+  args: string,
+): ValidatedAttack | null {
+  const resolved = resolveActor(game, user, args);
+  if (!resolved) return null;
+  const { entity, rest: abilityTarget } = resolved;
+
   if (isStunned(entity)) {
     failAct(game, entity, "Stunned");
     sendPm(user.name, `${entity.num} is Stunned and cannot use abilities.`);
