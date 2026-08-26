@@ -210,6 +210,42 @@ function* chooseTargets(
   return targets;
 }
 
+/** If the ability has damageType "Varies", prompt for a variant and return
+ * the resolved ability; otherwise return the ability unchanged. Returns null
+ * (with a message pushed) when the variant choice can't be made. */
+function* resolveVariantChoice(
+  user: Entity,
+  ability: AbilityData,
+  result: ResolutionResult,
+): Generator<AttackPrompt, AbilityData | null, PromptResponse> {
+  if (ability.damageType !== "Varies") return ability;
+
+  if (!ability.variants?.length) {
+    result.messages.push(
+      `${user.num} uses ${ability.name} but it has no damage variants.`,
+    );
+    return null;
+  }
+  const variantId = yield {
+    kind: "selection",
+    message: `Choose the type of ${ability.name}`,
+    options: ability.variants.map((v) => ({ id: v.id, label: v.label })),
+  };
+  const variant = ability.variants.find((v) => v.id === variantId);
+  if (!variant) {
+    result.messages.push(
+      `${user.num} cancels ${ability.name}: unknown variant.`,
+    );
+    return null;
+  }
+  return {
+    ...ability,
+    damageType: variant.damageType,
+    range: variant.range ?? ability.range,
+    effect: variant.effect ?? ability.effect,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The pipeline itself:
 // Declare -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
@@ -254,33 +290,8 @@ function* resolveAttackFlow(
   }
 
   // --- Variant choice for damageType "Varies" ---
-  let active = ability;
-  if (ability.damageType === "Varies") {
-    if (!ability.variants?.length) {
-      result.messages.push(
-        `${user.num} uses ${ability.name} but it has no damage variants.`,
-      );
-      return result;
-    }
-    const variantId = yield {
-      kind: "selection",
-      message: `Choose the type of ${ability.name}`,
-      options: ability.variants.map((v) => ({ id: v.id, label: v.label })),
-    };
-    const variant = ability.variants.find((v) => v.id === variantId);
-    if (!variant) {
-      result.messages.push(
-        `${user.num} cancels ${ability.name}: unknown variant.`,
-      );
-      return result;
-    }
-    active = {
-      ...ability,
-      damageType: variant.damageType,
-      range: variant.range ?? ability.range,
-      effect: variant.effect ?? ability.effect,
-    };
-  }
+  const active = yield* resolveVariantChoice(user, ability, result);
+  if (!active) return result;
 
   // --- Direction prompt for AoE abilities ---
   const needsDir = needsDirection(active);
