@@ -20,6 +20,7 @@ import {
   placeTerrain,
   TERRAIN_NAMES,
 } from "./state.js";
+import { matchesTargetGroup } from "./targeting.js";
 import {
   parseEffects,
   applyEffects,
@@ -774,42 +775,7 @@ export function isValidTarget(
   group: string,
 ): boolean {
   if (target.curhp <= 0) return false;
-  const g = group.toLowerCase();
-
-  if (/self (and|or) alle?/.test(g) || /allies? and self/.test(g))
-    return selfOrAllyCheck(user, target);
-  if (g.includes("self or foe")) return true;
-  if (g.includes("foe or ally")) return target.num !== user.num;
-  if (/self, foes?, (and )?alle?s?/.test(g)) return true;
-
-  if (g === "self") return target.num === user.num;
-  if (g === "ally") return allyCheck(user, target);
-  if (g === "foe") return foeCheck(user, target);
-  if (g === "any") return true;
-  if (g === "tile") return false;
-
-  return true;
-}
-
-// FFA / no-team games put everyone on team 0: "Foe" means anyone but self,
-// "Ally" targets nobody, and ally-groups resolve to self only. Mirrors the
-// GUI candidate filter in pages.ts so the direct-target path agrees with the
-// AoE path (isValidGroupTarget in state.ts).
-function foeCheck(user: Entity, target: Entity): boolean {
-  return user.team === 0
-    ? target.num !== user.num
-    : target.team !== user.team;
-}
-
-function allyCheck(user: Entity, target: Entity): boolean {
-  if (user.team === 0) return false;
-  return target.team === user.team && target.num !== user.num;
-}
-
-function selfOrAllyCheck(user: Entity, target: Entity): boolean {
-  return user.team === 0
-    ? target.num === user.num
-    : target.team === user.team;
+  return matchesTargetGroup(user, target, group.toLowerCase());
 }
 
 function* resolveSingleTarget(
