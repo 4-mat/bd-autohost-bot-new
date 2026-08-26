@@ -10,6 +10,12 @@ import {
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
 import {
+  MSG_NO_GAME,
+  MSG_GAME_STARTED,
+  MSG_NO_ACTIVE_TURN,
+  MSG_NOT_YOUR_TURN,
+} from "../messages.js";
+import {
   games,
   getCurrentEntity,
   getEntity,
@@ -74,64 +80,64 @@ export function gameCommand(
   switch (cmd) {
     case "move":
     case "dash":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleMove(game, user, cmd, full);
       break;
 
     case "attack":
     case "use":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleAttack(game, user, cmd, full);
       break;
 
     case "confirm":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleConfirm(game, user);
       break;
 
     case "cancel":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleCancel(game, user);
       break;
 
     case "target":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleTarget(game, user, full);
       break;
 
     case "choose":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleChoose(game, user, full);
       break;
 
     case "vote":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleVote(game, user, full);
       break;
 
     case "votestatus":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleVoteStatus(game, user);
       break;
 
     case "unvote":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleUnvote(game, user);
       break;
 
     case "leave":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleLeave(game, user);
       break;
 
     case "endturn":
     case "next":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleAdvanceTurn(game, user);
       break;
 
     case "back":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleBack(game, user);
       break;
 
@@ -142,68 +148,68 @@ export function gameCommand(
       break;
 
     case "info":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleInfo(game, user, args);
       break;
 
     case "map":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       broadcastPages(game);
       break;
 
     case "premove":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handlePremove(game, user);
       break;
 
     case "passmove":
     case "pass":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handlePassMove(game, user);
       break;
 
     case "pl":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       sendPm(user.name, buildPlayerList(game));
       break;
 
     case "log":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleLog(game, user, args);
       break;
 
     case "to":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       sendPm(user.name, buildTurnOrder(game));
       break;
 
     case "hp":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleHp(game, user, full);
       break;
 
     case "cut":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleCut(game, user, full);
       break;
     case "timer":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleTimer(game, user, full);
       break;
 
     case "checkrange":
     case "cr":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleCheckRange(game, user, full);
       break;
 
     case "status":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleStatus(game, user, full);
       break;
 
     case "regp":
-      if (!game) return sendPm(user.name, "No active game in this room.");
+      if (!game) return sendPm(user.name, MSG_NO_GAME);
       handleRegp(game, user, full);
       break;
 
@@ -280,10 +286,10 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
     entity = getCurrentEntity(game);
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
 
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (isStunned(entity)) {
     failAct(game, entity, "Stunned");
@@ -373,10 +379,10 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
     entity = getCurrentEntity(game);
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
 
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (isStunned(entity)) {
     failAct(game, entity, "Stunned");
@@ -521,9 +527,9 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 function handleConfirm(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!entity.pendingAction) {
     return sendPm(user.name, "No action pending. Select an ability first.");
@@ -537,9 +543,9 @@ function handleConfirm(game: Game, user: User) {
 function handleTarget(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %target <target>");
 
@@ -555,9 +561,9 @@ function handleTarget(game: Game, user: User, args: string) {
 function handleChoose(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %choose <option>");
 
@@ -571,7 +577,7 @@ function handleChoose(game: Game, user: User, args: string) {
 }
 
 function handleVote(game: Game, user: User, args: string) {
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.voteOpen) {
     return sendPm(
       user.name,
@@ -635,7 +641,7 @@ function handleVote(game: Game, user: User, args: string) {
 }
 
 function handleUnvote(game: Game, user: User) {
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.voteOpen) {
     return sendPm(user.name, "No gamemode vote is open right now.");
   }
@@ -765,9 +771,9 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
 function handleCancel(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!entity.pendingAction) {
     return sendPm(user.name, "No action pending.");
@@ -979,9 +985,9 @@ function handlePremove(game: Game, user: User) {
     entity = getCurrentEntity(game);
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, "You already moved this turn.");
@@ -1002,9 +1008,9 @@ function handlePremove(game: Game, user: User) {
 function handleDirChoice(game: Game, user: User, dir: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!dir) return sendPm(user.name, "Usage: %dir <direction>");
 
@@ -1020,9 +1026,9 @@ function handleDirChoice(game: Game, user: User, dir: string) {
 function handleTileChoice(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %tile <tile>");
 
@@ -1045,9 +1051,9 @@ function handlePassMove(game: Game, user: User) {
     entity = getCurrentEntity(game);
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, "You already moved this turn.");

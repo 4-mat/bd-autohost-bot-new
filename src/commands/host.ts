@@ -1,4 +1,10 @@
 import { send, sendPm, toId, parsePos, posToStr, rollDice } from "../utils.js";
+import {
+  MSG_NO_GAME,
+  MSG_GAME_STARTED,
+  MSG_NO_ACTIVE_TURN,
+  MSG_NOT_YOUR_TURN,
+} from "../messages.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
 import {
@@ -302,7 +308,7 @@ function parseVersion(arg: string): GameVersion | null {
 
 function handleDehost(room: Room, user: User) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %dehost.");
   }
@@ -315,11 +321,11 @@ function handleDehost(room: Room, user: User) {
 
 function handleSetGame(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %setgame.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
 
   const mode = args.trim();
   if (!mode)
@@ -436,11 +442,11 @@ function handleSetGame(room: Room, user: User, args: string) {
 
 function handleOpen(room: Room, user: User, highlight = false) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %open.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
 
   game.signupsOpen = true;
   const hl = highlight ? " (highlighted)" : "";
@@ -453,11 +459,11 @@ function handleOpen(room: Room, user: User, highlight = false) {
 
 function handleClose(room: Room, user: User) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %close.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
 
   game.signupsOpen = false;
 
@@ -484,11 +490,11 @@ function handleClose(room: Room, user: User) {
 
 function handleEndVote(room: Room, user: User) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %endvote.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.voteOpen) {
     return sendPm(
       user.name,
@@ -547,7 +553,7 @@ function handleEndVote(room: Room, user: User) {
  */
 function handleFfaButton(room: Room, user: User) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %ffabtn.");
   }
@@ -569,7 +575,7 @@ function handleFfaButton(room: Room, user: User) {
  */
 function handleNudge(room: Room, user: User) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %nudge.");
   }
@@ -613,8 +619,8 @@ function handleNudge(room: Room, user: User) {
 
 function handleJoin(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.signupsOpen) {
     return sendPm(user.name, "Signups are closed. Wait for the host to %open.");
   }
@@ -648,11 +654,11 @@ function handleJoin(room: Room, user: User, args: string) {
 
 function handleGenPos(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %genpos.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (game.map.length === 0) {
     return sendPm(
       user.name,
@@ -981,11 +987,11 @@ export function findNearestOpenTile(
 
 function handleAddPlayer(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %addp.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
 
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 1 || !parts[0]) {
@@ -1108,11 +1114,11 @@ function createPlayerEntity(
 
 function handleAddMonster(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %addm.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
 
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 8 || !parts[0]) {
@@ -1263,7 +1269,7 @@ function applyLoadoutChange(
 
 function handleSwitchClass(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   const parts = args.split(",").map((s) => s.trim());
   if (!parts[0]) {
     return sendPm(user.name, "Usage: %sc <class>");
@@ -1282,7 +1288,7 @@ function handleSwitchClass(room: Room, user: User, args: string) {
 
 function handleSwitchWeapon(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   const parts = args.split(",").map((s) => s.trim());
   if (!parts[0]) {
     return sendPm(user.name, "Usage: %sw <weapon>");
@@ -1307,7 +1313,7 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
  */
 function handleSelfLoadout(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 2 || !parts[0] || !parts[1]) {
     return sendPm(user.name, "Usage: %sco <class>, <weapon>");
@@ -1329,7 +1335,7 @@ function handleSelfLoadout(room: Room, user: User, args: string) {
 
 function handleSetClass(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %setclass.");
   }
@@ -1348,7 +1354,7 @@ function handleSetClass(room: Room, user: User, args: string) {
 
 function handleSetWeapon(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %setweapon.");
   }
@@ -1370,7 +1376,7 @@ function handleSetWeapon(room: Room, user: User, args: string) {
 
 function handleSetEntityLoadout(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %setloadout.");
   }
@@ -1424,11 +1430,11 @@ function applyEntityLevel(
 
 function handleSetLevel(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %setlevel.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
 
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length < 2 || !parts[0] || !parts[1]) {
@@ -1477,7 +1483,7 @@ function handleSetLevel(room: Room, user: User, args: string) {
 
 function handleSetTeam(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %setteam.");
   }
@@ -1505,7 +1511,7 @@ function handleSetTeam(room: Room, user: User, args: string) {
 
 function handleSetJugg(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %setjugg.");
   }
@@ -1542,7 +1548,7 @@ function handleSetJugg(room: Room, user: User, args: string) {
 
 function handleRemPlayer(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %remp.");
   }
@@ -1562,11 +1568,11 @@ function handleRemPlayer(room: Room, user: User, args: string) {
 
 function handleSetMap(room: Room, user: User, args: string) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %setmap.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
 
   const mapName = args.trim();
   if (!mapName)
@@ -1714,7 +1720,7 @@ function handleListMaps(room: Room, user: User, args: string) {
 
 function handleGenTurnOrder(room: Room, user: User) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %gento.");
   }
@@ -1767,11 +1773,11 @@ function handleGenTurnOrder(room: Room, user: User) {
 
 function handleStart(room: Room, user: User) {
   const game = findGameForRoom(room.id);
-  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (!game) return sendPm(user.name, MSG_NO_GAME);
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can use %start.");
   }
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (game.map.length === 0) {
     return sendPm(
       user.name,
