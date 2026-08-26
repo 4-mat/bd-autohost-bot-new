@@ -33,6 +33,7 @@ import {
   parseFrequency,
   type Game,
   type Entity,
+  type AbilityData,
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
 import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
@@ -255,12 +256,28 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   broadcastPages(game);
 }
 
-function handleAttack(game: Game, user: User, cmd: string, args: string) {
+type ValidatedAttack = {
+  entity: Entity;
+  ability: AbilityData;
+  targetName: string;
+};
+
+/**
+ * Resolve who acts and which ability they want, running every guard:
+ * turn ownership, statuses, ability lookup, cooldowns, uses, and action
+ * type. Returns the validated target or sends the failure to the user
+ * and returns null.
+ */
+function validateAttack(
+  game: Game,
+  user: User,
+  args: string,
+): ValidatedAttack | null {
   const isHost = toId(user.name) === toId(game.host);
 
+  // Host may pass "ability @ target, entityName" to act for another entity.
   let entityName = "";
   let abilityTarget = args;
-
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length >= 3) {
     entityName = parts[parts.length - 1];
@@ -276,29 +293,31 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   let entity: Entity | null = null;
   if (entityName && isHost) {
     entity = getEntity(game, entityName);
-    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
+    if (!entity) {
+      sendPm(user.name, `Unknown entity: ${entityName}`);
+      return null;
+    }
   } else {
     entity = getCurrentEntity(game);
   }
-
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) {
+    sendPm(user.name, "No active turn.");
+    return null;
+  }
 
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    sendPm(user.name, "It's not your turn.");
+    return null;
   }
   if (isStunned(entity)) {
     failAct(game, entity, "Stunned");
-    return sendPm(
-      user.name,
-      `${entity.num} is Stunned and cannot use abilities.`,
-    );
+    sendPm(user.name, `${entity.num} is Stunned and cannot use abilities.`);
+    return null;
   }
   if (isSealed(entity)) {
     failAct(game, entity, "Sealed");
-    return sendPm(
-      user.name,
-      `${entity.num} is Sealed and cannot use abilities.`,
-    );
+    sendPm(user.name, `${entity.num} is Sealed and cannot use abilities.`);
+    return null;
   }
 
   // Parse: ability name @ target
@@ -308,51 +327,79 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   ).trim();
   const targetName = atIdx >= 0 ? abilityTarget.slice(atIdx + 1).trim() : "";
 
-  if (!abilityName)
-    return sendPm(user.name, "Specify an ability. Use: %use Ability @ Target");
+  if (!abilityName) {
+    sendPm(user.name, "Specify an ability. Use: %use Ability @ Target");
+    return null;
+  }
 
   const ability = entity.abilities.find(
     (a) => toId(a.name) === toId(abilityName),
   );
-  if (!ability) return sendPm(user.name, `Unknown ability: ${abilityName}`);
+  if (!ability) {
+    sendPm(user.name, `Unknown ability: ${abilityName}`);
+    return null;
+  }
 
-  // Cooldown check
+  if (!checkAbilityAvailability(game, entity, ability, user)) return null;
+  if (!checkActionType(game, entity, ability, user)) return null;
+
+  return { entity, ability, targetName };
+}
+
+/** Cooldown + max-uses guards for an ability. */
+function checkAbilityAvailability(
+  game: Game,
+  entity: Entity,
+  ability: AbilityData,
+  user: User,
+): boolean {
   if (entity.cooldowns[ability.name]) {
     failAct(game, entity, `${ability.name} on cooldown`);
-    return sendPm(
+    sendPm(
       user.name,
       `${ability.name} is on cooldown (${entity.cooldowns[ability.name]} turns left).`,
     );
+    return false;
   }
-
-  // Max uses check
   const maxUses = ability.maxUses ?? parseFrequency(ability.frequency).uses;
   if (maxUses) {
     const used = entity.usesUsed[ability.name] ?? 0;
     if (used >= maxUses) {
       failAct(game, entity, `${ability.name} out of uses`);
-      return sendPm(user.name, `${ability.name} has no uses remaining.`);
+      sendPm(user.name, `${ability.name} has no uses remaining.`);
+      return false;
     }
   }
+  return true;
+}
 
-  // Action type enforcement
+/** Action-type slot and ordering guards. */
+function checkActionType(
+  game: Game,
+  entity: Entity,
+  ability: AbilityData,
+  user: User,
+): boolean {
   if (ability.actionType === "Standard" && entity.standardUsed) {
     failAct(game, entity, "Standard already used");
-    return sendPm(user.name, "You already used your Standard action.");
+    sendPm(user.name, "You already used your Standard action.");
+    return false;
   }
   if (ability.actionType === "Swift" && entity.swiftUsed) {
     failAct(game, entity, "Swift already used");
-    return sendPm(user.name, "You already used your Swift action this turn.");
+    sendPm(user.name, "You already used your Swift action this turn.");
+    return false;
   }
   if (
     ability.actionType === "Full" &&
     (entity.standardUsed || entity.movementUsed)
   ) {
     failAct(game, entity, "Full action needs Movement+Standard");
-    return sendPm(
+    sendPm(
       user.name,
       "Full action requires both Standard and Movement unused.",
     );
+    return false;
   }
   // Issue #3: Free/Swift/Trigger must be used before the Standard action.
   if (
@@ -362,26 +409,32 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
       ability.actionType === "Trigger")
   ) {
     failAct(game, entity, "Free/Swift must come before Standard");
-    return sendPm(
+    sendPm(
       user.name,
       `${ability.actionType} abilities must be used before your Standard action.`,
     );
+    return false;
   }
-  if (ability.actionType === "Trigger") {
-    // Trigger abilities are free-like: manual use, no slot consumed.
-    // Using a trigger lets the entity manually resolve Reactions this turn.
-  } else if (ability.actionType === "Reaction") {
-    if (!entity.triggered) {
-      failAct(game, entity, "no trigger active");
-      return sendPm(
-        user.name,
-        "No trigger active this turn — Reaction abilities cannot be used manually.",
-      );
-    }
-  } else if (ability.actionType === "Passive") {
+  if (ability.actionType === "Reaction" && !entity.triggered) {
+    failAct(game, entity, "no trigger active");
+    sendPm(
+      user.name,
+      "No trigger active this turn — Reaction abilities cannot be used manually.",
+    );
+    return false;
+  }
+  if (ability.actionType === "Passive") {
     failAct(game, entity, "Passive cannot be used manually");
-    return sendPm(user.name, "Passive abilities cannot be used manually.");
+    sendPm(user.name, "Passive abilities cannot be used manually.");
+    return false;
   }
+  return true;
+}
+
+function handleAttack(game: Game, user: User, cmd: string, args: string) {
+  const validated = validateAttack(game, user, args);
+  if (!validated) return;
+  const { entity, ability, targetName } = validated;
 
   pushSnapshot(game);
   if (ability.actionType === "Standard") entity.standardUsed = true;
