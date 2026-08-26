@@ -105,40 +105,46 @@ function parsePlayerRows(html: string): ParsedPlayer[] {
   const players: ParsedPlayer[] = [];
 
   for (let i = 1; i < rows.length; i++) {
-    const cells = extractCells(rows[i][1]);
-    if (cells.length < 10) continue;
-
-    const num = strip(cells[0]).match(/^(P\d+)$/);
-    if (!num) continue;
-
-    const cw = strip(cells[2]);
-    const cwMatch = cw.match(/^(.+?)\((\d+)\)\/(.+?)\((\d+)\)$/);
-    const className = cwMatch ? cwMatch[1] : cw.split("/")[0] || cw;
-    const classLevel = cwMatch ? parseInt(cwMatch[2]) : 1;
-    const weaponName = cwMatch ? cwMatch[3] : cw.split("/")[1] || "";
-    const weaponLevel = cwMatch ? parseInt(cwMatch[4]) : 1;
-
-    const hpMatch = strip(cells[3]).match(/(\d+)\/(\d+)/);
-
-    players.push({
-      num: num[1],
-      name: strip(cells[1]),
-      className,
-      weaponName,
-      classLevel,
-      weaponLevel,
-      hp: hpMatch ? parseInt(hpMatch[1]) : 0,
-      maxhp: hpMatch ? parseInt(hpMatch[2]) : 0,
-      atk: parseInt(strip(cells[4])) || 0,
-      mag: parseInt(strip(cells[5])) || 0,
-      pd: parseInt(strip(cells[6])) || 0,
-      md: parseInt(strip(cells[7])) || 0,
-      eva: parseInt(strip(cells[8])) || 0,
-      mp: parseInt(strip(cells[9])) || 0,
-    });
+    const player = parsePlayerRow(rows[i][1]);
+    if (player) players.push(player);
   }
 
   return players;
+}
+
+/** Parse one player row into a ParsedPlayer, or null when the row is malformed. */
+function parsePlayerRow(rowHtml: string): ParsedPlayer | null {
+  const cells = extractCells(rowHtml);
+  if (cells.length < 10) return null;
+
+  const num = strip(cells[0]).match(/^(P\d+)$/);
+  if (!num) return null;
+
+  const cw = strip(cells[2]);
+  const cwMatch = cw.match(/^(.+?)\((\d+)\)\/(.+?)\((\d+)\)$/);
+  const className = cwMatch ? cwMatch[1] : cw.split("/")[0] || cw;
+  const classLevel = cwMatch ? parseInt(cwMatch[2]) : 1;
+  const weaponName = cwMatch ? cwMatch[3] : cw.split("/")[1] || "";
+  const weaponLevel = cwMatch ? parseInt(cwMatch[4]) : 1;
+
+  const hpMatch = strip(cells[3]).match(/(\d+)\/(\d+)/);
+
+  return {
+    num: num[1],
+    name: strip(cells[1]),
+    className,
+    weaponName,
+    classLevel,
+    weaponLevel,
+    hp: hpMatch ? parseInt(hpMatch[1]) : 0,
+    maxhp: hpMatch ? parseInt(hpMatch[2]) : 0,
+    atk: parseInt(strip(cells[4])) || 0,
+    mag: parseInt(strip(cells[5])) || 0,
+    pd: parseInt(strip(cells[6])) || 0,
+    md: parseInt(strip(cells[7])) || 0,
+    eva: parseInt(strip(cells[8])) || 0,
+    mp: parseInt(strip(cells[9])) || 0,
+  };
 }
 
 function parseTurnOrder(html: string): string[] {
