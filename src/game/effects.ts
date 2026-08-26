@@ -322,116 +322,9 @@ function isInsideDice(text: string, pos: number): boolean {
 
 function parseClause(clause: string): Effect[] {
   const lower = clause.toLowerCase().trim();
-  const effects: Effect[] = [];
 
-  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
-  const ifMatch = lower.match(
-    /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
-  );
-  if (ifMatch) {
-    const thenEffects = parseEffects(ifMatch[2]);
-    const elseEffects = ifMatch[3] ? parseEffects(ifMatch[3]) : undefined;
-    effects.push({
-      type: "conditional",
-      condition: ifMatch[1].trim(),
-      thenEffects,
-      elseEffects,
-    });
-    return effects;
-  }
-
-  // Thirst: "Thirst N: EFFECT"
-  const thirstMatch = lower.match(/^thirst\s+(\d+):\s*(.+)$/);
-  if (thirstMatch) {
-    effects.push({
-      type: "thirst",
-      threshold: parseInt(thirstMatch[1]),
-      effects: parseEffects(thirstMatch[2]),
-    });
-    return effects;
-  }
-
-  // Apex: "Apex: EFFECT"
-  const apexMatch = lower.match(/^apex:\s*(.+)$/);
-  if (apexMatch) {
-    effects.push({
-      type: "apex",
-      effects: parseEffects(apexMatch[1]),
-    });
-    return effects;
-  }
-
-  // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
-  // Optional colon + "one" prefix to match real glossary variants.
-  const chooseMatch = lower.match(/^choose\s*:?\s+(?:one:\s*)?(.+)$/);
-  if (chooseMatch) {
-    const options = chooseMatch[1]
-      .split(/\s+or\s+/)
-      .map((o) => parseEffects(o.trim()))
-      .filter((o) => o.length > 0);
-    if (options.length > 0) {
-      effects.push({ type: "choose", options });
-      return effects;
-    }
-  }
-
-  // Channel: "Channel STAT for N rounds"
-  const channelMatch = lower.match(
-    /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
-  );
-  if (channelMatch) {
-    effects.push({
-      type: "channel",
-      stat: channelMatch[1],
-      rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
-    });
-    return effects;
-  }
-
-  // Phase: "Phase: PHASE_NAME"
-  const phaseMatch = lower.match(
-    /^phase:\s*(new moon|waxing|full moon|waning)$/,
-  );
-  if (phaseMatch) {
-    effects.push({ type: "phase", phase: phaseMatch[1] });
-    return effects;
-  }
-
-  // Delay: "Delay N rounds" or "Delay-N"
-  const delayMatch = lower.match(/^delay[\s-]+(\d+)\s+rounds?$/);
-  if (delayMatch) {
-    effects.push({ type: "delay", rounds: parseInt(delayMatch[1]) });
-    return effects;
-  }
-
-  // Recoil: "Recoil N%"
-  const recoilMatch = lower.match(/^recoil\s+(\d+)%$/);
-  if (recoilMatch) {
-    effects.push({ type: "recoil", percent: parseInt(recoilMatch[1]) });
-    return effects;
-  }
-
-  // Ignore: "Ignore(s) X"
-  const ignoreMatch = lower.match(/^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/);
-  if (ignoreMatch) {
-    effects.push({ type: "ignore", what: ignoreMatch[1].trim() });
-    return effects;
-  }
-
-  // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
-  const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
-  if (multiHitMatch) {
-    effects.push({ type: "multiHit", hits: parseInt(multiHitMatch[1]) });
-    return effects;
-  }
-
-  // Delay-land: "Delay attacks always land" or "Delay-N" already handled above
-  // Handle "Delay-1. May delay up to +2 more turns." as just delay
-  const delaySimple = lower.match(/^delay-?(\d+)$/);
-  if (delaySimple) {
-    effects.push({ type: "delay", rounds: parseInt(delaySimple[1]) });
-    return effects;
-  }
+  const clauseMatch = parseClauseStructured(lower);
+  if (clauseMatch) return clauseMatch;
 
   // Inflict: "inflict N Status/M" or "inflict Status/M" or "N Status/M" or "Status/M"
   const statusEffects = parseStatusInflict(lower);
@@ -463,14 +356,101 @@ function parseClause(clause: string): Effect[] {
 
   // Tile placement: "Place X tiles" or "X tiles"
   const tileEffect = parseTilePlacement(lower);
-  if (tileEffect) {
-    effects.push(tileEffect);
-    return effects;
-  }
+  if (tileEffect) return [tileEffect];
 
   // Fallback: unknown
-  effects.push({ type: "unknown", text: clause });
-  return effects;
+  return [{ type: "unknown", text: clause }];
+}
+
+/** Structured clauses with a fixed keyword prefix (If/Thirst/Apex/...). */
+function parseClauseStructured(lower: string): Effect[] | null {
+  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
+  const ifMatch = lower.match(
+    /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
+  );
+  if (ifMatch) {
+    return [{
+      type: "conditional",
+      condition: ifMatch[1].trim(),
+      thenEffects: parseEffects(ifMatch[2]),
+      elseEffects: ifMatch[3] ? parseEffects(ifMatch[3]) : undefined,
+    }];
+  }
+
+  // Thirst: "Thirst N: EFFECT"
+  const thirstMatch = lower.match(/^thirst\s+(\d+):\s*(.+)$/);
+  if (thirstMatch) {
+    return [{
+      type: "thirst",
+      threshold: parseInt(thirstMatch[1]),
+      effects: parseEffects(thirstMatch[2]),
+    }];
+  }
+
+  // Apex: "Apex: EFFECT"
+  const apexMatch = lower.match(/^apex:\s*(.+)$/);
+  if (apexMatch) {
+    return [{ type: "apex", effects: parseEffects(apexMatch[1]) }];
+  }
+
+  // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
+  // Optional colon + "one" prefix to match real glossary variants.
+  const chooseMatch = lower.match(/^choose\s*:?\s+(?:one:\s*)?(.+)$/);
+  if (chooseMatch) {
+    const options = chooseMatch[1]
+      .split(/\s+or\s+/)
+      .map((o) => parseEffects(o.trim()))
+      .filter((o) => o.length > 0);
+    if (options.length > 0) return [{ type: "choose", options }];
+  }
+
+  // Channel: "Channel STAT for N rounds"
+  const channelMatch = lower.match(
+    /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
+  );
+  if (channelMatch) {
+    return [{
+      type: "channel",
+      stat: channelMatch[1],
+      rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
+    }];
+  }
+
+  // Phase: "Phase: PHASE_NAME"
+  const phaseMatch = lower.match(
+    /^phase:\s*(new moon|waxing|full moon|waning)$/,
+  );
+  if (phaseMatch) {
+    return [{ type: "phase", phase: phaseMatch[1] }];
+  }
+
+  // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
+  const delayMatch =
+    lower.match(/^delay[\s-]+(\d+)\s+rounds?$/) ??
+    lower.match(/^delay-?(\d+)$/);
+  if (delayMatch) {
+    return [{ type: "delay", rounds: parseInt(delayMatch[1]) }];
+  }
+
+  // Recoil: "Recoil N%"
+  const recoilMatch = lower.match(/^recoil\s+(\d+)%$/);
+  if (recoilMatch) {
+    return [{ type: "recoil", percent: parseInt(recoilMatch[1]) }];
+  }
+
+  // Ignore: "Ignore(s) X"
+  const ignoreMatch = lower.match(/^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/);
+  if (ignoreMatch) {
+    return [{ type: "ignore", what: ignoreMatch[1].trim() }];
+  }
+
+  // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
+  const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
+  if (multiHitMatch) {
+    return [{ type: "multiHit", hits: parseInt(multiHitMatch[1]) }];
+  }
+
+  return null;
 }
 
 function parseStatusInflict(lower: string): Effect[] {
