@@ -892,31 +892,23 @@ function abilityReadyFor(entity: Entity, ab: AbilityData): boolean {
 function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
   return entity.abilities.filter((ab) => {
     if (!abilityReadyFor(entity, ab)) return false;
-
-    if (
-      ab.actionType === "Passive" ||
-      ab.actionType === "Reaction" ||
-      ab.actionType === "Trigger"
-    )
-      return false;
-
-    if (ab.actionType === "Standard" && entity.standardUsed) return false;
-    if (ab.actionType === "Swift" && entity.swiftUsed) return false;
-    // Issue #3: Free/Swift must be used before the Standard action.
-    if (
-      entity.standardUsed &&
-      (ab.actionType === "Free" || ab.actionType === "Swift")
-    )
-      return false;
-    if (ab.actionType === "Movement" && entity.movementUsed) return false;
-    if (
-      ab.actionType === "Full" &&
-      (entity.standardUsed || entity.movementUsed)
-    )
-      return false;
-
+    if (!canUseActionType(ab, entity)) return false;
     return true;
   });
+}
+
+/** Whether the entity still has the action type this ability needs. */
+function canUseActionType(ab: AbilityData, entity: Entity): boolean {
+  const type = ab.actionType;
+  if (type === "Passive" || type === "Reaction" || type === "Trigger")
+    return false;
+  // Issue #3: Free/Swift must be used before the Standard action.
+  if (type === "Free" || type === "Swift")
+    return !entity.swiftUsed && !entity.standardUsed;
+  if (type === "Standard") return !entity.standardUsed;
+  if (type === "Movement") return !entity.movementUsed;
+  if (type === "Full") return !entity.standardUsed && !entity.movementUsed;
+  return true;
 }
 
 /** Can be used before the Standard action: Free/Swift/Trigger/Movement, or a triggered Reaction. */
