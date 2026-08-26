@@ -862,21 +862,10 @@ function getBaseStat(entity: Entity, stat: string): number {
   }
 }
 
-// Local copy of `getEffectiveStat` -- same logic that resolve.ts inlines,
-// kept local so effects.ts stays self-contained. Used in places where a
-// clamped (>= 0) stat is what we need, e.g. damage scaling.
-function getEffStat(entity: Entity, stat: string): number {
-  let base = getBaseStat(entity, stat);
-  for (const b of entity.buffs) {
-    if (b.stat === stat) base += b.amount;
-  }
-  return Math.max(0, base);
-}
-
-// Unclamped variant -- used by condition evaluation so the sign check can
-// detect a stat that has debuffed below zero. The clamped helper would mask
-// negatives back to 0 and cause "Stat is negative" to misfire on heavily
-// debuffed targets.
+// Unclamped variant of getEffectiveStat (resolve.ts) -- used by condition
+// evaluation so the sign check can detect a stat that has debuffed below
+// zero. The clamped version would mask negatives back to 0 and cause
+// "Stat is negative" to misfire on heavily debuffed targets.
 function getRawStat(entity: Entity, stat: string): number {
   let base = getBaseStat(entity, stat);
   for (const b of entity.buffs) {
