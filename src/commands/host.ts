@@ -624,59 +624,16 @@ function handleGenPos(room: Room, user: User, args: string) {
   if (game.map.length === 0) {
     return sendPm(
       user.name,
-      "No map set. Use %setmap <name> (see %listmaps) or %setmap gen first.",
+      "Set a map first (%setmap <name> or %setmap gen), then %genpos.",
     );
   }
 
   const arg = args.trim().toLowerCase();
 
-  if (game.map.length === 0) {
-    return sendPm(
-      user.name,
-      "Set a map first (%setmap <name> or %setmap gen), then %genpos.",
-    );
-  }
-
   // Team mode: %genpos <N>v<M> (e.g. %genpos 2v2, %genpos 3v3)
   const teamMatch = arg.match(/^(\d+)\s*v\s*(\d+)$/);
   if (teamMatch) {
-    const a = parseInt(teamMatch[1]);
-    const b = parseInt(teamMatch[2]);
-    if (a < 1 || b < 1 || a > 5 || b > 5) {
-      return sendPm(
-        user.name,
-        "Usage: %genpos <N>v<M> with 1-5 per team (e.g. %genpos 2v2).",
-      );
-    }
-    const players = game.entities.filter((e) => !e.isMonster);
-    if (a + b !== players.length) {
-      return sendPm(
-        user.name,
-        `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
-      );
-    }
-
-    const teamA = players.slice(0, a);
-    const teamB = players.slice(a, a + b);
-
-    pushSnapshot(game);
-    const placed = placeTeamPlayers(game, teamA, teamB);
-    if (!placed) {
-      return sendPm(user.name, "Could not find open spawn tiles.");
-    }
-    teamA.forEach((e) => (e.team = 1));
-    teamB.forEach((e) => (e.team = 2));
-    game.mode = `${a}V${b}`;
-    game.modeChosen = true;
-    // Setting a mode directly supersedes any ongoing vote / runoff.
-    game.voteOpen = false;
-    game.votes = {};
-    game.voteRunoff = null;
-    const spots = [...placed[0], ...placed[1]]
-      .map(([e, p]) => `${e.num} (T${e.team}) at ${posToStr(p[0], p[1])}`)
-      .join(" | ");
-    send(room.id, `**Positions set (${a}v${b}):** ${spots}`);
-    broadcastPages(game);
+    genPosTeams(room, user, game, teamMatch[1], teamMatch[2]);
     return;
   }
 
@@ -688,10 +645,52 @@ function handleGenPos(room: Room, user: User, args: string) {
       "Usage: %genpos <N><mode> (e.g. %genpos 4pffa) or %genpos <N>v<M> (e.g. %genpos 2v2).",
     );
   }
+  genPosFfa(room, user, game, parseInt(match[1]), match[2]);
+}
 
-  const n = parseInt(match[1]);
-  const mode = match[2];
+/** %genpos <N>v<M> — split players into two teams and place them. */
+function genPosTeams(room: Room, user: User, game: Game, aStr: string, bStr: string) {
+  const a = parseInt(aStr);
+  const b = parseInt(bStr);
+  if (a < 1 || b < 1 || a > 5 || b > 5) {
+    return sendPm(
+      user.name,
+      "Usage: %genpos <N>v<M> with 1-5 per team (e.g. %genpos 2v2).",
+    );
+  }
+  const players = game.entities.filter((e) => !e.isMonster);
+  if (a + b !== players.length) {
+    return sendPm(
+      user.name,
+      `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
+    );
+  }
 
+  const teamA = players.slice(0, a);
+  const teamB = players.slice(a, a + b);
+
+  pushSnapshot(game);
+  const placed = placeTeamPlayers(game, teamA, teamB);
+  if (!placed) {
+    return sendPm(user.name, "Could not find open spawn tiles.");
+  }
+  teamA.forEach((e) => (e.team = 1));
+  teamB.forEach((e) => (e.team = 2));
+  game.mode = `${a}V${b}`;
+  game.modeChosen = true;
+  // Setting a mode directly supersedes any ongoing vote / runoff.
+  game.voteOpen = false;
+  game.votes = {};
+  game.voteRunoff = null;
+  const spots = [...placed[0], ...placed[1]]
+    .map(([e, p]) => `${e.num} (T${e.team}) at ${posToStr(p[0], p[1])}`)
+    .join(" | ");
+  send(room.id, `**Positions set (${a}v${b}):** ${spots}`);
+  broadcastPages(game);
+}
+
+/** %genpos <N><mode> — place N players FFA-style on the map. */
+function genPosFfa(room: Room, user: User, game: Game, n: number, mode: string) {
   if (mode.includes("v")) {
     return sendPm(
       user.name,
