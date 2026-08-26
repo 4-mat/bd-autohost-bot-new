@@ -1097,13 +1097,26 @@ export function processStartOfTurn(
     messages.push(`  **${entity.num} is sealed and cannot use abilities!**`);
   }
 
+  const died = checkTurnDeath(game, entity, messages);
+
+  return { messages, died };
+}
+
+/**
+ * If the entity ran out of HP at a turn boundary, announce the defeat and
+ * remove it from the game. Returns whether the entity died.
+ */
+function checkTurnDeath(
+  game: Game,
+  entity: Entity,
+  messages: string[],
+): boolean {
   const died = entity.curhp <= 0;
   if (died) {
     messages.push(`  **${entity.num} (${entity.name}) has been defeated!**`);
     removeEntity(game, entity);
   }
-
-  return { messages, died };
+  return died;
 }
 
 // Cooldowns, status durations, and lava resolve at the end of the entity's turn
@@ -1137,11 +1150,7 @@ export function processEndOfTurn(
     );
   }
 
-  const died = entity.curhp <= 0;
-  if (died) {
-    messages.push(`  **${entity.num} (${entity.name}) has been defeated!**`);
-    removeEntity(game, entity);
-  }
+  const died = checkTurnDeath(game, entity, messages);
 
   return { messages, died };
 }
