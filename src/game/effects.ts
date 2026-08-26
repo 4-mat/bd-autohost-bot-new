@@ -453,103 +453,70 @@ function parseClauseStructured(lower: string): Effect[] | null {
   return null;
 }
 
+interface StatusPattern {
+  re: RegExp;
+  /** Extract name/damage/rounds from a match; null when the pattern has no status. */
+  extract: (m: RegExpMatchArray) => { name: string; damage: number; rounds: number } | null;
+}
+
+// Patterns tried in order: "inflict N Status for M rounds", "inflict N
+// Status/M", standalone "N Status/M", standalone "Status/M", "inflict
+// Status/M", and bare "inflict Status".
+const STATUS_PATTERNS: StatusPattern[] = [
+  {
+    re: /inflict\s+(\d+)?\s*([a-z]+)\s+(?:for\s+)?(\d+)\s+rounds?/,
+    extract: (m) => ({
+      name: m[2],
+      damage: m[1] ? parseInt(m[1]) : 0,
+      rounds: parseInt(m[3]),
+    }),
+  },
+  {
+    re: /inflict\s+(\d+)?\s*([a-z]+)\s*\/\s*(\d+)/,
+    extract: (m) => ({
+      name: m[2],
+      damage: m[1] ? parseInt(m[1]) : 0,
+      rounds: parseInt(m[3]),
+    }),
+  },
+  {
+    re: /^(\d+)?\s*([a-z]+)\s*\/\s*(\d+)$/,
+    extract: (m) => ({
+      name: m[1] ? "" : m[2],
+      damage: m[1] ? parseInt(m[1]) : 0,
+      rounds: parseInt(m[3]),
+    }),
+  },
+  {
+    re: /^([a-z]+)\s*\/\s*(\d+)$/,
+    extract: (m) => ({ name: m[1], damage: 0, rounds: parseInt(m[2]) }),
+  },
+  {
+    re: /inflict\s+([a-z]+)\s*\/\s*(\d+)/,
+    extract: (m) => ({ name: m[1], damage: 0, rounds: parseInt(m[2]) }),
+  },
+  {
+    re: /inflict\s+([a-z]+)$/,
+    extract: (m) => ({ name: m[1], damage: 0, rounds: 1 }),
+  },
+];
+
 function parseStatusInflict(lower: string): Effect[] {
-  const effects: Effect[] = [];
-
-  // Pattern: "inflict N Status/M" or "inflict Status/M"
-  // Also: "N Status/M" standalone, or "Status/M" standalone
-  // Also: "inflict N status for M rounds"
-
-  // Try "inflict N Status for M rounds"
-  const formalMatch = lower.match(
-    /inflict\s+(\d+)?\s*([a-z]+)\s+(?:for\s+)?(\d+)\s+rounds?/,
-  );
-  if (formalMatch) {
-    const name = capitalize(formalMatch[2]);
-    const dmg = formalMatch[1] ? parseInt(formalMatch[1]) : 0;
-    const rounds = parseInt(formalMatch[3]);
-    if (STATUS_NAMES.includes(formalMatch[2])) {
-      effects.push({ type: "status", name, damage: dmg, rounds });
-      return effects;
-    }
-  }
-
-  // Try "inflict N Status/M"
-  const slashMatch = lower.match(/inflict\s+(\d+)?\s*([a-z]+)\s*\/\s*(\d+)/);
-  if (slashMatch) {
-    const statusName = slashMatch[2];
-    const name = capitalize(statusName);
-    const dmg = slashMatch[1] ? parseInt(slashMatch[1]) : 0;
-    const rounds = parseInt(slashMatch[3]);
-    if (STATUS_NAMES.includes(statusName)) {
-      effects.push({
+  for (const { re, extract } of STATUS_PATTERNS) {
+    const m = lower.match(re);
+    if (!m) continue;
+    const parsed = extract(m);
+    if (!parsed || !STATUS_NAMES.includes(parsed.name)) continue;
+    return [
+      {
         type: "status",
-        name,
-        damage: dmg,
-        rounds,
-      });
-      return effects;
-    }
+        name: capitalize(parsed.name),
+        damage: parsed.damage,
+        rounds: parsed.rounds,
+      },
+    ];
   }
-
-  // Try standalone "N Status/M" (e.g. "3 Bleed/1", "2 Cripple/1")
-  const standaloneMatch = lower.match(/^(\d+)?\s*([a-z]+)\s*\/\s*(\d+)$/);
-  if (standaloneMatch) {
-    const statusName = standaloneMatch[1] ? "" : standaloneMatch[2];
-    if (STATUS_NAMES.includes(statusName)) {
-      effects.push({
-        type: "status",
-        name: capitalize(statusName),
-        damage: standaloneMatch[1] ? parseInt(standaloneMatch[1]) : 0,
-        rounds: parseInt(standaloneMatch[3]),
-      });
-      return effects;
-    }
-  }
-
-  // Try standalone "Status/M" (e.g. "Slow/1", "Stun/1")
-  const nonDmgMatch = lower.match(/^([a-z]+)\s*\/\s*(\d+)$/);
-  if (nonDmgMatch) {
-    if (STATUS_NAMES.includes(nonDmgMatch[1])) {
-      effects.push({
-        type: "status",
-        name: capitalize(nonDmgMatch[1]),
-        damage: 0,
-        rounds: parseInt(nonDmgMatch[2]),
-      });
-      return effects;
-    }
-  }
-
-  // "inflict Status/M" without damage number
-  const inflictMatch = lower.match(/inflict\s+([a-z]+)\s*\/\s*(\d+)/);
-  if (inflictMatch) {
-    if (STATUS_NAMES.includes(inflictMatch[1])) {
-      effects.push({
-        type: "status",
-        name: capitalize(inflictMatch[1]),
-        damage: 0,
-        rounds: parseInt(inflictMatch[2]),
-      });
-      return effects;
-    }
-  }
-
-  // Bare "inflict Status" without duration
-  const bareMatch = lower.match(/inflict\s+([a-z]+)$/);
-  if (bareMatch) {
-    if (STATUS_NAMES.includes(bareMatch[1])) {
-      effects.push({
-        type: "status",
-        name: capitalize(bareMatch[1]),
-        damage: 0,
-        rounds: 1,
-      });
-      return effects;
-    }
-  }
-
-  return effects;
+  return [];
 }
 
 function parseStatMods(lower: string): Effect[] {
