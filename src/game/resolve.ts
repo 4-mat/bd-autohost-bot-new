@@ -61,27 +61,7 @@ export function eva43(entity: Entity, damageType: string): number {
 }
 
 export function getEffectiveStat(entity: Entity, stat: string): number {
-  let base = 0;
-  switch (stat) {
-    case "atk":
-      base = entity.atk;
-      break;
-    case "mag":
-      base = entity.mag;
-      break;
-    case "pd":
-      base = entity.pd;
-      break;
-    case "md":
-      base = entity.md;
-      break;
-    case "eva":
-      base = entity.eva;
-      break;
-    case "mp":
-      base = entity.mp;
-      break;
-  }
+  let base = BASE_STATS[stat]?.(entity) ?? 0;
   for (const b of entity.buffs) {
     if (b.stat === stat) base += b.amount;
     // DEF raises both physical and magical defense
@@ -92,6 +72,15 @@ export function getEffectiveStat(entity: Entity, stat: string): number {
   if ((stat === "pd" || stat === "md") && hasStatus(entity, "curse")) base -= 4;
   return Math.max(0, base);
 }
+
+const BASE_STATS: Record<string, (e: Entity) => number> = {
+  atk: (e) => e.atk,
+  mag: (e) => e.mag,
+  pd: (e) => e.pd,
+  md: (e) => e.md,
+  eva: (e) => e.eva,
+  mp: (e) => e.mp,
+};
 
 export function getStatBonus(entity: Entity, stat: string): number {
   let bonus = 0;
