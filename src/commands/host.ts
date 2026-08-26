@@ -14,7 +14,13 @@ import {
   Terrain,
   isStandable,
 } from "../game/state.js";
-import { classes, weapons, loadGameData } from "../data/index.js";
+import {
+  classes,
+  weapons,
+  loadGameData,
+  type ClassData,
+  type WeaponData,
+} from "../data/index.js";
 import { getVersionData } from "../data/version43.js";
 import type { GameVersion } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
@@ -59,37 +65,34 @@ function mayChangeLoadout(user: User, game: Game, entity: Entity): boolean {
 
 // Recalculate an entity's maxhp/curhp, stats, and abilities from its current
 // class + weapon. Returns the new max HP.
+/** Sum a stat across class + weapon data (0 when either is missing). */
+function sumStat(
+  classData: ClassData | undefined,
+  weaponData: WeaponData | undefined,
+  stat: string,
+): number {
+  const sv = (s: string) => parseFloat(s) || 0;
+  return (
+    (classData ? sv(String((classData.stats as Record<string, unknown>)[stat])) : 0) +
+    (weaponData ? sv(String((weaponData.stats as Record<string, unknown>)[stat])) : 0)
+  );
+}
+
 function recalcEntityStats(
   entity: Entity,
   data: { classes: typeof classes; weapons: typeof weapons },
 ): number {
   const classData = data.classes.get(toId(entity.className));
   const weaponData = data.weapons.get(toId(entity.weaponName));
-  const sv = (s: string) => parseFloat(s) || 0;
-  const newMaxhp =
-    (classData ? parseInt(classData.stats.hp) : 0) +
-    (weaponData ? parseInt(weaponData.stats.hp) : 0);
+  const newMaxhp = sumStat(classData, weaponData, "hp");
   entity.maxhp = newMaxhp;
   entity.curhp = Math.min(entity.curhp, newMaxhp);
-  entity.atk =
-    (classData ? sv(classData.stats.atk) : 0) +
-    (weaponData ? sv(weaponData.stats.atk) : 0);
-  entity.mag =
-    (classData ? sv(classData.stats.mag) : 0) +
-    (weaponData ? sv(weaponData.stats.mag) : 0);
-  entity.pd =
-    (classData ? sv(classData.stats.pd) : 0) +
-    (weaponData ? sv(weaponData.stats.pd) : 0);
-  entity.md =
-    (classData ? sv(classData.stats.md) : 0) +
-    (weaponData ? sv(weaponData.stats.md) : 0);
-  entity.eva = Math.floor(
-    (classData ? sv(classData.stats.eva) : 0) +
-      (weaponData ? sv(weaponData.stats.eva) : 0),
-  );
-  entity.mp =
-    (classData ? sv(classData.stats.mp) : 0) +
-    (weaponData ? sv(weaponData.stats.mp) : 0);
+  entity.atk = sumStat(classData, weaponData, "atk");
+  entity.mag = sumStat(classData, weaponData, "mag");
+  entity.pd = sumStat(classData, weaponData, "pd");
+  entity.md = sumStat(classData, weaponData, "md");
+  entity.eva = Math.floor(sumStat(classData, weaponData, "eva"));
+  entity.mp = sumStat(classData, weaponData, "mp");
   // classLevel and weaponLevel are always set together (createPlayerEntity,
   // %setlevel), so using classLevel here is equivalent to weaponLevel.
   const lvl = entity.classLevel;
