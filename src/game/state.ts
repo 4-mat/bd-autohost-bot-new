@@ -404,6 +404,11 @@ export function getHumanPlayers(game: Game): Entity[] {
   return game.entities.filter((e) => !e.isMonster);
 }
 
+/** Check whether the given user is the game's host. */
+export function isHostUser(game: Game, user: { name: string }): boolean {
+  return toId(user.name) === toId(game.host);
+}
+
 export function dist(a: [number, number], b: [number, number]): number {
   return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
 }
