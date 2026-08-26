@@ -1,3 +1,16 @@
+/**
+ * Game state management and core logic for bd-autohost-bot-new.
+ *
+ * Exports:
+ * - Terrain enum + color/names lookups
+ * - Entity, Game, AbilityData interfaces
+ * - State functions (move, attack, turn management, pathfinding)
+ * - Damage resolution, status effects, cooldowns
+ * - Game-over detection and loot calculation
+ *
+ * Import: `import { games, Entity, Terrain } from "../game/state.js"`
+ * or `import { rollDice, toId } from "../utils.js"`
+ */
 import { rollDice, posToStr, toId } from "../utils.js";
 import { send, sendPm } from "../utils.js";
 import { rooms } from "../rooms.js";
