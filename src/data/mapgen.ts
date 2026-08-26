@@ -81,24 +81,40 @@ function isConnected(grid: number[][]): boolean {
 
   while (queue.length > 0) {
     const [r, c] = queue.shift()!;
-    for (const [dr, dc] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ]) {
-      const nr = r + dr;
-      const nc = c + dc;
-      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
-      const key = `${nr},${nc}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (!isPassable(grid[nr][nc])) continue;
-      reachable++;
-      queue.push([nr, nc]);
-    }
+    reachable += expandNeighbor(grid, rows, cols, r, c, seen, queue);
   }
   return reachable === total;
+}
+
+/** Visit up to 4 orthogonal neighbors of (r,c), returning how many were
+ * newly-reached passable tiles. */
+function expandNeighbor(
+  grid: number[][],
+  rows: number,
+  cols: number,
+  r: number,
+  c: number,
+  seen: Set<string>,
+  queue: [number, number][],
+): number {
+  let found = 0;
+  for (const [dr, dc] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ]) {
+    const nr = r + dr;
+    const nc = c + dc;
+    if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+    const key = `${nr},${nc}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!isPassable(grid[nr][nc])) continue;
+    found++;
+    queue.push([nr, nc]);
+  }
+  return found;
 }
 
 /** Inputs a themed cell generator needs to pick terrain for one tile. */
