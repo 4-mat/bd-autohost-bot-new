@@ -391,6 +391,11 @@ export function getEntity(game: Game, ref: string): Entity | null {
   );
 }
 
+/** All living non-monster entities (human players). */
+export function getHumanPlayers(game: Game): Entity[] {
+  return game.entities.filter((e) => !e.isMonster);
+}
+
 export function dist(a: [number, number], b: [number, number]): number {
   return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
 }
