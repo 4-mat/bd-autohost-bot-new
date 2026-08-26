@@ -1311,6 +1311,316 @@ export interface EffectChoosePrompt {
  * chosen sub-effects, etc.) flow correctly via `yield*` so the resolve
  * pipeline keeps a single structure of prompts.
  */
+type EffectCtx = {
+  game: Game;
+  user: Entity;
+  target: Entity;
+  ability?: AbilityData;
+  messages: string[];
+};
+
+/**
+ * A single effect-type handler. Pushes log lines into `ctx.messages` and
+ * may `yield` prompts (choose) or recurse into sub-effects via
+ * `yield* applyEffectStream(...)`.
+ */
+type EffectHandler = (
+  ctx: EffectCtx,
+  effect: any,
+) => Generator<EffectChoosePrompt, void, string>;
+
+function* handleStatus(
+  { target, messages }: EffectCtx,
+  effect: StatusInflict,
+) {
+  const hasShield = target.statuses.some((s) => toId(s.name) === "shield");
+  if (hasShield && effect.damage === 0) {
+    messages.push(`  ${target.num}'s Shield blocks ${effect.name}!`);
+    return;
+  }
+  const existing = target.statuses.find((s) => s.name === effect.name);
+  if (existing) {
+    existing.rounds = Math.max(existing.rounds, effect.rounds);
+    existing.damage = Math.max(existing.damage, effect.damage);
+    messages.push(
+      `  ${target.num}'s ${effect.name} refreshed (${effect.rounds} rounds).`,
+    );
+  } else {
+    target.statuses.push({
+      name: effect.name,
+      damage: effect.damage,
+      rounds: effect.rounds,
+      maxRounds: effect.rounds,
+      removable: true,
+    });
+    messages.push(
+      `  ${target.num} afflicted with ${effect.name}${effect.damage > 0 ? ` (${effect.damage}/${effect.rounds})` : ` (${effect.rounds} rounds)`}.`,
+    );
+  }
+}
+
+function* handleStatMod(
+  { target, messages }: EffectCtx,
+  effect: StatMod,
+) {
+  const mult = effect.type === "buff" ? 1 : -1;
+  if (effect.percent) {
+    const baseStat = getBaseStat(target, effect.stat);
+    const amount = mult * Math.floor(baseStat * (Math.abs(effect.percent) / 100));
+    target.buffs.push({
+      stat: effect.stat,
+      amount,
+      rounds: effect.rounds ?? 1,
+    });
+    messages.push(
+      `  ${target.num} ${effect.type === "buff" ? "gains" : "loses"} ${mult > 0 ? "+" : ""}${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
+    );
+  } else {
+    target.buffs.push({
+      stat: effect.stat,
+      amount: effect.amount,
+      rounds: effect.rounds ?? 1,
+    });
+    messages.push(
+      `  ${target.num} ${effect.type === "buff" ? "gains +" : "loses "}${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+    );
+  }
+}
+
+function* handleDamageMod(
+  { target, messages }: EffectCtx,
+  effect: DamageMod,
+) {
+  const label = effect.percent
+    ? `${effect.percent > 0 ? "+" : ""}${effect.percent}% damage`
+    : `${effect.flat! > 0 ? "+" : ""}${effect.flat} DMG`;
+  messages.push(`  ${target.num} ${label}${effect.rounds ? `/${effect.rounds}` : ""}.`);
+}
+
+function* handleHeal(
+  { user, target, messages }: EffectCtx,
+  effect: HealEffect,
+) {
+  if (effect.amount) {
+    const prev = target.curhp;
+    target.curhp = Math.min(target.maxhp, target.curhp + effect.amount);
+    const healed = target.curhp - prev;
+    messages.push(
+      `  ${target.num} healed for ${healed} HP (${target.curhp}/${target.maxhp}).`,
+    );
+  } else {
+    messages.push(`  ${user.num} heals ${target.num}. (Manual resolution needed)`);
+  }
+}
+
+function* handleShield(
+  { target, messages }: EffectCtx,
+  effect: ShieldEffect,
+) {
+  const existingShield = target.statuses.find((s) => s.name === "Shield");
+  if (existingShield) {
+    existingShield.damage = Math.max(existingShield.damage, effect.amount);
+    existingShield.rounds = Math.max(existingShield.rounds, effect.rounds);
+  } else {
+    target.statuses.push({
+      name: "Shield",
+      damage: effect.amount,
+      rounds: effect.rounds,
+      maxRounds: effect.rounds,
+      removable: true,
+    });
+  }
+  messages.push(
+    `  ${target.num} gains Shield ${effect.amount} for ${effect.rounds} rounds.`,
+  );
+}
+
+function* handleDisplacement(
+  { game, user, target, messages }: EffectCtx,
+  effect: Displacement,
+) {
+  const source = effect.type === "push"
+    ? effect.toward === "user"
+      ? user.pos
+      : target.pos
+    : user.pos;
+  const { moved, path } = effect.type === "push"
+    ? pushEntity(game, target, source, effect.amount ?? 1)
+    : pullEntity(game, target, source, effect.amount ?? 1);
+  if (moved > 0) {
+    const pathStr = path.map((p) => `${p[0]},${p[1]}`).join(" -> ");
+    messages.push(
+      `  ${target.num} ${effect.type === "push" ? "pushed" : "pulled"} ${moved} tile${moved > 1 ? "s" : ""} to ${pathStr}.`,
+    );
+  } else {
+    messages.push(`  ${target.num} could not be ${effect.type === "push" ? "pushed" : "pulled"}.`);
+  }
+}
+
+function* handleSwap(
+  { user, target, messages }: EffectCtx,
+  _effect: Displacement,
+) {
+  const tmpPos = [...user.pos] as [number, number];
+  user.pos = [...target.pos] as [number, number];
+  target.pos = tmpPos;
+  messages.push(
+    `  ${user.num} and ${target.num} swap positions -> ${user.num} at ${user.pos[0]},${user.pos[1]}, ${target.num} at ${target.pos[0]},${target.pos[1]}.`,
+  );
+}
+
+function* handleSimple(
+  { user, messages }: EffectCtx,
+  effect: any,
+) {
+  switch (effect.type) {
+    case "teleport":
+      messages.push(
+        `  ${user.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
+      );
+      return;
+    case "move":
+      messages.push(
+        `  ${user.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
+      );
+      return;
+    case "resource":
+      messages.push(`  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`);
+      return;
+    case "delay":
+      messages.push(`  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`);
+      return;
+    case "ignore":
+      messages.push(`  Ignores ${effect.what}.`);
+      return;
+    case "channel":
+      messages.push(`  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`);
+      return;
+    case "phase":
+      messages.push(`  Phase shifts to ${effect.phase}.`);
+      return;
+    case "multiHit":
+      messages.push(`  Attack gains +${effect.hits - 1} additional hits.`);
+      return;
+    case "recoil":
+      // Recoil damage itself is applied in resolve.ts after on-hit damage
+      // is dealt. Here we just announce the marker so the log is readable.
+      messages.push(`  ${user.num} takes ${effect.percent}% recoil on damage dealt.`);
+      return;
+    case "tile":
+      messages.push(
+        `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
+      );
+      return;
+    case "unknown":
+      messages.push(`  ${effect.text}`);
+      return;
+    default:
+      return;
+  }
+}
+
+function* handleConditional(
+  { game, user, target, ability, messages }: EffectCtx,
+  effect: ConditionalEffect,
+) {
+  const { outcome, messages: condMsgs } = applyConditional(user, target, effect);
+  messages.push(...condMsgs);
+  // "unknown" defaults to then-branch (legacy fallback). "else" without
+  // an else-branch drops the sub-effects entirely.
+  if (outcome === "then" || outcome === "unknown") {
+    const thenMsgs = yield* applyEffectStream(game, user, target, effect.thenEffects, ability);
+    messages.push(...thenMsgs.map((m) => `    ${m}`));
+  }
+  if (outcome === "else" && effect.elseEffects) {
+    const elseMsgs = yield* applyEffectStream(game, user, target, effect.elseEffects, ability);
+    messages.push(...elseMsgs.map((m) => `    ${m}`));
+  }
+}
+
+function* handleThirst(
+  { game, user, target, ability, messages }: EffectCtx,
+  effect: ThirstEffect,
+) {
+  if (!isThirstActive(user, effect)) {
+    messages.push(
+      `  [Thirst ${effect.threshold}] inactive (Blood ${user.resources.blood ?? 0} < ${effect.threshold}).`,
+    );
+    return;
+  }
+  const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability);
+  messages.push(...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`));
+}
+
+function* handleApex(
+  { game, user, target, ability, messages }: EffectCtx,
+  effect: ApexEffect,
+) {
+  if (!ability) {
+    messages.push(`  [Apex] -- cannot evaluate without ability context.`);
+    return;
+  }
+  if (!isApexActive(game, user, target, ability)) {
+    messages.push(`  [Apex] inactive (target not at max listed range of ${ability.range}).`);
+    return;
+  }
+  const apexMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability);
+  messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
+}
+
+function* handleChoose(
+  { game, user, target, ability, messages }: EffectCtx,
+  effect: ChooseEffect,
+) {
+  // Yield a prompt. Resolve.ts feeds back the chosen option id and we
+  // recurse into the chosen branch's sub-effects through the stream so any
+  // nested APEX/THIRST/CHOICE inside the chosen branch also gets prompted.
+  const clauseId = `choose-${messages.length}`;
+  const chosenId = yield {
+    kind: "choose",
+    clauseId,
+    message: `Choose one option for the effect`,
+    options: effect.options.map((opts, i) => ({
+      id: `${clauseId}:${i}`,
+      label: opts.length
+        ? opts.map((o) => summariseEffect(o)).join("; ")
+        : `Option ${i + 1}`,
+    })),
+  } satisfies EffectChoosePrompt;
+  const idx = parseChosenIdx(chosenId, effect.options.length);
+  messages.push(`  [Choose] user picked option ${idx + 1}.`);
+  const chosenMsgs = yield* applyEffectStream(game, user, target, effect.options[idx], ability);
+  messages.push(...chosenMsgs.map((m) => `    ${m}`));
+}
+
+/** Dispatch an effect of any type to its handler. */
+const EFFECT_HANDLERS: Record<string, EffectHandler> = {
+  status: handleStatus,
+  buff: handleStatMod,
+  debuff: handleStatMod,
+  damageMod: handleDamageMod,
+  heal: handleHeal,
+  shield: handleShield,
+  push: handleDisplacement,
+  pull: handleDisplacement,
+  swap: handleSwap,
+  conditional: handleConditional,
+  thirst: handleThirst,
+  apex: handleApex,
+  choose: handleChoose,
+  teleport: handleSimple,
+  move: handleSimple,
+  resource: handleSimple,
+  delay: handleSimple,
+  ignore: handleSimple,
+  channel: handleSimple,
+  phase: handleSimple,
+  multiHit: handleSimple,
+  recoil: handleSimple,
+  tile: handleSimple,
+  unknown: handleSimple,
+};
+
 export function* applyEffectStream(
   game: Game,
   user: Entity,
@@ -1319,365 +1629,15 @@ export function* applyEffectStream(
   ability?: AbilityData,
 ): Generator<EffectChoosePrompt, string[], string> {
   const messages: string[] = [];
+  const ctx: EffectCtx = { game, user, target, ability, messages };
 
   for (const effect of effects) {
-    switch (effect.type) {
-      case "status": {
-        const hasShield = target.statuses.some(
-          (s) => toId(s.name) === "shield",
-        );
-        if (hasShield && effect.damage === 0) {
-          messages.push(`  ${target.num}'s Shield blocks ${effect.name}!`);
-          break;
-        }
-        const existing = target.statuses.find((s) => s.name === effect.name);
-        if (existing) {
-          existing.rounds = Math.max(existing.rounds, effect.rounds);
-          existing.damage = Math.max(existing.damage, effect.damage);
-          messages.push(
-            `  ${target.num}'s ${effect.name} refreshed (${effect.rounds} rounds).`,
-          );
-        } else {
-          target.statuses.push({
-            name: effect.name,
-            damage: effect.damage,
-            rounds: effect.rounds,
-            maxRounds: effect.rounds,
-            removable: true,
-          });
-          messages.push(
-            `  ${target.num} afflicted with ${effect.name}${effect.damage > 0 ? ` (${effect.damage}/${effect.rounds})` : ` (${effect.rounds} rounds)`}.`,
-          );
-        }
-        break;
-      }
-
-      case "buff": {
-        if (effect.percent) {
-          const baseStat = getBaseStat(target, effect.stat);
-          const amount = Math.floor(baseStat * (effect.percent / 100));
-          target.buffs.push({
-            stat: effect.stat,
-            amount,
-            rounds: effect.rounds ?? 1,
-          });
-          messages.push(
-            `  ${target.num} gains +${effect.percent}% ${effect.stat.toUpperCase()} (+${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
-          );
-        } else {
-          target.buffs.push({
-            stat: effect.stat,
-            amount: effect.amount,
-            rounds: effect.rounds ?? 1,
-          });
-          messages.push(
-            `  ${target.num} gains +${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-          );
-        }
-        break;
-      }
-
-      case "debuff": {
-        if (effect.percent) {
-          const baseStat = getBaseStat(target, effect.stat);
-          const amount = -Math.floor(
-            baseStat * (Math.abs(effect.percent) / 100),
-          );
-          target.buffs.push({
-            stat: effect.stat,
-            amount,
-            rounds: effect.rounds ?? 1,
-          });
-          messages.push(
-            `  ${target.num} loses ${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
-          );
-        } else {
-          target.buffs.push({
-            stat: effect.stat,
-            amount: effect.amount,
-            rounds: effect.rounds ?? 1,
-          });
-          messages.push(
-            `  ${target.num} loses ${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-          );
-        }
-        break;
-      }
-
-      case "damageMod": {
-        const label = effect.percent
-          ? `${effect.percent > 0 ? "+" : ""}${effect.percent}% damage`
-          : `${effect.flat! > 0 ? "+" : ""}${effect.flat} DMG`;
-        messages.push(
-          `  ${target.num} ${label}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-        );
-        break;
-      }
-
-      case "heal": {
-        if (effect.amount) {
-          const prev = target.curhp;
-          target.curhp = Math.min(target.maxhp, target.curhp + effect.amount);
-          const healed = target.curhp - prev;
-          messages.push(
-            `  ${target.num} healed for ${healed} HP (${target.curhp}/${target.maxhp}).`,
-          );
-        } else {
-          messages.push(
-            `  ${user.num} heals ${target.num}. (Manual resolution needed)`,
-          );
-        }
-        break;
-      }
-
-      case "teleport": {
-        messages.push(
-          `  ${user.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
-        );
-        break;
-      }
-
-      case "move": {
-        messages.push(
-          `  ${user.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
-        );
-        break;
-      }
-
-      case "resource": {
-        messages.push(
-          `  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`,
-        );
-        break;
-      }
-
-      case "delay": {
-        messages.push(
-          `  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`,
-        );
-        break;
-      }
-
-      case "ignore": {
-        messages.push(`  Ignores ${effect.what}.`);
-        break;
-      }
-
-      case "channel": {
-        messages.push(
-          `  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`,
-        );
-        break;
-      }
-
-      case "phase": {
-        messages.push(`  Phase shifts to ${effect.phase}.`);
-        break;
-      }
-
-      case "unknown": {
-        messages.push(`  ${effect.text}`);
-        break;
-      }
-
-      case "shield": {
-        const existingShield = target.statuses.find((s) => s.name === "Shield");
-        if (existingShield) {
-          existingShield.damage = Math.max(
-            existingShield.damage,
-            effect.amount,
-          );
-          existingShield.rounds = Math.max(
-            existingShield.rounds,
-            effect.rounds,
-          );
-        } else {
-          target.statuses.push({
-            name: "Shield",
-            damage: effect.amount,
-            rounds: effect.rounds,
-            maxRounds: effect.rounds,
-            removable: true,
-          });
-        }
-        messages.push(
-          `  ${target.num} gains Shield ${effect.amount} for ${effect.rounds} rounds.`,
-        );
-        break;
-      }
-
-      case "push": {
-        const pushSource = effect.toward === "user" ? user.pos : target.pos;
-        const { moved: pushMoved, path: pushPath } = pushEntity(
-          game,
-          target,
-          pushSource,
-          effect.amount ?? 1,
-        );
-        if (pushMoved > 0) {
-          const pathStr = pushPath.map((p) => `${p[0]},${p[1]}`).join(" -> ");
-          messages.push(
-            `  ${target.num} pushed ${pushMoved} tile${pushMoved > 1 ? "s" : ""} to ${pathStr}.`,
-          );
-        } else {
-          messages.push(`  ${target.num} could not be pushed.`);
-        }
-        break;
-      }
-
-      case "pull": {
-        const { moved: pullMoved, path: pullPath } = pullEntity(
-          game,
-          target,
-          user.pos,
-          effect.amount ?? 1,
-        );
-        if (pullMoved > 0) {
-          const pathStr = pullPath.map((p) => `${p[0]},${p[1]}`).join(" -> ");
-          messages.push(
-            `  ${target.num} pulled ${pullMoved} tile${pullMoved > 1 ? "s" : ""} to ${pathStr}.`,
-          );
-        } else {
-          messages.push(`  ${target.num} could not be pulled.`);
-        }
-        break;
-      }
-
-      case "swap": {
-        const tmpPos = [...user.pos] as [number, number];
-        user.pos = [...target.pos] as [number, number];
-        target.pos = tmpPos;
-        messages.push(
-          `  ${user.num} and ${target.num} swap positions -> ${user.num} at ${user.pos[0]},${user.pos[1]}, ${target.num} at ${target.pos[0]},${target.pos[1]}.`,
-        );
-        break;
-      }
-
-      case "multiHit": {
-        messages.push(`  Attack gains +${effect.hits - 1} additional hits.`);
-        break;
-      }
-
-      case "recoil": {
-        // Recoil damage itself is applied in resolve.ts after on-hit damage
-        // is dealt. Here we just announce the marker so the log is readable.
-        messages.push(
-          `  ${user.num} takes ${effect.percent}% recoil on damage dealt.`,
-        );
-        break;
-      }
-
-      case "conditional": {
-        const { outcome, messages: condMsgs } = applyConditional(
-          user,
-          target,
-          effect,
-        );
-        messages.push(...condMsgs);
-        // "unknown" defaults to then-branch (legacy fallback). "else" without
-        // an else-branch drops the sub-effects entirely.
-        if (outcome === "then" || outcome === "unknown") {
-          const thenMsgs = yield* applyEffectStream(
-            game,
-            user,
-            target,
-            effect.thenEffects,
-            ability,
-          );
-          messages.push(...thenMsgs.map((m) => `    ${m}`));
-        }
-        if (outcome === "else" && effect.elseEffects) {
-          const elseMsgs = yield* applyEffectStream(
-            game,
-            user,
-            target,
-            effect.elseEffects,
-            ability,
-          );
-          messages.push(...elseMsgs.map((m) => `    ${m}`));
-        }
-        break;
-      }
-
-      case "thirst": {
-        if (!isThirstActive(user, effect)) {
-          messages.push(
-            `  [Thirst ${effect.threshold}] inactive (Blood ${user.resources.blood ?? 0} < ${effect.threshold}).`,
-          );
-          break;
-        }
-        const thirstMsgs = yield* applyEffectStream(
-          game,
-          user,
-          target,
-          effect.effects,
-          ability,
-        );
-        messages.push(
-          ...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`),
-        );
-        break;
-      }
-
-      case "apex": {
-        if (!ability) {
-          messages.push(`  [Apex] -- cannot evaluate without ability context.`);
-          break;
-        }
-        if (!isApexActive(game, user, target, ability)) {
-          messages.push(
-            `  [Apex] inactive (target not at max listed range of ${ability.range}).`,
-          );
-          break;
-        }
-        const apexMsgs = yield* applyEffectStream(
-          game,
-          user,
-          target,
-          effect.effects,
-          ability,
-        );
-        messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
-        break;
-      }
-
-      case "choose": {
-        // Yield a prompt. Resolve.ts feeds back the chosen option id and
-        // we recurse into the chosen branch's sub-effects through the stream
-        // so any nested APEX/THIRST/CHOICE inside the chosen branch also
-        // gets prompted.
-        const clauseId = `choose-${messages.length}`;
-        const chosenId = yield {
-          kind: "choose",
-          clauseId,
-          message: `Choose one option for the effect`,
-          options: effect.options.map((opts, i) => ({
-            id: `${clauseId}:${i}`,
-            label: opts.length
-              ? opts.map((o) => summariseEffect(o)).join("; ")
-              : `Option ${i + 1}`,
-          })),
-        } satisfies EffectChoosePrompt;
-        const idx = parseChosenIdx(chosenId, effect.options.length);
-        messages.push(`  [Choose] user picked option ${idx + 1}.`);
-        const chosenMsgs = yield* applyEffectStream(
-          game,
-          user,
-          target,
-          effect.options[idx],
-          ability,
-        );
-        messages.push(...chosenMsgs.map((m) => `    ${m}`));
-        break;
-      }
-
-      case "tile": {
-        messages.push(
-          `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
-        );
-        break;
-      }
-
+    const handler = EFFECT_HANDLERS[effect.type];
+    if (handler) {
+      yield* handler(ctx, effect);
+    } else {
+      // No registered handler: surface the raw clause text.
+      messages.push(`  ${(effect as { text?: string }).text ?? ""}`);
     }
   }
 
