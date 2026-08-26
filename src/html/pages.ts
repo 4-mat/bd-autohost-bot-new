@@ -849,29 +849,35 @@ function buildAbilityButton(
 
 // -- Target Resolution Helpers ------------------------------------------------
 
+/** Shared gate: the entity hasn't used up this ability's level/cooldown/uses. */
+function abilityReadyFor(entity: Entity, ab: AbilityData): boolean {
+  if (!entity.isJuggernaut && typeof ab.level === "string") return false;
+
+  if (typeof ab.level === "number" && ab.level > 0) {
+    if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
+      return false;
+  }
+
+  if (entity.cooldowns[ab.name]) return false;
+
+  const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
+  if (maxUses) {
+    const used = entity.usesUsed[ab.name] ?? 0;
+    if (used >= maxUses) return false;
+  }
+  return true;
+}
+
 function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
   return entity.abilities.filter((ab) => {
+    if (!abilityReadyFor(entity, ab)) return false;
+
     if (
       ab.actionType === "Passive" ||
       ab.actionType === "Reaction" ||
       ab.actionType === "Trigger"
     )
       return false;
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
-
-    if (typeof ab.level === "number" && ab.level > 0) {
-      if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
-        return false;
-    }
-
-    if (entity.cooldowns[ab.name]) return false;
-
-    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
-    if (maxUses) {
-      const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= maxUses) return false;
-    }
 
     if (ab.actionType === "Standard" && entity.standardUsed) return false;
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;
@@ -892,36 +898,54 @@ function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
   });
 }
 
+/** Can be used before the Standard action: Free/Swift/Trigger/Movement, or a triggered Reaction. */
+function isPreMoveAction(ab: AbilityData, entity: Entity): boolean {
+  const type = ab.actionType;
+  return (
+    type === "Free" ||
+    type === "Swift" ||
+    type === "Trigger" ||
+    type === "Movement" ||
+    (type === "Reaction" && entity.triggered)
+  );
+}
+
 function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
   return entity.abilities.filter((ab) => {
-    if (
-      ab.actionType !== "Free" &&
-      ab.actionType !== "Swift" &&
-      ab.actionType !== "Trigger" &&
-      ab.actionType !== "Movement" &&
-      !(ab.actionType === "Reaction" && entity.triggered)
-    )
-      return false;
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
-
-    if (typeof ab.level === "number" && ab.level > 0) {
-      if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
-        return false;
-    }
-
-    if (entity.cooldowns[ab.name]) return false;
-
-    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
-    if (maxUses) {
-      const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= maxUses) return false;
-    }
-
+    if (!abilityReadyFor(entity, ab)) return false;
+    if (!isPreMoveAction(ab, entity)) return false;
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;
-
     return true;
   });
+}
+
+/** Whether `e` fits the ability's target group (Foe/Ally/Self/Any/…) from `user`. */
+function matchesTargetGroup(
+  ab: AbilityData,
+  user: Entity,
+  e: Entity,
+): boolean {
+  switch (ab.targetGroup) {
+    case "Foe":
+      if (user.team === 0) return e.num !== user.num;
+      return e.team !== user.team;
+    case "Ally":
+      if (e.num === user.num) return false;
+      if (user.team === 0) return false;
+      return e.team === user.team;
+    case "Self":
+      return e.num === user.num;
+    case "Any":
+    case "Foe or Ally":
+      return true;
+    default:
+      if (ab.targetGroup.includes("Ally") && !ab.targetGroup.includes("Foe")) {
+        if (e.num === user.num) return true;
+        if (user.team === 0) return false;
+        return e.team === user.team;
+      }
+      return true;
+  }
 }
 
 function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
@@ -933,38 +957,7 @@ function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
     )
       return false;
     if (e.curhp <= 0) return false;
-
-    switch (ab.targetGroup) {
-      case "Foe":
-        if (user.team === 0) {
-          if (e.num === user.num) return false;
-        } else {
-          if (e.team === user.team) return false;
-        }
-        break;
-      case "Ally":
-        if (e.num === user.num) return false;
-        if (user.team === 0) return false;
-        if (e.team !== user.team) return false;
-        break;
-      case "Self":
-        if (e.num !== user.num) return false;
-        break;
-      case "Any":
-        break;
-      case "Foe or Ally":
-        break;
-      default:
-        if (
-          ab.targetGroup.includes("Ally") &&
-          !ab.targetGroup.includes("Foe")
-        ) {
-          if (e.num === user.num) return true;
-          if (user.team === 0) return false;
-          if (e.team !== user.team) return false;
-        }
-        break;
-    }
+    if (!matchesTargetGroup(ab, user, e)) return false;
 
     if (ab.range !== "Global" && ab.range !== "Self") {
       if (!inRange(game, user.pos, e.pos, ab.range)) return false;
