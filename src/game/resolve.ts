@@ -43,6 +43,26 @@ function newResult(): ResolutionResult {
   return { messages: [], deaths: [], gameOver: false };
 }
 
+/**
+ * Record an entity's defeat: announce it, remove the entity from the game,
+ * and note the death on the result so callers can check win conditions.
+ *
+ * `cause` is the verb phrase announced before the "!" (e.g. "defeated",
+ * "defeated by Recoil", "killed").
+ */
+function recordDefeat(
+  game: Game,
+  result: ResolutionResult,
+  entity: Entity,
+  cause = "defeated",
+): void {
+  result.messages.push(
+    `  **${entity.num} (${entity.name}) has been ${cause}!**`,
+  );
+  removeEntity(game, entity);
+  result.deaths.push(entity);
+}
+
 function offensiveStat(entity: Entity, damageType: string): number {
   return getEffectiveStat(entity, damageType === "Physical" ? "atk" : "mag");
 }
@@ -821,21 +841,11 @@ function* resolveSingleTarget(
       }
     }
 
-    if (target.curhp <= 0) {
-      result.messages.push(
-        `  **${target.num} (${target.name}) has been defeated!**`,
-      );
-      removeEntity(game, target);
-      result.deaths.push(target);
-    }
+    if (target.curhp <= 0) recordDefeat(game, result, target);
 
     // Check if recoil killed the user (after target death is recorded)
     if (user.curhp <= 0) {
-      result.messages.push(
-        `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
-      );
-      removeEntity(game, user);
-      result.deaths.push(user);
+      recordDefeat(game, result, user, "defeated by Recoil");
       return result;
     }
   } else {
@@ -862,13 +872,7 @@ function* resolveSingleTarget(
     );
     result.confusionTriggered = true;
 
-    if (user.curhp <= 0) {
-      result.messages.push(
-        `  **${user.num} (${user.name}) has been defeated by Confusion!**`,
-      );
-      removeEntity(game, user);
-      result.deaths.push(user);
-    }
+    if (user.curhp <= 0) recordDefeat(game, result, user, "defeated by Confusion");
   }
 
   return result;
@@ -1146,13 +1150,7 @@ function resolveSplash(
       );
     }
 
-    if (target.curhp <= 0) {
-      result.messages.push(
-        `  **${target.num} (${target.name}) has been killed!**`,
-      );
-      removeEntity(game, target);
-      result.deaths.push(target);
-    }
+    if (target.curhp <= 0) recordDefeat(game, result, target, "killed");
   }
 
   return result;
