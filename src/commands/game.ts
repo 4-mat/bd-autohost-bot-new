@@ -1423,80 +1423,81 @@ function handleStatus(game: Game, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
   const action = parts[1].toLowerCase();
-  if (action === "list") {
-    if (entity.statuses.length === 0) {
-      return sendPm(user.name, `${entity.num} has no statuses.`);
-    }
-    const list = entity.statuses
-      .map(
-        (s) =>
-          `${s.name} ${s.damage > 0 ? s.damage + "/" : ""}${s.rounds}${s.removable ? "" : " (permanent)"}`,
-      )
-      .join(", ");
-    return sendPm(user.name, `${entity.num} statuses: ${list}`);
-  }
-
-  if (action === "add") {
-    // %status P1, add Bleed, 3/2
-    const statusName = parts[2];
-    if (!statusName) {
-      return sendPm(
-        user.name,
-        "Usage: %status <entity>, add <name>, <dmg>/<rounds>",
-      );
-    }
-
-    let damage = 0;
-    let rounds = 1;
-
-    if (parts[3]) {
-      const slashParts = parts[3].split("/");
-      damage = parseInt(slashParts[0]) || 0;
-      rounds = parseInt(slashParts[1]) || 1;
-    }
-
-    pushSnapshot(game);
-    entity.statuses.push({
-      name: capitalize(statusName),
-      damage,
-      rounds,
-      maxRounds: rounds,
-      removable: true,
-    });
-    send(
-      game.room,
-      `${entity.num} afflicted with ${capitalize(statusName)}${damage > 0 ? ` (${damage}/${rounds})` : ` (${rounds} rounds)`}.`,
-    );
-    broadcastPages(game);
-    return;
-  }
-
-  if (action === "remove") {
-    const statusName = parts[2];
-    if (!statusName) {
-      return sendPm(user.name, "Usage: %status <entity>, remove <name>");
-    }
-
-    const id = toId(statusName);
-    const idx = entity.statuses.findIndex((s) => toId(s.name) === id);
-    if (idx === -1) {
-      return sendPm(
-        user.name,
-        `${entity.num} does not have status: ${statusName}`,
-      );
-    }
-
-    pushSnapshot(game);
-    entity.statuses.splice(idx, 1);
-    send(game.room, `${entity.num}'s ${capitalize(statusName)} removed.`);
-    broadcastPages(game);
-    return;
-  }
+  if (action === "list") return statusList(game, user, entity);
+  if (action === "add") return statusAdd(game, user, entity, parts);
+  if (action === "remove") return statusRemove(game, user, entity, parts);
 
   sendPm(
     user.name,
     `Unknown status action: ${action}. Use add, remove, or list.`,
   );
+}
+
+/** %status <entity>, list — show all statuses on an entity. */
+function statusList(game: Game, user: User, entity: Entity) {
+  if (entity.statuses.length === 0) {
+    return sendPm(user.name, `${entity.num} has no statuses.`);
+  }
+  const list = entity.statuses
+    .map(
+      (s) =>
+        `${s.name} ${s.damage > 0 ? s.damage + "/" : ""}${s.rounds}${s.removable ? "" : " (permanent)"}`,
+    )
+    .join(", ");
+  return sendPm(user.name, `${entity.num} statuses: ${list}`);
+}
+
+/** %status <entity>, add <name>, <dmg>/<rounds> — afflict an entity. */
+function statusAdd(game: Game, user: User, entity: Entity, parts: string[]) {
+  // %status P1, add Bleed, 3/2
+  const statusName = parts[2];
+  if (!statusName) {
+    return sendPm(user.name, "Usage: %status <entity>, add <name>, <dmg>/<rounds>");
+  }
+
+  let damage = 0;
+  let rounds = 1;
+  if (parts[3]) {
+    const slashParts = parts[3].split("/");
+    damage = parseInt(slashParts[0]) || 0;
+    rounds = parseInt(slashParts[1]) || 1;
+  }
+
+  pushSnapshot(game);
+  entity.statuses.push({
+    name: capitalize(statusName),
+    damage,
+    rounds,
+    maxRounds: rounds,
+    removable: true,
+  });
+  send(
+    game.room,
+    `${entity.num} afflicted with ${capitalize(statusName)}${damage > 0 ? ` (${damage}/${rounds})` : ` (${rounds} rounds)`}.`,
+  );
+  broadcastPages(game);
+}
+
+/** %status <entity>, remove <name> — clear a status from an entity. */
+function statusRemove(game: Game, user: User, entity: Entity, parts: string[]) {
+  const statusName = parts[2];
+  if (!statusName) {
+    return sendPm(user.name, "Usage: %status <entity>, remove <name>");
+  }
+
+  const id = toId(statusName);
+  const idx = entity.statuses.findIndex((s) => toId(s.name) === id);
+  if (idx === -1) {
+    return sendPm(
+      user.name,
+      `${entity.num} does not have status: ${statusName}`,
+    );
+  }
+
+  pushSnapshot(game);
+  entity.statuses.splice(idx, 1);
+  send(game.room, `${entity.num}'s ${capitalize(statusName)} removed.`);
+  broadcastPages(game);
 }
 
 function handleRegp(game: Game, user: User, args: string) {
