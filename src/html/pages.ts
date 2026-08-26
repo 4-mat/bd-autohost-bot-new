@@ -352,44 +352,51 @@ function buildMapTable(game: Game, self: Entity | null): string {
     html += `<td style="${HEADER_CELL}"><b>${String.fromCharCode(65 + r)}</b></td>`;
 
     for (let c = 0; c < cols; c++) {
-      const terrain = game.map[r][c];
-      const color = TERRAIN_COLORS[terrain] ?? "#99E599";
-      const entity = game.entities.find(
-        (e) => e.pos[0] === r && e.pos[1] === c,
-      );
-
-      let label = "";
-      let title = TERRAIN_NAMES[terrain] ?? "Normal";
-      let highlight = "";
-      let isCur = false;
-
-      if (entity) {
-        label = entity.num;
-        title = entity.name;
-        isCur = entity.num === curNum;
-      }
-
-      if (self && entity) {
-        const isSelf = entity.num === self.num;
-        const isAlly = !isSelf && entity.team === self.team && self.team !== 0;
-        if (isSelf) highlight = "outline:2px solid #0a0;";
-        else if (isAlly) highlight = "outline:2px solid #08c;";
-      } else if (isCur && entity) {
-        highlight = "outline:2px solid #cc0;";
-      }
-
-      html += `<td class="mcell" style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"`;
-      if (entity) {
-        html += `><b style="${PLAYER_LABEL}">${label}</b></td>`;
-      } else {
-        html += `></td>`;
-      }
+      html += renderMapCell(game, self, curNum, r, c);
     }
     html += "</tr>";
   }
 
   html += "</table></div>";
   return html;
+}
+
+/** Render one map cell: terrain color, entity label, and highlight. */
+function renderMapCell(
+  game: Game,
+  self: Entity | null,
+  curNum: string,
+  r: number,
+  c: number,
+): string {
+  const terrain = game.map[r][c];
+  const color = TERRAIN_COLORS[terrain] ?? "#99E599";
+  const entity = game.entities.find((e) => e.pos[0] === r && e.pos[1] === c);
+
+  let label = "";
+  let title = TERRAIN_NAMES[terrain] ?? "Normal";
+  let highlight = "";
+  let isCur = false;
+
+  if (entity) {
+    label = entity.num;
+    title = entity.name;
+    isCur = entity.num === curNum;
+  }
+
+  if (self && entity) {
+    const isSelf = entity.num === self.num;
+    const isAlly = !isSelf && entity.team === self.team && self.team !== 0;
+    if (isSelf) highlight = "outline:2px solid #0a0;";
+    else if (isAlly) highlight = "outline:2px solid #08c;";
+  } else if (isCur && entity) {
+    highlight = "outline:2px solid #cc0;";
+  }
+
+  const inner = entity
+    ? `><b style="${PLAYER_LABEL}">${label}</b></td>`
+    : "></td>";
+  return `<td class="mcell" style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"${inner}`;
 }
 
 // -- Buff/Shield Display Helpers ----------------------------------------------
