@@ -115,6 +115,43 @@ function findGameForHost(username: string): Game | null {
   return null;
 }
 
+type HostCmd = (room: Room, user: User, full: string) => void;
+
+/** Host commands that take no arguments. */
+const HOST_CMDS_NOVAL: Record<string, (room: Room, user: User) => void> = {
+  dehost: handleDehost,
+  gento: handleGenTurnOrder,
+  start: handleStart,
+  close: handleClose,
+  endvote: handleEndVote,
+  ffabtn: handleFfaButton,
+  nudge: handleNudge,
+};
+
+/** Host commands that pass the full argument string through. */
+const HOST_CMDS: Record<string, HostCmd> = {
+  setgame: (r, u, full) => handleSetGame(r, u, full),
+  addp: (r, u, full) => handleAddPlayer(r, u, full),
+  remp: (r, u, full) => handleRemPlayer(r, u, full),
+  setmap: (r, u, full) => handleSetMap(r, u, full),
+  setlevel: (r, u, full) => handleSetLevel(r, u, full),
+  sl: (r, u, full) => handleSetLevel(r, u, full),
+  setteam: (r, u, full) => handleSetTeam(r, u, full),
+  addm: (r, u, full) => handleAddMonster(r, u, full),
+  sc: (r, u, full) => handleSwitchClass(r, u, full),
+  sw: (r, u, full) => handleSwitchWeapon(r, u, full),
+  sco: (r, u, full) => handleSelfLoadout(r, u, full),
+  setclass: (r, u, full) => handleSetClass(r, u, full),
+  setweapon: (r, u, full) => handleSetWeapon(r, u, full),
+  setloadout: (r, u, full) => handleSetEntityLoadout(r, u, full),
+  setjugg: (r, u, full) => handleSetJugg(r, u, full),
+  listmaps: (r, u, full) => handleListMaps(r, u, full),
+  join: (r, u, full) => handleJoin(r, u, full),
+  genpos: (r, u, full) => handleGenPos(r, u, full),
+  open: (r, u) => handleOpen(r, u, false),
+  openbsu: (r, u) => handleOpen(r, u, true),
+};
+
 export function hostCommand(
   room: Room | null,
   user: User,
@@ -135,90 +172,21 @@ export function hostCommand(
 
   const full = val ? `${args},${val}` : args;
 
-  switch (cmd) {
-    case "host":
-      handleHost(room, user, args);
-      break;
-    case "dehost":
-      handleDehost(room, user);
-      break;
-    case "setgame":
-      handleSetGame(room, user, full);
-      break;
-    case "addp":
-      handleAddPlayer(room, user, full);
-      break;
-    case "remp":
-      handleRemPlayer(room, user, full);
-      break;
-    case "setmap":
-      handleSetMap(room, user, full);
-      break;
-    case "setlevel":
-    case "sl":
-      handleSetLevel(room, user, full);
-      break;
-    case "setteam":
-      handleSetTeam(room, user, full);
-      break;
-    case "gento":
-      handleGenTurnOrder(room, user);
-      break;
-    case "start":
-      handleStart(room, user);
-      break;
-    case "addm":
-      handleAddMonster(room, user, full);
-      break;
-    case "sc":
-      handleSwitchClass(room, user, full);
-      break;
-    case "sw":
-      handleSwitchWeapon(room, user, full);
-      break;
-    case "sco":
-      handleSelfLoadout(room, user, full);
-      break;
-    case "setclass":
-      handleSetClass(room, user, full);
-      break;
-    case "setweapon":
-      handleSetWeapon(room, user, full);
-      break;
-    case "setloadout":
-      handleSetEntityLoadout(room, user, full);
-      break;
-    case "setjugg":
-      handleSetJugg(room, user, full);
-      break;
-    case "listmaps":
-      handleListMaps(room, user, full);
-      break;
-    case "open":
-    case "openbsu":
-      handleOpen(room, user, cmd === "openbsu");
-      break;
-    case "close":
-      handleClose(room, user);
-      break;
-    case "endvote":
-      handleEndVote(room, user);
-      break;
-    case "ffabtn":
-      handleFfaButton(room, user);
-      break;
-    case "nudge":
-      handleNudge(room, user);
-      break;
-    case "join":
-      handleJoin(room, user, full);
-      break;
-    case "genpos":
-      handleGenPos(room, user, full);
-      break;
-    default:
-      sendPm(user.name, `Host command ${cmd}: not yet implemented.`);
+  const noVal = HOST_CMDS_NOVAL[cmd];
+  if (noVal) {
+    noVal(room, user);
+    return;
   }
+  if (cmd === "host") {
+    handleHost(room, user, args);
+    return;
+  }
+  const handler = HOST_CMDS[cmd];
+  if (handler) {
+    handler(room, user, full);
+    return;
+  }
+  sendPm(user.name, `Host command ${cmd}: not yet implemented.`);
 }
 
 function findGameForRoom(roomid: string): Game | null {
