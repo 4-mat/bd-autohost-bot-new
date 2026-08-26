@@ -779,109 +779,148 @@ function* resolveSingleTarget(
 
   // --- Hit resolves first (damage to target first) ---
   if (hit) {
-    const damageRoll = rollDice(ability.roll);
-    const userOff = combat.ignore.atkMag
-      ? 0
-      : offensiveStat(user, ability.damageType);
-    const targetDef = applyIgnoreToDefense(
-      defensiveStat(target, ability.damageType),
-      combat.ignore,
+    const resolved = yield* resolveHitDamage(
+      game,
+      user,
+      ability,
+      target,
+      combat,
+      crit,
+      hitLabel,
+      result,
     );
-
-    let baseDamage = damageRoll.total + userOff - targetDef;
-
-    if (crit) {
-      const critRoll = rollDice(ability.roll);
-      baseDamage += critRoll.total;
-      result.messages.push(
-        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
-      );
-    }
-
-    const bleed = hasStatus(user, "bleed") ? 5 : 0;
-    // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
-    // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
-    // multiplicative 1.69x. extractCombatMetadata already summed the
-    // percent values additively.
-    let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
-    finalDamage += combat.flatDamage;
-    finalDamage = Math.max(0, Math.floor(finalDamage));
-    finalDamage = Math.max(0, finalDamage - bleed);
-
-    const dmgResult = dealDamage(target, finalDamage);
-    const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
-    result.messages.push(
-      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
-    );
-    emitDamageModTrail(result.messages, combat, finalDamage);
-
-    if (dmgResult.shieldAbsorbed > 0) {
-      result.messages.push(
-        `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
-      );
-    }
-
-    const effects = parseEffects(ability.effect);
-    const effectMsgs = yield* runEffectStream(
-      applyEffectStream(game, user, target, effects, ability),
-    );
-    result.messages.push(...effectMsgs);
-
-    // Apply recoil damage after hit damage (reuse the parsed `effects`
-    // array rather than re-running the regex-based clause splitter).
-    // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
-    // Recoil 25%" combo reflects the boosted total.
-    for (const e of effects) {
-      if (e.type === "recoil") {
-        const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
-        dealDamage(user, recoilDmg);
-        result.messages.push(
-          `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
-        );
-      }
-    }
-
-    if (target.curhp <= 0) {
-      result.messages.push(
-        `  **${target.num} (${target.name}) has been defeated!**`,
-      );
-      removeEntity(game, target);
-      result.deaths.push(target);
-    }
-
-    // Check if recoil killed the user (after target death is recorded)
-    if (user.curhp <= 0) {
-      result.messages.push(
-        `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
-      );
-      removeEntity(game, user);
-      result.deaths.push(user);
-      return result;
-    }
+    if (resolved === "user-defeated") return result;
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
-  if (isConfused(user) && accRoll >= 16 && !confusionAlreadyApplied) {
-    const offStat = Math.max(
-      getEffectiveStat(user, "atk"),
-      getEffectiveStat(user, "mag"),
-    );
-    dealDamage(user, offStat);
-    result.messages.push(
-      `  **${user.num} is Confused!** Takes **${offStat}** self-damage from their own ${offStat === getEffectiveStat(user, "atk") ? "ATK" : "MAG"} (${user.curhp}/${user.maxhp} HP).`,
-    );
-    result.confusionTriggered = true;
+  resolveConfusionSelfDamage(game, user, accRoll, confusionAlreadyApplied, result);
 
-    if (user.curhp <= 0) {
+  return result;
+}
+
+/**
+ * Resolve the damage portion of a hit: roll, crit, modifiers, recoil,
+ * and deaths. Returns "user-defeated" if recoil killed the attacker.
+ */
+function* resolveHitDamage(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  target: Entity,
+  combat: CombatMetadata,
+  crit: boolean,
+  hitLabel: string,
+  result: ResolutionResult,
+): Generator<AttackPrompt, "user-defeated" | "done", string> {
+  const damageRoll = rollDice(ability.roll);
+  const userOff = combat.ignore.atkMag
+    ? 0
+    : offensiveStat(user, ability.damageType);
+  const targetDef = applyIgnoreToDefense(
+    defensiveStat(target, ability.damageType),
+    combat.ignore,
+  );
+
+  let baseDamage = damageRoll.total + userOff - targetDef;
+
+  if (crit) {
+    const critRoll = rollDice(ability.roll);
+    baseDamage += critRoll.total;
+    result.messages.push(
+      `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+    );
+  }
+
+  const bleed = hasStatus(user, "bleed") ? 5 : 0;
+  // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
+  // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
+  // multiplicative 1.69x. extractCombatMetadata already summed the
+  // percent values additively.
+  let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
+  finalDamage += combat.flatDamage;
+  finalDamage = Math.max(0, Math.floor(finalDamage));
+  finalDamage = Math.max(0, finalDamage - bleed);
+
+  const dmgResult = dealDamage(target, finalDamage);
+  const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
+  result.messages.push(
+    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+  );
+  emitDamageModTrail(result.messages, combat, finalDamage);
+
+  if (dmgResult.shieldAbsorbed > 0) {
+    result.messages.push(
+      `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+    );
+  }
+
+  const effects = parseEffects(ability.effect);
+  const effectMsgs = yield* runEffectStream(
+    applyEffectStream(game, user, target, effects, ability),
+  );
+  result.messages.push(...effectMsgs);
+
+  // Apply recoil damage after hit damage (reuse the parsed `effects`
+  // array rather than re-running the regex-based clause splitter).
+  // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
+  // Recoil 25%" combo reflects the boosted total.
+  for (const e of effects) {
+    if (e.type === "recoil") {
+      const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
+      dealDamage(user, recoilDmg);
       result.messages.push(
-        `  **${user.num} (${user.name}) has been defeated by Confusion!**`,
+        `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
       );
-      removeEntity(game, user);
-      result.deaths.push(user);
     }
   }
 
-  return result;
+  if (target.curhp <= 0) {
+    result.messages.push(
+      `  **${target.num} (${target.name}) has been defeated!**`,
+    );
+    removeEntity(game, target);
+    result.deaths.push(target);
+  }
+
+  // Check if recoil killed the user (after target death is recorded)
+  if (user.curhp <= 0) {
+    result.messages.push(
+      `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
+    );
+    removeEntity(game, user);
+    result.deaths.push(user);
+    return "user-defeated";
+  }
+
+  return "done";
+}
+
+/** Self-damage from Confusion, applied after the hit resolves. */
+function resolveConfusionSelfDamage(
+  game: Game,
+  user: Entity,
+  accRoll: number,
+  confusionAlreadyApplied: boolean,
+  result: ResolutionResult,
+) {
+  if (!isConfused(user) || accRoll < 16 || confusionAlreadyApplied) return;
+  const offStat = Math.max(
+    getEffectiveStat(user, "atk"),
+    getEffectiveStat(user, "mag"),
+  );
+  dealDamage(user, offStat);
+  result.messages.push(
+    `  **${user.num} is Confused!** Takes **${offStat}** self-damage from their own ${offStat === getEffectiveStat(user, "atk") ? "ATK" : "MAG"} (${user.curhp}/${user.maxhp} HP).`,
+  );
+  result.confusionTriggered = true;
+
+  if (user.curhp <= 0) {
+    result.messages.push(
+      `  **${user.num} (${user.name}) has been defeated by Confusion!**`,
+    );
+    removeEntity(game, user);
+    result.deaths.push(user);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -951,18 +990,30 @@ function emitDamageModTrail(
   combat: CombatMetadata,
   finalDamage: number,
 ): void {
-  if (
-    combat.damagePercent === 0 &&
-    combat.flatDamage === 0 &&
-    !combat.ignore.atkMag &&
-    !combat.ignore.def &&
-    !combat.ignore.halfDef &&
-    !combat.ignore.quarterDef &&
-    combat.ignore.defReduction === 0 &&
-    combat.ignore.other.length === 0 &&
-    !combat.ignore.outsideFactors
-  )
-    return;
+  if (!hasDamageMods(combat)) return;
+  log.push(
+    `  *Damage Modifiers applied:* ${buildModTags(combat).join(", ")} -> **${finalDamage}**`,
+  );
+}
+
+/** Whether any damage modifier changed the math (no trail if none). */
+function hasDamageMods(combat: CombatMetadata): boolean {
+  const { ignore } = combat;
+  return (
+    combat.damagePercent !== 0 ||
+    combat.flatDamage !== 0 ||
+    ignore.atkMag ||
+    ignore.def ||
+    ignore.halfDef ||
+    ignore.quarterDef ||
+    ignore.defReduction > 0 ||
+    ignore.other.length > 0 ||
+    ignore.outsideFactors
+  );
+}
+
+/** Human-readable tags describing the applied damage modifiers. */
+function buildModTags(combat: CombatMetadata): string[] {
   const tags: string[] = [];
   if (combat.damagePercent !== 0) {
     const sign = combat.damagePercent > 0 ? "+" : "";
@@ -980,9 +1031,7 @@ function emitDamageModTrail(
     tags.push(`Ignores ${combat.ignore.defReduction} DEF`);
   if (combat.ignore.outsideFactors) tags.push("Ignores outside damage factors");
   for (const o of combat.ignore.other) tags.push(`Ignores ${o}`);
-  log.push(
-    `  *Damage Modifiers applied:* ${tags.join(", ")} -> **${finalDamage}**`,
-  );
+  return tags;
 }
 
 function setCooldown(entity: Entity, ability: AbilityData) {
