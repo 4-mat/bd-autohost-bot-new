@@ -1,3 +1,21 @@
+/**
+ * Attack resolution pipeline for bd-autohost-bot-new.
+ *
+ * Declares -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
+ * -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
+ *
+ * Exports:
+ * - ResolutionResult, AttackPrompt, PromptResponse types
+ * - resolveAction(), startAttack(), respondToChoice/Target/Dir/Tile
+ * - Core resolution pipeline: resolveAttackFlow, chooseTargets, resolveTargetAction
+ * - Damage calculation: resolveHitDamage, resolveHeal, resolveSplash
+ * - Cooldown/uses tracking: recordActionUsage, setCooldown
+ * - Modifiers math: extractCombatMetadata, formatDamageModsLine, buildModTags
+ * - Legacy: resolveAction() for existing callers
+ *
+ * Import: `import { resolveAction, startAttack } from "../game/resolve.js"`
+ * or `import { rollAccuracy, dealDamage } from "../game/state.js"`
+ */
 import {
   type Game,
   type Entity,
@@ -292,7 +310,11 @@ function* resolveAttackFlow(
   // result.messages.push(`/me declares ${ability.name}`);
 
   // --- Auto-deduct non-prompted costs ---
-  if (ability.cost && !ability.cost.prompt && !autoDeductCost(user, ability.cost)) {
+  if (
+    ability.cost &&
+    !ability.cost.prompt &&
+    !autoDeductCost(user, ability.cost)
+  ) {
     result.messages.push(
       `${user.num} could not pay the cost for ${ability.name}.`,
     );
@@ -366,7 +388,16 @@ function* resolveAttackFlow(
     );
   }
 
-  resolveSplashFor(game, user, active, targets, combat, isAttack, isAoE, result);
+  resolveSplashFor(
+    game,
+    user,
+    active,
+    targets,
+    combat,
+    isAttack,
+    isAoE,
+    result,
+  );
 
   // --- After Resolving (cooldowns, use tracking, win check) ---
   recordActionUsage(user, active);
@@ -485,6 +516,8 @@ export function startAttack(
   }
   const flow = resolveAttackFlow(game, user, ability, target);
   user.pendingResolution = flow;
+  // undefined passed as initial prompt input — advanceAttack handles the
+  // undefined case by yielding a prompt kind for the caller to respond to.
   return advanceAttack(user, flow, undefined as unknown as PromptResponse);
 }
 
@@ -809,7 +842,13 @@ function* resolveSingleTarget(
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
-  resolveConfusionSelfDamage(game, user, accRoll, confusionAlreadyApplied, result);
+  resolveConfusionSelfDamage(
+    game,
+    user,
+    accRoll,
+    confusionAlreadyApplied,
+    result,
+  );
 
   return result;
 }

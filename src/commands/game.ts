@@ -1,3 +1,21 @@
+/**
+ * Chat command handlers (%move, %attack, %vote, %join, etc.) for bd-autohost-bot-new.
+ *
+ * Exports:
+ * - gameCommand() - main entry point for processing commands
+ * - GAME_CMDS - record of all supported game commands
+ * - Command handlers: handleMove, handleAttack, handleConfirm, handleVote, etc.
+ * - Turn management: handleAdvanceTurn, handleBack, handleCancel
+ * - Range checking: handleCheckRange, checkRangeBetween, checkRangeToTarget
+ * - Voting: handleVote, handleUnvote, handleVoteStatus, buildVoteStatus
+ * - HP/Status: handleHp, handleStatus, statusAdd/Remove
+ * - Timer: handleCut, handleTimer, setGameTimer, resolveEntityRef
+ * - Display: buildPlayerList, buildTurnOrder, announceGameOver, broadcastPages
+ * - Info: handleInfo, handleRegp
+ *
+ * Import: `import { gameCommand } from "./game.js"`
+ * or `import { handleMove, handleAttack } from "./game.js"`
+ */
 import {
   send,
   sendPm,
@@ -48,14 +66,20 @@ import {
   type AttackStep,
 } from "../game/resolve.js";
 import { DIRECTION_LABELS } from "../game/state.js";
-import {    normalizeVoteMode,
-    pendingVoterIds,
-    runoffOptions,
-    tallyVotes,
+import {
+  normalizeVoteMode,
+  pendingVoterIds,
+  runoffOptions,
+  tallyVotes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
 
-type GameCmd = (game: Game | null, user: User, args: string, full: string) => void;
+type GameCmd = (
+  game: Game | null,
+  user: User,
+  args: string,
+  full: string,
+) => void;
 
 /** Run a handler only when a game is active; otherwise tell the user. */
 function withGame(
@@ -69,14 +93,20 @@ function withGame(
 }
 
 const GAME_CMDS: Record<string, GameCmd> = {
-  move: (g, u, _a, full) => withGame(g, u, (game) => handleMove(game, u, "move", full)),
-  dash: (g, u, _a, full) => withGame(g, u, (game) => handleMove(game, u, "dash", full)),
-  attack: (g, u, _a, full) => withGame(g, u, (game) => handleAttack(game, u, "attack", full)),
-  use: (g, u, _a, full) => withGame(g, u, (game) => handleAttack(game, u, "use", full)),
+  move: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleMove(game, u, "move", full)),
+  dash: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleMove(game, u, "dash", full)),
+  attack: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleAttack(game, u, "attack", full)),
+  use: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleAttack(game, u, "use", full)),
   confirm: (g, u) => withGame(g, u, (game) => handleConfirm(game, u)),
   cancel: (g, u) => withGame(g, u, (game) => handleCancel(game, u)),
-  target: (g, u, _a, full) => withGame(g, u, (game) => handleTarget(game, u, full)),
-  choose: (g, u, _a, full) => withGame(g, u, (game) => handleChoose(game, u, full)),
+  target: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleTarget(game, u, full)),
+  choose: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleChoose(game, u, full)),
   vote: (g, u, _a, full) => withGame(g, u, (game) => handleVote(game, u, full)),
   votestatus: (g, u) => withGame(g, u, (game) => handleVoteStatus(game, u)),
   unvote: (g, u) => withGame(g, u, (game) => handleUnvote(game, u)),
@@ -97,15 +127,24 @@ const GAME_CMDS: Record<string, GameCmd> = {
   to: (g, u) => withGame(g, u, (game) => sendPm(u.name, buildTurnOrder(game))),
   hp: (g, u, _a, full) => withGame(g, u, (game) => handleHp(game, u, full)),
   cut: (g, u, _a, full) => withGame(g, u, (game) => handleCut(game, u, full)),
-  timer: (g, u, _a, full) => withGame(g, u, (game) => handleTimer(game, u, full)),
-  checkrange: (g, u, _a, full) => withGame(g, u, (game) => handleCheckRange(game, u, full)),
-  cr: (g, u, _a, full) => withGame(g, u, (game) => handleCheckRange(game, u, full)),
-  status: (g, u, _a, full) => withGame(g, u, (game) => handleStatus(game, u, full)),
+  timer: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleTimer(game, u, full)),
+  checkrange: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleCheckRange(game, u, full)),
+  cr: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleCheckRange(game, u, full)),
+  status: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleStatus(game, u, full)),
   regp: (g, u, _a, full) => withGame(g, u, (game) => handleRegp(game, u, full)),
   dir: (g, u, args) =>
     withGame(g, u, (game) => handleDirChoice(game, u, args), "No active game."),
   tile: (g, u, _a, full) =>
-    withGame(g, u, (game) => handleTileChoice(game, u, full), "No active game."),
+    withGame(
+      g,
+      u,
+      (game) => handleTileChoice(game, u, full),
+      "No active game.",
+    ),
 };
 
 export function gameCommand(
@@ -554,7 +593,8 @@ function handleVote(game: Game, user: User, args: string) {
   if (!arg) {
     const lines = [buildVoteStatus(game)];
     const myVote = game.votes[entity.id];
-    if (myVote) lines.push(`You voted: **${myVote}** (use %unvote to withdraw).`);
+    if (myVote)
+      lines.push(`You voted: **${myVote}** (use %unvote to withdraw).`);
     const list = options.map((o) => o.id).join(", ");
     lines.push(`Vote with %vote <mode>${list ? ` — available: ${list}` : ""}.`);
     return sendPm(user.name, lines.join("\n"));
@@ -1270,7 +1310,7 @@ function handleCheckRange(game: Game, user: User, args: string) {
   const source =
     current && (!mine || toId(current.name) === toId(user.name))
       ? current
-      : mine ?? current;
+      : (mine ?? current);
   if (!source) {
     return sendPm(user.name, "No entity to check range from.");
   }
@@ -1297,7 +1337,10 @@ function checkRangeBetween(game: Game, user: User, arg: string): boolean {
   const d = dist(fromPos, toPos);
   const fromLabel = fromEntity?.num ?? posToStr(fromPos[0], fromPos[1]);
   const toLabel = toEntity?.num ?? posToStr(toPos[0], toPos[1]);
-  sendPm(user.name, `Distance ${fromLabel} -> ${toLabel}: ${d} tiles (Manhattan)`);
+  sendPm(
+    user.name,
+    `Distance ${fromLabel} -> ${toLabel}: ${d} tiles (Manhattan)`,
+  );
   return true;
 }
 
@@ -1370,7 +1413,8 @@ function checkRangeByPattern(
     s === "melee" ||
     s === "global" ||
     /^(range|homing|line|pierce|burst|star|beam|cone)\s*\d+$/i.test(s);
-  if (rangeParts.length === 0 || !rangeParts.every(validRangePart)) return false;
+  if (rangeParts.length === 0 || !rangeParts.every(validRangePart))
+    return false;
   const reachable = game.entities.filter(
     (e) =>
       e.num !== source.num &&
@@ -1452,7 +1496,10 @@ function statusAdd(game: Game, user: User, entity: Entity, parts: string[]) {
   // %status P1, add Bleed, 3/2
   const statusName = parts[2];
   if (!statusName) {
-    return sendPm(user.name, "Usage: %status <entity>, add <name>, <dmg>/<rounds>");
+    return sendPm(
+      user.name,
+      "Usage: %status <entity>, add <name>, <dmg>/<rounds>",
+    );
   }
 
   let damage = 0;
