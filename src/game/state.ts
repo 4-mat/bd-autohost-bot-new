@@ -409,6 +409,14 @@ export function isHostUser(game: Game, user: { name: string }): boolean {
   return toId(user.name) === toId(game.host);
 }
 
+/** Find the game active in a given room. */
+export function findGameForRoom(roomid: string): Game | null {
+  for (const game of games.values()) {
+    if (game.room === roomid) return game;
+  }
+  return null;
+}
+
 export function dist(a: [number, number], b: [number, number]): number {
   return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
 }
