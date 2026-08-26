@@ -1,5 +1,5 @@
 import { bot } from "./connection.js";
-import { send, sendPm, toId, splitMessage, parseArgs } from "./utils.js";
+import { send, sendPm, resumeSending, toId, splitMessage, parseArgs } from "./utils.js";
 import config from "./config.js";
 import { rooms, getRoom, type Room } from "./rooms.js";
 import { users, type User } from "./users.js";
@@ -13,6 +13,7 @@ bot.on("updateuser", (parts: string[]) => {
   const name = parts[2];
   if (name && toId(name) === toId(config.username)) {
     console.log(`Logged in as ${name}`);
+    resumeSending();
     for (const room of config.rooms) {
       send("", `/join ${room}`);
     }

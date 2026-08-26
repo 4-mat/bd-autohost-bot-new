@@ -98,6 +98,16 @@ export function resumeSending() {
   }
 }
 
+/** Send a message immediately, bypassing the queue. Used for /trn during login. */
+export function sendImmediate(msg: string) {
+  try {
+    ws!.send(`|${msg}`);
+  } catch {
+    // ws not available — fall back to queue so the message isn't lost.
+    send("", msg);
+  }
+}
+
 /**
  * Test-only: clear the outbound queue and cancel any in-flight drain so
  * send-queue tests start from a known state.

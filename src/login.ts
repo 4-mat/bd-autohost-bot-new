@@ -1,5 +1,5 @@
 import config from "./config.js";
-import { send } from "./utils.js";
+import { sendImmediate } from "./utils.js";
 
 export async function login(challstr: string) {
   const data = new URLSearchParams({
@@ -27,7 +27,7 @@ export async function login(challstr: string) {
     const parsed = JSON.parse(body);
     if (parsed.actionsuccess) {
       const assertion = parsed.assertion;
-      send("", `/trn ${config.username},0,${assertion}`);
+      sendImmediate(`/trn ${config.username},0,${assertion}`);
     } else {
       console.error("Login failed:", JSON.stringify(parsed));
     }
