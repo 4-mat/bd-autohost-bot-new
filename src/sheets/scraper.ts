@@ -22,7 +22,7 @@ interface FetchResult {
   }[];
 }
 
-interface DiffResult {
+export interface DiffResult {
   sheet: string;
   tab: string;
   label: string;
@@ -164,4 +164,4 @@ export async function approveAllUpdates() {
   }
 }
 
-export type { DiffResult, SheetRow, FetchResult };
+export type { SheetRow, FetchResult };
