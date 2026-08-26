@@ -1831,31 +1831,7 @@ function classifyIgnore(what: string, out: CombatIgnoreMetadata): void {
   }
 
   if (lower.includes("def")) {
-    // Order matters: a fractional "1/2 DEF" / "1/4 DEF" / "half DEF" /
-    // "quarter DEF" overrides a plain "5 DEF" -> the latter reads as
-    // "Ignores half DEF AND 5 DEF" which means (def/2 - 5). But BD's text
-    // typically gives them in a single clause. Without a clean
-    // multi-clause parser we take the strongest effect (full-zero >
-    // quarter > half > numeric subtract). If you see both strongest and
-    // subtract in real data, file an issue and we'll revisit.
-    if (lower.includes("half") || lower.includes("1/2")) {
-      out.halfDef = true;
-      return;
-    }
-    if (lower.includes("quarter") || lower.includes("1/4")) {
-      out.quarterDef = true;
-      return;
-    }
-    if (/^\s*\d+\s*$/.test(lower)) {
-      out.defReduction = Math.max(out.defReduction, parseInt(lower));
-      return;
-    }
-    const num = lower.match(/(\d+)/);
-    if (num) {
-      out.defReduction = Math.max(out.defReduction, parseInt(num[1]));
-      return;
-    }
-    out.def = true;
+    classifyDefIgnore(lower, out);
     return;
   }
 
@@ -1865,4 +1841,32 @@ function classifyIgnore(what: string, out: CombatIgnoreMetadata): void {
   }
 
   out.other.push(what);
+}
+
+/** Classify a DEF ignore clause. Order matters: a fractional "1/2 DEF" /
+ * "1/4 DEF" / "half DEF" / "quarter DEF" overrides a plain "5 DEF" -> the
+ * latter reads as "Ignores half DEF AND 5 DEF" which means (def/2 - 5). But
+ * BD's text typically gives them in a single clause. Without a clean
+ * multi-clause parser we take the strongest effect (full-zero > quarter >
+ * half > numeric subtract). If you see both strongest and subtract in real
+ * data, file an issue and we'll revisit. */
+function classifyDefIgnore(lower: string, out: CombatIgnoreMetadata): void {
+  if (lower.includes("half") || lower.includes("1/2")) {
+    out.halfDef = true;
+    return;
+  }
+  if (lower.includes("quarter") || lower.includes("1/4")) {
+    out.quarterDef = true;
+    return;
+  }
+  if (/^\s*\d+\s*$/.test(lower)) {
+    out.defReduction = Math.max(out.defReduction, parseInt(lower));
+    return;
+  }
+  const num = lower.match(/(\d+)/);
+  if (num) {
+    out.defReduction = Math.max(out.defReduction, parseInt(num[1]));
+    return;
+  }
+  out.def = true;
 }
