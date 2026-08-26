@@ -480,6 +480,26 @@ export function hasLineOfSight(
   return true;
 }
 
+type RangeChecker = (
+  game: Game,
+  from: [number, number],
+  to: [number, number],
+  n: number,
+) => boolean;
+
+// Numeric range types, keyed by their leading word. Non-numeric types
+// (melee/global) are handled before the map is consulted.
+const RANGE_CHECKERS: Record<string, RangeChecker> = {
+  burst: (g, f, t, n) => chebyshev(f, t) <= n,
+  star: (g, f, t, n) => manhattan(f, t) <= n && hasLineOfSight(g, f, t),
+  range: (g, f, t, n) => manhattan(f, t) <= n && hasLineOfSight(g, f, t),
+  homing: (_g, f, t, n) => manhattan(f, t) <= n,
+  line: (g, f, t, n) => onLine(f, t, n) && hasLineOfSight(g, f, t),
+  pierce: (g, f, t, n) => onLine(f, t, n) && hasLineOfSight(g, f, t),
+  beam: (g, f, t, n) => inBeam(g, f, t, n),
+  cone: (_g, f, t, n) => inCone(f, t, n),
+};
+
 // Check if target is in range of ability
 export function inRange(
   game: Game,
@@ -490,71 +510,14 @@ export function inRange(
   const rangeStr = range.toLowerCase().trim();
 
   if (rangeStr === "" || rangeStr === "varies") return false;
-
-  // Melee: 8 adjacent tiles (Chebyshev distance 1)
-  if (rangeStr === "melee") {
-    return chebyshev(from, to) <= 1;
-  }
-
+  if (rangeStr === "melee") return chebyshev(from, to) <= 1;
   if (rangeStr === "global") return true;
 
-  // Burst X: square area, X tiles out from each side (Chebyshev <= X)
-  const burstMatch = rangeStr.match(/^burst\s*(\d+)/);
-  if (burstMatch) {
-    const r = parseInt(burstMatch[1]);
-    return chebyshev(from, to) <= r;
-  }
+  const n = parseInt(rangeStr.match(/(\d+)/)?.[1] ?? "");
+  if (isNaN(n)) return false;
 
-  // Star X: all tiles of Range X (Manhattan <= X with LOS)
-  const starMatch = rangeStr.match(/^star\s*(\d+)/);
-  if (starMatch) {
-    const r = parseInt(starMatch[1]);
-    return manhattan(from, to) <= r && hasLineOfSight(game, from, to);
-  }
-
-  // Range X: Manhattan distance with LOS
-  const rangeMatch = rangeStr.match(/^range\s*(\d+)/);
-  if (rangeMatch) {
-    const r = parseInt(rangeMatch[1]);
-    return manhattan(from, to) <= r && hasLineOfSight(game, from, to);
-  }
-
-  // Homing X: Manhattan distance, no LOS needed (curves around)
-  const homingMatch = rangeStr.match(/^homing\s*(\d+)/);
-  if (homingMatch) {
-    const r = parseInt(homingMatch[1]);
-    return manhattan(from, to) <= r;
-  }
-
-  // Line X: cardinal line or diagonal (X/2 rounded up)
-  const lineMatch = rangeStr.match(/^line\s*(\d+)/);
-  if (lineMatch) {
-    const r = parseInt(lineMatch[1]);
-    return onLine(from, to, r) && hasLineOfSight(game, from, to);
-  }
-
-  // Pierce X: same as Line but AoE along the line
-  const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
-  if (pierceMatch) {
-    const r = parseInt(pierceMatch[1]);
-    return onLine(from, to, r) && hasLineOfSight(game, from, to);
-  }
-
-  // Beam X: 3 tiles wide, X tiles deep
-  const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
-  if (beamMatch) {
-    const r = parseInt(beamMatch[1]);
-    return inBeam(game, from, to, r);
-  }
-
-  // Cone X: triangle area in front in a cardinal direction
-  const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
-  if (coneMatch) {
-    const r = parseInt(coneMatch[1]);
-    return inCone(from, to, r);
-  }
-
-  return false;
+  const checker = RANGE_CHECKERS[rangeStr.split(/\s|\d/)[0]];
+  return checker ? checker(game, from, to, n) : false;
 }
 
 // Chebyshev distance (max of row diff, col diff) -- diagonal counts as 1
