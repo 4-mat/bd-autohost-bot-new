@@ -16,7 +16,7 @@ export function rowName(row: SheetRow): string {
   return "";
 }
 
-interface Violation {
+export interface Violation {
   rule: string;
   found: string;
   suggestion: string;
