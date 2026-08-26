@@ -765,28 +765,9 @@ function handleAdvanceTurn(game: Game, user: User) {
       send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
     }
   } else if (entity.pendingAction) {
-    const step = resolveAction(game, entity);
-
-    if (step.done === false) {
-      sendPm(user.name, step.prompt.message);
-      return;
-    }
-
-    for (const msg of step.result.messages) {
-      send(game.room, msg);
-    }
-
-    acted = summarizeResult(game, entity, step.result.messages);
-
-    for (const _ of step.result.deaths) {
-      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
-    }
-
-    const winner = checkGameOver(game);
-    if (game.phase === "ended") {
-      announceGameOver(game, winner);
-      return;
-    }
+    const done = resolvePendingAction(game, user, entity);
+    if (done === null) return; // prompt needs an answer — turn not advanced
+    acted = done;
   }
 
   if (
@@ -834,6 +815,42 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+/**
+ * Resolve an entity's pending action when their turn advances. Returns the
+ * acted summary string, or null when the action needs a prompt answer
+ * (the turn is NOT advanced in that case).
+ */
+function resolvePendingAction(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  const step = resolveAction(game, entity);
+
+  if (step.done === false) {
+    sendPm(user.name, step.prompt.message);
+    return null;
+  }
+
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
+
+  const acted = summarizeResult(game, entity, step.result.messages);
+
+  for (const _ of step.result.deaths) {
+    game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+  }
+
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return null;
+  }
+
+  return acted;
 }
 
 function summarizeResult(
