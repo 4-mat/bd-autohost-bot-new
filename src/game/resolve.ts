@@ -175,6 +175,41 @@ function* runEffectStream(
   }
 }
 
+/** Prompt for targets when the ability has none pre-selected. Returns
+ * null (with a message already pushed) when no valid target exists. */
+function* chooseTargets(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  initialTarget: string | undefined,
+  result: ResolutionResult,
+): Generator<AttackPrompt, Entity[] | null, PromptResponse> {
+  const candidates = getTargetCandidates(game, user, ability);
+  if (candidates.length === 0) {
+    result.messages.push(
+      `${user.num} uses ${ability.name} but no valid targets found.`,
+    );
+    return null;
+  }
+
+  const targetRef =
+    initialTarget ??
+    (yield {
+      kind: "target",
+      message: `Choose a target for ${ability.name}`,
+      candidates,
+    });
+
+  const targets = findTargets(game, user, ability, targetRef);
+  if (targets.length === 0) {
+    result.messages.push(
+      `${user.num} uses ${ability.name} but no valid targets found.`,
+    );
+    return null;
+  }
+  return targets;
+}
+
 // ---------------------------------------------------------------------------
 // The pipeline itself:
 // Declare -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
@@ -267,31 +302,15 @@ function* resolveAttackFlow(
   } = prepareTargeting(game, user, active);
   let targets = autoTargets;
   if (targets.length === 0) {
-    const candidates = getTargetCandidates(game, user, active);
-
-    if (candidates.length === 0) {
-      result.messages.push(
-        `${user.num} uses ${active.name} but no valid targets found.`,
-      );
-      return result;
-    }
-
-    const targetRef =
-      initialTarget ??
-      (yield {
-        kind: "target",
-        message: `Choose a target for ${active.name}`,
-        candidates,
-      });
-
-    targets = findTargets(game, user, active, targetRef);
-
-    if (targets.length === 0) {
-      result.messages.push(
-        `${user.num} uses ${active.name} but no valid targets found.`,
-      );
-      return result;
-    }
+    const chosen = yield* chooseTargets(
+      game,
+      user,
+      active,
+      initialTarget,
+      result,
+    );
+    if (chosen === null) return result;
+    targets = chosen;
   }
 
   const targetNames = targets.map((t) => t.num).join(", ");
