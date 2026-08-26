@@ -29,6 +29,7 @@ import {
   isRooted,
   isSealed,
   isConfused,
+  findGameForRoom,
   getEffectiveMp,
   getHumanPlayers,
   isHostUser,
@@ -223,13 +224,6 @@ export function gameCommand(
       sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
       break;
   }
-}
-
-function findGameForRoom(roomid: string): Game | null {
-  for (const game of games.values()) {
-    if (game.room === roomid) return game;
-  }
-  return null;
 }
 
 function findGameForUser(username: string): Game | null {

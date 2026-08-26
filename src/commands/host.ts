@@ -4,6 +4,7 @@ import type { User } from "../users.js";
 import {
   games,
   getCurrentEntity,
+  findGameForRoom,
   getEntity,
   getHumanPlayers,
   getReachableTiles,
@@ -221,13 +222,6 @@ export function hostCommand(
     default:
       sendPm(user.name, `Host command ${cmd}: not yet implemented.`);
   }
-}
-
-function findGameForRoom(roomid: string): Game | null {
-  for (const game of games.values()) {
-    if (game.room === roomid) return game;
-  }
-  return null;
 }
 
 // -- .host - Create a new game -------------------------------------------------
