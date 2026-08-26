@@ -303,22 +303,7 @@ function handleSetGame(room: Room, user: User, args: string) {
 
   // Validate team-count requirements BEFORE mutating anything.
   const teamMatch = mode.toUpperCase().match(/^(\d+)V(\d+)$/);
-  if (teamMatch) {
-    const a = parseInt(teamMatch[1]);
-    const b = parseInt(teamMatch[2]);
-    if (a < 1 || b < 1) {
-      return sendPm(
-        user.name,
-        "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.) — team modes need at least 1 player per team.",
-      );
-    }
-    if (players.length !== a + b) {
-      return sendPm(
-        user.name,
-        `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
-      );
-    }
-  }
+  if (teamMatch && !validateTeamCount(user, teamMatch, players)) return;
 
   game.mode = mode.toUpperCase();
   game.modeChosen = true;
@@ -333,55 +318,18 @@ function handleSetGame(room: Room, user: User, args: string) {
   // recommended pool, falling back to a procedural map.
   const mapMsg: string[] = [];
   if (game.map.length === 0) {
-    const poolPick = randomMapForMode(mode);
-    const poolDef = poolPick ? getMapByName(poolPick) : undefined;
-    if (poolDef) {
-      applyMap(game, poolDef, "", true);
-      mapMsg.push(
-        `Map: ${poolDef.displayName} (random ${modeIdFor(mode)!.toUpperCase()} pick)`,
-      );
-    } else {
-      applyMap(
-        game,
-        {
-          grid: generateDefaultMap(),
-          displayName: "Procedural (12x12)",
-          rows: 12,
-          cols: 12,
-        },
-        "",
-        true,
-      );
-      mapMsg.push("Map: Procedural (12x12)");
-    }
+    mapMsg.push(applyInitialMap(game, mode));
   }
 
   pushSnapshot(game);
 
   // Team modes: split the players into two teams and place mirrored halves.
-  let placedPairs: [Entity, [number, number]][] = [];
-  if (teamMatch) {
-    const a = parseInt(teamMatch[1]);
-    const b = parseInt(teamMatch[2]);
-    const teamA = players.slice(0, a);
-    const teamB = players.slice(a, a + b);
-    teamA.forEach((e) => (e.team = 1));
-    teamB.forEach((e) => (e.team = 2));
-    const placed = placeTeamPlayers(game, teamA, teamB);
-    if (!placed) {
-      broadcastPages(game); // keep the GUI in sync after the mode change
-      return sendPm(user.name, "Could not find open spawn tiles.");
-    }
-    placedPairs = [...placed[0], ...placed[1]];
-  } else {
-    // FFA and other modes: clear leftover teams, spread everyone.
-    players.forEach((e) => (e.team = 0));
-    const placed = placePlayers(game, players);
-    if (!placed) {
-      broadcastPages(game); // keep the GUI in sync after the mode change
-      return sendPm(user.name, "Could not find open spawn tiles.");
-    }
-    placedPairs = placed;
+  const placedPairs = teamMatch
+    ? placeTeamMode(game, players, teamMatch)
+    : placeFfaMode(game, players);
+  if (!placedPairs) {
+    broadcastPages(game); // keep the GUI in sync after the mode change
+    return sendPm(user.name, "Could not find open spawn tiles.");
   }
 
   // Generate the turn order so only %start remains. This RENUMBERS entities
@@ -446,6 +394,80 @@ function handleClose(room: Room, user: User) {
     send(room.id, "**Signups are now closed.**");
   }
   broadcastPages(game);
+}
+
+/** Validate a team-mode count (NvM) against the joined players. Sends the
+ * failure message (and returns false) when the count is bad. */
+function validateTeamCount(
+  user: User,
+  teamMatch: RegExpMatchArray,
+  players: Entity[],
+): boolean {
+  const a = parseInt(teamMatch[1]);
+  const b = parseInt(teamMatch[2]);
+  if (a < 1 || b < 1) {
+    sendPm(
+      user.name,
+      "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.) — team modes need at least 1 player per team.",
+    );
+    return false;
+  }
+  if (players.length !== a + b) {
+    sendPm(
+      user.name,
+      `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
+    );
+    return false;
+  }
+  return true;
+}
+
+/** Pick a map when none is chosen: random from the mode's pool, else procedural. */
+function applyInitialMap(game: Game, mode: string): string {
+  const poolPick = randomMapForMode(mode);
+  const poolDef = poolPick ? getMapByName(poolPick) : undefined;
+  if (poolDef) {
+    applyMap(game, poolDef, "", true);
+    return `Map: ${poolDef.displayName} (random ${modeIdFor(mode)!.toUpperCase()} pick)`;
+  }
+  applyMap(
+    game,
+    {
+      grid: generateDefaultMap(),
+      displayName: "Procedural (12x12)",
+      rows: 12,
+      cols: 12,
+    },
+    "",
+    true,
+  );
+  return "Map: Procedural (12x12)";
+}
+
+/** Split players into two teams, place mirrored halves, and return the pairs. */
+function placeTeamMode(
+  game: Game,
+  players: Entity[],
+  teamMatch: RegExpMatchArray,
+): [Entity, [number, number]][] | null {
+  const a = parseInt(teamMatch[1]);
+  const b = parseInt(teamMatch[2]);
+  const teamA = players.slice(0, a);
+  const teamB = players.slice(a, a + b);
+  teamA.forEach((e) => (e.team = 1));
+  teamB.forEach((e) => (e.team = 2));
+  const placed = placeTeamPlayers(game, teamA, teamB);
+  if (!placed) return null;
+  return [...placed[0], ...placed[1]];
+}
+
+/** Clear leftover teams and spread everyone FFA-style. */
+function placeFfaMode(
+  game: Game,
+  players: Entity[],
+): [Entity, [number, number]][] | null {
+  players.forEach((e) => (e.team = 0));
+  return placePlayers(game, players);
 }
 
 // -- .endvote - Close gamemode voting and apply the winner --------------------
