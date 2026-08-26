@@ -1130,22 +1130,7 @@ export function calculateLoot(
 ): { entity: Entity; xp: number; gold: number; gems: number }[] {
   const pl = game.entities.length;
   const modeLower = game.mode.toLowerCase();
-
-  // Base loot from loot table
-  let base = 5;
-  if (modeLower.includes("ffa")) {
-    if (pl <= 3) base = 5;
-    else if (pl <= 4) base = 6;
-    else if (pl <= 5) base = 7;
-    else if (pl <= 6) base = 8;
-    else if (pl <= 7) base = 9;
-    else base = 10;
-  } else {
-    // Team modes use higher base
-    if (pl <= 3) base = 7;
-    else if (pl <= 5) base = 9;
-    else base = 11;
-  }
+  const base = baseLootFor(pl, modeLower.includes("ffa"));
 
   // Kill bonus: +1 per kill
   // Winner bonus: x1.5 in FFA/PvP (surviving player)
@@ -1161,16 +1146,33 @@ export function calculateLoot(
       gold = Math.floor(gold * 1.5);
     }
 
-    // Gems: based on player count
-    let gems = 0;
-    if (pl >= 3 && pl <= 4) gems = 1;
-    else if (pl >= 5 && pl <= 6) gems = 2;
-    else if (pl >= 7) gems = 3;
-
-    results.push({ entity: e, xp, gold, gems });
+    results.push({ entity: e, xp, gold, gems: gemsFor(pl) });
   }
 
   return results;
+}
+
+/** Base xp/gold for a player count; team modes pay slightly higher. */
+function baseLootFor(pl: number, isFfa: boolean): number {
+  if (isFfa) {
+    if (pl <= 3) return 5;
+    if (pl <= 4) return 6;
+    if (pl <= 5) return 7;
+    if (pl <= 6) return 8;
+    if (pl <= 7) return 9;
+    return 10;
+  }
+  if (pl <= 3) return 7;
+  if (pl <= 5) return 9;
+  return 11;
+}
+
+/** Gem payout scales with player count. */
+function gemsFor(pl: number): number {
+  if (pl >= 7) return 3;
+  if (pl >= 5) return 2;
+  if (pl >= 3) return 1;
+  return 0;
 }
 
 export function nextTurn(game: Game): {
