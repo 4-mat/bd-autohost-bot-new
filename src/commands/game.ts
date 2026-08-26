@@ -54,6 +54,59 @@ import {    normalizeVoteMode,
   voteOptionsFor,
 } from "../data/gamemodes.js";
 
+type GameCmd = (game: Game | null, user: User, args: string, full: string) => void;
+
+/** Run a handler only when a game is active; otherwise tell the user. */
+function withGame(
+  game: Game | null,
+  user: User,
+  fn: (g: Game) => void,
+  msg = "No active game in this room.",
+) {
+  if (!game) return sendPm(user.name, msg);
+  fn(game);
+}
+
+const GAME_CMDS: Record<string, GameCmd> = {
+  move: (g, u, _a, full) => withGame(g, u, (game) => handleMove(game, u, "move", full)),
+  dash: (g, u, _a, full) => withGame(g, u, (game) => handleMove(game, u, "dash", full)),
+  attack: (g, u, _a, full) => withGame(g, u, (game) => handleAttack(game, u, "attack", full)),
+  use: (g, u, _a, full) => withGame(g, u, (game) => handleAttack(game, u, "use", full)),
+  confirm: (g, u) => withGame(g, u, (game) => handleConfirm(game, u)),
+  cancel: (g, u) => withGame(g, u, (game) => handleCancel(game, u)),
+  target: (g, u, _a, full) => withGame(g, u, (game) => handleTarget(game, u, full)),
+  choose: (g, u, _a, full) => withGame(g, u, (game) => handleChoose(game, u, full)),
+  vote: (g, u, _a, full) => withGame(g, u, (game) => handleVote(game, u, full)),
+  votestatus: (g, u) => withGame(g, u, (game) => handleVoteStatus(game, u)),
+  unvote: (g, u) => withGame(g, u, (game) => handleUnvote(game, u)),
+  leave: (g, u) => withGame(g, u, (game) => handleLeave(game, u)),
+  endturn: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
+  next: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
+  back: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
+  r: (_g, u, args) => handleRoll(u.name, args),
+  roll: (_g, u, args) => handleRoll(u.name, args),
+  dice: (_g, u, args) => handleRoll(u.name, args),
+  info: (g, u, args) => withGame(g, u, (game) => handleInfo(game, u, args)),
+  map: (g, u) => withGame(g, u, (game) => broadcastPages(game)),
+  premove: (g, u) => withGame(g, u, (game) => handlePremove(game, u)),
+  passmove: (g, u) => withGame(g, u, (game) => handlePassMove(game, u)),
+  pass: (g, u) => withGame(g, u, (game) => handlePassMove(game, u)),
+  pl: (g, u) => withGame(g, u, (game) => sendPm(u.name, buildPlayerList(game))),
+  log: (g, u, args) => withGame(g, u, (game) => handleLog(game, u, args)),
+  to: (g, u) => withGame(g, u, (game) => sendPm(u.name, buildTurnOrder(game))),
+  hp: (g, u, _a, full) => withGame(g, u, (game) => handleHp(game, u, full)),
+  cut: (g, u, _a, full) => withGame(g, u, (game) => handleCut(game, u, full)),
+  timer: (g, u, _a, full) => withGame(g, u, (game) => handleTimer(game, u, full)),
+  checkrange: (g, u, _a, full) => withGame(g, u, (game) => handleCheckRange(game, u, full)),
+  cr: (g, u, _a, full) => withGame(g, u, (game) => handleCheckRange(game, u, full)),
+  status: (g, u, _a, full) => withGame(g, u, (game) => handleStatus(game, u, full)),
+  regp: (g, u, _a, full) => withGame(g, u, (game) => handleRegp(game, u, full)),
+  dir: (g, u, args) =>
+    withGame(g, u, (game) => handleDirChoice(game, u, args), "No active game."),
+  tile: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleTileChoice(game, u, full), "No active game."),
+};
+
 export function gameCommand(
   room: Room | null,
   user: User,
@@ -70,157 +123,12 @@ export function gameCommand(
   }
 
   const full = val ? `${args},${val}` : args;
-
-  switch (cmd) {
-    case "move":
-    case "dash":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleMove(game, user, cmd, full);
-      break;
-
-    case "attack":
-    case "use":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleAttack(game, user, cmd, full);
-      break;
-
-    case "confirm":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleConfirm(game, user);
-      break;
-
-    case "cancel":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCancel(game, user);
-      break;
-
-    case "target":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleTarget(game, user, full);
-      break;
-
-    case "choose":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleChoose(game, user, full);
-      break;
-
-    case "vote":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleVote(game, user, full);
-      break;
-
-    case "votestatus":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleVoteStatus(game, user);
-      break;
-
-    case "unvote":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleUnvote(game, user);
-      break;
-
-    case "leave":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleLeave(game, user);
-      break;
-
-    case "endturn":
-    case "next":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleAdvanceTurn(game, user);
-      break;
-
-    case "back":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleBack(game, user);
-      break;
-
-    case "r":
-    case "roll":
-    case "dice":
-      handleRoll(user.name, args);
-      break;
-
-    case "info":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleInfo(game, user, args);
-      break;
-
-    case "map":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      broadcastPages(game);
-      break;
-
-    case "premove":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handlePremove(game, user);
-      break;
-
-    case "passmove":
-    case "pass":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handlePassMove(game, user);
-      break;
-
-    case "pl":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      sendPm(user.name, buildPlayerList(game));
-      break;
-
-    case "log":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleLog(game, user, args);
-      break;
-
-    case "to":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      sendPm(user.name, buildTurnOrder(game));
-      break;
-
-    case "hp":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleHp(game, user, full);
-      break;
-
-    case "cut":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCut(game, user, full);
-      break;
-    case "timer":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleTimer(game, user, full);
-      break;
-
-    case "checkrange":
-    case "cr":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCheckRange(game, user, full);
-      break;
-
-    case "status":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleStatus(game, user, full);
-      break;
-
-    case "regp":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleRegp(game, user, full);
-      break;
-
-    case "dir":
-      if (!game) return sendPm(user.name, "No active game.");
-      handleDirChoice(game, user, args);
-      break;
-
-    case "tile":
-      if (!game) return sendPm(user.name, "No active game.");
-      handleTileChoice(game, user, full);
-      break;
-
-    default:
-      sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
-      break;
+  const handler = GAME_CMDS[cmd];
+  if (handler) {
+    handler(game, user, args, full);
+    return;
   }
+  sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
 }
 
 function findGameForRoom(roomid: string): Game | null {
