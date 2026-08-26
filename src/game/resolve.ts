@@ -862,13 +862,12 @@ function* resolveSingleTarget(
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
   if (isConfused(user) && accRoll >= 16 && !confusionAlreadyApplied) {
-    const offStat = Math.max(
-      getEffectiveStat(user, "atk"),
-      getEffectiveStat(user, "mag"),
-    );
+    const atkStat = getEffectiveStat(user, "atk");
+    const offStat = Math.max(atkStat, getEffectiveStat(user, "mag"));
+    const offStatName = offStat === atkStat ? "ATK" : "MAG";
     dealDamage(user, offStat);
     result.messages.push(
-      `  **${user.num} is Confused!** Takes **${offStat}** self-damage from their own ${offStat === getEffectiveStat(user, "atk") ? "ATK" : "MAG"} (${user.curhp}/${user.maxhp} HP).`,
+      `  **${user.num} is Confused!** Takes **${offStat}** self-damage from their own ${offStatName} (${user.curhp}/${user.maxhp} HP).`,
     );
     result.confusionTriggered = true;
 
