@@ -258,62 +258,94 @@ export function generateSymmetricGrid(
     }
   }
 
-  // Guarantee a walkable centre plaza for spawns.
-  for (let r = 0; r < rows; r++) {
+  ensureWalkablePlaza(grid, centerR, centerC, inner);
+  ensureVariety(grid, seedName, centerR, centerC, inner);
+  ensureConnectivity(grid, seedName, centerR, centerC, inner);
+  ensureNotAllNormal(grid);
+
+  return grid;
+}
+
+/** Overwrite the centre plaza with walkable Normal tiles for spawns. */
+function ensureWalkablePlaza(
+  grid: number[][],
+  centerR: number,
+  centerC: number,
+  inner: number,
+): void {
+  const cols = grid[0]!.length;
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (Math.max(Math.abs(r - centerR), Math.abs(c - centerC)) <= inner)
+        grid[r][c] = Normal;
+    }
+  }
+}
+
+/** Sprinkle Water when a map is too uniform (matters for tiny maps). */
+function ensureVariety(
+  grid: number[][],
+  seedName: string,
+  centerR: number,
+  centerC: number,
+  inner: number,
+): void {
+  const total = grid.length * (grid[0]?.length ?? 0);
+  const nonNormal = grid.flat().filter((t) => t !== Normal).length;
+  if (nonNormal >= Math.max(1, Math.floor(total * 0.12))) return;
+
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < (grid[0]?.length ?? 0); c++) {
+      const dr = Math.abs(r - centerR);
+      const dc = Math.abs(c - centerC);
+      if (Math.max(dr, dc) <= inner) continue;
+      if (cellRand(seedName, dr, dc, 99) < 0.3) grid[r][c] = Water;
+    }
+  }
+  if (grid.flat().filter((t) => t !== Normal).length === 0) {
+    // Water in all four corners preserves D2 (both-axis mirror) symmetry.
+    waterCorners(grid);
+  }
+}
+
+/** Connectivity safety net: fall back to a simple always-connected, always
+ * varied stripe pattern if the themed layout ever seals anything off. Only
+ * Water + Normal are used, so the result is trivially connected, and the
+ * pattern is keyed on the symmetric coordinates so symmetry is preserved. */
+function ensureConnectivity(
+  grid: number[][],
+  seedName: string,
+  centerR: number,
+  centerC: number,
+  inner: number,
+): void {
+  if (isConnected(grid)) return;
+  const cols = grid[0]?.length ?? 0;
+  for (let r = 0; r < grid.length; r++) {
     for (let c = 0; c < cols; c++) {
       const dr = Math.abs(r - centerR);
       const dc = Math.abs(c - centerC);
-      if (Math.max(dr, dc) <= inner) grid[r][c] = Normal;
+      const d = Math.max(dr, dc);
+      grid[r][c] =
+        d > inner && (Math.round(dr) + Math.round(dc)) % 3 === 0
+          ? Water
+          : Normal;
     }
   }
+}
 
-  // Guarantee some variety (matters for tiny maps).
-  const total = rows * cols;
-  const nonNormal = grid.flat().filter((t) => t !== Normal).length;
-  if (nonNormal < Math.max(1, Math.floor(total * 0.12))) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const dr = Math.abs(r - centerR);
-        const dc = Math.abs(c - centerC);
-        if (Math.max(dr, dc) <= inner) continue;
-        if (cellRand(seedName, dr, dc, 99) < 0.3) grid[r][c] = Water;
-      }
-    }
-    if (grid.flat().filter((t) => t !== Normal).length === 0) {
-      // Water in all four corners preserves D2 (both-axis mirror) symmetry.
-      grid[0][0] = Water;
-      grid[0][cols - 1] = Water;
-      grid[rows - 1][0] = Water;
-      grid[rows - 1][cols - 1] = Water;
-    }
-  }
+/** Absolute safety net: never ship an all-Normal map. */
+function ensureNotAllNormal(grid: number[][]): void {
+  if (!grid.flat().every((t) => t === Normal)) return;
+  waterCorners(grid);
+}
 
-  // Connectivity safety net: fall back to a simple always-connected, always
-  // varied stripe pattern if the themed layout ever seals anything off. Only
-  // Water + Normal are used, so the result is trivially connected, and the
-  // pattern is keyed on the symmetric coordinates so symmetry is preserved.
-  if (!isConnected(grid)) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const dr = Math.abs(r - centerR);
-        const dc = Math.abs(c - centerC);
-        const d = Math.max(dr, dc);
-        grid[r][c] =
-          d > inner && (Math.round(dr) + Math.round(dc)) % 3 === 0
-            ? Water
-            : Normal;
-      }
-    }
-  }
-
-  // Absolute safety net: never ship an all-Normal map. Water is placed in
-  // all four corners so D2 (both-axis mirror) symmetry is preserved.
-  if (grid.flat().every((t) => t === Normal)) {
-    grid[0][0] = Water;
-    grid[0][cols - 1] = Water;
-    grid[rows - 1][0] = Water;
-    grid[rows - 1][cols - 1] = Water;
-  }
-
-  return grid;
+/** Put Water in all four corners (preserves D2 both-axis mirror symmetry). */
+function waterCorners(grid: number[][]): void {
+  const rows = grid.length;
+  const cols = grid[0]?.length ?? 0;
+  grid[0][0] = Water;
+  grid[0][cols - 1] = Water;
+  grid[rows - 1][0] = Water;
+  grid[rows - 1][cols - 1] = Water;
 }
