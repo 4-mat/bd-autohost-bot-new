@@ -1919,13 +1919,8 @@ export function findSpawnPosition(game: Game): [number, number] {
     for (let dr = -radius; dr <= radius; dr++) {
       for (let dc = -radius; dc <= radius; dc++) {
         if (Math.abs(dr) !== radius && Math.abs(dc) !== radius) continue;
-        const r = centerR + dr;
-        const c = centerC + dc;
-        if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
-        if (!isStandable(game.map[r][c])) continue;
-        if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c))
-          continue;
-        return [r, c];
+        const pos = openSpawnAt(game, centerR + dr, centerC + dc);
+        if (pos) return pos;
       }
     }
   }
@@ -1934,10 +1929,18 @@ export function findSpawnPosition(game: Game): [number, number] {
   // dump a spawn onto Broken/Lava/obstruction blindly.
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (!isStandable(game.map[r][c])) continue;
-      if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c)) continue;
-      return [r, c];
+      const pos = openSpawnAt(game, r, c);
+      if (pos) return pos;
     }
   }
   return [1, 1];
+}
+
+/** [r,c] when the tile is in-bounds, standable, and unoccupied; else null. */
+function openSpawnAt(game: Game, r: number, c: number): [number, number] | null {
+  if (r < 0 || r >= game.map.length || c < 0 || c >= (game.map[0]?.length ?? 0))
+    return null;
+  if (!isStandable(game.map[r][c])) return null;
+  if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c)) return null;
+  return [r, c];
 }
