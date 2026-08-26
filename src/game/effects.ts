@@ -978,42 +978,61 @@ export function isApexActive(
     return false;
   }
 
-  switch (type) {
-    case "burst":
-      return ch === max;
-    case "range":
-    case "homing":
-    case "star":
-      return mh === max;
-    case "pierce":
-    case "line": {
-      if (cardinal) return mh === max;
-      if (diagonal) return absDr === Math.ceil(max / 2);
-      return false;
-    }
-    case "cone": {
-      if (absDr > absDc) return absDr === max;
-      if (absDc > absDr) return absDc === max;
-      return false;
-    }
-    case "beam": {
-      // "Apex includes the final row/column of Beam ranges." The final
-      // row/column is a 3-tile strip at depth == max (one tile perpendicular
-      // to each side of the beam centerline).
-      if (Math.max(absDr, absDc) !== max) return false;
-      if (Math.min(absDr, absDc) > 1) return false;
-      // Centerline LOS: from user toward the centerline of the beam at the
-      // target's depth cardinal axis.
-      if (dr === 0)
-        return hasLineOfSight(game, user.pos, [user.pos[0], target.pos[1]]);
-      if (dc === 0)
-        return hasLineOfSight(game, user.pos, [target.pos[0], user.pos[1]]);
-      // Diagonal beam — direct LOS to target.
-      return hasLineOfSight(game, user.pos, target.pos);
-    }
-  }
-  return false;
+  const apexCheck = APEX_CHECKS[type];
+  return apexCheck
+    ? apexCheck({ game, user, target, dr, dc, absDr, absDc, mh, ch, max })
+    : false;
 }
+
+/** Inputs a per-range-type apex distance check needs. */
+type ApexCtx = {
+  game: Game;
+  user: Entity;
+  target: Entity;
+  dr: number;
+  dc: number;
+  absDr: number;
+  absDc: number;
+  mh: number;
+  ch: number;
+  max: number;
+};
+
+/** Per-range-type "is target at max range" checks for Apex. */
+const APEX_CHECKS: Record<string, (ctx: ApexCtx) => boolean> = {
+  burst: ({ ch, max }) => ch === max,
+  range: ({ mh, max }) => mh === max,
+  homing: ({ mh, max }) => mh === max,
+  star: ({ mh, max }) => mh === max,
+  pierce: ({ dr, dc, absDr, absDc, mh, max }) =>
+    dr === 0 || dc === 0
+      ? mh === max
+      : absDr === absDc && absDr === Math.ceil(max / 2),
+  line: ({ dr, dc, absDr, absDc, mh, max }) =>
+    dr === 0 || dc === 0
+      ? mh === max
+      : absDr === absDc && absDr === Math.ceil(max / 2),
+  cone: ({ absDr, absDc, max }) => {
+    if (absDr > absDc) return absDr === max;
+    if (absDc > absDr) return absDc === max;
+    return false;
+  },
+  beam: ({ game, user, target, dr, dc, absDr, absDc, max }) => {
+    // "Apex includes the final row/column of Beam ranges." The final
+    // row/column is a 3-tile strip at depth == max (one tile perpendicular
+    // to each side of the beam centerline).
+    if (Math.max(absDr, absDc) !== max) return false;
+    if (Math.min(absDr, absDc) > 1) return false;
+    // Centerline LOS: from user toward the centerline of the beam at the
+    // target's depth cardinal axis.
+    if (dr === 0)
+      return hasLineOfSight(game, user.pos, [user.pos[0], target.pos[1]]);
+    if (dc === 0)
+      return hasLineOfSight(game, user.pos, [target.pos[0], user.pos[1]]);
+    // Diagonal beam — direct LOS to target.
+    return hasLineOfSight(game, user.pos, target.pos);
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Effect Application
