@@ -812,14 +812,7 @@ function buildAbilityButton(
 
   // Single target abilities: show ability + each target as separate buttons
   if (targets.length > 0 && ab.targetAmount !== "AoE") {
-    let html = "";
-    for (const t of targets) {
-      const label = `${ab.name} -> ${t.num}`;
-      const cmd = `%use ${ab.name} @ ${t.name}`;
-      html += btn(cmd, label, "font-size:11px;padding:2px 6px");
-    }
-    html += `<br>`;
-    return html;
+    return buildTargetButtons(ab, targets);
   }
 
   // AoE abilities
@@ -834,16 +827,7 @@ function buildAbilityButton(
 
   // Tile targeting
   if (tiles.length > 0) {
-    let html = `<span style="color:#888;font-size:10px">${ab.name}:</span> `;
-    for (const t of tiles) {
-      html += btn(
-        `%use ${ab.name} @ ${t},${entity.name}`,
-        t,
-        "font-size:10px;padding:1px 4px",
-      );
-    }
-    html += "<br>";
-    return html;
+    return buildTileButtons(ab, entity, tiles);
   }
 
   // Fallback
@@ -852,6 +836,36 @@ function buildAbilityButton(
     `${ab.name}${usesStr}`,
     "font-size:11px;padding:2px 6px",
   );
+}
+
+/** One button per valid target for a single-target ability. */
+function buildTargetButtons(ab: AbilityData, targets: Entity[]): string {
+  let html = "";
+  for (const t of targets) {
+    html += btn(
+      `%use ${ab.name} @ ${t.name}`,
+      `${ab.name} -> ${t.num}`,
+      "font-size:11px;padding:2px 6px",
+    );
+  }
+  return html + "<br>";
+}
+
+/** One small button per valid tile for a Tile-targeting ability. */
+function buildTileButtons(
+  ab: AbilityData,
+  entity: Entity,
+  tiles: string[],
+): string {
+  let html = `<span style="color:#888;font-size:10px">${ab.name}:</span> `;
+  for (const t of tiles) {
+    html += btn(
+      `%use ${ab.name} @ ${t},${entity.name}`,
+      t,
+      "font-size:10px;padding:1px 4px",
+    );
+  }
+  return html + "<br>";
 }
 
 // -- Target Resolution Helpers ------------------------------------------------
