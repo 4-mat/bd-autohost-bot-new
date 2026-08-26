@@ -1,6 +1,5 @@
 import {
   type Game,
-  checkGameOver,
   type Entity,
   type AbilityData,
   type AbilityCost,
@@ -132,6 +131,8 @@ export type AttackPrompt =
 
 export type PromptResponse = string;
 
+type PushPullResult = { type: "push" | "pull"; amount: number };
+
 export type AttackStep =
   | { done: false; prompt: AttackPrompt }
   | { done: true; result: ResolutionResult };
@@ -180,7 +181,6 @@ function* runEffectStream(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
-/** Run the full attack pipeline: accuracy, damage, on-hit/on-miss/regardless, then after-resolving hooks. */
 function* resolveAttackFlow(
   game: Game,
   user: Entity,
@@ -317,47 +317,18 @@ function* resolveAttackFlow(
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   for (const target of targets) {
-    if (isAttack) {
-      let confusionApplied = false;
-      for (let h = 0; h < effectiveHitCount; h++) {
-        const label =
-          effectiveHitCount > 1 ? ` (Hit ${h + 1}/${effectiveHitCount})` : "";
-        const singleResult: ResolutionResult = yield* resolveSingleTarget(
-          game,
-          user,
-          active,
-          target,
-          combat,
-          label,
-          confusionApplied,
-        );
-        result.messages.push(...singleResult.messages);
-        result.deaths.push(...singleResult.deaths);
-
-        if (!confusionApplied && singleResult.confusionTriggered) {
-          confusionApplied = true;
-        }
-
-        if (
-          pushPullResult &&
-          singleResult.messages.some((m) => m.includes("HIT"))
-        ) {
-          applyPushPull(game, user, target, pushPullResult, result);
-        }
-      }
-    } else if (isHeal) {
-      const healResult = resolveHeal(game, user, active, target);
-      result.messages.push(...healResult.messages);
-    } else {
-      const statusResult: ResolutionResult = yield* resolveNonDamaging(
-        game,
-        user,
-        active,
-        target,
-      );
-      result.messages.push(...statusResult.messages);
-      result.deaths.push(...statusResult.deaths);
-    }
+    yield* resolveTargetAction(
+      game,
+      user,
+      active,
+      target,
+      combat,
+      effectiveHitCount,
+      isAttack,
+      isHeal,
+      pushPullResult,
+      result,
+    );
   }
 
   if (isAttack && !isAoE && targets.length > 0) {
@@ -367,30 +338,91 @@ function* resolveAttackFlow(
   }
 
   // --- After Resolving (cooldowns, use tracking, win check) ---
+  recordActionUsage(user, active);
+  checkActionWin(game, result);
+
+  return result;
+}
+
+/** Resolve one ability against one target (attack hits / heal / status). */
+function* resolveTargetAction(
+  game: Game,
+  user: Entity,
+  active: AbilityData,
+  target: Entity,
+  combat: CombatMetadata,
+  effectiveHitCount: number,
+  isAttack: boolean,
+  isHeal: boolean,
+  pushPullResult: PushPullResult | null,
+  result: ResolutionResult,
+): Generator<AttackPrompt, void, PromptResponse> {
+  if (isAttack) {
+    let confusionApplied = false;
+    for (let h = 0; h < effectiveHitCount; h++) {
+      const label =
+        effectiveHitCount > 1 ? ` (Hit ${h + 1}/${effectiveHitCount})` : "";
+      const singleResult: ResolutionResult = yield* resolveSingleTarget(
+        game,
+        user,
+        active,
+        target,
+        combat,
+        label,
+        confusionApplied,
+      );
+      result.messages.push(...singleResult.messages);
+      result.deaths.push(...singleResult.deaths);
+
+      if (!confusionApplied && singleResult.confusionTriggered) {
+        confusionApplied = true;
+      }
+
+      if (
+        pushPullResult &&
+        singleResult.messages.some((m) => m.includes("HIT"))
+      ) {
+        applyPushPull(game, user, target, pushPullResult, result);
+      }
+    }
+  } else if (isHeal) {
+    const healResult = resolveHeal(game, user, active, target);
+    result.messages.push(...healResult.messages);
+  } else {
+    const statusResult: ResolutionResult = yield* resolveNonDamaging(
+      game,
+      user,
+      active,
+      target,
+    );
+    result.messages.push(...statusResult.messages);
+    result.deaths.push(...statusResult.deaths);
+  }
+}
+
+/** Track cooldown + use count after an ability resolves. */
+function recordActionUsage(user: Entity, active: AbilityData) {
   setCooldown(user, active);
   const { uses } = parseFrequency(active.frequency);
   if (active.maxUses ?? uses) {
     user.usesUsed[active.name] = (user.usesUsed[active.name] ?? 0) + 1;
   }
-  // Bug fix carried over: check win condition once after all deaths this
-  // action, not once per death (was producing duplicate "Game over!" lines
-  // on multi-kill splash/AoE).
-  if (result.deaths.length > 0) {
-    // checkGameOver() sets game.phase = "ended" and returns null when no
-    // entity survives (a draw), so gate on the phase flag rather than the
-    // returned winner to mark zero-survivor games as game over too.
-    const winner = checkGameOver(game);
-    if (game.phase === "ended") {
-      result.gameOver = true;
-      result.messages.push(
-        winner
-          ? `**Game over! ${winner.num} (${winner.name}) wins!**`
-          : "**Game over! No survivors!**",
-      );
-    }
-  }
+}
 
-  return result;
+/**
+ * Check win condition once after all deaths this action (not once per
+ * death — that produced duplicate "Game over!" lines on multi-kill
+ * splash/AoE).
+ */
+function checkActionWin(game: Game, result: ResolutionResult) {
+  if (result.deaths.length === 0 || !isWinCondition(game)) return;
+  result.gameOver = true;
+  const winner = game.entities[0];
+  result.messages.push(
+    winner
+      ? `**Game over! ${winner.num} (${winner.name}) wins!**`
+      : "**Game over! No survivors!**",
+  );
 }
 
 export function startAttack(
@@ -678,23 +710,13 @@ function findTargets(
   });
 }
 
-/** Check whether an entity is a valid single target for a target group. */
 export function isValidTarget(
   user: Entity,
   target: Entity,
   group: string,
 ): boolean {
   if (target.curhp <= 0) return false;
-  // Normalize plural/legacy spellings ("Foe(s)", "Self, Foes, Allies",
-  // "Allies and Self") so single-target and AoE targeting agree; see the
-  // equivalent normalization in state.ts isValidGroupTarget.
-  const g = group
-    .toLowerCase()
-    .replace(/foes/g, "foe")
-    .replace(/allies/g, "ally")
-    .replace(/foe\(s\)/g, "foe")
-    .replace(/ally and self/g, "self and ally");
-
+  const g = group.toLowerCase();
   // FFA / no-team games put everyone on team 0: "Foe" means anyone but
   // self, "Ally" targets nobody, and ally-groups resolve to self only.
   // Mirrors the GUI candidate filter in pages.ts so the direct-target
@@ -710,13 +732,14 @@ export function isValidTarget(
     ? target.num === user.num
     : target.team === user.team;
 
-  if (g.includes("self and ally")) return selfOrAllyCheck;
-  if (g.includes("self or ally")) return selfOrAllyCheck;
-  if (g.includes("self or foe"))
-    return target.num === user.num || foeCheck;
+  if (g.includes("self and allies") || g.includes("self and ally"))
+    return selfOrAllyCheck;
+  if (g.includes("allies and self")) return selfOrAllyCheck;
+  if (g.includes("self or ally") || g.includes("self or allies"))
+    return selfOrAllyCheck;
+  if (g.includes("self or foe")) return true;
   if (g.includes("foe or ally")) return target.num !== user.num;
-  if (g.includes("tile or foe")) return foeCheck;
-  if (g.includes("self, foe, ally") || g.includes("self, foe, and ally"))
+  if (g.includes("self, foes, allies") || g.includes("self, foes, and allies"))
     return true;
 
   if (g === "self") return target.num === user.num;
@@ -725,10 +748,7 @@ export function isValidTarget(
   if (g === "any") return true;
   if (g === "tile") return false;
 
-  // Unknown group: reject, matching isValidGroupTarget in state.ts, so a
-  // malformed targetGroup cannot select arbitrary living entities here
-  // while selecting nothing in the AoE path.
-  return false;
+  return true;
 }
 
 function* resolveSingleTarget(
@@ -965,13 +985,22 @@ function emitDamageModTrail(
   );
 }
 
-/** Set the cooldown on an entity for an ability based on its frequency. */
 function setCooldown(entity: Entity, ability: AbilityData) {
   const { cooldown } = parseFrequency(ability.frequency);
   if (cooldown) entity.cooldowns[ability.name] = cooldown;
 }
 
-
+function isWinCondition(game: Game): boolean {
+  if (game.mode.includes("ffa") || game.mode.includes("pvp")) {
+    return game.entities.filter((e) => e.curhp > 0).length <= 1;
+  }
+  const teams = new Map<number, boolean>();
+  for (const e of game.entities) {
+    if (!teams.has(e.team)) teams.set(e.team, false);
+    if (e.curhp > 0) teams.set(e.team, true);
+  }
+  return [...teams.values()].filter(Boolean).length <= 1;
+}
 
 function parseMultiHit(ability: AbilityData): number {
   const roll = ability.roll.toLowerCase();
