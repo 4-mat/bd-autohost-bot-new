@@ -30,6 +30,7 @@ import {
   isSealed,
   isConfused,
   getEffectiveMp,
+  getHumanPlayers,
   parseFrequency,
   type Game,
   type Entity,
@@ -588,7 +589,7 @@ function handleVote(game: Game, user: User, args: string) {
   }
 
   const arg = args.trim();
-  const players = game.entities.filter((e) => !e.isMonster);
+  const players = getHumanPlayers(game);
   // During a runoff only the tied modes are votable.
   const options = game.voteRunoff
     ? runoffOptions(game.voteRunoff)
@@ -681,7 +682,7 @@ function handleLeave(game: Game, user: User) {
 
 // Chat status line for the open gamemode vote: tallies + the requester's vote.
 function buildVoteStatus(game: Game): string {
-  const players = game.entities.filter((e) => !e.isMonster);
+  const players = getHumanPlayers(game);
   const tally = tallyVotes(game.votes);
   const summary =
     tally.length > 0
