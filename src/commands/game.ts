@@ -791,30 +791,40 @@ function handleAdvanceTurn(game: Game, user: User) {
   }
 
   if (result.died || !result.entity) {
-    const winner = checkGameOver(game);
-    if (game.phase === "ended") {
-      announceGameOver(game, winner);
-      return;
-    }
-    // If entity died from DoT but game isn't over, advance again
-    if (!result.entity) {
-      const retry = nextTurn(game);
-      for (const msg of retry.messages) {
-        send(game.room, msg);
-      }
-      if (!retry.entity) {
-        const winner = checkGameOver(game);
-        announceGameOver(game, winner);
-        return;
-      }
-      send(game.room, `**${retry.entity.num}'s turn!** (${retry.entity.name})`);
-      broadcastPages(game);
-      return;
-    }
+    if (handleTurnDeath(game, result)) return;
   }
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+/** Handle a death at turn advance: game over, or skip to the next living
+ * entity. Returns true when the turn was fully handled. */
+function handleTurnDeath(
+  game: Game,
+  result: { died: boolean; entity: Entity | null },
+): boolean {
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return true;
+  }
+  // If entity died from DoT but game isn't over, advance again
+  if (!result.entity) {
+    const retry = nextTurn(game);
+    for (const msg of retry.messages) {
+      send(game.room, msg);
+    }
+    if (!retry.entity) {
+      const winner = checkGameOver(game);
+      announceGameOver(game, winner);
+      return true;
+    }
+    send(game.room, `**${retry.entity.num}'s turn!** (${retry.entity.name})`);
+    broadcastPages(game);
+    return true;
+  }
+  return false;
 }
 
 /**
