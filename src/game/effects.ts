@@ -1077,122 +1077,178 @@ export function evaluateCondition(
 ): ConditionOutcome {
   const lower = text.toLowerCase().trim();
 
-  // Resource equalities like "5 Blood" / "0 Campaigns" / "no Campaigns" --
-  // checked *before* the generic "not / no" negation wrapper so that
-  // "no Campaigns" reads as "<user> has Campaigns == 0" rather than
-  // "negation(<something unknown>)". We require the bare resource token
-  // to be a known resource name (or its plural form, e.g. "Campaigns" ->
-  // "Campaign") to avoid swallowing natural-language phrases like
-  // "no target has Stun" as a resource lookup.
-  const resourceEqMatch = lower.match(/^(\d+|zero|no)\s+([a-z]+)$/);
-  if (resourceEqMatch) {
-    const raw = resourceEqMatch[1];
-    const value = raw === "zero" || raw === "no" ? 0 : parseInt(raw);
-    const resource = canonicalResource(resourceEqMatch[2]);
-    if (resource) {
-      return (user.resources[resource] ?? 0) >= value ? "then" : "else";
-    }
-  }
+  const resourceEq = evalResourceEquality(lower, user);
+  if (resourceEq !== null) return resourceEq;
 
-  // Negation wrappers
-  const negateMatch = lower.match(/^(?:not|no)\s+(.+)$/);
-  if (negateMatch) {
-    const inner = evaluateCondition(negateMatch[1], user, target);
-    if (inner === "then") return "else";
-    if (inner === "else") return "then";
-    return "unknown";
-  }
+  const negate = evalNegation(lower, user, target);
+  if (negate !== null) return negate;
 
-  // target is alive / dead / dies
-  const aliveMatch = lower.match(/^target is (alive|dead)$/);
-  if (aliveMatch) {
-    const wantAlive = aliveMatch[1] === "alive";
-    return target.curhp > 0 === wantAlive ? "then" : "else";
-  }
-  if (
-    lower === "target dies" ||
-    /target has been (killed|defeated)/.test(lower)
-  ) {
-    return target.curhp <= 0 ? "then" : "else";
-  }
+  const alive = evalAlive(lower, target);
+  if (alive !== null) return alive;
 
-  // user/target has Status (matches any STATUS_NAMES)
-  const statusMatch = lower.match(/^(user|target) has (?:a |an )?([a-z ]+?)$/);
-  if (statusMatch) {
-    const which = statusMatch[1];
-    const candidates = statusMatch[2]
-      .trim()
-      .split(/\s+or\s+|\s*,\s*/)
-      .map((s) => s.trim().split(/\s+/).pop()!)
-      .filter(Boolean);
-    const entity = which === "user" ? user : target;
-    for (const cand of candidates) {
-      const has = entity.statuses.some((s) => toId(s.name) === toId(cand));
-      if (has) return "then";
-    }
-    return "else";
-  }
+  const status = evalHasStatus(lower, user, target);
+  if (status !== null) return status;
 
-  // user/target has N <resource>
-  const resourceMatch = lower.match(/^(user|target) has (\d+)\s+([a-z]+)$/);
-  if (resourceMatch) {
-    const which = resourceMatch[1];
-    const amount = parseInt(resourceMatch[2]);
-    const resource = resourceMatch[3];
-    const entity = which === "user" ? user : target;
-    return (entity.resources[resource] ?? 0) >= amount ? "then" : "else";
-  }
+  const resource = evalHasResource(lower, user, target);
+  if (resource !== null) return resource;
 
-  // user/target Stat positive|negative|zero
-  const signMatch = lower.match(
-    /^(user|target)\s+(atk|mag|pd|md|eva|mp|acc|cr)\s+(positive|negative|zero)$/,
-  );
-  if (signMatch) {
-    const which = signMatch[1];
-    const stat = signMatch[2];
-    const sign = signMatch[3];
-    const entity = which === "user" ? user : target;
-    const v = getRawStat(entity, stat);
-    if (sign === "positive") return v > 0 ? "then" : "else";
-    if (sign === "negative") return v < 0 ? "then" : "else";
-    return v === 0 ? "then" : "else";
-  }
+  const sign = evalStatSign(lower, user, target);
+  if (sign !== null) return sign;
 
-  // user Stat > N / < N / >= / <= / =
-  const cmpMatch = lower.match(
-    /^(user|target)\s+(atk|mag|pd|md|eva|mp|acc|cr)\s*(>=|<=|>|<|=)\s*(-?\d+)$/,
-  );
-  if (cmpMatch) {
-    const which = cmpMatch[1];
-    const stat = cmpMatch[2];
-    const op = cmpMatch[3];
-    const value = parseInt(cmpMatch[4]);
-    const entity = which === "user" ? user : target;
-    const v = getRawStat(entity, stat);
-    if (op === ">") return v > value ? "then" : "else";
-    if (op === ">=") return v >= value ? "then" : "else";
-    if (op === "<") return v < value ? "then" : "else";
-    if (op === "<=") return v <= value ? "then" : "else";
-    return v === value ? "then" : "else";
-  }
+  const cmp = evalStatCompare(lower, user, target);
+  if (cmp !== null) return cmp;
 
-  // user Stat greater than / less than N (word variant)
-  const wordCmpMatch = lower.match(
-    /^(user|target)'?s?\s+(atk|mag|pd|md|eva|mp|acc|cr)\s+(greater than|less than|equal to)\s+(-?\d+)$/,
-  );
-  if (wordCmpMatch) {
-    const which = wordCmpMatch[1];
-    const stat = wordCmpMatch[2];
-    const op = wordCmpMatch[3];
-    const value = parseInt(wordCmpMatch[4]);
-    const entity = which === "user" ? user : target;
-    const v = getRawStat(entity, stat);
-    if (op === "greater than") return v > value ? "then" : "else";
-    if (op === "less than") return v < value ? "then" : "else";
-    return v === value ? "then" : "else";
-  }
+  const word = evalStatWordCompare(lower, user, target);
+  if (word !== null) return word;
 
   return "unknown";
+}
+
+/** "5 Blood" / "0 Campaigns" / "no Campaigns" — resource threshold. */
+function evalResourceEquality(
+  lower: string,
+  user: Entity,
+): ConditionOutcome | null {
+  // Checked *before* the generic "not / no" negation wrapper so that
+  // "no Campaigns" reads as "<user> has Campaigns == 0" rather than
+  // "negation(<something unknown>)". The bare token must be a known
+  // resource name (or its plural) so natural-language phrases like
+  // "no target has Stun" aren't swallowed as a resource lookup.
+  const m = lower.match(/^(\d+|zero|no)\s+([a-z]+)$/);
+  if (!m) return null;
+  const raw = m[1];
+  const value = raw === "zero" || raw === "no" ? 0 : parseInt(raw);
+  const resource = canonicalResource(m[2]);
+  if (!resource) return null;
+  return (user.resources[resource] ?? 0) >= value ? "then" : "else";
+}
+
+/** "not ..." / "no ..." — flips any wrapped condition. */
+function evalNegation(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(/^(?:not|no)\s+(.+)$/);
+  if (!m) return null;
+  const inner = evaluateCondition(m[1], user, target);
+  if (inner === "then") return "else";
+  if (inner === "else") return "then";
+  return "unknown";
+}
+
+/** "target is alive/dead" / "target dies" / "target has been killed". */
+function evalAlive(lower: string, target: Entity): ConditionOutcome | null {
+  const m = lower.match(/^target is (alive|dead)$/);
+  if (m) {
+    const wantAlive = m[1] === "alive";
+    return target.curhp > 0 === wantAlive ? "then" : "else";
+  }
+  if (lower === "target dies" || /target has been (killed|defeated)/.test(lower)) {
+    return target.curhp <= 0 ? "then" : "else";
+  }
+  return null;
+}
+
+/** "user/target has <status>" — matches any candidate name. */
+function evalHasStatus(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(/^(user|target) has (?:a |an )?([a-z ]+?)$/);
+  if (!m) return null;
+  const which = m[1];
+  const candidates = m[2]
+    .trim()
+    .split(/\s+or\s+|\s*,\s*/)
+    .map((s) => s.trim().split(/\s+/).pop()!)
+    .filter(Boolean);
+  const entity = which === "user" ? user : target;
+  for (const cand of candidates) {
+    const has = entity.statuses.some((s) => toId(s.name) === toId(cand));
+    if (has) return "then";
+  }
+  return "else";
+}
+
+/** "user/target has N <resource>". */
+function evalHasResource(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(/^(user|target) has (\d+)\s+([a-z]+)$/);
+  if (!m) return null;
+  const which = m[1];
+  const amount = parseInt(m[2]);
+  const resource = m[3];
+  const entity = which === "user" ? user : target;
+  return (entity.resources[resource] ?? 0) >= amount ? "then" : "else";
+}
+
+/** "user/target <stat> positive|negative|zero". */
+function evalStatSign(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(
+    /^(user|target)\s+(atk|mag|pd|md|eva|mp|acc|cr)\s+(positive|negative|zero)$/,
+  );
+  if (!m) return null;
+  const which = m[1];
+  const stat = m[2];
+  const sign = m[3];
+  const entity = which === "user" ? user : target;
+  const v = getRawStat(entity, stat);
+  if (sign === "positive") return v > 0 ? "then" : "else";
+  if (sign === "negative") return v < 0 ? "then" : "else";
+  return v === 0 ? "then" : "else";
+}
+
+/** "user/target <stat> > N" / ">=" / "<" / "<=" / "=". */
+function evalStatCompare(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(
+    /^(user|target)\s+(atk|mag|pd|md|eva|mp|acc|cr)\s*(>=|<=|>|<|=)\s*(-?\d+)$/,
+  );
+  if (!m) return null;
+  const which = m[1];
+  const stat = m[2];
+  const op = m[3];
+  const value = parseInt(m[4]);
+  const entity = which === "user" ? user : target;
+  const v = getRawStat(entity, stat);
+  if (op === ">") return v > value ? "then" : "else";
+  if (op === ">=") return v >= value ? "then" : "else";
+  if (op === "<") return v < value ? "then" : "else";
+  if (op === "<=") return v <= value ? "then" : "else";
+  return v === value ? "then" : "else";
+}
+
+/** "user/target <stat> greater than|less than|equal to N". */
+function evalStatWordCompare(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(
+    /^(user|target)'?s?\s+(atk|mag|pd|md|eva|mp|acc|cr)\s+(greater than|less than|equal to)\s+(-?\d+)$/,
+  );
+  if (!m) return null;
+  const which = m[1];
+  const stat = m[2];
+  const op = m[3];
+  const value = parseInt(m[4]);
+  const entity = which === "user" ? user : target;
+  const v = getRawStat(entity, stat);
+  if (op === "greater than") return v > value ? "then" : "else";
+  if (op === "less than") return v < value ? "then" : "else";
+  return v === value ? "then" : "else";
 }
 
 /**
