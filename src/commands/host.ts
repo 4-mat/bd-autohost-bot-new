@@ -1549,21 +1549,7 @@ function handleSetMap(room: Room, user: User, args: string) {
   // recommendations plus any volunteer maps tagged for the mode).
   // (e.g. %setmap pvp, %setmap 1v1, %setmap 2v2).
   const modeId = modeIdFor(lower);
-  if (modeId) {
-    let pick = randomMapForMode(lower)!;
-    // Avoid instantly re-setting the same map when the pool has options.
-    if (GAMEMODE_MAPS[modeId].length > 1 && game.mapName) {
-      for (let tries = 0; tries < 4; tries++) {
-        if (getMapByName(pick)?.displayName !== game.mapName) break;
-        pick = randomMapForMode(lower)!;
-      }
-    }
-    const modeDef = getMapByName(pick);
-    if (modeDef) {
-      applyMap(game, modeDef, ` — random ${modeId.toUpperCase()} pick`);
-      return;
-    }
-  }
+  if (modeId && pickRandomModeMap(game, lower, modeId)) return;
 
   // Curated map database
   const def = getMapByName(lower);
@@ -1574,31 +1560,7 @@ function handleSetMap(room: Room, user: User, args: string) {
 
   // %setmap gen [12|16|20] — the ONLY procedural map trigger.
   if (lower === "gen" || lower.startsWith("gen ")) {
-    const size = lower === "gen" ? 12 : parseInt(lower.slice(4));
-    if (
-      lower !== "gen" &&
-      (isNaN(size) || (size !== 12 && size !== 16 && size !== 20))
-    ) {
-      return sendPm(user.name, "Usage: %setmap gen [12|16|20].");
-    }
-    let grid: Terrain[][];
-    let displayName: string;
-    if (size === 16) {
-      grid = generateMediumMap();
-      displayName = "Procedural (16x16)";
-    } else if (size === 20) {
-      grid = generateLargeMap();
-      displayName = "Procedural (20x20)";
-    } else {
-      grid = generateDefaultMap();
-      displayName = "Procedural (12x12)";
-    }
-    applyMap(game, {
-      grid,
-      displayName,
-      rows: grid.length,
-      cols: grid[0]?.length ?? 0,
-    });
+    applyProceduralMap(game, user, lower);
     return;
   }
 
@@ -1606,6 +1568,47 @@ function handleSetMap(room: Room, user: User, args: string) {
     user.name,
     "Unknown map. Use %listmaps to see curated maps, or %setmap gen for a procedural map.",
   );
+}
+
+/** Pick a random map from a gamemode's pool, avoiding instantly re-setting the same map. */
+function pickRandomModeMap(game: Game, lower: string, modeId: string) {
+  let pick = randomMapForMode(lower)!;
+  if (GAMEMODE_MAPS[modeId].length > 1 && game.mapName) {
+    for (let tries = 0; tries < 4; tries++) {
+      if (getMapByName(pick)?.displayName !== game.mapName) break;
+      pick = randomMapForMode(lower)!;
+    }
+  }
+  const modeDef = getMapByName(pick);
+  if (!modeDef) return false;
+  applyMap(game, modeDef, ` — random ${modeId.toUpperCase()} pick`);
+  return true;
+}
+
+/** Apply a procedurally generated map of the requested size (gen [12|16|20]). */
+function applyProceduralMap(game: Game, user: User, lower: string) {
+  const size = lower === "gen" ? 12 : parseInt(lower.slice(4));
+  if (lower !== "gen" && (isNaN(size) || (size !== 12 && size !== 16 && size !== 20))) {
+    return sendPm(user.name, "Usage: %setmap gen [12|16|20].");
+  }
+  let grid: Terrain[][];
+  let displayName: string;
+  if (size === 16) {
+    grid = generateMediumMap();
+    displayName = "Procedural (16x16)";
+  } else if (size === 20) {
+    grid = generateLargeMap();
+    displayName = "Procedural (20x20)";
+  } else {
+    grid = generateDefaultMap();
+    displayName = "Procedural (12x12)";
+  }
+  applyMap(game, {
+    grid,
+    displayName,
+    rows: grid.length,
+    cols: grid[0]?.length ?? 0,
+  });
 }
 
 // -- .listmaps [size] - List available maps -----------------------------------
