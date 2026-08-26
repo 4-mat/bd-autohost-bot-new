@@ -7,6 +7,7 @@ import {
   getEntity,
   getHumanPlayers,
   getReachableTiles,
+  isHostUser,
   pushSnapshot,
   nextTurn,
   removeEntity,
@@ -54,7 +55,7 @@ function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
 // Whether a user may change this entity's class/weapon: hosts any time,
 // players only their own entity until the game starts.
 function mayChangeLoadout(user: User, game: Game, entity: Entity): boolean {
-  if (toId(user.name) === toId(game.host)) return true;
+  if (isHostUser(game, user)) return true;
   return !game.started && toId(entity.name) === toId(user.name);
 }
 
