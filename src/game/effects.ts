@@ -1863,10 +1863,16 @@ function perTriggerApplies(trigger: string, user: Entity): boolean {
  */
 function triggerApplies(event: string, user: Entity, target: Entity): boolean {
   const t = event.toLowerCase().trim();
+  // FFA mode (team 0): any non-self target is a foe; team mode: different team.
+  const isFoe =
+    user.team === 0
+      ? target.num !== user.num
+      : target.team !== user.team;
+
   if (t === "hit") return true;
-  if (t === "user damages a foe" || t === "user damages foe") return true;
+  if (t === "user damages a foe" || t === "user damages foe") return isFoe;
   if (t === "user kills a foe" || t === "user kills foe")
-    return target.curhp <= 0;
+    return isFoe && target.curhp <= 0;
   return false;
 }
 
