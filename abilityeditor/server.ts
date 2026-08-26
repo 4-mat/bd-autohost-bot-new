@@ -75,15 +75,20 @@ function loadCustoms() {
   try {
     const data = JSON.parse(fs.readFileSync(CUSTOMS_PATH, "utf8"));
     for (const c of data.classes ?? []) {
-      if (c?.name) {
-        classes.set(toId(c.name), c);
-        customClassIds.add(toId(c.name));
+      const name = typeof c?.name === "string" ? c.name.trim() : "";
+      if (name) {
+        // Rebuild through defaultClass so abilities pass cleanNamedAbility:
+        // legacy entries with blank or non-string ability names must not
+        // bypass sanitization and re-persist via saveCustoms.
+        classes.set(toId(name), defaultClass(name, c));
+        customClassIds.add(toId(name));
       }
     }
     for (const w of data.weapons ?? []) {
-      if (w?.name) {
-        weapons.set(toId(w.name), w);
-        customWeaponIds.add(toId(w.name));
+      const name = typeof w?.name === "string" ? w.name.trim() : "";
+      if (name) {
+        weapons.set(toId(name), defaultWeapon(name, w));
+        customWeaponIds.add(toId(name));
       }
     }
   } catch (e) {
