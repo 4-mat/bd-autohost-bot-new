@@ -1236,23 +1236,7 @@ function handleCheckRange(game: Game, user: User, args: string) {
     );
   }
 
-  // --- Original two-position form: %cr <from>, <to> ---
-  const commaParts = arg.split(",").map((s) => s.trim());
-  if (commaParts.length >= 2 && commaParts[0] && commaParts[1]) {
-    const fromEntity = getEntity(game, commaParts[0]);
-    const toEntity = getEntity(game, commaParts[1]);
-    const fromPos = fromEntity?.pos ?? parsePos(commaParts[0]);
-    const toPos = toEntity?.pos ?? parsePos(commaParts[1]);
-    if (fromPos && toPos) {
-      const d = dist(fromPos, toPos);
-      const fromLabel = fromEntity?.num ?? posToStr(fromPos[0], fromPos[1]);
-      const toLabel = toEntity?.num ?? posToStr(toPos[0], toPos[1]);
-      return sendPm(
-        user.name,
-        `Distance ${fromLabel} -> ${toLabel}: ${d} tiles (Manhattan)`,
-      );
-    }
-  }
+  if (checkRangeBetween(game, user, arg)) return;
 
   // Resolve the source entity. Deliberately prefer the caller's own entity
   // (mine) over the turn's entity even on someone else's turn: %checkrange is
@@ -1269,73 +1253,113 @@ function handleCheckRange(game: Game, user: User, args: string) {
     return sendPm(user.name, "No entity to check range from.");
   }
 
-  // --- Mode 1: target entity/tile ---
+  if (checkRangeToTarget(game, user, source, arg)) return;
+  if (checkRangeByAbility(game, user, source, arg)) return;
+  if (checkRangeByPattern(game, user, source, arg)) return;
+
+  return sendPm(
+    user.name,
+    `Could not resolve "${arg}". Usage: %checkrange <entity|tile|ability|range> (e.g. %checkrange P2, %checkrange Fireball, %checkrange range 5).`,
+  );
+}
+
+/** Two-position form: %cr <from>, <to> — raw Manhattan distance. */
+function checkRangeBetween(game: Game, user: User, arg: string): boolean {
+  const commaParts = arg.split(",").map((s) => s.trim());
+  if (commaParts.length < 2 || !commaParts[0] || !commaParts[1]) return false;
+  const fromEntity = getEntity(game, commaParts[0]);
+  const toEntity = getEntity(game, commaParts[1]);
+  const fromPos = fromEntity?.pos ?? parsePos(commaParts[0]);
+  const toPos = toEntity?.pos ?? parsePos(commaParts[1]);
+  if (!fromPos || !toPos) return false;
+  const d = dist(fromPos, toPos);
+  const fromLabel = fromEntity?.num ?? posToStr(fromPos[0], fromPos[1]);
+  const toLabel = toEntity?.num ?? posToStr(toPos[0], toPos[1]);
+  sendPm(user.name, `Distance ${fromLabel} -> ${toLabel}: ${d} tiles (Manhattan)`);
+  return true;
+}
+
+/** Mode 1: target entity/tile — distances, LOS, and abilities that reach. */
+function checkRangeToTarget(
+  game: Game,
+  user: User,
+  source: Entity,
+  arg: string,
+): boolean {
   const targetEntity = getEntity(game, arg);
   const tilePos = !targetEntity ? parsePos(arg) : null;
-  if (targetEntity || tilePos) {
-    const toPos = targetEntity ? targetEntity.pos : tilePos!;
-    const label = targetEntity
-      ? `${targetEntity.num} (${targetEntity.name})`
-      : posToStr(toPos[0], toPos[1]);
-    const md = manhattan(source.pos, toPos);
-    const cd = chebyshev(source.pos, toPos);
-    const los = hasLineOfSight(game, source.pos, toPos);
-    // Respect the ability's target group too: geometry alone isn't enough
-    // (a heal that reaches a foe is not "can hit" in any meaningful sense).
-    // Tile targets can't be group-filtered, so entity targets only.
-    const hitAbilities = source.abilities.filter(
-      (a) =>
-        inRangeInParts(game, source.pos, toPos, a.range) &&
-        (!targetEntity || isValidTarget(source, targetEntity, a.targetGroup)),
-    );
-    return sendPm(
-      user.name,
-      `${source.num} -> ${label}: ${md} tiles Manhattan / ${cd} Chebyshev, LOS ${los ? "clear" : "blocked"}. Abilities that can hit: ${hitAbilities.length ? hitAbilities.map((a) => a.name).join(", ") : "none"}.`,
-    );
-  }
+  if (!targetEntity && !tilePos) return false;
+  const toPos = targetEntity ? targetEntity.pos : tilePos!;
+  const label = targetEntity
+    ? `${targetEntity.num} (${targetEntity.name})`
+    : posToStr(toPos[0], toPos[1]);
+  const md = manhattan(source.pos, toPos);
+  const cd = chebyshev(source.pos, toPos);
+  const los = hasLineOfSight(game, source.pos, toPos);
+  // Respect the ability's target group too: geometry alone isn't enough
+  // (a heal that reaches a foe is not "can hit" in any meaningful sense).
+  // Tile targets can't be group-filtered, so entity targets only.
+  const hitAbilities = source.abilities.filter(
+    (a) =>
+      inRangeInParts(game, source.pos, toPos, a.range) &&
+      (!targetEntity || isValidTarget(source, targetEntity, a.targetGroup)),
+  );
+  sendPm(
+    user.name,
+    `${source.num} -> ${label}: ${md} tiles Manhattan / ${cd} Chebyshev, LOS ${los ? "clear" : "blocked"}. Abilities that can hit: ${hitAbilities.length ? hitAbilities.map((a) => a.name).join(", ") : "none"}.`,
+  );
+  return true;
+}
 
-  // --- Mode 2: ability name ---
+/** Mode 2: ability name — which entities it can currently reach. */
+function checkRangeByAbility(
+  game: Game,
+  user: User,
+  source: Entity,
+  arg: string,
+): boolean {
   const ability = source.abilities.find((a) => toId(a.name) === toId(arg));
-  if (ability) {
-    // isValidTarget already rejects dead entities (curhp <= 0).
-    const reachable = game.entities.filter(
-      (e) =>
-        e.num !== source.num &&
-        isValidTarget(source, e, ability.targetGroup) &&
-        inRangeInParts(game, source.pos, e.pos, ability.range),
-    );
-    const groupLabel = ability.targetGroup || "any";
-    return sendPm(
-      user.name,
-      `${source.num} ${ability.name} (${ability.range}, targets: ${groupLabel}): ${formatRangeList(reachable)}.`,
-    );
-  }
+  if (!ability) return false;
+  // isValidTarget already rejects dead entities (curhp <= 0).
+  const reachable = game.entities.filter(
+    (e) =>
+      e.num !== source.num &&
+      isValidTarget(source, e, ability.targetGroup) &&
+      inRangeInParts(game, source.pos, e.pos, ability.range),
+  );
+  const groupLabel = ability.targetGroup || "any";
+  sendPm(
+    user.name,
+    `${source.num} ${ability.name} (${ability.range}, targets: ${groupLabel}): ${formatRangeList(reachable)}.`,
+  );
+  return true;
+}
 
-  // --- Mode 3: raw range string (e.g. "range 5", "melee", "line 3",
-  // or "or" combos like "range 3 or melee", mirroring the engine) ---
+/** Mode 3: raw range string ("range 5", "melee", "line 3", "or" combos). */
+function checkRangeByPattern(
+  game: Game,
+  user: User,
+  source: Entity,
+  arg: string,
+): boolean {
   const rangeStr = arg.toLowerCase().trim();
   const rangeParts = rangeStr.split(/\s+or\s+/i).map((s) => s.trim());
   const validRangePart = (s: string) =>
     s === "melee" ||
     s === "global" ||
     /^(range|homing|line|pierce|burst|star|beam|cone)\s*\d+$/i.test(s);
-  if (rangeParts.length > 0 && rangeParts.every(validRangePart)) {
-    const reachable = game.entities.filter(
-      (e) =>
-        e.num !== source.num &&
-        e.curhp > 0 &&
-        rangeParts.some((rp) => inRange(game, source.pos, e.pos, rp)),
-    );
-    return sendPm(
-      user.name,
-      `${source.num} within ${rangeStr}: ${formatRangeList(reachable)}.`,
-    );
-  }
-
-  return sendPm(
-    user.name,
-    `Could not resolve "${arg}". Usage: %checkrange <entity|tile|ability|range> (e.g. %checkrange P2, %checkrange Fireball, %checkrange range 5).`,
+  if (rangeParts.length === 0 || !rangeParts.every(validRangePart)) return false;
+  const reachable = game.entities.filter(
+    (e) =>
+      e.num !== source.num &&
+      e.curhp > 0 &&
+      rangeParts.some((rp) => inRange(game, source.pos, e.pos, rp)),
   );
+  sendPm(
+    user.name,
+    `${source.num} within ${rangeStr}: ${formatRangeList(reachable)}.`,
+  );
+  return true;
 }
 
 function buildPlayerList(game: Game): string {
