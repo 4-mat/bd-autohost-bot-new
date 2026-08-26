@@ -246,6 +246,44 @@ function* resolveVariantChoice(
   };
 }
 
+/** Prompt for a selection-based ability (choices / sacrifice / pay costs).
+ * Returns true when paid, false (with a message pushed) when it can't. */
+function* resolveSelection(
+  user: Entity,
+  ability: AbilityData,
+  result: ResolutionResult,
+): Generator<AttackPrompt, boolean, PromptResponse> {
+  if (!abilityNeedsSelection(ability)) return true;
+
+  const choiceId = yield {
+    kind: "selection",
+    message: `Choose an option for ${ability.name}`,
+    options: buildSelectionOptions(ability),
+  };
+  if (applySelection(user, ability, choiceId)) return true;
+
+  result.messages.push(
+    `${user.num} could not pay the cost for ${ability.name}.`,
+  );
+  return false;
+}
+
+/** Prompt for a direction when the ability needs one and none is pending. */
+function* resolveDirection(
+  user: Entity,
+  ability: AbilityData,
+  active: AbilityData,
+): Generator<AttackPrompt, string | undefined, PromptResponse> {
+  if (!needsDirection(active)) return undefined;
+  if (user.pendingAction?.direction) return user.pendingAction.direction;
+
+  return yield {
+    kind: "direction",
+    message: `Choose a direction for ${ability.name}`,
+    candidates: getDirectionCandidates(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The pipeline itself:
 // Declare -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
@@ -264,46 +302,23 @@ function* resolveAttackFlow(
   // result.messages.push(`/me declares ${ability.name}`);
 
   // --- Auto-deduct non-prompted costs ---
-  if (ability.cost && !ability.cost.prompt) {
-    if (!autoDeductCost(user, ability.cost)) {
-      result.messages.push(
-        `${user.num} could not pay the cost for ${ability.name}.`,
-      );
-      return result;
-    }
+  if (ability.cost && !ability.cost.prompt && !autoDeductCost(user, ability.cost)) {
+    result.messages.push(
+      `${user.num} could not pay the cost for ${ability.name}.`,
+    );
+    return result;
   }
 
   // --- Selection / Choices / Sacrifice / Pay Costs ---
-  if (abilityNeedsSelection(ability)) {
-    const choiceId = yield {
-      kind: "selection",
-      message: `Choose an option for ${ability.name}`,
-      options: buildSelectionOptions(ability),
-    };
-    const paid = applySelection(user, ability, choiceId);
-    if (!paid) {
-      result.messages.push(
-        `${user.num} could not pay the cost for ${ability.name}.`,
-      );
-      return result;
-    }
-  }
+  const paid = yield* resolveSelection(user, ability, result);
+  if (!paid) return result;
 
   // --- Variant choice for damageType "Varies" ---
   const active = yield* resolveVariantChoice(user, ability, result);
   if (!active) return result;
 
   // --- Direction prompt for AoE abilities ---
-  const needsDir = needsDirection(active);
-  let dir = user.pendingAction?.direction;
-  if (needsDir && !dir) {
-    const dirs = getDirectionCandidates();
-    dir = yield {
-      kind: "direction",
-      message: `Choose a direction for ${ability.name}`,
-      candidates: dirs,
-    };
-  }
+  const dir = yield* resolveDirection(user, ability, active);
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   const {
@@ -361,17 +376,30 @@ function* resolveAttackFlow(
     );
   }
 
-  if (isAttack && !isAoE && targets.length > 0) {
-    const splashResult = resolveSplash(game, user, active, targets[0], combat);
-    result.messages.push(...splashResult.messages);
-    result.deaths.push(...splashResult.deaths);
-  }
+  resolveSplashFor(game, user, active, targets, combat, isAttack, isAoE, result);
 
   // --- After Resolving (cooldowns, use tracking, win check) ---
   recordActionUsage(user, active);
   checkActionWin(game, result);
 
   return result;
+}
+
+/** Apply splash damage to nearby tiles when a single-target attack hits. */
+function resolveSplashFor(
+  game: Game,
+  user: Entity,
+  active: AbilityData,
+  targets: Entity[],
+  combat: CombatMetadata,
+  isAttack: boolean,
+  isAoE: boolean,
+  result: ResolutionResult,
+): void {
+  if (!isAttack || isAoE || targets.length === 0) return;
+  const splashResult = resolveSplash(game, user, active, targets[0], combat);
+  result.messages.push(...splashResult.messages);
+  result.deaths.push(...splashResult.deaths);
 }
 
 /** Resolve one ability against one target (attack hits / heal / status). */
