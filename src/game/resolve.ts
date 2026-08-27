@@ -20,6 +20,7 @@ import {
   DIRECTION_LABELS,
   placeTerrain,
   TERRAIN_NAMES,
+  pushSnapshot,
 } from "./state.js";
 import {
   parseEffects,
@@ -712,8 +713,7 @@ export function isValidTarget(
 
   if (g.includes("self and ally")) return selfOrAllyCheck;
   if (g.includes("self or ally")) return selfOrAllyCheck;
-  if (g.includes("self or foe"))
-    return target.num === user.num || foeCheck;
+  if (g.includes("self or foe")) return target.num === user.num || foeCheck;
   if (g.includes("foe or ally")) return target.num !== user.num;
   if (g.includes("tile or foe")) return foeCheck;
   if (g.includes("self, foe, ally") || g.includes("self, foe, and ally"))
@@ -837,6 +837,16 @@ function* resolveSingleTarget(
       removeEntity(game, user);
       result.deaths.push(user);
       return result;
+    }
+  } else {
+    const missMatch = ability.effect.match(/On Miss:\s*([^.]+)/i);
+    if (missMatch) {
+      pushSnapshot(game);
+      const missEffects = parseEffects(missMatch[1]);
+      const missMsgs: string[] = yield* runEffectStream(
+        applyEffectStream(game, user, target, missEffects, ability),
+      );
+      result.messages.push(...missMsgs.map((m) => `  [On Miss] ${m}`));
     }
   }
 
@@ -970,8 +980,6 @@ function setCooldown(entity: Entity, ability: AbilityData) {
   const { cooldown } = parseFrequency(ability.frequency);
   if (cooldown) entity.cooldowns[ability.name] = cooldown;
 }
-
-
 
 function parseMultiHit(ability: AbilityData): number {
   const roll = ability.roll.toLowerCase();
