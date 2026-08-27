@@ -15,33 +15,35 @@ export interface AgentConfig {
   capabilities: string[];
 }
 
+interface HandlerEntry {
+  handler: (msg: AgentMessage) => void;
+  topics: Set<string>;
+}
+
 interface BusState {
-  subscribers: Map<string, Set<(msg: AgentMessage) => void>>;
+  subscribers: Map<string, Set<HandlerEntry>>;
   messages: AgentMessage[];
   agentConfigs: Map<string, AgentConfig>;
-  topics: Map<string, Set<string>>;
 }
+
+const MAX_HISTORY = 500;
 
 class AgentBus {
   private state: BusState = {
     subscribers: new Map(),
     messages: [],
     agentConfigs: new Map(),
-    topics: new Map(),
   };
 
   registerAgent(config: AgentConfig): void {
     this.state.agentConfigs.set(config.id, config);
     if (!this.state.subscribers.has(config.id))
       this.state.subscribers.set(config.id, new Set());
-    if (!this.state.topics.has(config.id))
-      this.state.topics.set(config.id, new Set());
   }
 
   unregisterAgent(agentId: string): void {
     this.state.subscribers.delete(agentId);
     this.state.agentConfigs.delete(agentId);
-    this.state.topics.delete(agentId);
   }
 
   getAgentConfigs(): Map<string, AgentConfig> {
@@ -56,42 +58,40 @@ class AgentBus {
     if (!this.state.agentConfigs.has(agentId)) return () => {};
     if (!this.state.subscribers.has(agentId))
       this.state.subscribers.set(agentId, new Set());
-    if (!this.state.topics.has(agentId))
-      this.state.topics.set(agentId, new Set());
-    const set = this.state.topics.get(agentId)!;
-    topics.forEach((t) => set.add(t));
-    const handlers = this.state.subscribers.get(agentId)!;
-    handlers.add(handler);
+    const entry: HandlerEntry = { handler, topics: new Set(topics) };
+    this.state.subscribers.get(agentId)!.add(entry);
     return () => {
-      handlers.delete(handler);
-      topics.forEach((t) => set.delete(t));
+      this.state.subscribers.get(agentId)?.delete(entry);
     };
   }
 
   publish(message: AgentMessage): AgentMessage[] {
     this.state.messages.push(message);
-    const recipients: string[] = [];
-    if (message.to && this.state.agentConfigs.has(message.to))
-      recipients.push(message.to);
-    else if (!message.to)
-      this.state.agentConfigs.forEach((_, id) => recipients.push(id));
-    else this.state.agentConfigs.forEach((_, id) => recipients.push(id));
+    if (this.state.messages.length > MAX_HISTORY) {
+      this.state.messages = this.state.messages.slice(-MAX_HISTORY);
+    }
+
+    if (message.to && !this.state.agentConfigs.has(message.to)) {
+      return [];
+    }
+
+    const recipients: string[] = message.to
+      ? [message.to]
+      : Array.from(this.state.agentConfigs.keys());
 
     const delivered: AgentMessage[] = [];
     for (const recipientId of recipients) {
-      const topics = this.state.topics.get(recipientId);
-      if (topics && topics.size > 0) {
+      const handlers = this.state.subscribers.get(recipientId);
+      if (!handlers) continue;
+      for (const entry of handlers) {
         const matches =
-          topics.has(message.type) ||
-          topics.has(message.to) ||
+          entry.topics.has(message.type) ||
+          entry.topics.has(message.to) ||
           message.to === "" ||
           message.to === recipientId;
         if (!matches) continue;
-      }
-      const handlers = this.state.subscribers.get(recipientId) || new Set();
-      for (const h of handlers) {
         try {
-          h(message);
+          entry.handler(message);
           delivered.push(message);
         } catch (e) {
           console.error(`Error delivering message to ${recipientId}:`, e);
