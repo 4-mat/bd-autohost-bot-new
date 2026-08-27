@@ -6,14 +6,8 @@ import {
   type AbilityData,
   Terrain,
 } from "../game/state.js";
-import {
-  parseEffects,
-  extractCombatMetadata,
-} from "../game/effects.js";
-import {
-  startAttack,
-  isValidTarget,
-} from "../game/resolve.js";
+import { parseEffects, extractCombatMetadata } from "../game/effects.js";
+import { startAttack, isValidTarget } from "../game/resolve.js";
 setWs({ send() {} });
 
 // ---------------------------------------------------------------------------
@@ -119,9 +113,12 @@ beforeEach(() => {});
 describe("isValidTarget", () => {
   // Team-mode fixtures: the FFA (team 0) behavior is covered by the
   // dedicated "FFA targeting" describe below.
-  const user = () => makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 1 });
-  const foe = () => makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 2 });
-  const ally = () => makeEntity({ num: "P3", name: "Cara", pos: [5, 4], team: 1 });
+  const user = () =>
+    makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 1 });
+  const foe = () =>
+    makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 2 });
+  const ally = () =>
+    makeEntity({ num: "P3", name: "Cara", pos: [5, 4], team: 1 });
 
   it("'Self or Foe' accepts the user and foes but not allies", () => {
     expect(isValidTarget(user(), user(), "Self or Foe")).toBe(true);
@@ -171,7 +168,11 @@ describe("isValidTarget", () => {
 
   it("rejects dead targets", () => {
     expect(
-      isValidTarget(user(), makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }), "Foe"),
+      isValidTarget(
+        user(),
+        makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }),
+        "Foe",
+      ),
     ).toBe(false);
   });
 
@@ -303,9 +304,7 @@ describe("extractCombatMetadata", () => {
   });
 
   it("does NOT descend into Thirst sub-effects (would over-apply when blood < threshold)", () => {
-    const meta = extractCombatMetadata(
-      parseEffects("Thirst 4: Multi-Hit: 3"),
-    );
+    const meta = extractCombatMetadata(parseEffects("Thirst 4: Multi-Hit: 3"));
     expect(meta.additionalHits).toBe(0);
   });
 
@@ -315,18 +314,14 @@ describe("extractCombatMetadata", () => {
     // at runtime. resolve.ts handles per-branch metadata through the
     // legacy buff pipeline; metadata here is top-level only.
     const meta = extractCombatMetadata(
-      parseEffects(
-        "If target is alive, +30% damage. Otherwise, +10% damage.",
-      ),
+      parseEffects("If target is alive, +30% damage. Otherwise, +10% damage."),
     );
     expect(meta.damagePercent).toBe(0);
   });
 
   it("does NOT descend into Choose option sub-effects at extract time", () => {
     const meta = extractCombatMetadata(
-      parseEffects(
-        "Choose: Multi-Hit: 2 or +30% damage or Ignores DEF.",
-      ),
+      parseEffects("Choose: Multi-Hit: 2 or +30% damage or Ignores DEF."),
     );
     // All clauses are inside the Choose gate, so the metadata extractor
     // treats them as gated and leaves the top-level metadata at zero.
@@ -511,9 +506,7 @@ describe("resolveAttackFlow: damage mods surface in the log", () => {
     // extracted metadata must not report a damage percent that was
     // nested inside an Apex clause, otherwise the resolve math treats
     // it as always-on.
-    const meta = extractCombatMetadata(
-      parseEffects("Apex: +50% damage"),
-    );
+    const meta = extractCombatMetadata(parseEffects("Apex: +50% damage"));
     expect(meta.damagePercent).toBe(0);
   });
 });
@@ -575,18 +568,23 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
     // Both P2 and P3 damage lines should carry the +50% mod tag.
     expect(log).toContain("P2");
     expect(log).toContain("P3");
-    const p2Trail = log.split("\n").find((line) =>
-      line.includes("Damage Modifiers applied") && line.includes("P2"),
-    );
-    const p3Trail = log.split("\n").find((line) =>
-      line.includes("Damage Modifiers applied") && line.includes("P3"),
-    );
+    const p2Trail = log
+      .split("\n")
+      .find(
+        (line) =>
+          line.includes("Damage Modifiers applied") && line.includes("P2"),
+      );
+    const p3Trail = log
+      .split("\n")
+      .find(
+        (line) =>
+          line.includes("Damage Modifiers applied") && line.includes("P3"),
+      );
     // The mod trails reference just the damageValue; for each target we
     // confirm at least one line contains the +50% tag.
     expect(log).toMatch(/\+50% damage/);
   });
 });
-
 
 describe("FFA targeting (team 0 = no teams)", () => {
   it("treats every other player as a Foe and no one as an Ally", () => {
@@ -613,5 +611,38 @@ describe("FFA targeting (team 0 = no teams)", () => {
     expect(isValidTarget(p1, p2, "Foe")).toBe(false);
     expect(isValidTarget(p1, p3, "Foe")).toBe(true);
     expect(isValidTarget(p1, p3, "Ally")).toBe(false);
+  });
+});
+
+describe("On Miss hook (#139)", () => {
+  it("fires only on miss, not on hit", () => {
+    const make = (mr: number) =>
+      makeAbility({
+        name: "Glancing Blow",
+        range: "Melee",
+        mr,
+        roll: "1d6+0",
+        effect: "On Miss: +2 EVA/1.",
+      });
+    const userHit = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const missLog = driveResolveAgainst(
+      makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 }),
+      make(30),
+      makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, eva: 0 }),
+    );
+    expect(missLog).toContain("[On Miss]");
+    expect(missLog).toContain("MISS");
+    const hitLog = driveResolveAgainst(
+      userHit,
+      make(0),
+      makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, eva: 0 }),
+    );
+    expect(hitLog).not.toContain("[On Miss]");
+    expect(hitLog).toContain("HIT");
   });
 });
