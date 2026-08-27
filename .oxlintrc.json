@@ -1,1 +1,5 @@
-fatal: not a valid object name: refactor\complexity;.oxlintrc.json
+{
+  "rules": {
+    "complexity": ["warn", { "max": 15 }]
+  }
+}
