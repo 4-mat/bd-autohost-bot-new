@@ -43,6 +43,7 @@ import {
   pathState,
   reachPreview,
   dashMode,
+  gridHidden,
   clearMovementState,
   clearGameMovementState,
   movementKey,
@@ -198,6 +199,11 @@ export function gameCommand(
     case "dashmode":
       if (!game) return sendPm(user.name, "No active game in this room.");
       handleDashMode(game, user, full);
+      break;
+
+    case "grid":
+      if (!game) return sendPm(user.name, "No active game in this room.");
+      handleGridToggle(game, user, full);
       break;
 
     case "pl":
@@ -1391,6 +1397,40 @@ function handleDashMode(game: Game, user: User, args: string) {
     pathState.delete(key);
     dashMode.add(key);
     send(game.room, `/me ${entity.num} entering dash mode`);
+  }
+  broadcastPages(game);
+}
+
+// %grid toggles the map gridlines (tile/table borders) for one viewer. It's a
+// display preference, not a gameplay action: no turn/movement checks. The GUI
+// button emits %grid <entity name>; the host may also pass a name to toggle
+// another player's view. Without a name, players toggle their own entity's
+// view and the host toggles the host-page view.
+function handleGridToggle(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const name = args.trim();
+  let entity: Entity | null = null;
+
+  if (name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    if (!isHost && toId(named.name) !== toId(user.name)) {
+      return sendPm(user.name, "You can only toggle your own map grid.");
+    }
+    entity = named;
+  } else if (!isHost) {
+    // No name: non-host players toggle their own view even outside their turn.
+    entity = getEntity(game, user.name) ?? getCurrentEntity(game);
+    if (!entity) return sendPm(user.name, "No entity found for you.");
+  }
+
+  const key = entity ? movementKey(game, entity) : `${game.id}:host`;
+  if (gridHidden.has(key)) {
+    gridHidden.delete(key);
+    sendPm(user.name, "Map grid: on");
+  } else {
+    gridHidden.add(key);
+    sendPm(user.name, "Map grid: off");
   }
   broadcastPages(game);
 }
