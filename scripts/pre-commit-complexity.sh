@@ -6,7 +6,7 @@
 #   cp scripts/pre-commit-complexity.sh .git/hooks/pre-commit
 #   chmod +x .git/hooks/pre-commit
 
-STAGED_TS=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts' | grep -v node_modules | grep -v __tests__)
+STAGED_TS=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts' | grep -v node_modules | grep -v __tests__ | grep -vE '\.(test|spec)\.ts$' || true)
 
 if [ -z "$STAGED_TS" ]; then
   exit 0
@@ -14,8 +14,7 @@ fi
 
 echo "🔍 Checking cyclomatic complexity..."
 
-# Run oxlint with complexity warn on staged .ts files
-ISSUES=$(echo "$STAGED_TS" | xargs bun x oxlint --config .oxlintrc.json 2>&1 | grep -i "complexity" || true)
+ISSUES=$(printf '%s\n' "$STAGED_TS" | xargs -r bun x oxlint --config .oxlintrc.json 2>&1 | grep -i "complexity" || true)
 
 if [ -n "$ISSUES" ]; then
   echo ""
