@@ -5771,3 +5771,10 @@ function loadReferences() {
 function toId(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
+
+export function getAbilityByName(
+  weapon: WeaponData | ClassData,
+  name: string,
+): AbilityData | undefined {
+  return weapon.abilities.find((ab) => toId(ab.name) === toId(name));
+}
