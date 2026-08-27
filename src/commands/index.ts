@@ -51,7 +51,7 @@ export function handleCommand(
 
   // Info/reference commands
   if (id === "wt" || id === "rf" || id === "wtm") {
-    infoCommand(user, id, args || val);
+    infoCommand(room, user, id, args || val);
     return;
   }
 
