@@ -15,11 +15,9 @@ prs() {
 status() {
   echo -e "PR\tbranch\tbot_review_at\tbot_state\thead_sha\tstale?"
   while IFS=$'\t' read -r num head headref; do
-    local latest_review latest_state
-    latest_review=$(gh api "repos/$REPO/pulls/$num/reviews?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")][0].submitted_at // "-"' 2>/dev/null || echo "-")
-    latest_state=$(gh api "repos/$REPO/pulls/$num/reviews?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")][0].state // "-"' 2>/dev/null || echo "-")
-    local last_reply
-    last_reply=$(gh api "repos/$REPO/issues/$num/comments?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")][0].created_at // "-"' 2>/dev/null || echo "-")
+    latest_review=$(gh api "repos/$REPO/pulls/$num/reviews?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | sort_by(.submitted_at) | reverse | .[0].submitted_at // "-"' 2>/dev/null || echo "-")
+    latest_state=$(gh api "repos/$REPO/pulls/$num/reviews?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | sort_by(.submitted_at) | reverse | .[0].state // "-"' 2>/dev/null || echo "-")
+    last_reply=$(gh api "repos/$REPO/issues/$num/comments?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | sort_by(.created_at) | reverse | .[0].created_at // "-"' 2>/dev/null || echo "-")
     echo -e "$num\t${head:0:7}\t${latest_review:0:16}\t$latest_state\treply=$last_reply"
   done < <(prs)
 }
@@ -32,28 +30,19 @@ findings() {
 
 trigger_review() {
   local num=$1
-  body="${2:-}"
-  if [ -n "$body" ]; then
-    gh pr comment "$num" --body "$body" >/dev/null 2>&1 && echo "triggered #$num"
-  else
-    gh pr comment "$num" --body "@coderabbitai full review" >/dev/null 2>&1 | echo "triggered #$num"
-  fi
+  body="${2:-@coderabbitai full review}"
+  gh pr comment "$num" --body "$body" >/dev/null 2>&1 && echo "triggered #$num"
 }
 
-# PRs whose last CodeRabbit activity predates a push AFTER their last review/reply,
-# or whose latest bot reply was a rate-limit error.
 needs_review() {
   while IFS=$'\t' read -r num head headref; do
-    local last_review=$(gh api "repos/$REPO/pulls/$num/reviews?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")][0].submitted_at // ""' 2>/dev/null || echo "")
-    local last_reply
-    last_reply=$(gh api "repos/$REPO/issues/$num/comments?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")][0].body // ""' 2>/dev/null || echo "")
-    if echo "$last_reply" | grep -qi "rate limit"; then
+    last_review=$(gh api "repos/$REPO/pulls/$num/reviews?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | sort_by(.submitted_at) | reverse | .[0].submitted_at // ""' 2>/dev/null || echo "")
+    last_reply=$(gh api "repos/$REPO/issues/$num/comments?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | sort_by(.created_at) | reverse | .[0].body // ""' 2>/dev/null || echo "")
+    if printf '%s' "$last_reply" | grep -qi "rate limit"; then
       echo "$num rate-limited"
     elif [ -z "$last_review" ]; then
       echo "$num no-review"
     else
-      # staleness check via commits list
-      local last_commit
       last_commit=$(gh api "repos/$REPO/pulls/$num/commits?per_page=100" --jq '.[-1].commit.author.date // ""' 2>/dev/null || echo "")
       if [ -n "$last_review" ] && [ -n "$last_commit" ] && [[ "$last_commit" > "$last_review" ]]; then
         echo "$num stale (commit $last_commit > review $last_review)"

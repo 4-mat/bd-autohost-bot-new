@@ -30,19 +30,19 @@ for arg in "$@"; do
   esac
 done
 
-# Run oxlint, capture raw output.
+if ! command -v bun >/dev/null 2>&1; then
+  echo "error: bun not found in PATH" >&2
+  exit 2
+fi
+
 RAW="$(bun x oxlint --config .oxlintrc.json "$SCAN_PATH" 2>&1 || true)"
 
-# Pass raw output to the parser via a temp file (heredoc + stdin don't
-# mix well on Windows).
-TMP_FILE="$(mktemp)"
+TMP_FILE="$(mktemp -t complexity-XXXXXX)"
+trap 'rm -f "$TMP_FILE"' EXIT
 printf '%s' "$RAW" > "$TMP_FILE"
 
 MODE_ENV="$MODE" TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE"
 
-rm -f "$TMP_FILE"
-
-# Gate mode: fail when any function exceeds the threshold.
 if [ "$REPORT" != "true" ] && printf '%s' "$RAW" | grep -q "complexity"; then
   exit 1
 fi

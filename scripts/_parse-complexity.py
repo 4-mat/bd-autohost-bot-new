@@ -34,17 +34,35 @@ def parse(raw: str):
                 name, complexity = pending
                 results.append((complexity, m.group(1), int(m.group(2)), name))
                 pending = None
+    if pending:
+        sys.stderr.write(
+            f"warning: unmatched complexity entry {pending!r} without location\n"
+        )
     return results
 
 
 def main() -> None:
+    if len(sys.argv) < 2:
+        sys.stderr.write(f"usage: {sys.argv[0]} <raw-output-file>\n")
+        sys.exit(2)
     raw_path = sys.argv[1]
-    with open(raw_path, encoding="utf-8", errors="replace") as f:
-        raw = f.read()
+    try:
+        with open(raw_path, encoding="utf-8", errors="replace") as f:
+            raw = f.read()
+    except OSError as e:
+        sys.stderr.write(f"error reading {raw_path}: {e}\n")
+        sys.exit(1)
 
     mode = os.environ.get("MODE_ENV", "text")
     top_env = os.environ.get("TOP_ENV", "")
-    top = int(top_env) if top_env else None
+    top = None
+    if top_env:
+        try:
+            top = int(top_env)
+        except ValueError:
+            sys.stderr.write(
+                f"warning: TOP_ENV={top_env!r} is not an integer, ignoring\n"
+            )
 
     results = parse(raw)
     results.sort(reverse=True, key=lambda r: r[0])
@@ -55,8 +73,8 @@ def main() -> None:
         print(
             json.dumps(
                 [
-                    {"complexity": c, "file": f, "line": ln, "name": n}
-                    for c, f, ln, n in results
+                    {"complexity": c, "file": filepath, "line": ln, "name": n}
+                    for c, filepath, ln, n in results
                 ],
                 indent=2,
             )
@@ -65,8 +83,8 @@ def main() -> None:
 
     total = len(results)
     print(f"\nWarning: {total} function(s) over complexity threshold:\n")
-    for c, f, ln, n in results:
-        print(f"  {c:>3}  {f}:{ln}  `{n}`")
+    for c, filepath, ln, n in results:
+        print(f"  {c:>3}  {filepath}:{ln}  `{n}`")
     print()
 
 
