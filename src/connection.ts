@@ -2,10 +2,11 @@ import WebSocket from "ws";
 import { EventEmitter } from "events";
 import config from "./config.js";
 import { login } from "./login.js";
-import { setWs } from "./utils.js";
+import { setWs, resumeSending } from "./utils.js";
 
 export const bot = new EventEmitter();
 
+/** Connect to the Pokemon Showdown WebSocket and wire up login and message handling. */
 export function connect() {
   const proto = config.useTLS ? "wss" : "ws";
   const url = `${proto}://${config.server}:${config.port}/showdown/websocket`;
@@ -13,6 +14,8 @@ export function connect() {
 
   ws.on("open", () => {
     console.log(`Connected to ${config.server}`);
+    // Flush anything queued while the previous socket was down.
+    resumeSending();
   });
 
   ws.on("message", (data) => {
@@ -39,6 +42,6 @@ export function connect() {
     console.error("WebSocket error:", err.message);
   });
 
-  setWs({ send: (msg: string) => ws.send(msg) });
+  setWs({ send: (msg: string, cb) => ws.send(msg, cb) });
   return ws;
 }

@@ -229,8 +229,7 @@ export const DIRECTION_LABELS: Record<string, string> = {
 
 export function needsDirection(ability: AbilityData): boolean {
   const r = ability.range.toLowerCase().trim();
-  return false;
-  // return /^(cone|line|beam|pierce)\b/.test(r);
+  return /^(cone|line|beam|pierce)\b/.test(r);
 }
 
 export function getDirectionCandidates(): string[] {
@@ -316,6 +315,15 @@ export interface Game {
   voteRunoff: string[] | null;
   /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
   timer?: { entity: string | null; endAt: number } | null;
+  /**
+   * Transient: set by removeEntity when the CURRENT actor is removed mid-turn
+   * (e.g. %leave, %remp, %hp, or a no-dice Free/Swift finishStep). The turn
+   * pointer then already sits on the entity that shifted into the removed
+   * slot, so the next nextTurn() must behave like an actor-death transition
+   * (no buff tick / no advance) or that entity's turn gets skipped. Cleared
+   * by nextTurn when consumed.
+   */
+  removedCurrentActor?: boolean;
 }
 
 export const games = new Map<string, Game>();
@@ -431,14 +439,11 @@ export function getReachableTiles(
     for (const [dr, dc] of dirs) {
       const nr = pos[0] + dr;
       const nc = pos[1] + dc;
-      if (nr < 0 || nr >= game.map.length || nc < 0 || nc >= game.map[0].length)
-        continue;
+      // Bounds + standable terrain + living-entity occupancy, identical to the
+      // push/pull rule, so %move/%dash reject the same tiles.
+      if (!isPassable(game, nr, nc)) continue;
 
-      const terrain = game.map[nr][nc];
-      // Obstructions + Broken (impassable) + Lava (damages on entry).
-      if (!isStandable(terrain)) continue;
-
-      const tileCost = moveCost(terrain);
+      const tileCost = moveCost(game.map[nr][nc]);
       const newCost = cost + tileCost;
       if (newCost > finalMp) continue;
 
@@ -871,12 +876,19 @@ export function getSplashTargets(
   });
 }
 
-// Check if entity is valid for a target group
+/** Check whether an entity is a valid target for a target group (normalizing legacy spellings). */
 function isValidGroupTarget(
   user: Entity,
   target: Entity,
   group: string,
 ): boolean {
+  // Normalize plural/legacy spellings so the checks below match the data as
+  // written ("Foe(s)", "Self, Foes, Allies", "Allies and Self", ...).
+  const g = group
+    .replace(/foes/g, "foe")
+    .replace(/allies/g, "ally")
+    .replace(/foe\(s\)/g, "foe")
+    .replace(/ally and self/g, "self and ally");
   // FFA / no-team games put everyone on team 0: "Foe" = anyone but self,
   // "Ally" = nobody, ally-groups = self only. Mirrors the GUI candidate
   // filter in pages.ts and the single-target validator in resolve.ts.
@@ -891,24 +903,22 @@ function isValidGroupTarget(
     ? target.num === user.num
     : target.team === user.team;
 
-  if (group === "self") return target.num === user.num;
-  if (group === "ally") return allyCheck;
-  if (group === "foe") return foeCheck;
-  if (group === "any") return true;
-  if (group === "tile") return false;
-  if (group.includes("self and allies") || group.includes("self and ally"))
-    return selfOrAllyCheck;
-  if (group.includes("allies and self")) return selfOrAllyCheck;
-  if (group.includes("self or ally") || group.includes("self or allies"))
-    return selfOrAllyCheck;
-  if (group.includes("self or foe")) return true;
-  if (group.includes("foe or ally")) return target.num !== user.num;
-  if (
-    group.includes("self, foes, allies") ||
-    group.includes("self, foes, and allies")
-  )
-    return true;
-  return true;
+  if (g === "self") return target.num === user.num;
+  if (g === "ally") return allyCheck;
+  if (g === "foe") return foeCheck;
+  if (g === "any") return true;
+  if (g === "tile") return false;
+  if (g.includes("self and ally")) return selfOrAllyCheck;
+  if (g.includes("self or ally")) return selfOrAllyCheck;
+  if (g.includes("self or foe"))
+    return target.num === user.num || foeCheck;
+  if (g.includes("foe or ally")) return target.num !== user.num;
+  if (g.includes("tile or foe")) return foeCheck;
+  if (g.includes("self, foe, ally")) return true;
+  // Unknown group: reject, matching isValidTarget in resolve.ts, so a
+  // malformed targetGroup cannot select arbitrary living entities here
+  // while selecting nothing in the single-target path.
+  return false;
 }
 
 // Push an entity X tiles away from a source in a straight line
@@ -931,6 +941,7 @@ export function pullEntity(
   return moveEntityInLine(game, target, source, amount, false);
 }
 
+/** Move an entity in a straight line, stopping at obstacles, occupied tiles, and the map edge. */
 function moveEntityInLine(
   game: Game,
   target: Entity,
@@ -982,7 +993,10 @@ function moveEntityInLine(
 function isPassable(game: Game, r: number, c: number): boolean {
   if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length)
     return false;
-  return isStandable(game.map[r][c]);
+  if (!isStandable(game.map[r][c])) return false;
+  if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c && e.curhp > 0))
+    return false;
+  return true;
 }
 
 // Roll accuracy check
@@ -1035,7 +1049,7 @@ export function getEffectiveMp(entity: Entity): number {
   return Math.max(0, entity.mp - getSlowMpReduction(entity));
 }
 
-// Apply damage to entity — Shield absorbs first if present
+/** Apply damage to an entity: Shield absorbs first when present, and HP is clamped at zero. */
 export function dealDamage(
   entity: Entity,
   damage: number,
@@ -1062,7 +1076,7 @@ export function dealDamage(
   }
 
   const actual = remaining;
-  entity.curhp -= remaining;
+  entity.curhp = Math.max(0, entity.curhp - remaining);
   return { actual, shieldAbsorbed, shieldBreaks };
 }
 
@@ -1106,7 +1120,7 @@ export function processStartOfTurn(
   return { messages, died };
 }
 
-// Cooldowns, status durations, and lava resolve at the end of the entity's turn
+/** Resolve cooldowns, status durations, and lava at the end of an entity's turn. */
 export function processEndOfTurn(
   game: Game,
   entity: Entity,
@@ -1146,14 +1160,39 @@ export function processEndOfTurn(
   return { messages, died };
 }
 
-export function removeEntity(game: Game, entity: Entity) {
-  game.entities = game.entities.filter((e) => e.num !== entity.num);
-  game.turnOrder = game.turnOrder.filter((n) => n !== entity.num);
-  if (game.turnIndex >= game.turnOrder.length) {
-    game.turnIndex = 0;
+export function removeEntity(game: Game, entity: Entity): boolean {
+  const removedNum = entity.num;
+  const oldIdx = game.turnOrder.indexOf(removedNum);
+  // Removing the CURRENT actor mid-turn (%leave, %remp, %hp, a no-dice
+  // Free/Swift finishStep): the entity that was next shifts into this slot,
+  // so the pointer already rests on the upcoming actor. Tell the next
+  // nextTurn() to treat it as an actor-death transition (no buff tick of
+  // the shifted-in entity, no double advance) — otherwise its turn is
+  // silently skipped.
+  if (game.phase === "playing" && oldIdx === game.turnIndex) {
+    game.removedCurrentActor = true;
   }
-  // Drop any gamemode vote the removed entity had cast.
+  game.entities = game.entities.filter((e) => e.num !== removedNum);
+  game.turnOrder = game.turnOrder.filter((n) => n !== removedNum);
+  if (oldIdx !== -1 && oldIdx < game.turnIndex) {
+    game.turnIndex--;
+  }
+  // Drop the removed entity's gamemode vote on EVERY path — including the
+  // wrap below, which returns early (CodeRabbit L1186).
   delete game.votes[entity.id];
+  if (game.turnIndex >= game.turnOrder.length) {
+    // The entity occupying the final slot was removed, so the turn pointer
+    // wrapped back to slot 0: a full cycle completed. Advance the round
+    // counter here so it can't go stale or get missed — this covers
+    // mid-turn actor deaths, start-of-turn deaths in the final slot, and
+    // removals of the current entity (%leave/%remp) during play.
+    game.turnIndex = 0;
+    if (game.phase === "playing") {
+      game.round++;
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Check if the game is over. Returns the winner entity or null. */
@@ -1240,69 +1279,116 @@ export function calculateLoot(
   return results;
 }
 
-export function nextTurn(game: Game): {
+export function nextTurn(
+  game: Game,
+  opts: { actorDied?: boolean } = {},
+): {
   entity: Entity | null;
   messages: string[];
   died: boolean;
 } {
+  const { actorDied = false } = opts;
+  // If the CURRENT actor was removed mid-turn (removeEntity set this), the
+  // pointer already rests on the entity that shifted into its slot — treat
+  // it exactly like an actor-death transition: no buff tick of a "prev"
+  // that never had its turn, no extra advance (CodeRabbit L1172).
+  const actorRemoved = game.removedCurrentActor === true;
+  game.removedCurrentActor = false;
+  const skipAdvance = actorDied || actorRemoved;
   if (game.entities.length <= 1) {
     game.phase = "ended";
     return { entity: null, messages: [], died: false };
   }
 
-  // Tick buffs of the entity whose turn is ending
   const messages: string[] = [];
-  const prev = getCurrentEntity(game);
-  const prevIndex = game.turnIndex;
-  if (prev) {
-    prev.buffs = prev.buffs.filter((b) => {
-      b.rounds--;
-      if (b.rounds <= 0) {
-        messages.push(
-          `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
-        );
-        return false;
-      }
-      return true;
-    });
-  }
-
-  game.turnIndex++;
-  if (game.turnIndex >= game.turnOrder.length) {
-    game.turnIndex = 0;
-    game.round++;
-  }
-
-  // Resolve end-of-turn effects for the entity whose turn just ended
   let died = false;
-  if (prev) {
-    const end = processEndOfTurn(game, prev);
-    messages.push(...end.messages);
-    died = end.died;
-    if (end.died) {
-      // prev was removed from turnOrder; keep the pointer on the next entity
-      game.turnIndex = prevIndex >= game.turnOrder.length ? 0 : prevIndex;
+
+  if (!skipAdvance) {
+    // Tick buffs of the entity whose turn is ending
+    const prev = getCurrentEntity(game);
+    const prevIndex = game.turnIndex;
+    if (prev) {
+      prev.buffs = prev.buffs.filter((b) => {
+        b.rounds--;
+        if (b.rounds <= 0) {
+          messages.push(
+            `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
+          );
+          return false;
+        }
+        return true;
+      });
+    }
+
+    game.turnIndex++;
+    if (game.turnIndex >= game.turnOrder.length) {
+      game.turnIndex = 0;
+      game.round++;
+    }
+
+    // Resolve end-of-turn effects for the entity whose turn just ended
+    if (prev) {
+      const end = processEndOfTurn(game, prev);
+      messages.push(...end.messages);
+      died = end.died;
+      if (end.died) {
+        // prev was removed from turnOrder; keep the pointer on the next entity
+        game.turnIndex = prevIndex >= game.turnOrder.length ? 0 : prevIndex;
+      }
     }
   }
+  // When the actor died mid-turn it was already removed from turnOrder and
+  // turnIndex now points at the entity that shifted into its slot, so we must
+  // NOT advance past it again (that would skip that entity's turn). If the
+  // removal wrapped the pointer (actor held the final slot), removeEntity
+  // already advanced the round for the completed cycle.
 
-  const entity = getCurrentEntity(game);
-  if (!entity) return { entity: null, messages, died };
+  // Start the turn of the entity at turnIndex, advancing past any entity
+  // that dies when its turn starts (e.g. start-of-turn DoT), so a dead
+  // entity is never returned as the current actor.
+  let entity = getCurrentEntity(game);
+  while (entity) {
+    if (entity.curhp <= 0) {
+      // Dead but still present (its removal was missed): never hand a
+      // corpse the turn — remove it and advance to the next entity.
+      // Report the removal through `died` so the caller re-checks game
+      // over even when a living entity follows (CodeRabbit L1341).
+      removeEntity(game, entity);
+      died = true;
+      // The shift-in is handled right here (the loop starts the next
+      // entity's turn), so don't let removeEntity's current-actor flag
+      // leak into a FUTURE nextTurn call and skip that entity.
+      game.removedCurrentActor = false;
+      entity = getCurrentEntity(game);
+      continue;
+    }
+    // Reset per-turn flags
+    entity.dashUsed = false;
+    entity.standardUsed = false;
+    entity.movementUsed = false;
+    entity.swiftUsed = false;
+    entity.triggered = false;
+    entity.pendingAction = null;
 
-  // Reset per-turn flags
-  entity.dashUsed = false;
-  entity.standardUsed = false;
-  entity.movementUsed = false;
-  entity.swiftUsed = false;
-  entity.triggered = false;
-  entity.pendingAction = null;
+    const { messages: startMessages, died: startDied } = processStartOfTurn(
+      game,
+      entity,
+    );
+    messages.push(...startMessages);
+    died = died || startDied;
+    if (startDied) {
+      // entity was removed; the next entity shifted into this slot
+      entity = getCurrentEntity(game);
+      continue;
+    }
+    break;
+  }
 
-  const { messages: startMessages, died: startDied } = processStartOfTurn(
-    game,
-    entity,
-  );
-  return {
-    entity,
-    messages: [...messages, ...startMessages],
-    died: died || startDied,
-  };
+  if (!entity) {
+    // Every entity died during the transition (end-of-turn and
+    // start-of-turn deaths consumed the last survivors): end the game.
+    game.phase = "ended";
+    return { entity: null, messages, died };
+  }
+  return { entity, messages, died };
 }

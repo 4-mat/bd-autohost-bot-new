@@ -1622,10 +1622,6 @@ export function* applyEffectStream(
         break;
       }
 
-      case "unknown": {
-        messages.push(`  ${effect.text}`);
-        break;
-      }
     }
   }
 
