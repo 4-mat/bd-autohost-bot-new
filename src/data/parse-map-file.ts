@@ -42,6 +42,23 @@ export function minDimFor(modes: readonly GameModeId[]): number {
   return Math.max(...modes.map((m) => GAMEMODE_MIN_SIZE[m]));
 }
 
+export function isSymmetric(grid: readonly (readonly Terrain[])[]): boolean {
+  const rows = grid.length;
+  const cols = grid[0]?.length ?? 0;
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      if (grid[r][c] !== grid[rows - 1 - r][cols - 1 - c]) return false;
+  return true;
+}
+
+export function isCentered(grid: readonly (readonly Terrain[])[]): boolean {
+  const rows = grid.length;
+  const cols = grid[0]?.length ?? 0;
+  if (rows > MAX_DIM || cols > MAX_DIM) return false;
+  if (rows < MIN_DIM || cols < MIN_DIM) return false;
+  return rows % 2 === 1 && cols % 2 === 1;
+}
+
 export function displayFromName(name: string): string {
   return name
     .replace(/([a-z])([A-Z])/g, "$1 $2")
