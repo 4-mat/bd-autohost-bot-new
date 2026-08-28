@@ -42,8 +42,9 @@ def parse(raw: str):
     subject_re = r"[a-z]+(?:\s+[a-z]+)*"
     # Matches `<file>:<line>:<col>: warning eslint(complexity): ...` (piped
     # output) with the location captured from the prefix.
+    # File pattern handles both Unix paths and Windows paths with drive letters (e.g., C:/path/file.ts).
     inline_re = re.compile(
-        r"([^\s:]+):(\d+):\d+:.*eslint\(complexity\):\s+"
+        r"([^:\s]+(?::[^:\s]+)?):(\d+):\d+:.*eslint\(complexity\):\s+"
         + subject_re
         + r"(?: `([^`]+)`)? has a complexity of (\d+)",
         re.IGNORECASE,
@@ -56,7 +57,8 @@ def parse(raw: str):
         + r"(?: `([^`]+)`)? has a complexity of (\d+)",
         re.IGNORECASE,
     )
-    location_re = re.compile(r"\s*[,-]+\[([^:]+):(\d+):\d+\]")
+    # Location pattern handles both Unix paths and Windows paths with drive letters.
+    location_re = re.compile(r"\s*[,-]+\[([^:]+(?::[^:]+)?):(\d+):\d+\]")
 
     results = []
     pending = None
