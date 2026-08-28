@@ -30,8 +30,12 @@ for arg in "$@"; do
   esac
 done
 
-# Run oxlint, capture raw output.
-RAW="$(bun x oxlint --config .oxlintrc.json "$SCAN_PATH" 2>&1 || true)"
+# Run oxlint, capture raw output and exit code.
+RAW="$(bun x --no-install oxlint --config .oxlintrc.json "$SCAN_PATH" 2>&1)"
+SCAN_EXIT=$?
+
+# Always print raw output for visibility.
+printf '%s\n' "$RAW"
 
 # Pass raw output to the parser via a temp file (heredoc + stdin don't
 # mix well on Windows).
@@ -41,6 +45,12 @@ printf '%s' "$RAW" > "$TMP_FILE"
 MODE_ENV="$MODE" TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE"
 
 rm -f "$TMP_FILE"
+
+# Propagate scanner failure: if oxlint itself failed (config, resolution, etc.),
+# exit with its code so CI does not pass silently.
+if [ $SCAN_EXIT -ne 0 ]; then
+  exit $SCAN_EXIT
+fi
 
 # Gate mode: fail when any function exceeds the threshold.
 if [ "$REPORT" != "true" ] && printf '%s' "$RAW" | grep -q "complexity"; then
