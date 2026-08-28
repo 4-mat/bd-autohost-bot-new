@@ -12,6 +12,7 @@
 set -euo pipefail
 
 LABEL="merge conflict"
+REPO="4-mat/bd-autohost-bot-new"
 PRS_ARG="${*:-}"
 
 cd "$(git rev-parse --show-toplevel)"
@@ -20,6 +21,10 @@ echo "==> Fetching PR heads + base branches"
 git fetch origin "+refs/pull/*/head:refs/remotes/origin/pr/*" --quiet
 git fetch origin "+refs/heads/*:refs/remotes/origin/*" --quiet
 
+CONFLICT=0
+CLEAN=0
+SKIP=0
+
 if [ -n "$PRS_ARG" ]; then
   PRS=""
   for N in $PRS_ARG; do
@@ -27,19 +32,20 @@ if [ -n "$PRS_ARG" ]; then
     if [ -n "$BASE" ]; then
       PRS="$PRS
 $N $BASE"
+    else
+      echo "PR #$N: gh pr view failed — lookup skipped" >&2
+      SKIP=$((SKIP+1))
     fi
   done
 else
-  PRS=$(gh pr list --state open --limit 100 --json number,baseRefName --jq '.[] | "\(.number) \(.baseRefName)"')
+  # Paginate so every open PR is processed instead of truncating at 100.
+  PRS=$(gh api "repos/$REPO/pulls?state=open&per_page=100" --paginate --jq '.[] | "\(.number) \(.baseRefName)"')
 fi
 
 gh label create "$LABEL" --color b60205 --force >/dev/null 2>&1 || true
 
 TOTAL=$(printf '%s\n' "$PRS" | sed '/^$/d' | wc -l | tr -d ' ')
 echo "==> Checking $TOTAL PRs"
-CONFLICT=0
-CLEAN=0
-SKIP=0
 
 while read -r N BASE; do
   [ -z "$N" ] && continue
