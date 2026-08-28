@@ -43,9 +43,14 @@ needs_review() {
     elif [ -z "$last_review" ]; then
       echo "$num no-review"
     else
-      last_commit=$(gh api "repos/$REPO/pulls/$num/commits?per_page=100" --jq '.[-1].commit.author.date // ""' 2>/dev/null || echo "")
-      if [ -n "$last_review" ] && [ -n "$last_commit" ] && [[ "$last_commit" > "$last_review" ]]; then
-        echo "$num stale (commit $last_commit > review $last_review)"
+      # Compare the PR's current head with the commit the newest CodeRabbit
+      # review was filed against. commit.author.date can predate the review when
+      # an older commit is pushed afterwards, so headRefOid vs commit_id is the
+      # correct staleness check.
+      last_review_commit=$(gh api "repos/$REPO/pulls/$num/reviews?per_page=100" \
+        --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | sort_by(.submitted_at) | reverse | .[0].commit_id // ""' 2>/dev/null || echo "")
+      if [ -n "$last_review" ] && [ -n "$last_review_commit" ] && [ "$head" != "$last_review_commit" ]; then
+        echo "$num stale (head $head != reviewed $last_review_commit)"
       fi
     fi
   done < <(prs)
