@@ -868,23 +868,14 @@ function* resolveSingleTarget(
     if (missText) {
       pushSnapshot(game);
       const missEffects = parseEffects(missText);
-      // `applyEffectStream` routes buffs/statuses/shields onto the entity passed
-      // as `target`. A miss is a compensation for the attacker, so self-beneficial
-      // `buff` effects should land on the attacker (`user`) rather than the
-      // defender (`target`), while effects aimed at the defender keep targeting it.
-      const selfEffects = missEffects.filter((e) => e.type === "buff");
-      const foeEffects = missEffects.filter((e) => e.type !== "buff");
-      const missMsgs: string[] = [];
-      for (const [subject, effects] of [
-        [user, selfEffects],
-        [target, foeEffects],
-      ] as const) {
-        if (effects.length === 0) continue;
-        const msgs = yield* runEffectStream(
-          applyEffectStream(game, user, subject, effects, ability),
-        );
-        missMsgs.push(...msgs);
-      }
+      // `applyEffectStream` routes buff/status/shield effects onto the entity
+      // passed as `target`. A miss is a compensation for the attacker, so
+      // `routeBuffsToUser` makes every `buff` (top-level or nested inside a
+      // conditional) land on the attacker (`user`) rather than the defender
+      // (`target`), while debuffs/statuses still target the defender.
+      const missMsgs: string[] = yield* runEffectStream(
+        applyEffectStream(game, user, target, missEffects, ability, true),
+      );
       result.messages.push(...missMsgs.map((m) => `  [On Miss] ${m}`));
     }
   }
