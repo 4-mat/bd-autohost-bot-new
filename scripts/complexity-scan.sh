@@ -20,14 +20,19 @@ TOP=""
 SCAN_PATH="src/"
 REPORT=false
 
-for arg in "$@"; do
-  case "$arg" in
+# Parse args with a shift loop so both `--top=N` and the documented
+# `--top N` (space-separated) forms work; the value is consumed as TOP so it is
+# never treated as a stray separate argument.
+while [ $# -gt 0 ]; do
+  case "$1" in
     --json) MODE="json" ;;
-    --top=*) TOP="${arg#--top=}" ;;
-    --path=*) SCAN_PATH="${arg#--path=}" ;;
+    --top=*) TOP="${1#--top=}" ;;
+    --top) shift; TOP="${1:-}" ;;
+    --path=*) SCAN_PATH="${1#--path=}" ;;
     --report) REPORT=true ;;
     *) ;;
   esac
+  shift
 done
 
 if ! command -v bun >/dev/null 2>&1; then
@@ -35,7 +40,13 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 2
 fi
 
-RAW="$(bun x oxlint --config .oxlintrc.json "$SCAN_PATH" 2>&1 || true)"
+# Capture the oxlint exit status instead of discarding it: a non-zero status
+# means oxlint itself failed (e.g. bad config / missing files), which must not
+# be silently reported as a clean scan.
+set +e
+RAW="$(bun x oxlint --config .oxlintrc.json "$SCAN_PATH" 2>&1)"
+OXLINT_RC=$?
+set -e
 
 TMP_FILE="$(mktemp -t complexity-XXXXXX)"
 trap 'rm -f "$TMP_FILE"' EXIT
@@ -43,7 +54,18 @@ printf '%s' "$RAW" > "$TMP_FILE"
 
 MODE_ENV="$MODE" TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE"
 
-if [ "$REPORT" != "true" ] && printf '%s' "$RAW" | grep -q "complexity"; then
+# Non-blocking modes (--report) only print the report.
+if [ "$REPORT" = "true" ]; then
+  exit 0
+fi
+
+# Gate mode: an oxlint execution failure must fail the gate even when no
+# complexity diagnostic is present; otherwise a broken scan is masked as clean.
+if [ "$OXLINT_RC" -ne 0 ]; then
+  echo "error: oxlint failed (exit $OXLINT_RC); scan did not complete" >&2
+  exit "$OXLINT_RC"
+fi
+if printf '%s' "$RAW" | grep -q "complexity"; then
   exit 1
 fi
 exit 0
