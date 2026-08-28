@@ -645,4 +645,66 @@ describe("On Miss hook (#139)", () => {
     expect(hitLog).not.toContain("[On Miss]");
     expect(hitLog).toContain("HIT");
   });
+
+  it("applies every effect in a multi-effect On Miss clause (#139)", () => {
+    const ability = makeAbility({
+      name: "Stumble",
+      range: "Melee",
+      mr: 30,
+      roll: "1d6+0",
+      effect: "On Miss: +2 EVA/1. +3 ACC/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    const log = driveResolveAgainst(user, ability, target);
+    expect(log).toContain("[On Miss]");
+    // Both buffs from the clause must land (not just the first).
+    expect(log).toContain("+2 EVA");
+    expect(log).toContain("+3 ACC");
+    // Buffs are self-targeted, so they land on the attacker, not the defender.
+    const userBuffs = Object.fromEntries(
+      user.buffs.map((b) => [b.stat, b.amount]),
+    );
+    expect(userBuffs["eva"]).toBe(2);
+    expect(userBuffs["acc"]).toBe(3);
+  });
+
+  it("routes self-targeted On Miss buffs to the attacker, not the defender (#139)", () => {
+    const ability = makeAbility({
+      name: "Glancing Blow",
+      range: "Melee",
+      mr: 30,
+      roll: "1d6+0",
+      effect: "On Miss: +2 EVA/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    driveResolveAgainst(user, ability, target);
+    const userEva = user.buffs.filter((b) => b.stat === "eva").length;
+    const targetEva = target.buffs.filter((b) => b.stat === "eva").length;
+    expect(userEva).toBe(1);
+    expect(targetEva).toBe(0);
+  });
 });

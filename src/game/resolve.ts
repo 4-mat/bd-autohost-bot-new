@@ -201,6 +201,31 @@ function* runEffectStream(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
+/**
+ * Extract the complete `On Miss:` clause from an ability effect string.
+ *
+ * The previous implementation captured only up to the first period
+ * (`([^.]+)`), so a multi-effect clause like `On Miss: +2 EVA. -3 Slow.`
+ * silently dropped every effect after the first. We instead take everything
+ * after the `On Miss:` marker up to the next phase keyword (or end of the
+ * string), leaving `parseEffects` to split the clause into its individual
+ * effects -- so all period-delimited effects are preserved.
+ */
+const ON_MISS_RE = /\bOn\s+Miss\s*:\s*/i;
+const NEXT_PHASE_RE =
+  /\b(?:On\s+Hit|On\s+Miss|Regardless\s+of|After\s+Resolving|Before\s+(?:accuracy|damage|targeting|moving|push))\b/i;
+
+function extractOnMissClause(effect: string): string | undefined {
+  const markerIdx = effect.search(ON_MISS_RE);
+  if (markerIdx === -1) return undefined;
+  const afterMarker = effect.slice(markerIdx).replace(ON_MISS_RE, "");
+  const nextPhase = afterMarker.search(NEXT_PHASE_RE);
+  const clause =
+    nextPhase === -1 ? afterMarker : afterMarker.slice(0, nextPhase);
+  const trimmed = clause.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /** Run the full attack pipeline: accuracy, damage, on-hit/on-miss/regardless, then after-resolving hooks. */
 function* resolveAttackFlow(
   game: Game,
@@ -849,13 +874,27 @@ function* resolveSingleTarget(
       return result;
     }
   } else {
-    const missMatch = ability.effect.match(/On Miss:\s*([^.]+)/i);
-    if (missMatch) {
+    const missText = extractOnMissClause(ability.effect);
+    if (missText) {
       pushSnapshot(game);
-      const missEffects = parseEffects(missMatch[1]);
-      const missMsgs: string[] = yield* runEffectStream(
-        applyEffectStream(game, user, target, missEffects, ability),
-      );
+      const missEffects = parseEffects(missText);
+      // `applyEffectStream` routes buffs/statuses/shields onto the entity passed
+      // as `target`. A miss is a compensation for the attacker, so self-beneficial
+      // `buff` effects should land on the attacker (`user`) rather than the
+      // defender (`target`), while effects aimed at the defender keep targeting it.
+      const selfEffects = missEffects.filter((e) => e.type === "buff");
+      const foeEffects = missEffects.filter((e) => e.type !== "buff");
+      const missMsgs: string[] = [];
+      for (const [subject, effects] of [
+        [user, selfEffects],
+        [target, foeEffects],
+      ] as const) {
+        if (effects.length === 0) continue;
+        const msgs = yield* runEffectStream(
+          applyEffectStream(game, user, subject, effects, ability),
+        );
+        missMsgs.push(...msgs);
+      }
       result.messages.push(...missMsgs.map((m) => `  [On Miss] ${m}`));
     }
   }
