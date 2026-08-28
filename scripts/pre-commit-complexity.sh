@@ -15,7 +15,20 @@ fi
 echo "🔍 Checking cyclomatic complexity..."
 
 # Run oxlint with complexity warn on staged .ts files
-ISSUES=$(echo "$STAGED_TS" | xargs bun x oxlint --config .oxlintrc.json 2>&1 | grep -i "complexity" || true)
+RAW=$(echo "$STAGED_TS" | xargs bun x --no-install oxlint --config .oxlintrc.json 2>&1)
+SCAN_EXIT=$?
+
+# If oxlint itself failed (config, resolution, etc.), report the failure
+# and exit non-zero so the pre-commit hook fails.
+if [ $SCAN_EXIT -ne 0 ]; then
+  echo ""
+  echo "❌ oxlint scan failed (exit code $SCAN_EXIT):"
+  echo "$RAW"
+  echo ""
+  exit 1
+fi
+
+ISSUES=$(printf '%s' "$RAW" | grep -i "complexity" || true)
 
 if [ -n "$ISSUES" ]; then
   echo ""

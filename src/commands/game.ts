@@ -825,7 +825,7 @@ function handleAdvanceTurn(game: Game, user: User) {
   // repositioned turnIndex onto the next entity; tell nextTurn so it does
   // not advance past it a second time.
   const actorDied = entity.curhp <= 0 || !game.entities.includes(entity);
-  const result = nextTurn(game, { actorDied });
+  const result = nextTurn(game);
   for (const msg of result.messages) {
     send(game.room, msg);
   }
