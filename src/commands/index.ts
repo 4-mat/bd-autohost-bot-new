@@ -84,6 +84,9 @@ const GAME_COMMANDS = new Set([
   "pass",
   "status",
   "regp",
+  "log",
+  "dir",
+  "tile",
 ]);
 
 /** Character/loot commands handled by the player module. */
