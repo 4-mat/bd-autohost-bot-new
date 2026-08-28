@@ -13,23 +13,71 @@ import sys
 def parse(raw: str):
     """Pair each complexity diagnostic with its file location.
 
-    oxlint emits the diagnostic line first, then the file location:
-        "  ! eslint(complexity): function `x` has a complexity of 33."
-        "     ,-[src/game/resolve.ts:19:3]"
+    oxlint can emit complexity diagnostics in two layouts:
+
+    1. The "!" default reporter, where the diagnostic line and the file
+       location are on separate lines:
+           "  ! eslint(complexity): function `x` has a complexity of 33."
+           "     ,-[src/game/resolve.ts:19:3]"
+
+    2. The non-TTY reporter used when piping (e.g. by complexity-scan.sh),
+       where the location is embedded in a single line:
+           "src/game/resolve.ts:19:3: warning eslint(complexity): "
+           "function `x` has a complexity of 33. Maximum allowed is 15."
+
+    Both are handled. The rule reports several node kinds (function, method,
+    arrow function, generator/async function, class method, constructor), so
+    the diagnostic type is matched generically rather than hard-coding
+    "function"; previously a "method `bar` ..." diagnostic was silently
+    dropped.
     """
+    # Diagnostic subject: one or more lowercase words describing the construct
+    # that exceeds the threshold, e.g. "function", "method", "arrow function",
+    # "generator function", "async function", "class static block",
+    # "class field initializer", "constructor", etc. Matching the whole
+    # subject (rather than hard-coding "function") means a "method `x` ..." or
+    # "class static block has a complexity of N" diagnostic is no longer
+    # silently dropped. The subject is matched case-insensitively so
+    # ESLint-style capitalized names ("Method `x` ...") also parse.
+    subject_re = r"[a-z]+(?:\s+[a-z]+)*"
+    # Matches `<file>:<line>:<col>: warning eslint(complexity): ...` (piped
+    # output) with the location captured from the prefix.
+    inline_re = re.compile(
+        r"([^\s:]+):(\d+):\d+:.*eslint\(complexity\):\s+"
+        + subject_re
+        + r"(?: `([^`]+)`)? has a complexity of (\d+)",
+        re.IGNORECASE,
+    )
+    # Matches the "!" reporter diagnostic line, expecting the file location on
+    # the following line (tracked via `pending`).
+    message_re = re.compile(
+        r".*eslint\(complexity\):\s+"
+        + subject_re
+        + r"(?: `([^`]+)`)? has a complexity of (\d+)",
+        re.IGNORECASE,
+    )
+    location_re = re.compile(r"\s*[,-]+\[([^:]+):(\d+):\d+\]")
+
     results = []
     pending = None
     for line in raw.splitlines():
-        m = re.match(
-            r".*eslint\(complexity\):\s+(?:async )?(?:generator )?"
-            r"function(?: `([^`]+)`)? has a complexity of (\d+)",
-            line,
-        )
+        m = inline_re.match(line)
+        if m:
+            file, line_no, name, complexity = (
+                m.group(1),
+                m.group(2),
+                m.group(3),
+                m.group(4),
+            )
+            results.append((int(complexity), file, int(line_no), name or "<anonymous>"))
+            pending = None
+            continue
+        m = message_re.match(line)
         if m:
             pending = (m.group(1) or "<anonymous>", int(m.group(2)))
             continue
         if pending:
-            m = re.match(r"\s*[,-]+\[([^:]+):(\d+):\d+\]", line)
+            m = location_re.match(line)
             if m:
                 name, complexity = pending
                 results.append((complexity, m.group(1), int(m.group(2)), name))
