@@ -374,7 +374,7 @@ function* resolveAttackFlow(
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   for (const target of targets) {
-    yield* resolveTargetAction(
+    const userDefeated = yield* resolveTargetAction(
       game,
       user,
       active,
@@ -386,6 +386,7 @@ function* resolveAttackFlow(
       pushPullResult,
       result,
     );
+    if (userDefeated) break;
   }
 
   resolveSplashFor(
@@ -423,7 +424,8 @@ function resolveSplashFor(
   result.deaths.push(...splashResult.deaths);
 }
 
-/** Resolve one ability against one target (attack hits / heal / status). */
+/** Resolve one ability against one target (attack hits / heal / status).
+ * Returns true if the attacker (user) was defeated and resolution should stop. */
 function* resolveTargetAction(
   game: Game,
   user: Entity,
@@ -435,7 +437,7 @@ function* resolveTargetAction(
   isHeal: boolean,
   pushPullResult: PushPullResult | null,
   result: ResolutionResult,
-): Generator<AttackPrompt, void, PromptResponse> {
+): Generator<AttackPrompt, boolean, PromptResponse> {
   if (isAttack) {
     let confusionApplied = false;
     for (let h = 0; h < effectiveHitCount; h++) {
@@ -452,6 +454,11 @@ function* resolveTargetAction(
       );
       result.messages.push(...singleResult.messages);
       result.deaths.push(...singleResult.deaths);
+
+      // If the attacker was defeated by recoil or confusion, stop remaining hits
+      if (singleResult.deaths.some((d) => d.num === user.num)) {
+        return true;
+      }
 
       if (!confusionApplied && singleResult.confusionTriggered) {
         confusionApplied = true;
@@ -477,6 +484,7 @@ function* resolveTargetAction(
     result.messages.push(...statusResult.messages);
     result.deaths.push(...statusResult.deaths);
   }
+  return false;
 }
 
 /** Track cooldown + use count after an ability resolves. */
