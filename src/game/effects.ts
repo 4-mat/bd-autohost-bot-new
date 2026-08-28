@@ -478,7 +478,7 @@ const STATUS_PATTERNS: StatusPattern[] = [
   {
     re: /^(\d+)?\s*([a-z]+)\s*\/\s*(\d+)$/,
     extract: (m) => ({
-      name: m[1] ? "" : m[2],
+      name: m[2],
       damage: m[1] ? parseInt(m[1]) : 0,
       rounds: parseInt(m[3]),
     }),
