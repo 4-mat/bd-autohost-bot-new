@@ -903,8 +903,8 @@ function canUseActionType(ab: AbilityData, entity: Entity): boolean {
   if (type === "Passive" || type === "Reaction" || type === "Trigger")
     return false;
   // Issue #3: Free/Swift must be used before the Standard action.
-  if (type === "Free" || type === "Swift")
-    return !entity.swiftUsed && !entity.standardUsed;
+  if (type === "Free") return !entity.standardUsed;
+  if (type === "Swift") return !entity.swiftUsed && !entity.standardUsed;
   if (type === "Standard") return !entity.standardUsed;
   if (type === "Movement") return !entity.movementUsed;
   if (type === "Full") return !entity.standardUsed && !entity.movementUsed;
