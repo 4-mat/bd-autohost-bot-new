@@ -34,13 +34,14 @@ export function matchesTargetGroup(
 ): boolean {
   if (group === "self") return target.num === user.num;
   if (group === "ally") return allyCheck(user, target);
-  if (group === "foe") return foeCheck(user, target);
+  if (/^foe\(?s?\)?$/i.test(group)) return foeCheck(user, target);
   if (group === "any") return true;
   if (group === "tile") return false;
   if (/self (and|or) alle?/.test(group) || /allies? and self/.test(group))
     return selfOrAllyCheck(user, target);
-  if (group.includes("self or foe")) return true;
+  if (group.includes("self or foe")) return target.num === user.num || foeCheck(user, target);
   if (group.includes("foe or ally")) return target.num !== user.num;
+  if (group.includes("tile or foe")) return foeCheck(user, target);
   if (/self, foes?, (and )?alle?s?/.test(group)) return true;
-  return true;
+  return false;
 }
