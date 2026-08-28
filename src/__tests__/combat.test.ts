@@ -707,4 +707,35 @@ describe("On Miss hook (#139)", () => {
     expect(userEva).toBe(1);
     expect(targetEva).toBe(0);
   });
+
+  it("routes On Miss buffs nested inside a conditional to the attacker (#139)", () => {
+    const ability = makeAbility({
+      name: "Counter",
+      range: "Melee",
+      mr: 30,
+      roll: "1d6+0",
+      effect: "On Miss: If user mp >= 0, +2 EVA/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    const log = driveResolveAgainst(user, ability, target);
+    expect(log).toContain("[On Miss]");
+    // The buff sits inside a conditional branch, so it must still route to
+    // the attacker through the recursion, never to the defender.
+    const userEva = user.buffs.filter((b) => b.stat === "eva").length;
+    const targetEva = target.buffs.filter((b) => b.stat === "eva").length;
+    expect(userEva).toBe(1);
+    expect(targetEva).toBe(0);
+  });
 });
