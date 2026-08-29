@@ -1,4 +1,4 @@
-import { Terrain, games, type Game, type Entity } from "../game/state.js";
+import { Terrain, games, findGameForRoom, type Game, type Entity } from "../game/state.js";
 import { classes, weapons } from "../data/index.js";
 import { toId } from "../utils.js";
 import { broadcastPages } from "../commands/game.js";
@@ -198,13 +198,6 @@ export function parseKyubsInfo(html: string): KyubsInfo | null {
   if (players.length === 0) return null;
   const turnOrderNames = parseTurnOrder(html);
   return { map, players, turnOrderNames };
-}
-
-function findGameForRoom(roomid: string): Game | null {
-  for (const game of games.values()) {
-    if (game.room === roomid) return game;
-  }
-  return null;
 }
 
 export function handleKyubsInfo(roomid: string, html: string) {
