@@ -1226,73 +1226,36 @@ function gemsFor(pl: number): number {
   return 0;
 }
 
-export function nextTurn(
+/**
+ * Tick down the buffs on the entity whose turn is ending, dropping any
+ * that reach 0 rounds and reporting their expiry. Extracted from nextTurn
+ * to keep that function's cyclomatic complexity within the gate threshold.
+ */
+function tickEndingBuffs(prev: Entity, messages: string[]) {
+  prev.buffs = prev.buffs.filter((b) => {
+    b.rounds--;
+    if (b.rounds <= 0) {
+      messages.push(
+        `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
+      );
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Start the turn of the entity at turnIndex, advancing past any entity that
+ * dies when its turn starts (e.g. start-of-turn DoT), so a corpse is never
+ * returned as the current actor. Returns the entity to act (null when every
+ * remaining entity died during the transition). Extracted from nextTurn to
+ * keep that function's cyclomatic complexity within the gate threshold.
+ */
+function startCurrentEntityTurn(
   game: Game,
-  opts: { actorDied?: boolean } = {},
-): {
-  entity: Entity | null;
-  messages: string[];
-  died: boolean;
-} {
-  const { actorDied = false } = opts;
-  // If the CURRENT actor was removed mid-turn (removeEntity set this), the
-  // pointer already rests on the entity that shifted into its slot — treat
-  // it exactly like an actor-death transition: no buff tick of a "prev"
-  // that never had its turn, no extra advance.
-  const actorRemoved = game.removedCurrentActor === true;
-  game.removedCurrentActor = false;
-  const skipAdvance = actorDied || actorRemoved;
-  if (game.entities.length <= 1) {
-    game.phase = "ended";
-    return { entity: null, messages: [], died: false };
-  }
-
-  const messages: string[] = [];
-  let died = false;
-
-  if (!skipAdvance) {
-    // Tick buffs of the entity whose turn is ending
-    const prev = getCurrentEntity(game);
-    const prevIndex = game.turnIndex;
-    if (prev) {
-      prev.buffs = prev.buffs.filter((b) => {
-        b.rounds--;
-        if (b.rounds <= 0) {
-          messages.push(
-            `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
-          );
-          return false;
-        }
-        return true;
-      });
-    }
-
-    game.turnIndex++;
-    if (game.turnIndex >= game.turnOrder.length) {
-      game.turnIndex = 0;
-      game.round++;
-    }
-
-    // Resolve end-of-turn effects for the entity whose turn just ended
-    if (prev) {
-      const end = processEndOfTurn(game, prev);
-      messages.push(...end.messages);
-      died = end.died;
-      if (end.died) {
-        // prev was removed from turnOrder; keep the pointer on the next entity
-        game.turnIndex = prevIndex >= game.turnOrder.length ? 0 : prevIndex;
-      }
-    }
-  }
-  // When the actor died mid-turn it was already removed from turnOrder and
-  // turnIndex now points at the entity that shifted into its slot, so we must
-  // NOT advance past it again (that would skip that entity's turn). If the
-  // removal wrapped the pointer (actor held the final slot), removeEntity
-  // already advanced the round for the completed cycle.
-
-  // Start the turn of the entity at turnIndex, advancing past any entity
-  // that dies when its turn starts (e.g. start-of-turn DoT), so a dead
-  // entity is never returned as the current actor.
+  messages: string[],
+  died: boolean,
+): { entity: Entity | null; died: boolean } {
   let entity = getCurrentEntity(game);
   while (entity) {
     if (entity.curhp <= 0) {
@@ -1330,6 +1293,70 @@ export function nextTurn(
     }
     break;
   }
+  return { entity, died };
+}
+
+export function nextTurn(
+  game: Game,
+  opts: { actorDied?: boolean } = {},
+): {
+  entity: Entity | null;
+  messages: string[];
+  died: boolean;
+} {
+  const { actorDied = false } = opts;
+  // If the CURRENT actor was removed mid-turn (removeEntity set this), the
+  // pointer already rests on the entity that shifted into its slot — treat
+  // it exactly like an actor-death transition: no buff tick of a "prev"
+  // that never had its turn, no extra advance.
+  const actorRemoved = game.removedCurrentActor === true;
+  game.removedCurrentActor = false;
+  const skipAdvance = actorDied || actorRemoved;
+  if (game.entities.length <= 1) {
+    game.phase = "ended";
+    return { entity: null, messages: [], died: false };
+  }
+
+  const messages: string[] = [];
+  let died = false;
+
+  if (!skipAdvance) {
+    // Tick buffs of the entity whose turn is ending
+    const prev = getCurrentEntity(game);
+    const prevIndex = game.turnIndex;
+    if (prev) {
+      tickEndingBuffs(prev, messages);
+    }
+
+    game.turnIndex++;
+    if (game.turnIndex >= game.turnOrder.length) {
+      game.turnIndex = 0;
+      game.round++;
+    }
+
+    // Resolve end-of-turn effects for the entity whose turn just ended
+    if (prev) {
+      const end = processEndOfTurn(game, prev);
+      messages.push(...end.messages);
+      died = end.died;
+      if (end.died) {
+        // prev was removed from turnOrder; keep the pointer on the next entity
+        game.turnIndex = prevIndex >= game.turnOrder.length ? 0 : prevIndex;
+      }
+    }
+  }
+  // When the actor died mid-turn it was already removed from turnOrder and
+  // turnIndex now points at the entity that shifted into its slot, so we must
+  // NOT advance past it again (that would skip that entity's turn). If the
+  // removal wrapped the pointer (actor held the final slot), removeEntity
+  // already advanced the round for the completed cycle.
+
+  // Start the turn of the entity at turnIndex, advancing past any entity
+  // that dies when its turn starts (e.g. start-of-turn DoT), so a dead
+  // entity is never returned as the current actor.
+  const started = startCurrentEntityTurn(game, messages, died);
+  const entity = started.entity;
+  died = started.died;
 
   if (!entity) {
     // Every entity died during the transition (end-of-turn and
