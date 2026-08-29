@@ -75,15 +75,20 @@ function loadCustoms() {
   try {
     const data = JSON.parse(fs.readFileSync(CUSTOMS_PATH, "utf8"));
     for (const c of data.classes ?? []) {
-      if (c?.name) {
-        classes.set(toId(c.name), c);
-        customClassIds.add(toId(c.name));
+      const name = typeof c?.name === "string" ? c.name.trim() : "";
+      if (name) {
+        // Rebuild through defaultClass so abilities pass cleanNamedAbility:
+        // legacy entries with blank or non-string ability names must not
+        // bypass sanitization and re-persist via saveCustoms.
+        classes.set(toId(name), defaultClass(name, c));
+        customClassIds.add(toId(name));
       }
     }
     for (const w of data.weapons ?? []) {
-      if (w?.name) {
-        weapons.set(toId(w.name), w);
-        customWeaponIds.add(toId(w.name));
+      const name = typeof w?.name === "string" ? w.name.trim() : "";
+      if (name) {
+        weapons.set(toId(name), defaultWeapon(name, w));
+        customWeaponIds.add(toId(name));
       }
     }
   } catch (e) {
@@ -146,7 +151,16 @@ function defaultClass(name: string, item: Record<string, unknown>): ClassData {
   return {
     name,
     stats,
-    abilities: (Array.isArray(item.abilities) ? item.abilities : []) as ClassData["abilities"],
+    // Sanitize abilities the same way the update/proposal paths do, and drop
+    // entries that come back without a valid name so customs never persist
+    // malformed AbilityData.
+    abilities: (
+      Array.isArray(item.abilities)
+        ? (item.abilities
+            .map((a) => cleanNamedAbility(a))
+            .filter((a): a is Record<string, unknown> => a !== null) as unknown as ClassData["abilities"])
+        : []
+    ),
     description: String(item.description ?? ""),
   };
 }
@@ -210,8 +224,22 @@ function snapshot() {
   return {
     classes: [...classes.values()],
     weapons: [...weapons.values()],
-    customs: [...customClassIds, ...customWeaponIds],
+    // Per-kind custom id lists: a custom class and custom weapon may share an
+    // id, and each entry's custom status must be judged against the list that
+    // matches its own kind (the combined `customs` array would let a shared id
+    // mark — or un-mark — both kinds at once).
+    customClasses: [...customClassIds],
+    customWeapons: [...customWeaponIds],
   };
+}
+
+function cleanNamedAbility(raw: unknown): Record<string, unknown> | null {
+  const a = sanitizeAbility(raw);
+  // Only string names are valid: String() would coerce 123 / false / objects
+  // into non-empty names and smuggle malformed abilities past the guard.
+  if (typeof a.name !== "string") return null;
+  a.name = a.name.trim();
+  return a.name ? a : null;
 }
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -298,7 +326,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
           } else if (k === "description" || k === "branch") {
             (entry as unknown as Record<string, unknown>)[k] = String(v);
           } else if (k === "abilities" && Array.isArray(v)) {
-            entry.abilities = v.map(sanitizeAbility) as unknown as ClassData["abilities"];
+            // Same strict validation as every other write path: non-string,
+            // blank, and whitespace-only names are dropped rather than
+            // coerced into valid-looking entries (CodeRabbit L324).
+            entry.abilities = v
+              .map(cleanNamedAbility)
+              .filter((a): a is Record<string, unknown> => a !== null) as unknown as ClassData["abilities"];
           }
         }
       }
@@ -317,8 +350,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       }
       const abilities = entry.abilities ?? (entry.abilities = []);
       if (action === "add") {
-        const a = sanitizeAbility(ability ?? {});
-        if (!a.name) {
+        const a = cleanNamedAbility(ability ?? {});
+        if (!a) {
           send(res, 400, { error: "ability needs a name" });
           return;
         }
@@ -335,7 +368,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         }
         abilities.splice(idx, 1);
       } else if (action === "save") {
-        const clean = sanitizeAbility(ability ?? {});
+        const clean = cleanNamedAbility(ability ?? {});
+        if (!clean) {
+          send(res, 400, { error: "ability needs a name" });
+          return;
+        }
         const idx = abilities.findIndex((x) => toId(String(x.name)) === toId(String(name)));
         if (idx === -1) {
           send(res, 404, { error: `ability '${name ?? "?"}' not found` });
