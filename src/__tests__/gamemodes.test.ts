@@ -45,6 +45,25 @@ describe("GAMEMODE_MAPS", () => {
       if (mode !== "ntr") expect(min).toBeGreaterThanOrEqual(7);
     }
   });
+
+  test("ntr pool contains only exactly 5x5 maps", () => {
+    for (const name of GAMEMODE_MAPS.ntr) {
+      const m = getMapByName(name);
+      expect(m, `ntr pool: "${name}" is not a curated map`).toBeDefined();
+      expect(m!.rows, `${name} must be exactly 5 rows for ntr`).toBe(5);
+      expect(m!.cols, `${name} must be exactly 5 cols for ntr`).toBe(5);
+    }
+  });
+
+  test("1v1 pool contains only maps bigger than 7x7", () => {
+    expect(GAMEMODE_MAPS["1v1"]).toEqual(["duel", "arena", "crossout"]);
+    for (const name of GAMEMODE_MAPS["1v1"]) {
+      const m = getMapByName(name);
+      expect(m, `1v1 pool: "${name}" is not a curated map`).toBeDefined();
+      expect(m!.rows, `${name} must be bigger than 7 rows for 1v1`).toBeGreaterThan(7);
+      expect(m!.cols, `${name} must be bigger than 7 cols for 1v1`).toBeGreaterThan(7);
+    }
+  });
 });
 
 describe("mapsForMode", () => {
