@@ -29,7 +29,10 @@ import {
   isRooted,
   isSealed,
   isConfused,
+  findGameForRoom,
   getEffectiveMp,
+  getHumanPlayers,
+  isHostUser,
   parseFrequency,
   type Game,
   type Entity,
@@ -224,13 +227,6 @@ export function gameCommand(
   }
 }
 
-function findGameForRoom(roomid: string): Game | null {
-  for (const game of games.values()) {
-    if (game.room === roomid) return game;
-  }
-  return null;
-}
-
 function findGameForUser(username: string): Game | null {
   for (const game of games.values()) {
     if (toId(game.host) === toId(username)) return game;
@@ -256,7 +252,7 @@ function failAct(game: Game, entity: Entity, reason: string) {
 }
 
 function handleMove(game: Game, user: User, cmd: string, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
 
   let entityName = "";
   let posStr = args;
@@ -349,7 +345,7 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
 }
 
 function handleAttack(game: Game, user: User, cmd: string, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
 
   let entityName = "";
   let abilityTarget = args;
@@ -520,7 +516,7 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 }
 
 function handleConfirm(game: Game, user: User) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
   const entity = getCurrentEntity(game);
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -536,7 +532,7 @@ function handleConfirm(game: Game, user: User) {
 }
 
 function handleTarget(game: Game, user: User, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
   const entity = getCurrentEntity(game);
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -554,7 +550,7 @@ function handleTarget(game: Game, user: User, args: string) {
 }
 
 function handleChoose(game: Game, user: User, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
   const entity = getCurrentEntity(game);
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -589,7 +585,7 @@ function handleVote(game: Game, user: User, args: string) {
   }
 
   const arg = args.trim();
-  const players = game.entities.filter((e) => !e.isMonster);
+  const players = getHumanPlayers(game);
   // During a runoff only the tied modes are votable.
   const options = game.voteRunoff
     ? runoffOptions(game.voteRunoff)
@@ -663,7 +659,7 @@ function handleUnvote(game: Game, user: User) {
  * use %dehost instead.
  */
 function handleLeave(game: Game, user: User) {
-  if (toId(user.name) === toId(game.host)) {
+  if (isHostUser(game, user)) {
     return sendPm(
       user.name,
       "You're the host — use %dehost to close the game.",
@@ -682,7 +678,7 @@ function handleLeave(game: Game, user: User) {
 
 // Chat status line for the open gamemode vote: tallies + the requester's vote.
 function buildVoteStatus(game: Game): string {
-  const players = game.entities.filter((e) => !e.isMonster);
+  const players = getHumanPlayers(game);
   const tally = tallyVotes(game.votes);
   const summary =
     tally.length > 0
@@ -764,7 +760,7 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
 }
 
 function handleCancel(game: Game, user: User) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
   const entity = getCurrentEntity(game);
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -845,7 +841,11 @@ function handleAdvanceTurn(game: Game, user: User) {
     );
   }
 
-  const result = nextTurn(game);
+  // If the actor died mid-turn (recoil/confusion), removeEntity already
+  // repositioned turnIndex onto the next entity; tell nextTurn so it does
+  // not advance past it a second time.
+  const actorDied = entity.curhp <= 0 || !game.entities.includes(entity);
+  const result = nextTurn(game, { actorDied });
   for (const msg of result.messages) {
     send(game.room, msg);
   }
@@ -970,15 +970,11 @@ function handleRoll(target: string, args: string) {
   sendPm(target, msg);
 }
 
+/** Toggle the current entity's pre-move ability view. */
 function handlePremove(game: Game, user: User) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
 
-  let entity: Entity | null = null;
-  if (isHost) {
-    entity = getCurrentEntity(game);
-  } else {
-    entity = getCurrentEntity(game);
-  }
+  const entity = getCurrentEntity(game);
 
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -1001,7 +997,7 @@ function handlePremove(game: Game, user: User) {
 // -- Direction / Tile choice handlers -----------------------------------------
 
 function handleDirChoice(game: Game, user: User, dir: string) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
   const entity = getCurrentEntity(game);
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -1018,8 +1014,9 @@ function handleDirChoice(game: Game, user: User, dir: string) {
   }
 }
 
+/** Handle a tile choice for tile-placement abilities. */
 function handleTileChoice(game: Game, user: User, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
   const entity = getCurrentEntity(game);
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -1037,14 +1034,9 @@ function handleTileChoice(game: Game, user: User, args: string) {
 }
 
 function handlePassMove(game: Game, user: User) {
-  const isHost = toId(user.name) === toId(game.host);
+  const isHost = isHostUser(game, user);
 
-  let entity: Entity | null = null;
-  if (isHost) {
-    entity = getCurrentEntity(game);
-  } else {
-    entity = getCurrentEntity(game);
-  }
+  const entity = getCurrentEntity(game);
 
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
