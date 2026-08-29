@@ -1,6 +1,7 @@
 import {
   TERRAIN_COLORS,
   TERRAIN_NAMES,
+  getCurrentEntity,
   getReachableTiles,
   getEffectiveMp,
   hasLineOfSight,
@@ -354,7 +355,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     }
     actions += `<div style="margin-top:6px">${btn("%endturn", "End Turn")}</div>`;
   } else {
-    const cur = getCurrentTurnEntity(game);
+    const cur = getCurrentEntity(game);
     const curLabel = cur ? `${cur.num} (${cur.name})` : "...";
     phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
@@ -1155,7 +1156,4 @@ function getValidTiles(game: Game, ab: AbilityData, user: Entity): string[] {
   return tiles;
 }
 
-function getCurrentTurnEntity(game: Game): Entity | null {
-  const num = game.turnOrder[game.turnIndex];
-  return game.entities.find((e) => e.num === num) ?? null;
-}
+

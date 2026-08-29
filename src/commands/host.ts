@@ -4,8 +4,11 @@ import type { User } from "../users.js";
 import {
   games,
   getCurrentEntity,
+  findGameForRoom,
   getEntity,
+  getHumanPlayers,
   getReachableTiles,
+  isHostUser,
   pushSnapshot,
   nextTurn,
   removeEntity,
@@ -53,7 +56,7 @@ function hasAbility(a: AbilityData, lvl: number, exOk: boolean) {
 // Whether a user may change this entity's class/weapon: hosts any time,
 // players only their own entity until the game starts.
 function mayChangeLoadout(user: User, game: Game, entity: Entity): boolean {
-  if (toId(user.name) === toId(game.host)) return true;
+  if (isHostUser(game, user)) return true;
   return !game.started && toId(entity.name) === toId(user.name);
 }
 
@@ -221,13 +224,6 @@ export function hostCommand(
   }
 }
 
-function findGameForRoom(roomid: string): Game | null {
-  for (const game of games.values()) {
-    if (game.room === roomid) return game;
-  }
-  return null;
-}
-
 // -- .host - Create a new game -------------------------------------------------
 
 function handleHost(room: Room, user: User, args: string) {
@@ -325,7 +321,7 @@ function handleSetGame(room: Room, user: User, args: string) {
   if (!mode)
     return sendPm(user.name, "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.)");
 
-  const players = game.entities.filter((e) => !e.isMonster);
+  const players = getHumanPlayers(game);
   if (players.length === 0) {
     return sendPm(
       user.name,
@@ -462,7 +458,7 @@ function handleClose(room: Room, user: User) {
   game.signupsOpen = false;
 
   // Closing signups opens gamemode voting (unless there's nobody to vote).
-  const players = game.entities.filter((e) => !e.isMonster);
+  const players = getHumanPlayers(game);
   if (players.length >= 2) {
     game.voteOpen = true;
     game.votes = {};
@@ -580,7 +576,7 @@ function handleNudge(room: Room, user: User) {
     );
   }
 
-  const players = game.entities.filter((e) => !e.isMonster);
+  const players = getHumanPlayers(game);
   const pending = pendingVoterIds(
     game.votes,
     players.map((p) => p.id),
@@ -680,7 +676,7 @@ function handleGenPos(room: Room, user: User, args: string) {
         "Usage: %genpos <N>v<M> with 1-5 per team (e.g. %genpos 2v2).",
       );
     }
-    const players = game.entities.filter((e) => !e.isMonster);
+    const players = getHumanPlayers(game);
     if (a + b !== players.length) {
       return sendPm(
         user.name,
@@ -734,7 +730,7 @@ function handleGenPos(room: Room, user: User, args: string) {
     return sendPm(user.name, "%genpos does not support PvE.");
   }
 
-  const players = game.entities.filter((e) => !e.isMonster);
+  const players = getHumanPlayers(game);
   if (n < 1) {
     return sendPm(
       user.name,
@@ -1053,7 +1049,7 @@ function createPlayerEntity(
     return parseFloat(statList) || 0;
   }
 
-  const playerNum = game.entities.filter((e) => !e.isMonster).length + 1;
+  const playerNum = getHumanPlayers(game).length + 1;
   const num = `P${playerNum}`;
 
   const classAbilities = classData.abilities.filter((a) =>
@@ -1442,7 +1438,7 @@ function handleSetLevel(room: Room, user: User, args: string) {
 
   // %setlevel all, <level> — level every player in one go.
   if (toId(parts[0]) === "all") {
-    const players = game.entities.filter((e) => !e.isMonster);
+    const players = getHumanPlayers(game);
     if (players.length === 0) {
       return sendPm(user.name, "No players in the game.");
     }
