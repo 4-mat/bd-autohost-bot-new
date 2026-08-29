@@ -1279,6 +1279,7 @@ type EffectCtx = {
   target: Entity;
   ability?: AbilityData;
   messages: string[];
+  routeBuffsToUser: boolean;
 };
 
 /**
@@ -1483,7 +1484,7 @@ function* handleSimple(
 }
 
 function* handleConditional(
-  { game, user, target, ability, messages }: EffectCtx,
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: ConditionalEffect,
 ) {
   const { outcome, messages: condMsgs } = applyConditional(user, target, effect);
@@ -1491,17 +1492,17 @@ function* handleConditional(
   // "unknown" defaults to then-branch (legacy fallback). "else" without
   // an else-branch drops the sub-effects entirely.
   if (outcome === "then" || outcome === "unknown") {
-    const thenMsgs = yield* applyEffectStream(game, user, target, effect.thenEffects, ability);
+    const thenMsgs = yield* applyEffectStream(game, user, target, effect.thenEffects, ability, routeBuffsToUser);
     messages.push(...thenMsgs.map((m) => `    ${m}`));
   }
   if (outcome === "else" && effect.elseEffects) {
-    const elseMsgs = yield* applyEffectStream(game, user, target, effect.elseEffects, ability);
+    const elseMsgs = yield* applyEffectStream(game, user, target, effect.elseEffects, ability, routeBuffsToUser);
     messages.push(...elseMsgs.map((m) => `    ${m}`));
   }
 }
 
 function* handleThirst(
-  { game, user, target, ability, messages }: EffectCtx,
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: ThirstEffect,
 ) {
   if (!isThirstActive(user, effect)) {
@@ -1510,7 +1511,7 @@ function* handleThirst(
     );
     return;
   }
-  const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability);
+  const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
   messages.push(...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`));
 }
 
@@ -1589,9 +1590,10 @@ export function* applyEffectStream(
   target: Entity,
   effects: Effect[],
   ability?: AbilityData,
+  routeBuffsToUser = false,
 ): Generator<EffectChoosePrompt, string[], string> {
   const messages: string[] = [];
-  const ctx: EffectCtx = { game, user, target, ability, messages };
+  const ctx: EffectCtx = { game, user, target, ability, messages, routeBuffsToUser };
 
   for (const effect of effects) {
     const handler = EFFECT_HANDLERS[effect.type];
