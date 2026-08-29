@@ -1235,6 +1235,39 @@ describe("nextTurn end-of-turn death", () => {
     expect(game.entities.find((x) => x.num === "P2")).toBeUndefined();
   });
 
+  it("clears removedCurrentActor after a start-of-turn death so the next nextTurn does not skip the shifted-in entity's buff tick", () => {
+    // P2 dies from start-of-turn Bleed (processStartOfTurn calls
+    // removeEntity on the CURRENT actor -> sets removedCurrentActor=true).
+    // Without the reset in the startDied branch, the NEXT nextTurn would
+    // hit the skipAdvance path and never tick the shifted-in entity's
+    // buffs at its end-of-turn.
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({
+      num: "P2",
+      name: "B",
+      curhp: 5,
+      statuses: [
+        { name: "Bleed", damage: 99, rounds: 3, maxRounds: 3, removable: true },
+      ],
+    });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 0;
+    nextTurn(game); // P2 bleeds out at start, P3 becomes current actor
+    expect(game.removedCurrentActor).toBe(false); // must be cleared for next time
+
+    // P3 takes its turn normally and ends; the next nextTurn must tick
+    // P3's buffs (not skip them via a leaked removedCurrentActor flag).
+    p3.buffs = [
+      { stat: "atk", amount: 3, rounds: 2 },
+    ];
+    nextTurn(game);
+    expect(p3.buffs[0].rounds).toBe(1); // ticked down: would stay at 2 if skipped
+  });
+
   it("ends the game when the last survivors die across the turn transition", () => {
     const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
     map[0][0] = Terrain.Lava;

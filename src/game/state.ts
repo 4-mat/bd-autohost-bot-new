@@ -1287,6 +1287,9 @@ function startCurrentEntityTurn(
     messages.push(...startMessages);
     died = died || startDied;
     if (startDied) {
+      // Reset so the NEXT nextTurn treats the shifted-in entity normally
+      // (its end-of-turn buffs will tick — they must not be skipped).
+      game.removedCurrentActor = false;
       // entity was removed; the next entity shifted into this slot
       entity = getCurrentEntity(game);
       continue;

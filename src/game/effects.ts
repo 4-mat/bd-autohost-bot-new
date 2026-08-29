@@ -805,21 +805,10 @@ function getBaseStat(entity: Entity, stat: string): number {
   }
 }
 
-// Local copy of `getEffectiveStat` -- same logic that resolve.ts inlines,
-// kept local so effects.ts stays self-contained. Used in places where a
-// clamped (>= 0) stat is what we need, e.g. damage scaling.
-function getEffStat(entity: Entity, stat: string): number {
-  let base = getBaseStat(entity, stat);
-  for (const b of entity.buffs) {
-    if (b.stat === stat) base += b.amount;
-  }
-  return Math.max(0, base);
-}
-
-// Unclamped variant -- used by condition evaluation so the sign check can
-// detect a stat that has debuffed below zero. The clamped helper would mask
-// negatives back to 0 and cause "Stat is negative" to misfire on heavily
-// debuffed targets.
+// Unclamped variant of getEffectiveStat (resolve.ts) -- used by condition
+// evaluation so the sign check can detect a stat that has debuffed below
+// zero. The clamped version would mask negatives back to 0 and cause
+// "Stat is negative" to misfire on heavily debuffed targets.
 function getRawStat(entity: Entity, stat: string): number {
   let base = getBaseStat(entity, stat);
   for (const b of entity.buffs) {
@@ -1279,6 +1268,7 @@ type EffectCtx = {
   target: Entity;
   ability?: AbilityData;
   messages: string[];
+  routeBuffsToUser: boolean;
 };
 
 /**
@@ -1322,29 +1312,34 @@ function* handleStatus(
 }
 
 function* handleStatMod(
-  { target, messages }: EffectCtx,
+  { user, target, messages, routeBuffsToUser }: EffectCtx,
   effect: StatMod,
 ) {
-  const mult = effect.type === "buff" ? 1 : -1;
+  const isBuff = effect.type === "buff";
+  const mult = isBuff ? 1 : -1;
+  // In an On Miss clause a buff compensates the attacker who missed, so when
+  // `routeBuffsToUser` is set the buff lands on `user` rather than `target`,
+  // while debuffs always hit the defender.
+  const statTarget = isBuff && routeBuffsToUser ? user : target;
   if (effect.percent) {
-    const baseStat = getBaseStat(target, effect.stat);
+    const baseStat = getBaseStat(statTarget, effect.stat);
     const amount = mult * Math.floor(baseStat * (Math.abs(effect.percent) / 100));
-    target.buffs.push({
+    statTarget.buffs.push({
       stat: effect.stat,
       amount,
       rounds: effect.rounds ?? 1,
     });
     messages.push(
-      `  ${target.num} ${effect.type === "buff" ? "gains" : "loses"} ${mult > 0 ? "+" : ""}${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
+      `  ${statTarget.num} ${isBuff ? "gains" : "loses"} ${mult > 0 ? "+" : ""}${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
     );
   } else {
-    target.buffs.push({
+    statTarget.buffs.push({
       stat: effect.stat,
       amount: effect.amount,
       rounds: effect.rounds ?? 1,
     });
     messages.push(
-      `  ${target.num} ${effect.type === "buff" ? "gains +" : "loses "}${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+      `  ${statTarget.num} ${isBuff ? "gains +" : "loses "}${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
     );
   }
 }
@@ -1483,7 +1478,7 @@ function* handleSimple(
 }
 
 function* handleConditional(
-  { game, user, target, ability, messages }: EffectCtx,
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: ConditionalEffect,
 ) {
   const { outcome, messages: condMsgs } = applyConditional(user, target, effect);
@@ -1491,17 +1486,17 @@ function* handleConditional(
   // "unknown" defaults to then-branch (legacy fallback). "else" without
   // an else-branch drops the sub-effects entirely.
   if (outcome === "then" || outcome === "unknown") {
-    const thenMsgs = yield* applyEffectStream(game, user, target, effect.thenEffects, ability);
+    const thenMsgs = yield* applyEffectStream(game, user, target, effect.thenEffects, ability, routeBuffsToUser);
     messages.push(...thenMsgs.map((m) => `    ${m}`));
   }
   if (outcome === "else" && effect.elseEffects) {
-    const elseMsgs = yield* applyEffectStream(game, user, target, effect.elseEffects, ability);
+    const elseMsgs = yield* applyEffectStream(game, user, target, effect.elseEffects, ability, routeBuffsToUser);
     messages.push(...elseMsgs.map((m) => `    ${m}`));
   }
 }
 
 function* handleThirst(
-  { game, user, target, ability, messages }: EffectCtx,
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: ThirstEffect,
 ) {
   if (!isThirstActive(user, effect)) {
@@ -1510,12 +1505,12 @@ function* handleThirst(
     );
     return;
   }
-  const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability);
+  const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
   messages.push(...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`));
 }
 
 function* handleApex(
-  { game, user, target, ability, messages }: EffectCtx,
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: ApexEffect,
 ) {
   if (!ability) {
@@ -1526,12 +1521,12 @@ function* handleApex(
     messages.push(`  [Apex] inactive (target not at max listed range of ${ability.range}).`);
     return;
   }
-  const apexMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability);
+  const apexMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
   messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
 }
 
 function* handleChoose(
-  { game, user, target, ability, messages }: EffectCtx,
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: ChooseEffect,
 ) {
   // Yield a prompt. Resolve.ts feeds back the chosen option id and we
@@ -1551,7 +1546,7 @@ function* handleChoose(
   } satisfies EffectChoosePrompt;
   const idx = parseChosenIdx(chosenId, effect.options.length);
   messages.push(`  [Choose] user picked option ${idx + 1}.`);
-  const chosenMsgs = yield* applyEffectStream(game, user, target, effect.options[idx], ability);
+  const chosenMsgs = yield* applyEffectStream(game, user, target, effect.options[idx], ability, routeBuffsToUser);
   messages.push(...chosenMsgs.map((m) => `    ${m}`));
 }
 
@@ -1589,9 +1584,10 @@ export function* applyEffectStream(
   target: Entity,
   effects: Effect[],
   ability?: AbilityData,
+  routeBuffsToUser = false,
 ): Generator<EffectChoosePrompt, string[], string> {
   const messages: string[] = [];
-  const ctx: EffectCtx = { game, user, target, ability, messages };
+  const ctx: EffectCtx = { game, user, target, ability, messages, routeBuffsToUser };
 
   for (const effect of effects) {
     const handler = EFFECT_HANDLERS[effect.type];

@@ -37,8 +37,9 @@ import {
   DIRECTION_LABELS,
   placeTerrain,
   TERRAIN_NAMES,
+  pushSnapshot,
+  checkGameOver,
 } from "./state.js";
-import { modeIdFor } from "../data/gamemodes.js";
 import { matchesTargetGroup } from "./targeting.js";
 import {
   parseEffects,
@@ -59,6 +60,26 @@ export interface ResolutionResult {
 
 function newResult(): ResolutionResult {
   return { messages: [], deaths: [], gameOver: false };
+}
+
+/**
+ * Record an entity's defeat: announce it, remove the entity from the game,
+ * and note the death on the result so callers can check win conditions.
+ *
+ * `cause` is the verb phrase announced before the "!" (e.g. "defeated",
+ * "defeated by Recoil", "killed").
+ */
+function recordDefeat(
+  game: Game,
+  result: ResolutionResult,
+  entity: Entity,
+  cause = "defeated",
+): void {
+  result.messages.push(
+    `  **${entity.num} (${entity.name}) has been ${cause}!**`,
+  );
+  removeEntity(game, entity);
+  result.deaths.push(entity);
 }
 
 function offensiveStat(entity: Entity, damageType: string): number {
@@ -299,6 +320,32 @@ function* resolveDirection(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
+/**
+ * Extract the complete `On Miss:` clause from an ability effect string.
+ *
+ * The previous implementation captured only up to the first period
+ * (`([^.]+)`), so a multi-effect clause like `On Miss: +2 EVA. -3 Slow.`
+ * silently dropped every effect after the first. We instead take everything
+ * after the `On Miss:` marker up to the next phase keyword (or end of the
+ * string), leaving `parseEffects` to split the clause into its individual
+ * effects -- so all period-delimited effects are preserved.
+ */
+const ON_MISS_RE = /\bOn\s+Miss\s*:\s*/i;
+const NEXT_PHASE_RE =
+  /\b(?:On\s+Hit|On\s+Miss|Regardless\s+of|After\s+Resolving|Before\s+(?:accuracy|damage|targeting|moving|push))\b/i;
+
+function extractOnMissClause(effect: string): string | undefined {
+  const markerIdx = effect.search(ON_MISS_RE);
+  if (markerIdx === -1) return undefined;
+  const afterMarker = effect.slice(markerIdx).replace(ON_MISS_RE, "");
+  const nextPhase = afterMarker.search(NEXT_PHASE_RE);
+  const clause =
+    nextPhase === -1 ? afterMarker : afterMarker.slice(0, nextPhase);
+  const trimmed = clause.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/** Run the full attack pipeline: accuracy, damage, on-hit/on-miss/regardless, then after-resolving hooks. */
 function* resolveAttackFlow(
   game: Game,
   user: Entity,
@@ -503,14 +550,19 @@ function recordActionUsage(user: Entity, active: AbilityData) {
  * splash/AoE).
  */
 function checkActionWin(game: Game, result: ResolutionResult) {
-  if (result.deaths.length === 0 || !isWinCondition(game)) return;
-  result.gameOver = true;
-  const winner = game.entities[0];
-  result.messages.push(
-    winner
-      ? `**Game over! ${winner.num} (${winner.name}) wins!**`
-      : "**Game over! No survivors!**",
-  );
+  if (result.deaths.length === 0) return;
+  // checkGameOver() sets game.phase = "ended" and returns null when no
+  // entity survives (a draw), so gate on the phase flag rather than the
+  // returned winner to mark zero-survivor games as game over too.
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    result.gameOver = true;
+    result.messages.push(
+      winner
+        ? `**Game over! ${winner.num} (${winner.name}) wins!**`
+        : "**Game over! No survivors!**",
+    );
+  }
 }
 
 export function startAttack(
@@ -848,6 +900,19 @@ function* resolveSingleTarget(
       result,
     );
     if (resolved === "user-defeated") return result;
+  } else {
+    // On Miss clause compensates the attacker who missed. `routeBuffsToUser`
+    // makes every buff land on the attacker rather than the defender, while
+    // debuffs/statuses still target the defender.
+    const missText = extractOnMissClause(ability.effect);
+    if (missText) {
+      pushSnapshot(game);
+      const missEffects = parseEffects(missText);
+      const missMsgs: string[] = yield* runEffectStream(
+        applyEffectStream(game, user, target, missEffects, ability, true),
+      );
+      result.messages.push(...missMsgs.map((m) => `  [On Miss] ${m}`));
+    }
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
@@ -1103,34 +1168,6 @@ function setCooldown(entity: Entity, ability: AbilityData) {
   if (cooldown) entity.cooldowns[ability.name] = cooldown;
 }
 
-function isWinCondition(game: Game): boolean {
-  // game.mode is stored uppercase (e.g. "FFA", "2V2", "NTR", "JUGG");
-  // normalize before matching so mode rules always resolve correctly.
-  const mode = game.mode.toLowerCase();
-  const id = modeIdFor(game.mode);
-  if (id === "jugg") {
-    // Juggernaut: the jugg side wins by surviving; the field wins by
-    // killing the jugg. Handled by the jugg-designation logic elsewhere —
-    // here a generic "one side left" check still applies.
-    const teams = new Map<number, boolean>();
-    for (const e of game.entities) {
-      if (!teams.has(e.team)) teams.set(e.team, false);
-      if (e.curhp > 0) teams.set(e.team, true);
-    }
-    return [...teams.values()].filter(Boolean).length <= 1;
-  }
-  if (id === "ffa" || id === "ntr" || id === "pvp" || id === "1v1" ||
-      mode.includes("ffa") || mode.includes("pvp")) {
-    return game.entities.filter((e) => e.curhp > 0).length <= 1;
-  }
-  const teams = new Map<number, boolean>();
-  for (const e of game.entities) {
-    if (!teams.has(e.team)) teams.set(e.team, false);
-    if (e.curhp > 0) teams.set(e.team, true);
-  }
-  return [...teams.values()].filter(Boolean).length <= 1;
-}
-
 function parseMultiHit(ability: AbilityData): number {
   const roll = ability.roll.toLowerCase();
   if (roll.includes("double hit")) return 2;
@@ -1296,13 +1333,7 @@ function resolveSplash(
       );
     }
 
-    if (target.curhp <= 0) {
-      result.messages.push(
-        `  **${target.num} (${target.name}) has been killed!**`,
-      );
-      removeEntity(game, target);
-      result.deaths.push(target);
-    }
+    if (target.curhp <= 0) recordDefeat(game, result, target, "killed");
   }
 
   return result;
