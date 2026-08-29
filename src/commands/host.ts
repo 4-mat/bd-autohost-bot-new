@@ -447,7 +447,9 @@ function applyInitialMap(game: Game, mode: string): string {
   return "Map: Procedural (12x12)";
 }
 
-/** Split players into two teams, place mirrored halves, and return the pairs. */
+/** Split players into two teams, place mirrored halves, and return the pairs.
+ * Atomic: teams and positions are only committed if placement fully succeeds,
+ * so a failed placement never leaves a half-mutated setup state. */
 function placeTeamMode(
   game: Game,
   players: Entity[],
@@ -457,10 +459,11 @@ function placeTeamMode(
   const b = parseInt(teamMatch[2]);
   const teamA = players.slice(0, a);
   const teamB = players.slice(a, a + b);
-  teamA.forEach((e) => (e.team = 1));
-  teamB.forEach((e) => (e.team = 2));
   const placed = placeTeamPlayers(game, teamA, teamB);
   if (!placed) return null;
+  // Placement succeeded for everyone — only now commit team assignments.
+  teamA.forEach((e) => (e.team = 1));
+  teamB.forEach((e) => (e.team = 2));
   return [...placed[0], ...placed[1]];
 }
 
@@ -902,10 +905,20 @@ export function placeTeamPlayers(
   // See placePlayers: ignore the placed players' old positions so repeated
   // %genpos calls still hit the exact anchors.
   const placing = new Set([...teamA, ...teamB].map((e) => e.id));
+  // Snapshot original positions so a failed placement can be rolled back
+  // atomically instead of leaving entities half-moved.
+  const origPos = new Map<string, [number, number]>();
+  for (const e of [...teamA, ...teamB]) origPos.set(e.id, [...e.pos] as [number, number]);
 
   for (let i = 0; i < teamA.length; i++) {
     const pos = findNearestOpenTile(game, top[i][0], top[i][1], used, placing);
-    if (!pos) return null;
+    if (!pos) {
+      for (const e of [...teamA, ...teamB]) {
+        const orig = origPos.get(e.id);
+        if (orig) e.pos = [...orig] as [number, number];
+      }
+      return null;
+    }
     teamA[i].pos = pos;
     used.add(`${pos[0]},${pos[1]}`);
     outA.push([teamA[i], pos]);
@@ -918,7 +931,13 @@ export function placeTeamPlayers(
       used,
       placing,
     );
-    if (!pos) return null;
+    if (!pos) {
+      for (const e of [...teamA, ...teamB]) {
+        const orig = origPos.get(e.id);
+        if (orig) e.pos = [...orig] as [number, number];
+      }
+      return null;
+    }
     teamB[i].pos = pos;
     used.add(`${pos[0]},${pos[1]}`);
     outB.push([teamB[i], pos]);
@@ -1611,10 +1630,11 @@ function pickRandomModeMap(game: Game, lower: string, modeId: string) {
 
 /** Apply a procedurally generated map of the requested size (gen [12|16|20]). */
 function applyProceduralMap(game: Game, user: User, lower: string) {
-  const size = lower === "gen" ? 12 : parseInt(lower.slice(4));
-  if (lower !== "gen" && (isNaN(size) || (size !== 12 && size !== 16 && size !== 20))) {
+  const sizeArg = lower.slice(4).trim();
+  if (lower !== "gen" && !["12", "16", "20"].includes(sizeArg)) {
     return sendPm(user.name, "Usage: %setmap gen [12|16|20].");
   }
+  const size = lower === "gen" ? 12 : Number(sizeArg);
   let grid: Terrain[][];
   let displayName: string;
   if (size === 16) {

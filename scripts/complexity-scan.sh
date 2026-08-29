@@ -24,6 +24,10 @@ for arg in "$@"; do
   case "$arg" in
     --json) MODE="json" ;;
     --top=*) TOP="${arg#--top=}" ;;
+    --top)
+      shift
+      if [ $# -gt 0 ]; then TOP="$1"; fi
+      ;;
     --path=*) SCAN_PATH="${arg#--path=}" ;;
     --report) REPORT=true ;;
     *) ;;
@@ -31,8 +35,14 @@ for arg in "$@"; do
 done
 
 # Run oxlint, capture raw output and exit code.
-RAW="$(bun x --no-install oxlint --config .oxlintrc.json "$SCAN_PATH" 2>&1)"
-SCAN_EXIT=$?
+# The if-wrapping prevents `set -e` from killing the script when oxlint
+# itself fails (config error, missing binary, etc.) — we want to keep both
+# its output and its exit code for reporting below.
+if RAW="$(bun x --no-install oxlint --config .oxlintrc.json "$SCAN_PATH" 2>&1)"; then
+  SCAN_EXIT=0
+else
+  SCAN_EXIT=$?
+fi
 
 # Always print raw output for visibility.
 printf '%s\n' "$RAW"
@@ -53,7 +63,10 @@ if [ $SCAN_EXIT -ne 0 ]; then
 fi
 
 # Gate mode: fail when any function exceeds the threshold.
-if [ "$REPORT" != "true" ] && printf '%s' "$RAW" | grep -q "complexity"; then
+# grep reads the temp file directly (NOT `printf | grep -q`): under pipefail,
+# `grep -q` can exit early on a match and SIGPIPE the writer, making the
+# pipeline fail spuriously and letting real complexity violations pass CI.
+if [ "$REPORT" != "true" ] && grep -q "complexity" "$TMP_FILE"; then
   exit 1
 fi
 exit 0

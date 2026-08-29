@@ -243,8 +243,7 @@ export const DIRECTION_LABELS: Record<string, string> = {
 
 export function needsDirection(ability: AbilityData): boolean {
   const r = ability.range.toLowerCase().trim();
-  return false;
-  // return /^(cone|line|beam|pierce)\b/.test(r);
+  return /^(cone|line|beam|pierce)\b/.test(r);
 }
 
 export function getDirectionCandidates(): string[] {
@@ -453,6 +452,13 @@ export function getReachableTiles(
       const terrain = game.map[nr][nc];
       // Obstructions + Broken (impassable) + Lava (damages on entry).
       if (!isStandable(terrain)) continue;
+      // Exclude tiles occupied by a living entity from move/dash reachability.
+      if (
+        game.entities.some(
+          (e) => e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
+        )
+      )
+        continue;
 
       const tileCost = moveCost(terrain);
       const newCost = cost + tileCost;
@@ -930,7 +936,12 @@ function moveEntityInLine(
 function isPassable(game: Game, r: number, c: number): boolean {
   if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length)
     return false;
-  return isStandable(game.map[r][c]);
+  if (!isStandable(game.map[r][c])) return false;
+  // A tile occupied by a living entity is not passable — push/pull and
+  // line movement must stop there instead of sliding through.
+  return !game.entities.some(
+    (e) => e.curhp > 0 && e.pos[0] === r && e.pos[1] === c,
+  );
 }
 
 // Roll accuracy check
@@ -1010,7 +1021,7 @@ export function dealDamage(
   }
 
   const actual = remaining;
-  entity.curhp -= remaining;
+  entity.curhp = Math.max(0, entity.curhp - remaining);
   return { actual, shieldAbsorbed, shieldBreaks };
 }
 

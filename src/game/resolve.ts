@@ -38,6 +38,7 @@ import {
   placeTerrain,
   TERRAIN_NAMES,
 } from "./state.js";
+import { modeIdFor } from "../data/gamemodes.js";
 import { matchesTargetGroup } from "./targeting.js";
 import {
   parseEffects,
@@ -1103,7 +1104,23 @@ function setCooldown(entity: Entity, ability: AbilityData) {
 }
 
 function isWinCondition(game: Game): boolean {
-  if (game.mode.includes("ffa") || game.mode.includes("pvp")) {
+  // game.mode is stored uppercase (e.g. "FFA", "2V2", "NTR", "JUGG");
+  // normalize before matching so mode rules always resolve correctly.
+  const mode = game.mode.toLowerCase();
+  const id = modeIdFor(game.mode);
+  if (id === "jugg") {
+    // Juggernaut: the jugg side wins by surviving; the field wins by
+    // killing the jugg. Handled by the jugg-designation logic elsewhere —
+    // here a generic "one side left" check still applies.
+    const teams = new Map<number, boolean>();
+    for (const e of game.entities) {
+      if (!teams.has(e.team)) teams.set(e.team, false);
+      if (e.curhp > 0) teams.set(e.team, true);
+    }
+    return [...teams.values()].filter(Boolean).length <= 1;
+  }
+  if (id === "ffa" || id === "ntr" || id === "pvp" || id === "1v1" ||
+      mode.includes("ffa") || mode.includes("pvp")) {
     return game.entities.filter((e) => e.curhp > 0).length <= 1;
   }
   const teams = new Map<number, boolean>();

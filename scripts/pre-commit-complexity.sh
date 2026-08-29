@@ -19,13 +19,13 @@ RAW=$(echo "$STAGED_TS" | xargs bun x --no-install oxlint --config .oxlintrc.jso
 SCAN_EXIT=$?
 
 # If oxlint itself failed (config, resolution, etc.), report the failure
-# and exit non-zero so the pre-commit hook fails.
+# but exit 0 — this hook is warning-only and must never block a commit.
 if [ $SCAN_EXIT -ne 0 ]; then
   echo ""
   echo "❌ oxlint scan failed (exit code $SCAN_EXIT):"
   echo "$RAW"
   echo ""
-  exit 1
+  exit 0
 fi
 
 ISSUES=$(printf '%s' "$RAW" | grep -i "complexity" || true)
