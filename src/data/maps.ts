@@ -3447,17 +3447,17 @@ MAPS.set("vortex", {
   ],
 });
 
-MAPS.set("ntr", {
-  name: "ntr",
-  displayName: "Ntr",
+MAPS.set("truentr", {
+  name: "truentr",
+  displayName: "Truentr",
   rows: 5,
-  cols: 6,
+  cols: 5,
   grid: [
-    [0, 0, 0, 0, 8, 0],
-    [0, 0, 0, 8, 7, 0],
-    [5, 5, 1, 3, 10, 0],
-    [0, 0, 0, 2, 4, 0],
-    [0, 0, 0, 0, 2, 0]
+    [1, 1, 1, 1, 1],
+    [1, 2, 3, 2, 1],
+    [1, 2, 0, 2, 1],
+    [1, 2, 3, 2, 1],
+    [1, 1, 1, 1, 1],
   ],
 });
 

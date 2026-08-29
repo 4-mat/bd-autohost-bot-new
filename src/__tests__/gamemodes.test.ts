@@ -338,3 +338,28 @@ describe("runoffOptions", () => {
     expect(opts.map((o) => o.id)).toEqual(["FFA", "JUGG"]);
   });
 });
+
+// NTR pool: every map in GAMEMODE_MAPS.ntr must be exactly 5x5 and D2-symmetric.
+// The canonical map for the mode is named "truentr" (formerly "ntr").
+test("NTR pool: all maps are exactly 5 rows x 5 cols", () => {
+  for (const name of GAMEMODE_MAPS.ntr) {
+    const m = getMapByName(name);
+    expect(m, `"${name}" is not in MAPS`).toBeDefined();
+    expect(m!.rows, `"${name}" rows must be 5`).toBe(5);
+    expect(m!.cols, `"${name}" cols must be 5`).toBe(5);
+  }
+});
+
+test("NTR pool: all maps are D2-symmetric (mirrored on both axes)", () => {
+  for (const name of GAMEMODE_MAPS.ntr) {
+    const m = getMapByName(name)!;
+    for (let r = 0; r < m.rows; r++) {
+      for (let c = 0; c < m.cols; c++) {
+        expect(m.grid[r][c], `"${name}" at (${r},${c})`)
+          .toBe(m.grid[m.rows - 1 - r][c]); // vertical mirror
+        expect(m.grid[r][c], `"${name}" at (${r},${c})`)
+          .toBe(m.grid[r][m.cols - 1 - c]); // horizontal mirror
+      }
+    }
+  }
+});
