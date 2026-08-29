@@ -63,10 +63,11 @@ if [ $SCAN_EXIT -ne 0 ]; then
 fi
 
 # Gate mode: fail when any function exceeds the threshold.
-# grep reads the temp file directly (NOT `printf | grep -q`): under pipefail,
+# Use a here-string on "$RAW" (NOT `printf | grep -q`): under pipefail,
 # `grep -q` can exit early on a match and SIGPIPE the writer, making the
 # pipeline fail spuriously and letting real complexity violations pass CI.
-if [ "$REPORT" != "true" ] && grep -q "complexity" "$TMP_FILE"; then
+# The temp file is already removed above, so gate on $RAW directly instead.
+if [ "$REPORT" != "true" ] && grep -q "complexity" <<< "$RAW"; then
   exit 1
 fi
 exit 0
