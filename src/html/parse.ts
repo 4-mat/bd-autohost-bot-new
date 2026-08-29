@@ -154,13 +154,15 @@ function parseCw(
 } {
   const m = cw.match(/^(.+?)\((\d+)\)\/(.+?)\((\d+)\)$/);
   if (!m) {
-    const [className, weaponName = ""] = cw.split("/");
+    const [className, weaponName = ""] = cw
+      .split("/")
+      .map((part) => part.trim());
     return { className: className || cw, weaponName, classLevel: 1, weaponLevel: 1 };
   }
   return {
-    className: m[1],
+    className: m[1].trim(),
     classLevel: parseInt(m[2]),
-    weaponName: m[3],
+    weaponName: m[3].trim(),
     weaponLevel: parseInt(m[4]),
   };
 }
