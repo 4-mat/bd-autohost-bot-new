@@ -20,6 +20,7 @@ import {
   DIRECTION_LABELS,
   placeTerrain,
   TERRAIN_NAMES,
+  pushSnapshot,
 } from "./state.js";
 import {
   parseEffects,
@@ -199,6 +200,31 @@ function* runEffectStream(
 // Declare -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
+
+/**
+ * Extract the complete `On Miss:` clause from an ability effect string.
+ *
+ * The previous implementation captured only up to the first period
+ * (`([^.]+)`), so a multi-effect clause like `On Miss: +2 EVA. -3 Slow.`
+ * silently dropped every effect after the first. We instead take everything
+ * after the `On Miss:` marker up to the next phase keyword (or end of the
+ * string), leaving `parseEffects` to split the clause into its individual
+ * effects -- so all period-delimited effects are preserved.
+ */
+const ON_MISS_RE = /\bOn\s+Miss\s*:\s*/i;
+const NEXT_PHASE_RE =
+  /\b(?:On\s+Hit|On\s+Miss|Regardless\s+of|After\s+Resolving|Before\s+(?:accuracy|damage|targeting|moving|push))\b/i;
+
+function extractOnMissClause(effect: string): string | undefined {
+  const markerIdx = effect.search(ON_MISS_RE);
+  if (markerIdx === -1) return undefined;
+  const afterMarker = effect.slice(markerIdx).replace(ON_MISS_RE, "");
+  const nextPhase = afterMarker.search(NEXT_PHASE_RE);
+  const clause =
+    nextPhase === -1 ? afterMarker : afterMarker.slice(0, nextPhase);
+  const trimmed = clause.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
 
 /** Run the full attack pipeline: accuracy, damage, on-hit/on-miss/regardless, then after-resolving hooks. */
 function* resolveAttackFlow(
@@ -732,8 +758,7 @@ export function isValidTarget(
 
   if (g.includes("self and ally")) return selfOrAllyCheck;
   if (g.includes("self or ally")) return selfOrAllyCheck;
-  if (g.includes("self or foe"))
-    return target.num === user.num || foeCheck;
+  if (g.includes("self or foe")) return target.num === user.num || foeCheck;
   if (g.includes("foe or ally")) return target.num !== user.num;
   if (g.includes("tile or foe")) return foeCheck;
   if (g.includes("self, foe, ally") || g.includes("self, foe, and ally"))
@@ -847,6 +872,21 @@ function* resolveSingleTarget(
     if (user.curhp <= 0) {
       recordDefeat(game, result, user, "defeated by Recoil");
       return result;
+    }
+  } else {
+    const missText = extractOnMissClause(ability.effect);
+    if (missText) {
+      pushSnapshot(game);
+      const missEffects = parseEffects(missText);
+      // `applyEffectStream` routes buff/status/shield effects onto the entity
+      // passed as `target`. A miss is a compensation for the attacker, so
+      // `routeBuffsToUser` makes every `buff` (top-level or nested inside a
+      // conditional) land on the attacker (`user`) rather than the defender
+      // (`target`), while debuffs/statuses still target the defender.
+      const missMsgs: string[] = yield* runEffectStream(
+        applyEffectStream(game, user, target, missEffects, ability, true),
+      );
+      result.messages.push(...missMsgs.map((m) => `  [On Miss] ${m}`));
     }
   }
 
@@ -973,8 +1013,6 @@ function setCooldown(entity: Entity, ability: AbilityData) {
   const { cooldown } = parseFrequency(ability.frequency);
   if (cooldown) entity.cooldowns[ability.name] = cooldown;
 }
-
-
 
 function parseMultiHit(ability: AbilityData): number {
   const roll = ability.roll.toLowerCase();
