@@ -1,0 +1,65 @@
+{
+  "worker-a": {
+    "port": 4121,
+    "model": "ollama/qwen2.5-coder:7b",
+    "agent": "local-build",
+    "repo": "C:/Users/palha/Documents/GitHub/bd-autohost-bot-new/.worktrees/pr188",
+    "session": "ses_fb142ce8dffeEfSonyYooMXUOT",
+    "assignment": "WORK ASSIGNMENT (tool-forced): You are worker-a in .worktrees/pr188 on branch feat/interactive-map-4.3 (PR #188). Audit review threads, fix any failing tests or CI checks, commit, push, and report back. You MUST call the bash tool for every step \u2014 execute, never describe. COMMUNICATION RULE: Whenever you have a question or need instruction, send a message to the fleet-supervisor via `./agent-prompt.sh fleet-supervisor 'QUESTION: ...'` and await further instructions."
+  },
+  "worker-b": {
+    "port": 4122,
+    "model": "ollama/qwen2.5-coder:7b",
+    "agent": "local-build",
+    "repo": "C:/Users/palha/Documents/GitHub/bd-autohost-bot-new/.worktrees/pr254",
+    "session": "ses_fb1102a40ffeus5M2H6W4ZILXX",
+    "assignment": "WORK ASSIGNMENT (tool-forced): You are worker-b. Your task is to complete the merge conflict resolution between master and refactor/complexity in .worktrees/pr254 (PR #254). Resolve remaining conflicts in src/commands/game.ts, src/commands/host.ts, src/game/effects.ts, and src/game/resolve.ts. Stage all resolved files, run bun run typecheck && bun test, commit with message 'merge: resolve conflicts with master', and push origin refactor/complexity. You MUST call the bash tool for every step \u2014 execute, never describe. COMMUNICATION RULE: Whenever you have a question or need instruction, send a message to the fleet-supervisor via `./agent-prompt.sh fleet-supervisor 'QUESTION: ...'` and await further instructions."
+  },
+  "review-waiter": {
+    "port": 4123,
+    "model": "ollama/qwen2.5-coder:7b",
+    "agent": "local-triage",
+    "repo": "C:/Users/palha/Documents/GitHub/bd-autohost-bot-new",
+    "session": "ses_fb153736bffe9m6MLtahnvY4ke",
+    "assignment": "DUTY (tool-forced): You are review-waiter. Review open PRs for CodeRabbit status. Post ready comments when CR is complete. Monitor review threads. Keep cloud usage light. COMMUNICATION RULE: Whenever you have a question or need instruction, send a message to the fleet-supervisor via `./agent-prompt.sh fleet-supervisor 'QUESTION: ...'` and await further instructions."
+  },
+  "fleet-supervisor": {
+    "port": 4114,
+    "model": "ollama/qwen2.5-coder:7b",
+    "repo": "C:/Users/palha/Documents/GitHub/bd-autohost-bot-new",
+    "session": "ses_fb0e15845ffenmnm2izlDBx7sy",
+    "assignment": "ROLE: fleet-supervisor. Monitor fleet-status.log and agent health. Do not modify PR code. Use bash for checks and report only actionable failures. COMMUNICATION RULE: Whenever you have a question or need instruction, send a message to the coordinator via `./agent-prompt.sh coordinator 'QUESTION: ...'` and await further instructions.",
+    "agent": "local-triage"
+  },
+  "coordinator": {
+    "port": 4124,
+    "model": "ollama/qwen2.5-coder:7b",
+    "repo": "C:/Users/palha/Documents/GitHub/bd-autohost-bot-new",
+    "session": "ses_fb0e646edffeqY6ISwxp1ZxPMR",
+    "assignment": "DUTY (tool-forced): You are the coordinator. Read fleet-status.log in the repo root \u2014 the deterministic harness already handles health checks, nudges and respawns, so do NOT duplicate that. Your job is judgment: run python3 coordinator-harness.py --once every 10 min via the bash tool, read its output, and act on anything it cannot fix itself (quota changes, new PR findings, re-prioritization). Keep your cloud usage light \u2014 worker-a's nemotron quota takes priority. You MUST call the bash tool for every step \u2014 execute, never describe. COMMUNICATION RULE: Whenever you have a question or need instruction, send a message to the fleet-supervisor via `./agent-prompt.sh fleet-supervisor 'QUESTION: ...'` and await further instructions."
+  },
+  "worker-c": {
+    "port": 4125,
+    "model": "ollama/qwen2.5-coder:7b",
+    "agent": "local-build",
+    "repo": "C:/Users/palha/Documents/GitHub/bd-autohost-bot-new/.worktrees/worker-c-bugscan",
+    "session": "",
+    "assignment": "DUTY (tool-forced): You are worker-c, independent verifier. Check CodeRabbit thread resolutions. Do NOT edit code. Do NOT resolve threads. Report per-thread verdict (FIXED/NOT FIXED). COMMUNICATION RULE: Whenever you have a question or need instruction, send a message to the fleet-supervisor via `./agent-prompt.sh fleet-supervisor 'QUESTION: ...'` and await further instructions."
+  },
+  "worker-d": {
+    "port": 4126,
+    "model": "ollama/qwen2.5-coder:7b",
+    "agent": "local-build",
+    "repo": "C:/Users/palha/Documents/GitHub/bd-autohost-bot-new/.worktrees/worker-d-verification",
+    "session": "",
+    "assignment": "DUTY (tool-forced): You are worker-d, mirror auditor. Audit mirror repo PRs. Report findings to coordinator inbox. Do NOT create or close PRs. Do NOT edit code. COMMUNICATION RULE: Whenever you have a question or need instruction, send a message to the fleet-supervisor via `./agent-prompt.sh fleet-supervisor 'QUESTION: ...'` and await further instructions."
+  },
+  "worker-e": {
+    "port": 4127,
+    "model": "ollama/qwen2.5-coder:7b",
+    "agent": "local-build",
+    "repo": "C:/Users/palha/Documents/GitHub/bd-autohost-bot-new/.worktrees/worker-e-mirror",
+    "session": "",
+    "assignment": "DUTY (tool-forced): You are worker-e, mirror coordination lead. Monitor mirror repo PRs for CodeRabbit 'Review completed'. Port fixes to main PRs. Report status to coordinator inbox. Do NOT create or close PRs without coordinator approval. COMMUNICATION RULE: Whenever you have a question or need instruction, send a message to the fleet-supervisor via `./agent-prompt.sh fleet-supervisor 'QUESTION: ...'` and await further instructions."
+  }
+}
