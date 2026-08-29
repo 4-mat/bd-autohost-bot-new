@@ -15,3 +15,12 @@ AGENTS.md
 abilityeditor/customs.local.json
 abilityeditor/runtime-data.json
 dist-editor/
+
+# Local swarm harness files (private to this machine; never committed)
+agent-prompt.sh
+spawn-agent.sh
+agent-assignments.json
+agent-registry.json
+coordinator-harness.py
+provider-routing.json
+scan-conflicts.sh
