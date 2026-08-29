@@ -11,33 +11,25 @@ import sys
 
 
 def parse(raw: str):
-    """Pair each complexity diagnostic with its file location.
+    """Parse oxlint complexity diagnostics into a sorted report.
 
-    oxlint emits the diagnostic line first, then the file location:
-        "  ! eslint(complexity): function `x` has a complexity of 33."
-        "     ,-[src/game/resolve.ts:19:3]"
+    oxlint emits the diagnostic and location on a single line:
+        "src/game/resolve.ts:19:3: warning eslint(complexity): function `x` has a complexity of 33. Maximum allowed is 15."
     """
     results = []
-    pending = None
+    # Pattern for single-line oxlint output: filepath:line:col: warning eslint(complexity): ...
+    pattern = re.compile(
+        r"^([^:]+):(\d+):\d+:\s+(?:warning|error)\s+eslint\(complexity\):\s+"
+        r"(?:async\s+)?(?:generator\s+)?function(?: `([^`]+)`)?\s+has\s+a\s+complexity\s+of\s+(\d+)"
+    )
     for line in raw.splitlines():
-        m = re.match(
-            r".*eslint\(complexity\):\s+(?:async )?(?:generator )?"
-            r"function(?: `([^`]+)`)? has a complexity of (\d+)",
-            line,
-        )
+        m = pattern.match(line)
         if m:
-            pending = (m.group(1) or "<anonymous>", int(m.group(2)))
-            continue
-        if pending:
-            m = re.match(r"\s*[,-]+\[([^:]+):(\d+):\d+\]", line)
-            if m:
-                name, complexity = pending
-                results.append((complexity, m.group(1), int(m.group(2)), name))
-                pending = None
-    if pending:
-        sys.stderr.write(
-            f"warning: unmatched complexity entry {pending!r} without location\n"
-        )
+            filepath = m.group(1)
+            line_num = int(m.group(2))
+            name = m.group(3) or "<anonymous>"
+            complexity = int(m.group(4))
+            results.append((complexity, filepath, line_num, name))
     return results
 
 

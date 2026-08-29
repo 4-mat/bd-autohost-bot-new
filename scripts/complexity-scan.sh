@@ -52,6 +52,7 @@ TMP_FILE="$(mktemp -t complexity-XXXXXX)"
 trap 'rm -f "$TMP_FILE"' EXIT
 printf '%s' "$RAW" > "$TMP_FILE"
 
+# Run parser to generate the report (text or json)
 MODE_ENV="$MODE" TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE"
 
 # Non-blocking modes (--report) only print the report.
@@ -65,10 +66,14 @@ if [ "$OXLINT_RC" -ne 0 ]; then
   echo "error: oxlint failed (exit $OXLINT_RC); scan did not complete" >&2
   exit "$OXLINT_RC"
 fi
-# Gate on $RAW via a here-string (NOT `printf | grep -q`): under pipefail,
-# `grep -q` can exit early on a match and SIGPIPE the writer, making the
-# pipeline fail spuriously and letting real complexity violations pass CI.
-if grep -q "complexity" <<< "$RAW"; then
+
+# Gate on parsed results: run parser in JSON mode and check if any functions
+# exceed the threshold. This avoids the crude grep which matches "complexity"
+# in "Maximum allowed is 15" or parser warnings.
+JSON_OUT="$(MODE_ENV=json TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE" 2>/dev/null)"
+# Count elements in JSON array (handles empty array "[]")
+COUNT=$(printf '%s' "$JSON_OUT" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+if [ "$COUNT" -gt 0 ]; then
   exit 1
 fi
 exit 0
