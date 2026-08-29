@@ -399,6 +399,24 @@ export function getEntity(game: Game, ref: string): Entity | null {
   );
 }
 
+/** All living non-monster entities (human players). */
+export function getHumanPlayers(game: Game): Entity[] {
+  return game.entities.filter((e) => !e.isMonster);
+}
+
+/** Check whether the given user is the game's host. */
+export function isHostUser(game: Game, user: { name: string }): boolean {
+  return toId(user.name) === toId(game.host);
+}
+
+/** Find the game active in a given room. */
+export function findGameForRoom(roomid: string): Game | null {
+  for (const game of games.values()) {
+    if (game.room === roomid) return game;
+  }
+  return null;
+}
+
 export function dist(a: [number, number], b: [number, number]): number {
   return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
 }
@@ -1111,13 +1129,26 @@ export function processStartOfTurn(
     messages.push(`  **${entity.num} is sealed and cannot use abilities!**`);
   }
 
+  const died = checkTurnDeath(game, entity, messages);
+
+  return { messages, died };
+}
+
+/**
+ * If the entity ran out of HP at a turn boundary, announce the defeat and
+ * remove it from the game. Returns whether the entity died.
+ */
+function checkTurnDeath(
+  game: Game,
+  entity: Entity,
+  messages: string[],
+): boolean {
   const died = entity.curhp <= 0;
   if (died) {
     messages.push(`  **${entity.num} (${entity.name}) has been defeated!**`);
     removeEntity(game, entity);
   }
-
-  return { messages, died };
+  return died;
 }
 
 /** Resolve cooldowns, status durations, and lava at the end of an entity's turn. */
@@ -1151,11 +1182,7 @@ export function processEndOfTurn(
     );
   }
 
-  const died = entity.curhp <= 0;
-  if (died) {
-    messages.push(`  **${entity.num} (${entity.name}) has been defeated!**`);
-    removeEntity(game, entity);
-  }
+  const died = checkTurnDeath(game, entity, messages);
 
   return { messages, died };
 }
