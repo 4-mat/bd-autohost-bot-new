@@ -1250,6 +1250,7 @@ export function* applyEffectStream(
   target: Entity,
   effects: Effect[],
   ability?: AbilityData,
+  routeBuffsToUser = false,
 ): Generator<EffectChoosePrompt, string[], string> {
   const messages: string[] = [];
 
@@ -1286,25 +1287,30 @@ export function* applyEffectStream(
       }
 
       case "buff": {
+        // In an On Miss clause a buff compensates the attacker who missed, so
+        // when `routeBuffsToUser` is set the buff lands on `user` rather than
+        // `target`. This applies to top-level and nested (e.g. conditional)
+        // buffs alike, since the flag is threaded through recursion.
+        const buffTarget = routeBuffsToUser ? user : target;
         if (effect.percent) {
-          const baseStat = getBaseStat(target, effect.stat);
+          const baseStat = getBaseStat(buffTarget, effect.stat);
           const amount = Math.floor(baseStat * (effect.percent / 100));
-          target.buffs.push({
+          buffTarget.buffs.push({
             stat: effect.stat,
             amount,
             rounds: effect.rounds ?? 1,
           });
           messages.push(
-            `  ${target.num} gains +${effect.percent}% ${effect.stat.toUpperCase()} (+${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
+            `  ${buffTarget.num} gains +${effect.percent}% ${effect.stat.toUpperCase()} (+${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
           );
         } else {
-          target.buffs.push({
+          buffTarget.buffs.push({
             stat: effect.stat,
             amount: effect.amount,
             rounds: effect.rounds ?? 1,
           });
           messages.push(
-            `  ${target.num} gains +${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+            `  ${buffTarget.num} gains +${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
           );
         }
         break;
@@ -1516,6 +1522,7 @@ export function* applyEffectStream(
             target,
             effect.thenEffects,
             ability,
+            routeBuffsToUser,
           );
           messages.push(...thenMsgs.map((m) => `    ${m}`));
         }
@@ -1526,6 +1533,7 @@ export function* applyEffectStream(
             target,
             effect.elseEffects,
             ability,
+            routeBuffsToUser,
           );
           messages.push(...elseMsgs.map((m) => `    ${m}`));
         }
@@ -1545,6 +1553,7 @@ export function* applyEffectStream(
           target,
           effect.effects,
           ability,
+          routeBuffsToUser,
         );
         messages.push(
           ...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`),
@@ -1569,6 +1578,7 @@ export function* applyEffectStream(
           target,
           effect.effects,
           ability,
+          routeBuffsToUser,
         );
         messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
         break;
@@ -1599,6 +1609,7 @@ export function* applyEffectStream(
           target,
           effect.options[idx],
           ability,
+          routeBuffsToUser,
         );
         messages.push(...chosenMsgs.map((m) => `    ${m}`));
         break;
