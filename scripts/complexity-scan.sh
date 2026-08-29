@@ -65,7 +65,10 @@ if [ "$OXLINT_RC" -ne 0 ]; then
   echo "error: oxlint failed (exit $OXLINT_RC); scan did not complete" >&2
   exit "$OXLINT_RC"
 fi
-if printf '%s' "$RAW" | grep -q "complexity"; then
+# Gate on $RAW via a here-string (NOT `printf | grep -q`): under pipefail,
+# `grep -q` can exit early on a match and SIGPIPE the writer, making the
+# pipeline fail spuriously and letting real complexity violations pass CI.
+if grep -q "complexity" <<< "$RAW"; then
   exit 1
 fi
 exit 0
