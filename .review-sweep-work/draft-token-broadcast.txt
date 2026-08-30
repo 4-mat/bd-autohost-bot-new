@@ -1,0 +1,11 @@
+TOKEN EXHAUSTION — action required for all reviewers
+
+Operator note: we have RUN OUT of tokens for zen/nemotron (worker-c & worker-d, plus any role still on a nemotron-3-ultra) and zen/big-pickle (worker-a & worker-b). Treat those two providers as DEAD until the operator restocks them — do not keep retrying them and burning the remaining budget.
+
+As reviewers/fixers you must find a working alternative to keep reviews flowing:
+1. Switch your active model to an available fallback in provider-routing.json — local ollama/qwen2.5-coder:7b is free, or opencode2/nemotron-3.5-lightning-free / opencode2/mimo-v2.5-free / mistral/codestral-latest. If a worker (especially worker-a/worker-b) cannot self-switch mid-session, flag it to the operator and wait for a relaunch onto a working model rather than stalling on the dead one.
+2. Continue triaging/reviewing with the fallback model. Lower depth is acceptable — prioritize the highest-value findings per PR over exhaustiveness until tokens are back.
+3. Do NOT trigger CodeRabbit as a workaround unless it is your assigned slot.
+4. Write the reusable quota check we discussed: a small script that probes each configured cloud model with a trivial prompt and marks it DEAD on quota/402/429/rate-limit, then falls back to the next provider and notifies the coordinator. The operator has added a first version at check-quota.sh (run ./check-quota.sh) — refine/extend it as you see fit.
+
+Report blockers through the coordinator inbox. Keep worker-a's remaining budget untouched while the operator restocks.
