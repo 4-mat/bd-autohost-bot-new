@@ -1490,7 +1490,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "plus",
