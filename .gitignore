@@ -18,3 +18,39 @@ dist-editor/
 
 # Local agent skills (installed locally, never committed)
 .agents/
+
+# Local swarm harness (never commit)
+agent-prompt.sh
+spawn-agent.sh
+agent-assignments.json
+agent-registry.json
+coordinator-harness.py
+provider-routing.json
+scan-conflicts.sh
+swarm-loop.json
+swarm-message.sh
+swarm-broadcast.sh
+swarm-messages.log
+spawn-assignment-swarm.sh
+launch-chipotlai-workers.sh
+start-pr263-chipotlai.sh
+launch-worker-tuis.ps1
+validate-worker-tuis.ps1
+launch-one-chip.ps1
+spawn-chipotlai-swarm.ps1
+spawn-one-window.ps1
+launch-one-worker.ps1
+spawn-workers-batched.ps1
+cleanup-workers.ps1
+list-workers.ps1
+list-attaches.ps1
+check-one-tab.ps1
+find-help-tab.ps1
+inspect-ports.ps1
+read-tabs.ps1
+spawn-chipotlai-pr263.ps1
+spawn-mintty.ps1
+spawn-pr263.ps1
+spawn-swarm-windows.ps1
+pr263-swarm.json
+local-ollama-agent.py
