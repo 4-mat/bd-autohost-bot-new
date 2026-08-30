@@ -52,7 +52,7 @@ function makeEntity(
 }
 
 function makeGame(
-  opts: { entities?: Entity[]; size?: number; map?: Terrain[][] } = {},
+  opts: { entities?: Entity[]; size?: number; map?: Terrain[][]; version?: string } = {},
 ): Game {
   const size = opts.size ?? 10;
   const map =
@@ -77,6 +77,7 @@ function makeGame(
     mode: "ffa",
     phase: "playing",
     started: true,
+    version: opts.version ?? "4.4",
     kills: {},
     winner: null,
     chatLog: [],
@@ -285,8 +286,9 @@ function driveResolveAgainst(
   ability: AbilityData,
   target: Entity,
   map?: Terrain[][],
+  version?: string,
 ): string {
-  const game = makeGame({ entities: [user, target], map });
+  const game = makeGame({ entities: [user, target], map, version });
   user.abilities = [ability];
   const step = startAttack(game, user, ability, target.num);
   let safety = 0;
@@ -525,6 +527,39 @@ describe("resolveAttackFlow: terrain stat bonuses", () => {
     map[5][6] = tile;
     return map;
   }
+
+  it("4.3 games get the EVA penalty but NOT the +5 PD bonus", () => {
+    // The +5 defense bonus is a 4.4 mechanic; 4.3 terrain rules are PE/ME
+    // only (the -1 EVA still applies as -1 PE) (PR-Agent on #178).
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      pd: 5,
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Sword Swing",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      damageType: "Physical",
+    });
+    const log = driveResolveAgainst(
+      user,
+      ability,
+      target,
+      terrainMap(Terrain.Forest),
+      "4.3",
+    );
+    // EVA penalty still applies (eva43: PD 5/10 floor = 0, then terrain -1).
+    expect(log).toMatch(/EVA -1 =/);
+    // PD is base 5 without the terrain +5 on 4.3.
+    expect(log).toMatch(/PD\(5\)/);
+    expect(log).not.toMatch(/PD\(10\)/);
+  });
 
   it("Forest grants +5 PD and -1 EVA vs a Physical attack", () => {
     const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });

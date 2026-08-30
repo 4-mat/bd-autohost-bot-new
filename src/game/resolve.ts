@@ -60,6 +60,9 @@ export function terrainStatBonus(
   stat: string,
   damageType: string,
 ): number {
+  // BD 4.3's terrain rules are PE/ME only (the -1 EVA below); the +5 defense
+  // bonus is a 4.4 mechanic and must not leak into 4.3 games.
+  if (game.version === "4.3" && stat !== "eva") return 0;
   const tile = game.map[entity.pos[0]]?.[entity.pos[1]];
   if (tile === Terrain.Forest) {
     if (stat === "pd") return 5;

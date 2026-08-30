@@ -423,7 +423,8 @@ function buildTileCell(game: Game, entity: Entity): string {
   if (tile === Terrain.Forest) note = " +5 PD / -1 EVA vs Phys";
   else if (tile === Terrain.Water) note = " +5 MD / -1 EVA vs Mag";
   else if (tile === Terrain.Lava) note = " 30 dmg end turn";
-  else if (tile === Terrain.Air) note = " -1 range through";
+  // Air's "-1 range through" penalty is not implemented (out of scope for
+  // this PR), so no note is shown — a misleading one was removed.
   else if (tile === Terrain.Sticky) note = " +1 MP to enter";
   else if (tile === Terrain.Boost) note = " -1 MP to enter";
   const color = TERRAIN_COLORS[tile];
@@ -433,7 +434,7 @@ function buildTileCell(game: Game, entity: Entity): string {
     tile === Terrain.Forest || tile === Terrain.Water ? "color:#fff" : "";
   const style = color
     ? `style="background:${color};${fg};padding:0px 8px"`
-    : "padding:0px 8px";
+    : `style="padding:0px 8px"`;
   const title = note.trim();
   const noteStyle = fg ? "color:#ccc" : "color:#888";
   return `<td ${style} title="${esc(title)}">${esc(name)}${note ? ` <i style="color:${noteStyle};font-size:10px">${esc(note)}</i>` : ""}</td>`;
@@ -471,6 +472,7 @@ function buildPlayerDataTable(game: Game): string {
 <col>
 <col>
 <col>
+<col width="22">
 <col width="22">
 <col width="22">
 <col width="22">
