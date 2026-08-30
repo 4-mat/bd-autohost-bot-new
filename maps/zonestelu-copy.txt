@@ -1,0 +1,17 @@
+# Modes: ffa
+# Battle Dome volunteer map — made with the map editor
+name: zonestelu-copy
+display: Zonestelu
+modes: ffa
+wwwww..wwwww
+wwwww..wwwww
+wwsss..sssww
+wws......sww
+wws......sww
+.....ss.....
+.....ss.....
+wws......sww
+wws......sww
+wwsss..sssww
+wwwww..wwwww
+wwwww..wwwww
