@@ -16,6 +16,7 @@
     "bot": "bun src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
+    "pr-chain": "python scripts/pr-chain.py",
     "clean": "rm -rf dist",
     "check-updates": "tsx src/sheets/check-updates.ts",
     "maps": "bun scripts/import-volunteer-maps.ts",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/ws": "^8.5.10",
+    "oxlint": "1.80.0",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"
   },

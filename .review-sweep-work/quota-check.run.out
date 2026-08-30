@@ -1,0 +1,8 @@
+== quota check 2026-08-30T18:49:12Z ==
+[worker-a] port=4138 model=zen/big-pickle -> OK
+[worker-b] port=4122 model=zen/big-pickle -> OK
+[worker-c] port=4125 model=zen/nemotron-3-ultra-free -> OK
+[worker-d] port=4126 model=zen/nemotron-3-ultra-free -> OK
+[review-waiter] port=4139 model=zen/nemotron-3.5-lightning-free -> QUOTA/ERROR
+    Delivered prompt to session ses_fac1654e7ffe23VrVxB3c1SrJo on port 4139 via /api/session/ses_fac1654e7ffe23VrVxB3c1SrJo/prompt
+    {"data":{"admittedSeq":277,"id":"msg_05401a316001AGHe4Egzs9tLaO","sessionID":"ses_fac1654e7ffe23VrVxB3c1SrJo","prompt":{"text":"Quota probe: reply with exactly the word OK and nothing else."},"delivery":"steer","timeCreated":1788115788567}}
