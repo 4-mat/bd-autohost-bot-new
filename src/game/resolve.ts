@@ -801,6 +801,38 @@ function findTargets(
   });
 }
 
+function collectPhaseEffects(
+  effects: import("./effects.js").Effect[],
+  phase: "before-acc" | "before-damage" | "on-miss" | "regardless",
+): import("./effects.js").Effect[] {
+  const collected: import("./effects.js").Effect[] = [];
+  for (const effect of effects) {
+    if (effect.type === "phaseEffect") {
+      if (effect.phase === phase) collected.push(...effect.effects);
+      continue;
+    }
+    if (effect.type === "conditional") {
+      const thenEffects = collectPhaseEffects(effect.thenEffects, phase);
+      const elseEffects = effect.elseEffects
+        ? collectPhaseEffects(effect.elseEffects, phase)
+        : [];
+      if (thenEffects.length || elseEffects.length) {
+        collected.push({
+          ...effect,
+          thenEffects,
+          elseEffects: elseEffects.length ? elseEffects : undefined,
+        });
+      }
+      continue;
+    }
+    if ("effects" in effect && Array.isArray(effect.effects)) {
+      const nested = collectPhaseEffects(effect.effects, phase);
+      if (nested.length) collected.push({ ...effect, effects: nested } as typeof effect);
+    }
+  }
+  return collected;
+}
+
 export function isValidTarget(
   user: Entity,
   target: Entity,
@@ -850,7 +882,25 @@ function* resolveSingleTarget(
   );
 
   // --- Hit resolves first (damage to target first) ---
+  const effects = parseEffects(ability.effect);
+
   if (hit) {
+    const beforeDamageEffects = effects.filter(
+      (effect) => effect.type === "phaseEffect" && effect.phase === "before-damage",
+    );
+    if (beforeDamageEffects.length > 0) {
+      const beforeDamageMessages = yield* runEffectStream(
+        applyEffectStream(
+          game,
+          user,
+          target,
+          beforeDamageEffects,
+          ability,
+        ),
+      );
+      result.messages.push(...beforeDamageMessages);
+    }
+
     const resolved = yield* resolveHitDamage(
       game,
       user,
@@ -875,6 +925,17 @@ function* resolveSingleTarget(
         applyEffectStream(game, user, target, missEffects, ability, true),
       );
       result.messages.push(...missMsgs.map((m) => `  [On Miss] ${m}`));
+    }
+  }
+
+  if (!hit) {
+    const onMissEffects = collectPhaseEffects(effects, "on-miss");
+    const missMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, onMissEffects, ability, true),
+    );
+    if (missMsgs.length > 0) {
+      result.messages.push(`  [On Miss]`);
+      result.messages.push(...missMsgs);
     }
   }
 
@@ -947,8 +1008,9 @@ function* resolveHitDamage(
   }
 
   const effects = parseEffects(ability.effect);
+  const onHitEffects = effects.filter((effect) => effect.type !== "phaseEffect");
   const effectMsgs = yield* runEffectStream(
-    applyEffectStream(game, user, target, effects, ability),
+    applyEffectStream(game, user, target, onHitEffects, ability),
   );
   result.messages.push(...effectMsgs);
 
