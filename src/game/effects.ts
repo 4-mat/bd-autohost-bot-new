@@ -31,6 +31,7 @@ export interface StatMod {
   amount: number;
   rounds?: number;
   percent?: number;
+  subject?: "self" | "target";
 }
 
 export interface Displacement {
@@ -116,6 +117,14 @@ export interface PhaseEffect {
   phase: string;
 }
 
+export type PhaseTiming = "before-acc" | "before-damage" | "on-miss" | "regardless";
+
+export interface PhaseTimingEffect {
+  type: "phaseEffect";
+  phase: PhaseTiming;
+  effects: Effect[];
+}
+
 export interface DelayLandEffect {
   type: "delayLand";
 }
@@ -153,6 +162,7 @@ export type Effect =
   | ChooseEffect
   | ChannelEffect
   | PhaseEffect
+  | PhaseTimingEffect
   | DelayLandEffect
   | MultiHitMod
   | TileEffect
@@ -216,6 +226,7 @@ const RESOURCE_NAMES = [
 function canonicalResource(name: string): string | null {
   const lower = name.toLowerCase();
   if (RESOURCE_NAMES.includes(lower)) return lower;
+  if (lower === "campaigns") return "campaigns";
   if (RESOURCE_NAMES.includes(lower.replace(/s$/, "")))
     return lower.replace(/s$/, "");
   return null;
@@ -238,6 +249,23 @@ export function parseEffects(text: string): Effect[] {
   // The regex tolerates either ", " or ". " before "Otherwise", and an
   // optional trailing period at the end of the else-branch.
   const lowerFull = normalized.toLowerCase();
+  const timingFullMatch = lowerFull.match(
+    /^(before accuracy|before acc|before damage|on miss|regardless):\s*(.+)$/,
+  );
+  if (timingFullMatch) {
+    const phaseMap: Record<string, PhaseTiming> = {
+      "before accuracy": "before-acc",
+      "before acc": "before-acc",
+      "before damage": "before-damage",
+      "on miss": "on-miss",
+      "regardless": "regardless",
+    };
+    return [{
+      type: "phaseEffect",
+      phase: phaseMap[timingFullMatch[1]],
+      effects: parseEffects(timingFullMatch[2]),
+    }];
+  }
   const fullIfMatch = lowerFull.match(
     /^if\s+(.+?),\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
@@ -380,6 +408,25 @@ function parseClauseStructured(lower: string): Effect[] | null {
       type: "thirst",
       threshold: parseInt(thirstMatch[1]),
       effects: parseEffects(thirstMatch[2]),
+    }];
+  }
+
+  // Phase-prefixed: "On Miss: EFFECT" / "Before Damage: EFFECT"
+  const timingMatch = lower.match(
+    /^(before accuracy|before acc|before damage|on miss|regardless):\s*(.+)$/,
+  );
+  if (timingMatch) {
+    const phaseMap: Record<string, PhaseTiming> = {
+      "before accuracy": "before-acc",
+      "before acc": "before-acc",
+      "before damage": "before-damage",
+      "on miss": "on-miss",
+      "regardless": "regardless",
+    };
+    return [{
+      type: "phaseEffect",
+      phase: phaseMap[timingMatch[1]],
+      effects: parseEffects(timingMatch[2]),
     }];
   }
 
@@ -526,9 +573,11 @@ function parseStatMods(lower: string): Effect[] {
   const statRegex =
     /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range)\s*(?:\/\s*(\d+))?/g;
   let match;
-  while ((match = statRegex.exec(lower)) !== null) {
-    const sign = match[1] === "-" ? -1 : 1;
-    const isPercent = match[2].includes("%");
+  while ((match = statRegex.exec(lower)) !== null) {      const sign = match[1] === "-" ? -1 : 1;
+      const isPercent = match[2].includes("%");
+      const subject = /(?:^|\b)(?:target|targets|each target)\b/.test(lower)
+        ? "target"
+        : "self";
     const value = parseFloat(match[2].replace("%", ""));
     let stat = match[3].toLowerCase();
 
@@ -546,6 +595,7 @@ function parseStatMods(lower: string): Effect[] {
         amount: 0,
         percent: sign * value,
         rounds,
+        subject,
       });
     } else {
       effects.push({
@@ -553,6 +603,7 @@ function parseStatMods(lower: string): Effect[] {
         stat,
         amount: sign * value,
         rounds,
+        subject,
       });
     }
   }
@@ -1082,7 +1133,8 @@ function evalResourceEquality(
   const value = raw === "zero" || raw === "no" ? 0 : parseInt(raw);
   const resource = canonicalResource(m[2]);
   if (!resource) return null;
-  return (user.resources[resource] ?? 0) >= value ? "then" : "else";
+  const current = user.resources[resource] ?? 0;
+  return (value === 0 ? current === 0 : current >= value) ? "then" : "else";
 }
 
 /** "not ..." / "no ..." — flips any wrapped condition. */
@@ -1323,29 +1375,30 @@ function* handleStatus(
 }
 
 function* handleStatMod(
-  { target, messages }: EffectCtx,
+  { user, target, messages, routeBuffsToUser }: EffectCtx,
   effect: StatMod,
 ) {
+  const recipient = routeBuffsToUser && effect.subject !== "target" ? user : target;
   const mult = effect.type === "buff" ? 1 : -1;
   if (effect.percent) {
-    const baseStat = getBaseStat(target, effect.stat);
+    const baseStat = getBaseStat(recipient, effect.stat);
     const amount = mult * Math.floor(baseStat * (Math.abs(effect.percent) / 100));
-    target.buffs.push({
+    recipient.buffs.push({
       stat: effect.stat,
       amount,
       rounds: effect.rounds ?? 1,
     });
     messages.push(
-      `  ${target.num} ${effect.type === "buff" ? "gains" : "loses"} ${mult > 0 ? "+" : ""}${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
+      `  ${recipient.num} ${effect.type === "buff" ? "gains" : "loses"} ${mult > 0 ? "+" : ""}${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
     );
   } else {
-    target.buffs.push({
+    recipient.buffs.push({
       stat: effect.stat,
       amount: effect.amount,
       rounds: effect.rounds ?? 1,
     });
     messages.push(
-      `  ${target.num} ${effect.type === "buff" ? "gains +" : "loses "}${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+      `  ${recipient.num} ${effect.type === "buff" ? "gains +" : "loses "}${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
     );
   }
 }
@@ -1531,6 +1584,28 @@ function* handleApex(
   messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
 }
 
+function* handlePhaseTiming(
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
+  effect: PhaseTimingEffect,
+) {
+  const nested = yield* applyEffectStream(
+    game,
+    user,
+    target,
+    effect.effects,
+    ability,
+    routeBuffsToUser,
+  );
+  messages.push(...nested.map((message) => `  [${formatPhase(effect.phase)}] ${message}`));
+}
+
+function formatPhase(phase: PhaseTiming): string {
+  if (phase === "on-miss") return "On Miss";
+  if (phase === "before-acc") return "Before Accuracy";
+  if (phase === "before-damage") return "Before Damage";
+  return "Regardless";
+}
+
 function* handleChoose(
   { game, user, target, ability, messages }: EffectCtx,
   effect: ChooseEffect,
@@ -1571,6 +1646,7 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   thirst: handleThirst,
   apex: handleApex,
   choose: handleChoose,
+  phaseEffect: handlePhaseTiming,
   teleport: handleSimple,
   move: handleSimple,
   resource: handleSimple,

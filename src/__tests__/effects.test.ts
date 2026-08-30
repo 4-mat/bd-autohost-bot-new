@@ -1115,6 +1115,9 @@ describe("evaluateCondition: supported patterns", () => {
     expect(evaluateCondition("6 blood", user, target)).toBe("else");
     expect(evaluateCondition("zero campaigns", user, target)).toBe("then");
     expect(evaluateCondition("no campaigns", user, target)).toBe("then");
+    user.resources.campaigns = 2;
+    expect(evaluateCondition("zero campaigns", user, target)).toBe("else");
+    expect(evaluateCondition("no campaigns", user, target)).toBe("else");
     expect(evaluateCondition("1 campaign", user, target)).toBe("else");
   });
 
