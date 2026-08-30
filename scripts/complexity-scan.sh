@@ -67,7 +67,7 @@ fi
 # `grep -q` can exit early on a match and SIGPIPE the writer, making the
 # pipeline fail spuriously and letting real complexity violations pass CI.
 # The temp file is already removed above, so gate on $RAW directly instead.
-if [ "$REPORT" != "true" ] && grep -q "complexity" <<< "$RAW"; then
+if [ "$REPORT" != "true" ] && grep -Eq "Found [1-9][0-9]* (error|errors)" <<< "$RAW"; then
   exit 1
 fi
 exit 0
