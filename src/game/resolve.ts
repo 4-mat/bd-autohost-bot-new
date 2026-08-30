@@ -37,6 +37,7 @@ import {
   DIRECTION_LABELS,
   placeTerrain,
   TERRAIN_NAMES,
+  pushSnapshot,
 } from "./state.js";
 import { modeIdFor } from "../data/gamemodes.js";
 import { matchesTargetGroup } from "./targeting.js";
@@ -809,6 +810,19 @@ export function isValidTarget(
   return matchesTargetGroup(user, target, group.toLowerCase());
 }
 
+/**
+ * Extract the complete `On Miss:` clause from an ability effect string.
+ *
+ * Captures everything after the `On Miss:` marker up to the next phase
+ * keyword (or end of the string), so multi-effect clauses like
+ * `On Miss: +2 EVA. -3 Slow.` preserve every effect for `parseEffects`
+ * to split on.
+ */
+function extractOnMissClause(effect: string): string | undefined {
+  const match = effect.match(/on miss:\s*(.+?)(?=\s+(?:on hit:|on miss:|phase:)|$)/is);
+  return match ? match[1].trim() : undefined;
+}
+
 function* resolveSingleTarget(
   game: Game,
   user: Entity,
@@ -848,6 +862,20 @@ function* resolveSingleTarget(
       result,
     );
     if (resolved === "user-defeated") return result;
+  } else {
+    // --- On Miss: apply the ability's On Miss clause if one exists ---
+    const missText = extractOnMissClause(ability.effect);
+    if (missText) {
+      pushSnapshot(game);
+      const missEffects = parseEffects(missText);
+      // routeBuffsToUser=true so a self-targeted buff (compensation for the
+      // attacker who missed) lands on the user rather than the target,
+      // including buffs nested inside a conditional clause.
+      const missMsgs: string[] = yield* runEffectStream(
+        applyEffectStream(game, user, target, missEffects, ability, true),
+      );
+      result.messages.push(...missMsgs.map((m) => `  [On Miss] ${m}`));
+    }
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
