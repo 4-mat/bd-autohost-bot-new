@@ -1323,29 +1323,31 @@ function* handleStatus(
 }
 
 function* handleStatMod(
-  { target, messages }: EffectCtx,
+  { target, user, messages, routeBuffsToUser }: EffectCtx,
   effect: StatMod,
 ) {
+  // On Miss buffs route to user; debuffs always target the defender.
+  const buffTarget = routeBuffsToUser ? user : target;
   const mult = effect.type === "buff" ? 1 : -1;
   if (effect.percent) {
-    const baseStat = getBaseStat(target, effect.stat);
+    const baseStat = getBaseStat(buffTarget, effect.stat);
     const amount = mult * Math.floor(baseStat * (Math.abs(effect.percent) / 100));
-    target.buffs.push({
+    buffTarget.buffs.push({
       stat: effect.stat,
       amount,
       rounds: effect.rounds ?? 1,
     });
     messages.push(
-      `  ${target.num} ${effect.type === "buff" ? "gains" : "loses"} ${mult > 0 ? "+" : ""}${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
+      `  ${buffTarget.num} ${effect.type === "buff" ? "gains" : "loses"} ${mult > 0 ? "+" : ""}${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
     );
   } else {
-    target.buffs.push({
+    buffTarget.buffs.push({
       stat: effect.stat,
       amount: effect.amount,
       rounds: effect.rounds ?? 1,
     });
     messages.push(
-      `  ${target.num} ${effect.type === "buff" ? "gains +" : "loses "}${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+      `  ${buffTarget.num} ${effect.type === "buff" ? "gains +" : "loses "}${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
     );
   }
 }
