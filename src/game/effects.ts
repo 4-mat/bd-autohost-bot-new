@@ -387,20 +387,22 @@ function parseClause(clause: string): Effect[] {
 }
 
 /** Structured clauses with a fixed keyword prefix (If/Thirst/Apex/...). */
-function parseClauseStructured(lower: string): Effect[] | null {
-  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
+function parseConditionalClause(lower: string): Effect[] | null {
   const ifMatch = lower.match(
     /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
   );
-  if (ifMatch) {
-    return [{
-      type: "conditional",
-      condition: ifMatch[1].trim(),
-      thenEffects: parseEffects(ifMatch[2]),
-      elseEffects: ifMatch[3] ? parseEffects(ifMatch[3]) : undefined,
-    }];
-  }
+  if (!ifMatch) return null;
+  return [{
+    type: "conditional",
+    condition: ifMatch[1].trim(),
+    thenEffects: parseEffects(ifMatch[2]),
+    elseEffects: ifMatch[3] ? parseEffects(ifMatch[3]) : undefined,
+  }];
+}
 
+function parseClauseStructured(lower: string): Effect[] | null {
+  const conditional = parseConditionalClause(lower);
+  if (conditional) return conditional;
   // Thirst: "Thirst N: EFFECT"
   const thirstMatch = lower.match(/^thirst\s+(\d+):\s*(.+)$/);
   if (thirstMatch) {
