@@ -577,9 +577,9 @@ function parseStatMods(lower: string): Effect[] {
   let match;
   while ((match = statRegex.exec(lower)) !== null) {      const sign = match[1] === "-" ? -1 : 1;
       const isPercent = match[2].includes("%");
-      const subject = /(?:^|\b)(?:target|targets|each target)\b/.test(lower)
-        ? "target"
-        : "self";
+      const subject = /(?:^|\b)(?:self|user)\b/.test(lower)
+        ? "self"
+        : "target";
     const value = parseFloat(match[2].replace("%", ""));
     let stat = match[3].toLowerCase();
 
