@@ -53,4 +53,5 @@ spawn-mintty.ps1
 spawn-pr263.ps1
 spawn-swarm-windows.ps1
 pr263-swarm.json
+check-quota.sh
 local-ollama-agent.py

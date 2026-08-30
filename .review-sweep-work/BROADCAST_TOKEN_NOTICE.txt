@@ -1,0 +1,9 @@
+TOKEN NOTICE from operator: we are OUT of tokens for zen/nemotron-3-ultra (worker-c, worker-d) and zen/big-pickle (worker-a, worker-b). Do not keep relying on them for reviews. A trivial probe still returns OK, so the cap may only bite on larger requests or intermittently — either way, do not burn your remaining budget retrying; route around them.
+
+What to do:
+1. Switch your active model to an available fallback in provider-routing.json — local ollama/qwen2.5-coder:7b is free, or opencode2/nemotron-3.5-lightning-free, opencode2/mimo-v2.5-free, mistral/codestral-latest. If a worker cannot self-switch mid-session, flag it to the operator for a relaunch onto a working model instead of stalling on the dead one.
+2. Keep reviewing/fixing with the fallback. Lower depth is fine — prioritize the highest-value finding per PR over exhaustiveness until tokens return.
+3. Do not trigger CodeRabbit as a workaround unless it is your assigned slot.
+4. Build/refine the reusable quota check so the next time nemo/big-pickle hit a cap the fleet auto-detects it, falls back, and notifies the coordinator. Operator has added a first version at ./check-quota.sh — run it, extend it (probe each cloud model with a trivial prompt, mark DEAD on quota/402/429, fall back, report).
+
+Report blockers through the coordinator inbox. Do not touch worker-a's remaining budget while the operator restocks.
