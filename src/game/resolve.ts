@@ -545,9 +545,9 @@ export function respondToDir(user: Entity, dir: string): AttackStep {
   return respondToPromptOfKind(user, "direction", dir, "%dir");
 }
 
-// %tile <tileRef> -- only valid while a "tile" prompt is pending.
+// %picktile <tileRef> -- only valid while a "tile" prompt is pending.
 export function respondToTile(user: Entity, tileRef: string): AttackStep {
-  return respondToPromptOfKind(user, "tile", tileRef, "%tile");
+  return respondToPromptOfKind(user, "tile", tileRef, "%picktile");
 }
 
 function respondToPromptOfKind(
@@ -567,7 +567,7 @@ function respondToPromptOfKind(
       selection: "%choose",
       target: "%target",
       direction: "%dir",
-      tile: "%tile",
+      tile: "%picktile",
     };
     const wants = kindMap[user.pendingPromptKind ?? ""] ?? "%target";
     throw new Error(

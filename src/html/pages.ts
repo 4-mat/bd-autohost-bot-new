@@ -263,7 +263,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 
     // Tile prompt buttons
     if (entity.pendingPromptKind === "tile") {
-      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #80f;background:rgba(136,0,255,0.10)"><b style="color:#80f">CHOOSE TILE</b><br><span style="color:#888;font-size:10px">Use %tile &lt;ref&gt; to pick a tile</span></div>`;
+      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #80f;background:rgba(136,0,255,0.10)"><b style="color:#80f">CHOOSE TILE</b><br>        <span style="color:#888;font-size:10px">Use %picktile &lt;ref&gt; to pick a tile</span></div>`;
     }
 
     if (entity.pendingAction) {

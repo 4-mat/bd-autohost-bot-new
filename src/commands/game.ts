@@ -138,7 +138,7 @@ const GAME_CMDS: Record<string, GameCmd> = {
   regp: (g, u, _a, full) => withGame(g, u, (game) => handleRegp(game, u, full)),
   dir: (g, u, args) =>
     withGame(g, u, (game) => handleDirChoice(game, u, args), "No active game."),
-  tile: (g, u, _a, full) =>
+  picktile: (g, u, _a, full) =>
     withGame(
       g,
       u,
@@ -735,7 +735,7 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
     } else if (step.prompt.kind === "tile") {
       send(
         game.room,
-        `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
+        `Use %picktile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
       );
     }
     return;
@@ -1048,7 +1048,7 @@ function handleTileChoice(game: Game, user: User, args: string) {
   if (!isHost && toId(entity.name) !== toId(user.name)) {
     return sendPm(user.name, "It's not your turn.");
   }
-  if (!args) return sendPm(user.name, "Usage: %tile <tile>");
+  if (!args) return sendPm(user.name, "Usage: %picktile <tile>");
 
   pushSnapshot(game);
   try {
