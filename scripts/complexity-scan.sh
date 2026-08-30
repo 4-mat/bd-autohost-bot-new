@@ -20,55 +20,54 @@ TOP=""
 SCAN_PATH="src/"
 REPORT=false
 
-# Parse args with a shift loop so both `--top=N` and the documented
-# `--top N` (space-separated) forms work; the value is consumed as TOP so it is
-# never treated as a stray separate argument.
-while [ $# -gt 0 ]; do
-  case "$1" in
+for arg in "$@"; do
+  case "$arg" in
     --json) MODE="json" ;;
-    --top=*) TOP="${1#--top=}" ;;
-    --top) shift; TOP="${1:-}" ;;
-    --path=*) SCAN_PATH="${1#--path=}" ;;
+    --top=*) TOP="${arg#--top=}" ;;
+    --top)
+      shift
+      if [ $# -gt 0 ]; then TOP="$1"; fi
+      ;;
+    --path=*) SCAN_PATH="${arg#--path=}" ;;
     --report) REPORT=true ;;
     *) ;;
   esac
-  shift
 done
 
-if ! command -v bun >/dev/null 2>&1; then
-  echo "error: bun not found in PATH" >&2
-  exit 2
+# Run oxlint, capture raw output and exit code.
+# The if-wrapping prevents `set -e` from killing the script when oxlint
+# itself fails (config error, missing binary, etc.) — we want to keep both
+# its output and its exit code for reporting below.
+if RAW="$(bun x --no-install oxlint --config .oxlintrc.json "$SCAN_PATH" 2>&1)"; then
+  SCAN_EXIT=0
+else
+  SCAN_EXIT=$?
 fi
 
-# Capture the oxlint exit status instead of discarding it: a non-zero status
-# means oxlint itself failed (e.g. bad config / missing files), which must not
-# be silently reported as a clean scan.
-set +e
-RAW="$(bun x oxlint --config .oxlintrc.json "$SCAN_PATH" 2>&1)"
-OXLINT_RC=$?
-set -e
+# Always print raw output for visibility.
+printf '%s\n' "$RAW"
 
-TMP_FILE="$(mktemp -t complexity-XXXXXX)"
-trap 'rm -f "$TMP_FILE"' EXIT
+# Pass raw output to the parser via a temp file (heredoc + stdin don't
+# mix well on Windows).
+TMP_FILE="$(mktemp)"
 printf '%s' "$RAW" > "$TMP_FILE"
 
 MODE_ENV="$MODE" TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE"
 
-# Non-blocking modes (--report) only print the report.
-if [ "$REPORT" = "true" ]; then
-  exit 0
+rm -f "$TMP_FILE"
+
+# Propagate scanner failure: if oxlint itself failed (config, resolution, etc.),
+# exit with its code so CI does not pass silently.
+if [ $SCAN_EXIT -ne 0 ]; then
+  exit $SCAN_EXIT
 fi
 
-# Gate mode: an oxlint execution failure must fail the gate even when no
-# complexity diagnostic is present; otherwise a broken scan is masked as clean.
-if [ "$OXLINT_RC" -ne 0 ]; then
-  echo "error: oxlint failed (exit $OXLINT_RC); scan did not complete" >&2
-  exit "$OXLINT_RC"
-fi
-# Gate on $RAW via a here-string (NOT `printf | grep -q`): under pipefail,
+# Gate mode: fail when any function exceeds the threshold.
+# Use a here-string on "$RAW" (NOT `printf | grep -q`): under pipefail,
 # `grep -q` can exit early on a match and SIGPIPE the writer, making the
 # pipeline fail spuriously and letting real complexity violations pass CI.
-if grep -q "complexity" <<< "$RAW"; then
+# The temp file is already removed above, so gate on $RAW directly instead.
+if [ "$REPORT" != "true" ] && grep -q "complexity" <<< "$RAW"; then
   exit 1
 fi
 exit 0
