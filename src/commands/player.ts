@@ -1,5 +1,6 @@
 import { send, sendPm, toId, posToStr } from "../utils.js";
 import type { User } from "../users.js";
+import { eva43 } from "../game/resolve.js";
 import {
   games,
   parseFrequency,
@@ -36,14 +37,19 @@ export function playerCommand(user: User, cmd: string, args: string) {
       const result = findEntityInGames(name);
       if (!result) return sendPm(target, `No character found for ${name}.`);
 
-      const { entity: e } = result;
+      const { game, entity: e } = result;
       const hpPct = Math.max(0, (e.curhp / e.maxhp) * 100);
       const hpBar = hpPct > 50 ? "[+]" : hpPct > 25 ? "[~]" : "[-]";
+
+      const eva =
+        game.version === "4.3"
+          ? `**PE**: ${eva43(e, "Physical")} | **ME**: ${eva43(e, "Magical")}`
+          : `**EVA**: ${e.eva}`;
 
       const lines = [
         `**${e.num} ${e.name}** -- ${e.className}/${e.weaponName} (Lv.${e.classLevel}/${e.weaponLevel})`,
         `${hpBar} **HP**: ${e.curhp}/${e.maxhp}`,
-        `**ATK**: ${e.atk} | **MAG**: ${e.mag} | **PD**: ${e.pd} | **MD**: ${e.md} | **EVA**: ${e.eva} | **MP**: ${e.mp}`,
+        `**ATK**: ${e.atk} | **MAG**: ${e.mag} | **PD**: ${e.pd} | **MD**: ${e.md} | ${eva} | **MP**: ${e.mp}`,
         `**Position**: ${posToStr(e.pos[0], e.pos[1])} | **Team**: ${e.team}`,
       ];
 

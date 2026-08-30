@@ -16,6 +16,7 @@ import {
 import { posToStr } from "../utils.js";
 import { eva43 } from "../game/resolve.js";
 import { getVersionData } from "../data/version43.js";
+import type { GameVersion } from "../data/index.js";
 import {
   runoffOptions,
   tallyVotes,
@@ -207,7 +208,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   const isTurn = game.turnOrder[game.turnIndex] === entity.num;
 
   const map = buildMiniMap(game, entity);
-  const stats = buildEntityStats(entity);
+  const stats = buildEntityStats(entity, game.version);
   const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game, true);
 
@@ -581,7 +582,7 @@ function buildControls(game: Game): string {
 
 // -- Entity Stats (Player) ----------------------------------------------------
 
-function buildEntityStats(entity: Entity): string {
+function buildEntityStats(entity: Entity, version: GameVersion): string {
   const hpPct = Math.max(0, (entity.curhp / entity.maxhp) * 100);
   const hpColor = hpPct > 50 ? "#0c0" : hpPct > 25 ? "#cc0" : "#c00";
 
@@ -591,7 +592,12 @@ function buildEntityStats(entity: Entity): string {
   html += ` <b>MAG:</b> ${entity.mag}`;
   html += ` <b>PD:</b> ${entity.pd}`;
   html += ` <b>MD:</b> ${entity.md}`;
-  html += ` <b>EVA:</b> ${entity.eva}`;
+  if (version === "4.3") {
+    html += ` <b>PE:</b> ${eva43(entity, "Physical")}`;
+    html += ` <b>ME:</b> ${eva43(entity, "Magical")}`;
+  } else {
+    html += ` <b>EVA:</b> ${entity.eva}`;
+  }
   html += ` <b>MP:</b> <b style="color:#08c">${entity.mp}</b>`;
 
   if (entity.statuses.length > 0 || entity.buffs.length > 0) {
