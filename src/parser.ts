@@ -1,8 +1,8 @@
 import { bot } from "./connection.js";
-import { send, sendPm, toId, splitMessage, parseArgs } from "./utils.js";
+import { send, toId, splitMessage } from "./utils.js";
 import config from "./config.js";
-import { rooms, getRoom, type Room } from "./rooms.js";
-import { users, type User } from "./users.js";
+import { rooms, getRoom } from "./rooms.js";
+import { users } from "./users.js";
 import { handleCommand } from "./commands/index.js";
 import { handleKyubsInfo } from "./html/parse.js";
 import { games } from "./game/state.js";

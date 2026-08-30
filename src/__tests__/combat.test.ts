@@ -568,13 +568,13 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
     // Both P2 and P3 damage lines should carry the +50% mod tag.
     expect(log).toContain("P2");
     expect(log).toContain("P3");
-    const p2Trail = log
+    const _p2Trail = log
       .split("\n")
       .find(
         (line) =>
           line.includes("Damage Modifiers applied") && line.includes("P2"),
       );
-    const p3Trail = log
+    const _p3Trail = log
       .split("\n")
       .find(
         (line) =>

@@ -4,7 +4,7 @@ import {
   type Entity,
   type AbilityData,
   Terrain,
-  isObstruction,
+  // isObstruction (unused),
 } from "../game/state.js";
 import {
   parseEffects,
@@ -932,7 +932,7 @@ describe("applyEffectStream: choose prompt", () => {
     // Pick option 2 (+4 DEF/1)
     const { prompts } = driveStream(
       applyEffectStream(game, user, target, effects, ability),
-      (p) => 2,
+      (_p) => 2,
     );
 
     expect(prompts).toHaveLength(1);

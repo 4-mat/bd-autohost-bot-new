@@ -1,0 +1,28 @@
+{
+  "from": "local-ollama",
+  "ts": "2026-08-29T16:22:56",
+  "pr": 254,
+  "branch": "fix/remove-actor-flag-leak",
+  "commit": "002c86f",
+  "status": "done",
+  "files": [
+    ".merge-conflicts-manifest.txt",
+    "src/game/state.ts",
+    "src/__tests__/state.test.ts",
+    "src/game/effects.ts",
+    "src/game/resolve.ts"
+  ],
+  "tests": "189 pass (114 state + 75 effects, 0 fail)",
+  "typecheck": "my 5 files clean; 7 pre-existing errors in unrelated WIP files (game.ts, host.ts, parse.ts) — NOT in my commit",
+  "blockers": [
+    "PR #254 merge conflicts resolved (effects.ts: routeBuffsToUser ported into handler-map refactor; resolve.ts: per-hunk intelligent merge)",
+    "harness inbox 127.0.0.1:4101/message unreachable (connection refused) — report written to fleet-status.log + this file as fallback",
+    "pre-existing WIP in worktree (game.ts, host.ts, parse.ts importing findGameForRoom/getHumanPlayers/isHostUser from someone's state.ts WIP) — NOT in my commit"
+  ],
+  "summary": "Found and fixed a real bug: removedCurrentActor flag leak in startCurrentEntityTurn's startDied branch. When entity dies at start of turn (e.g. start-of-turn DoT like Bleed), processStartOfTurn calls removeEntity on the current actor, which sets removedCurrentActor=true. The startDied branch did not reset this flag, so the next nextTurn() call would enter skipAdvance=true and skip the shifted-in entity's end-of-turn buff tick. The curhp<=0 branch (dead-but-present) already had the correct reset. Added regression test. Also resolved 2 pre-existing merge conflicts with master. 5-file commit on new branch fix/remove-actor-flag-leak (NOT touching PR #254's refactor/complexity branch or any of the other WIP files in the worktree). Cyclomatic-complexity pre-commit hook passed.",
+  "next_steps": [
+    "Merge fix/remove-actor-flag-leak -> master (or open a PR)",
+    "Coordinate with worker-b (also on pr254) to land the other resolved conflicts into refactor/complexity",
+    "Resolve the unrelated WIP in src/commands/game.ts, src/commands/host.ts, src/html/parse.ts (someone else's work, not mine)"
+  ]
+}

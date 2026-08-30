@@ -42,7 +42,6 @@ import { modeIdFor } from "../data/gamemodes.js";
 import { matchesTargetGroup } from "./targeting.js";
 import {
   parseEffects,
-  applyEffects,
   applyEffectStream,
   extractCombatMetadata,
   type CombatMetadata,
@@ -331,7 +330,7 @@ function* resolveAttackFlow(
   if (!active) return result;
 
   // --- Direction prompt for AoE abilities ---
-  const dir = yield* resolveDirection(user, ability, active);
+  const _dir = yield* resolveDirection(user, ability, active);
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   const {

@@ -2,10 +2,8 @@ import {
   type Game,
   type Entity,
   type AbilityData,
-  type StatusEffect,
   Terrain,
   chebyshev,
-  dealDamage,
   hasLineOfSight,
   inRange,
   manhattan,
@@ -861,7 +859,7 @@ function getBaseStat(entity: Entity, stat: string): number {
 // Local copy of `getEffectiveStat` -- same logic that resolve.ts inlines,
 // kept local so effects.ts stays self-contained. Used in places where a
 // clamped (>= 0) stat is what we need, e.g. damage scaling.
-function getEffStat(entity: Entity, stat: string): number {
+function _getEffStat(entity: Entity, stat: string): number {
   let base = getBaseStat(entity, stat);
   for (const b of entity.buffs) {
     if (b.stat === stat) base += b.amount;
@@ -964,7 +962,7 @@ export function isApexActive(
   const max = parseInt(m[2]);
 
   const cardinal = dr === 0 || dc === 0;
-  const diagonal = !cardinal && absDr === absDc;
+  const _diagonal = !cardinal && absDr === absDc;
 
   // Beam LOS / off-axis geometry isn't modelled correctly by inRange's
   // inBeam helper, so beam is handled separately below (with its own
