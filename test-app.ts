@@ -19,6 +19,11 @@ import {
   type Game,
 } from "./src/game/state.js";
 import { broadcastPages } from "./src/commands/game.js";
+import {
+  DARK_PASTEL_BACKGROUNDS,
+  backgroundForVersion,
+  type BackgroundRotationState,
+} from "./src/theme/background-rotation.js";
 
 loadGameData();
 loadGameData43();
@@ -587,6 +592,15 @@ function ensureUser(name: string) {
   return uid;
 }
 
+const IS_RENDER = !!process.env.RENDER;
+const CLIENT_VERSION = process.env.RENDER_GIT_COMMIT ?? process.env.COMMIT_SHA ?? "development";
+const backgroundState = backgroundForVersion(CLIENT_VERSION, undefined);
+const CLIENT_BACKGROUND = DARK_PASTEL_BACKGROUNDS[backgroundState.index];
+const DEPLOYED_AT = new Date().toLocaleString("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 const ICON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%232e2e38'/%3E%3Ctext x='96' y='124' font-size='76' font-family='monospace' font-weight='bold' text-anchor='middle' fill='%239db8d8'%3EBD%3C/text%3E%3C/svg%3E";
 
@@ -595,17 +609,11 @@ const MANIFEST = JSON.stringify({
   short_name: "BD Autohost",
   start_url: "/",
   display: "standalone",
-  background_color: "#1d1d23",
-  theme_color: "#2e2e38",
+  background_color: CLIENT_BACKGROUND,
+  theme_color: CLIENT_BACKGROUND,
   icons: [
     { src: ICON, sizes: "192x192", type: "image/svg+xml", purpose: "any" },
   ],
-});
-
-const IS_RENDER = !!process.env.RENDER;
-const DEPLOYED_AT = new Date().toLocaleString("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
 });
 
 const server = http.createServer((req, res) => {
@@ -1032,7 +1040,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2e2e38">
+<meta name="theme-color" content="${CLIENT_BACKGROUND}">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1047,7 +1055,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   /* ------------------------------------------------------------------ */
   :root {
     /* surfaces */
-    --bg: #1d1d23;            /* app background - soft charcoal   */
+    --bg: ${CLIENT_BACKGROUND};  /* deterministic per-deploy dark pastel */
     --bg-2: #26262e;          /* panels, input rows, gui content  */
     --bg-3: #2e2e38;          /* raised cards, tabs, indicator box*/
     --panel: #2b2b34;         /* cards, toasts, login box         */
