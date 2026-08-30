@@ -1,0 +1,18 @@
+# Modes: ffa
+# Battle Dome volunteer map — made with the map editor
+name: voltaic
+display: Voltaic
+modes: ffa
+bbbb.w.f.bbbb
+bbf.r....o.bb
+b.....o.r..fb
+bo.w.bbb.w..b
+..r.bbbbb..r.
+f..bbbbbbb..w
+..obbbbbbbo..
+w..bbbbbbb..f
+.r..bbbbb.r..
+b..w.bbb.w.ob
+bf..r.o.....b
+bb.o....r.fbb
+bbbb.w.f.bbbb
