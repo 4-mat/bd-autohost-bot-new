@@ -241,7 +241,7 @@ export interface Entity {
 // says "Swap subweapons (Standard)... Start in Gladius."). Everyone else has
 // no subweapon; switching away from Gladius clears it.
 export function startingSubweapon(weaponName: string): string | undefined {
-  return weaponName === "Gladius" ? "gladius" : undefined;
+  return toId(weaponName) === "gladius" ? "gladius" : undefined;
 }
 
 // -- Moon phases (Lunar Rod / Dark-class mechanic) ------------------------------
