@@ -830,15 +830,24 @@
       if (classes.length + weapons.length === 0)
         throw new Error("No classes or weapons found in that file.");
       // Accept both the editor's own format and a bare { classes, weapons }.
+      // Only mark an entry as custom if it's not already a built-in — otherwise a
+      // bare { classes, weapons } export would tag every loaded entry custom
+      // and 'Save to Bot' would silently drop them all.
+      const validClasses = classes.filter((c) => c && c.name);
+      const validWeapons = weapons.filter((w) => w && w.name);
       const customClasses = Array.isArray(data.customClasses)
         ? data.customClasses.map((s) => String(s))
-        : classes.map((c) => toId(String(c && c.name)));
+        : validClasses
+            .filter((c) => !state.data.classes.some((x) => x.name === c.name))
+            .map((c) => toId(c.name));
       const customWeapons = Array.isArray(data.customWeapons)
         ? data.customWeapons.map((s) => String(s))
-        : weapons.map((w) => toId(String(w && w.name)));
+        : validWeapons
+            .filter((w) => !state.data.weapons.some((x) => x.name === w.name))
+            .map((w) => toId(w.name));
       state.data = {
-        classes: JSON.parse(JSON.stringify(classes.filter((c) => c && c.name))),
-        weapons: JSON.parse(JSON.stringify(weapons.filter((w) => w && w.name))),
+        classes: JSON.parse(JSON.stringify(validClasses)),
+        weapons: JSON.parse(JSON.stringify(validWeapons)),
         customClasses,
         customWeapons,
       };
