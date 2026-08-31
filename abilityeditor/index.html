@@ -464,6 +464,7 @@
       <div id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></div>
       <span class="spacer"></span>
       <span id="dirty-chip">● unsaved edits</span>
+      <button id="btn-csv" title="Download all abilities as a CSV that opens in Excel / Google Sheets">CSV</button>
       <button id="btn-revert" title="Discard all unsaved edits (reload data from src/data/index.ts)">Revert</button>
       <button id="btn-save" class="primary" title="Regenerate src/data/index.ts with the current edits (customs are excluded)">Save to Bot</button>
     </header>
@@ -782,6 +783,109 @@
       }
       window.open(url, "_blank");
       toast("Proposal drafted — a GitHub issue should open in a new tab.", "ok");
+    }
+
+    // ---------- CSV (Excel / Google Sheets) export ----------
+
+    function csvCell(value) {
+      const s = String(value ?? "").replace(/"/g, '""');
+      return /[,"\n]/.test(s) ? '"' + s + '"' : s;
+    }
+
+    function exportCsv() {
+      const headers = [
+        "Type",
+        "Item",
+        "Branch",
+        "Ability",
+        "Level",
+        "Frequency",
+        "MR",
+        "Roll",
+        "Damage",
+        "Action",
+        "Targets",
+        "Group",
+        "Range",
+        "Effect",
+        "Max Uses",
+        "Cost",
+      ];
+      const rows = [headers];
+
+      for (const kind of ["class", "weapon"]) {
+        const arr = state.data[kind === "class" ? "classes" : "weapons"];
+        for (const item of arr) {
+          const abilities = item.abilities || [];
+          if (abilities.length === 0) {
+            rows.push([
+              kind,
+              item.name,
+              item.branch || "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              item.description || "",
+              "",
+              "",
+            ]);
+            continue;
+          }
+          for (const a of abilities) {
+            const cost =
+              a.cost && a.cost.type
+                ? a.cost.type +
+                  (a.cost.resource ? " " + a.cost.resource : "") +
+                  " " +
+                  (a.cost.amount ?? "")
+                : "";
+            rows.push([
+              kind,
+              item.name,
+              item.branch || "",
+              a.name || "",
+              a.level != null ? a.level : "",
+              a.frequency || "",
+              a.mr != null ? a.mr : "",
+              a.roll != null ? a.roll : "",
+              a.damageType || "",
+              a.actionType || "",
+              a.targetAmount != null ? a.targetAmount : "",
+              a.targetGroup || "",
+              a.range != null ? a.range : "",
+              a.effect || "",
+              a.maxUses != null ? a.maxUses : "",
+              cost,
+            ]);
+          }
+        }
+      }
+
+      // Prepend a UTF-8 BOM so Excel opens the file without mojibake.
+      let csv = "\ufeff";
+      for (const row of rows) csv += row.map(csvCell).join(",") + "\r\n";
+
+      try {
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "bd-abilities-" + new Date().toISOString().slice(0, 10) + ".csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        toast("CSV exported — open in Excel or Google Sheets.", "ok");
+      } catch (e) {
+        toast("CSV export failed: " + e.message, "err");
+      }
     }
 
     async function fetchData() {
@@ -1479,6 +1583,7 @@
     $("#btn-save").addEventListener("click", saveToBot);
     $("#btn-revert").addEventListener("click", revertAll);
     $("#btn-new").addEventListener("click", newCustom);
+    $("#btn-csv").addEventListener("click", exportCsv);
 
     // ---------- init ----------
     (async function init() {
