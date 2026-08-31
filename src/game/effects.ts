@@ -136,6 +136,11 @@ export interface TileEffect {
   range: number;
 }
 
+export interface OnMissEffect {
+  type: "onMiss";
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -156,6 +161,7 @@ export type Effect =
   | DelayLandEffect
   | MultiHitMod
   | TileEffect
+  | OnMissEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -231,13 +237,22 @@ export function parseEffects(text: string): Effect[] {
     .replace(/\s+/g, " ")
     .trim();
 
+  // "On Miss: <effects>" wraps subsequent effects so they only fire
+  // when the attack misses.  The prefix is case-insensitive and may
+  // appear at the start of the entire ability text.
+  const lowerFull = normalized.toLowerCase();
+  const onMissMatch = lowerFull.match(/^on\s+miss:\s*(.+)$/i);
+  if (onMissMatch) {
+    const inner = parseEffects(onMissMatch[1].trim());
+    return [{ type: "onMiss", effects: inner }];
+  }
+
   // Conditional statements span multiple splitClauses pieces, so try the
   // whole normalized text as a single conditional effect first. If the WHOLE
   // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return
   // one effect rather than splitting on the inner period and losing context.
   // The regex tolerates either ", " or ". " before "Otherwise", and an
   // optional trailing period at the end of the else-branch.
-  const lowerFull = normalized.toLowerCase();
   const fullIfMatch = lowerFull.match(
     /^if\s+(.+?),\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
