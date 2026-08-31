@@ -547,34 +547,7 @@ function parseStatusInflict(lower: string): Effect[] {
 
 function parseStatMods(lower: string): Effect[] {
   const effects: Effect[] = [];
-
-  // Pattern: "+N STAT/M" or "-N STAT/M" with optional "for" or "until"
-  // Also: "+N% STAT" or "-N% STAT"
-  // Also: "+N STAT" without duration
-  // Also: "gain +N STAT/M"
-
-  // Clause-level subject: a stat-mod clause is a self-buff ("gain +3 ATK/1"
-  // and the common bare "+3 ATK/1", e.g. Fantasia's Choose or "This turn:
-  // +2 MP") unless the clause opens with a target recipient marker
-  // ("inflict -3 DEF/1", "target -3 MP/1", "Targets: -25% damage", "Foes
-  // in Star 3: ..."). "target" inside a condition ("targets at full HP:
-  // +5 damage") stays a self-buff.
-  let subject: "self" | "target" = "self";
-  if (/\binflict/.test(lower)) subject = "target";
-  // "Target: N STAT" clauses may be unsigned (e.g. Razor Rust's
-  // "Target: 3 MP/1" = the target only has 3 MP). Accept an optional
-  // +/- sign so those route to the target, not the user.
-  else if (/^targets?\s*:?\s*[-+]?\s*\d/.test(lower)) subject = "target";
-  else if (/^targets?\s+[-+]?\s*\d/.test(lower)) subject = "target";
-  else if (/^foes?\s+in\b/.test(lower)) subject = "target";
-  // "Each target's ..." clauses are also target-directed.
-  else if (/^each\s+target/.test(lower)) subject = "target";
-  // "Target gains +4 DMG/1" / "Healed targets gain +1 EVA/1" -- the
-  // target is the recipient. "Targets at full HP: +5 damage" (a
-  // condition) stays a self-buff because it uses "at", not "gain".
-  else if (/targets?\s+gains?\b/.test(lower)) subject = "target";
-  // "Next Standard/Full on each target: +2 ACC" -- recipient is target.
-  else if (/on each target/.test(lower)) subject = "target";
+  const subject = statModSubject(lower);
 
   const statRegex =
     /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range|dice faces|dice)\s*(?:\/\s*(\d+))?/g;
@@ -583,17 +556,12 @@ function parseStatMods(lower: string): Effect[] {
     const sign = match[1] === "-" ? -1 : 1;
     const isPercent = match[2].includes("%");
     const value = parseFloat(match[2].replace("%", ""));
-    let stat = match[3].toLowerCase();
+    const stat = normalizeStatName(match[3]);
 
     // "remove 1 dice" / "lose 2 MP" -- an unsigned value preceded by a
     // removal verb is a negative modifier, not a gain.
     const before = lower.slice(0, match.index);
     const removed = sign > 0 && /(remove|lose|spend|cost)\s*$/.test(before);
-
-    // Normalize stat names
-    if (stat === "damage") stat = "dmg";
-    if (stat === "mdef") stat = "md";
-    if (stat === "pdef") stat = "pd";
 
     const rounds = match[4] ? parseInt(match[4]) : undefined;
 
@@ -618,6 +586,42 @@ function parseStatMods(lower: string): Effect[] {
   }
 
   return effects;
+}
+
+// Clause-level subject: a stat-mod clause is a self-buff ("gain +3 ATK/1"
+// and the common bare "+3 ATK/1", e.g. Fantasia's Choose or "This turn:
+// +2 MP") unless the clause opens with a target recipient marker
+// ("inflict -3 DEF/1", "target -3 MP/1", "Targets: -25% damage", "Foes
+// in Star 3: ..."). "target" inside a condition ("targets at full HP:
+// +5 damage") stays a self-buff.
+function statModSubject(lower: string): "self" | "target" {
+  if (/\binflict/.test(lower)) return "target";
+  // "Target: N STAT" clauses may be unsigned (e.g. Razor Rust's
+  // "Target: 3 MP/1" = the target only has 3 MP). Accept an optional
+  // +/- sign so those route to the target, not the user.
+  if (/^targets?\s*:?\s*[-+]?\s*\d/.test(lower)) return "target";
+  if (/^targets?\s+[-+]?\s*\d/.test(lower)) return "target";
+  if (/^foes?\s+in\b/.test(lower)) return "target";
+  // "Each target's ..." clauses are also target-directed.
+  if (/^each\s+target/.test(lower)) return "target";
+  // "Target gains +4 DMG/1" / "Healed targets gain +1 EVA/1" -- the
+  // target is the recipient. "Targets at full HP: +5 damage" (a
+  // condition) stays a self-buff because it uses "at", not "gain".
+  if (/targets?\s+gains?\b/.test(lower)) return "target";
+  // "Next Standard/Full on each target: +2 ACC" -- recipient is target.
+  if (/on each target/.test(lower)) return "target";
+  return "self";
+}
+
+const STAT_ALIASES: Record<string, string> = {
+  damage: "dmg",
+  mdef: "md",
+  pdef: "pd",
+};
+
+function normalizeStatName(raw: string): string {
+  const stat = raw.toLowerCase();
+  return STAT_ALIASES[stat] ?? stat;
 }
 
 function parseDamageMod(lower: string): Effect[] {
@@ -1125,43 +1129,61 @@ export function evaluateCondition(
   const word = evalStatWordCompare(lower, user, target);
   if (word !== null) return word;
 
-  // "<user|target> debuffed (by foe)" -- any negative buff active
-  const debuffedMatch = lower.match(
-    /^(user|target)\s+debuffed(?:\s+by\s+[a-z]+)?$/,
-  );
-  if (debuffedMatch) {
-    const entity = debuffedMatch[1] === "user" ? user : target;
-    return entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
-  }
+  const debuffed = evalDebuffed(lower, user, target);
+  if (debuffed !== null) return debuffed;
 
-  // "<name> (not) active" / "<user|target> <name> (not) active"
-  // e.g. "Moonblast active", "Moonblast or Celestial Blessing active",
-  // "debuff not active". Bare names default to the target (for self-targeted
-  // abilities the target *is* the user, so both readings line up).
-  const activeMatch = lower.match(/^(?:(user|target)\s+)?(.+?)\s+(not\s+)?active$/);
-  if (activeMatch) {
-    const which = activeMatch[1] ?? "target";
-    const name = activeMatch[2].trim();
-    const negated = Boolean(activeMatch[3]);
-    const entity = which === "user" ? user : target;
-    let outcome: ConditionOutcome;
-    if (name === "debuff") {
-      outcome = entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
-    } else if (name === "buff") {
-      outcome = entity.buffs.some((b) => b.amount > 0) ? "then" : "else";
-    } else {
-      const candidates = name
-        .split(/\s+or\s+|\s*,\s*/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      outcome = candidates.some((c) => hasStatus(entity, c))
-        ? "then"
-        : "else";
-    }
-    return negated ? (outcome === "then" ? "else" : "then") : outcome;
-  }
+  const active = evalActive(lower, user, target);
+  if (active !== null) return active;
 
   return "unknown";
+}
+
+/** "<user|target> debuffed (by foe)" -- any negative buff active. */
+function evalDebuffed(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(
+    /^(user|target)\s+debuffed(?:\s+by\s+[a-z]+)?$/,
+  );
+  if (!m) return null;
+  const entity = m[1] === "user" ? user : target;
+  return entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
+}
+
+/**
+ * "<name> (not) active" / "<user|target> <name> (not) active"
+ * e.g. "Moonblast active", "Moonblast or Celestial Blessing active",
+ * "debuff not active". Bare names default to the target (for self-targeted
+ * abilities the target *is* the user, so both readings line up).
+ */
+function evalActive(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(/^(?:(user|target)\s+)?(.+?)\s+(not\s+)?active$/);
+  if (!m) return null;
+  const which = m[1] ?? "target";
+  const name = m[2].trim();
+  const negated = Boolean(m[3]);
+  const entity = which === "user" ? user : target;
+  let outcome: ConditionOutcome;
+  if (name === "debuff") {
+    outcome = entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
+  } else if (name === "buff") {
+    outcome = entity.buffs.some((b) => b.amount > 0) ? "then" : "else";
+  } else {
+    const candidates = name
+      .split(/\s+or\s+|\s*,\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    outcome = candidates.some((c) => hasStatus(entity, c))
+      ? "then"
+      : "else";
+  }
+  return negated ? (outcome === "then" ? "else" : "then") : outcome;
 }
 
 /** "5 Blood" / "0 Campaigns" / "no Campaigns" — resource threshold. */

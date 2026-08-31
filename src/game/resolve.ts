@@ -335,68 +335,31 @@ function rerouteSelfToTarget(effects: Effect[]): void {
 }
 
 /**
- * True when the effect subtree is nothing but self-subject stat mods,
- * possibly wrapped in conditionals/thirst/apex/choose. Such subtrees can
- * be hoisted out of the per-target stream and applied once per ability
- * use. Any other effect inside (target mods, ignores, heals, damage mods,
- * unknown, ...) keeps the whole subtree in the per-target stream.
+ * True when the ability targets an exclusively-friendly group (allies/ally
+ * but never foe). Only such groups get "gain +N STAT" clauses rerouted
+ * from the user onto each target.
  */
-function isSelfOnlyEffect(e: Effect): boolean {
-  if (e.type === "buff" || e.type === "debuff") {
-    return e.subject === "self";
-  }
-  if (e.type === "conditional") {
-    return (
-      e.thenEffects.length > 0 &&
-      e.thenEffects.every(isSelfOnlyEffect) &&
-      (!e.elseEffects ||
-        (e.elseEffects.length > 0 && e.elseEffects.every(isSelfOnlyEffect)))
-    );
-  }
-  if (e.type === "thirst" || e.type === "apex") {
-    return e.effects.length > 0 && e.effects.every(isSelfOnlyEffect);
-  }
-  if (e.type === "choose") {
-    return (
-      e.options.length > 0 &&
-      e.options.every(
-        (opts) => opts.length > 0 && opts.every(isSelfOnlyEffect),
-      )
-    );
-  }
-  return false;
+function isFriendlyOnlyGroup(targetGroup: string): boolean {
+  return (
+    !/(^| )foe/i.test(targetGroup) &&
+    /(^| )(allies|ally)/i.test(targetGroup)
+  );
 }
 
 /**
- * True when the effect subtree is nothing but stat mods (buff/debuff),
- * possibly wrapped in conditionals/thirst/apex/choose. Used to hoist
- * rerouted ally stat mods out of the per-hit stream so a multi-hit attack
- * cannot stack the ally buff once per hit.
+ * Fold the attacker's persistent outgoing-damage buffs/debuffs (a "-25%
+ * damage" debuff from Sandstorm, a "gain +50% damage/2" self-buff from a
+ * previous turn) into this attack's combat metadata. The ability's own
+ * text clauses are already folded by extractCombatMetadata; entity.buffs
+ * carry the round-limited persistent ones. Percent-marked dmg buffs are
+ * percentages; plain "dmg" buffs are flat amounts (CodeRabbit L1435).
  */
-function isStatModSubtree(e: Effect): boolean {
-  if (e.type === "buff" || e.type === "debuff") {
-    return true;
+function foldDamageBuffs(user: Entity, combat: CombatMetadata): void {
+  for (const b of user.buffs) {
+    if (b.stat !== "dmg") continue;
+    if (b.percent) combat.damagePercent += b.amount;
+    else combat.flatDamage += b.amount;
   }
-  if (e.type === "conditional") {
-    return (
-      e.thenEffects.length > 0 &&
-      e.thenEffects.every(isStatModSubtree) &&
-      (!e.elseEffects ||
-        (e.elseEffects.length > 0 && e.elseEffects.every(isStatModSubtree)))
-    );
-  }
-  if (e.type === "thirst" || e.type === "apex") {
-    return e.effects.length > 0 && e.effects.every(isStatModSubtree);
-  }
-  if (e.type === "choose") {
-    return (
-      e.options.length > 0 &&
-      e.options.every(
-        (opts) => opts.length > 0 && opts.every(isStatModSubtree),
-      )
-    );
-  }
-  return false;
 }
 
 function* resolveAttackFlow(
@@ -473,17 +436,7 @@ function* resolveAttackFlow(
   const effects = parseEffects(active.effect);
   const combat = extractCombatMetadata(effects);
 
-  // Persistent outgoing-damage modifiers on the attacker (a "-25% damage"
-  // debuff from Sandstorm, a "gain +50% damage/2" self-buff from a previous
-  // turn) fold into this attack's combat metadata. The ability's own text
-  // clauses are already folded by extractCombatMetadata; entity.buffs carry
-  // the round-limited persistent ones. Percent-marked dmg buffs are
-  // percentages; plain "dmg" buffs are flat amounts (CodeRabbit L1435).
-  for (const b of user.buffs) {
-    if (b.stat !== "dmg") continue;
-    if (b.percent) combat.damagePercent += b.amount;
-    else combat.flatDamage += b.amount;
-  }
+  foldDamageBuffs(user, combat);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   // Ally-targeted abilities (Rising Hope, Primadonna, Crusade, Flower
@@ -494,37 +447,8 @@ function* resolveAttackFlow(
   // (Blitz, Point-in-Line, ...). Only exclusively-friendly groups reroute:
   // "Any" / "Foe or Ally" / "Self, Foes, Allies" can select a foe, and a
   // foe would then receive the buff instead of the user.
-  if (
-    !/(^| )foe/i.test(ability.targetGroup) &&
-    /(^| )(allies|ally)/i.test(ability.targetGroup)
-  ) {
+  if (isFriendlyOnlyGroup(ability.targetGroup)) {
     rerouteSelfToTarget(effects);
-  }
-
-  // Self-subject stat mods ("gain +2 DMG/1", "gain +1 ACC/1") must apply
-  // ONCE per ability use, not once per hit/target: applyEffectStream runs
-  // inside the per-target x per-hit loops below, so leaving them in the
-  // per-hit list would push the buff onto the user once per hit per target
-  // (getStatBonus sums buffs, so a Pierce 3 "gain +2 DMG/1" would become
-  // +6 dice faces). Apply them once after the loops and pass only the
-  // target effects down to the per-hit/per-target resolution.
-  const selfEffects = effects.filter(isSelfOnlyEffect);
-  const targetEffects = effects.filter((e) => !isSelfOnlyEffect(e));
-
-  // Rerouted ally stat mods ("gain +4 MAG/1" for each ally) must apply ONCE
-  // per target per ability use, not once per hit: applyEffectStream runs
-  // inside the per-hit loop below, so leaving them in the per-hit list would
-  // push the buff onto each ally once per hit (getStatBonus sums buffs, so a
-  // Pierce 3 "gain +2 MAG/1" ally buff would become +6 MAG). Keep normal
-  // per-hit effects (damage, statuses, shields, ...) in the per-hit list.
-  let allyStatMods: Effect[] = [];
-  let perHitEffects = targetEffects;
-  if (
-    !/(^| )foe/i.test(ability.targetGroup) &&
-    /(^| )(allies|ally)/i.test(ability.targetGroup)
-  ) {
-    allyStatMods = targetEffects.filter(isStatModSubtree);
-    perHitEffects = targetEffects.filter((e) => !isStatModSubtree(e));
   }
 
   for (const target of targets) {
