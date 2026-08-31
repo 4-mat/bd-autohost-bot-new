@@ -38,14 +38,15 @@ export const GAMEMODE_MAPS: Record<GameModeId, string[]> = {
   // NTR (hold the centre): maps with strong central features / rings.
   ntr: [
     "ntr",
-    "realntr",
-    "fusioncore",
-    "clover",
-    "donut",
-    "ringoffire",
-    "miniring",
-    "pinering",
-    "combatring",
+    "bifurcation",
+    "nyoom",
+    "pond",
+    "duelingground",
+    "sprint",
+    "unabletorun",
+    "minicrossroads",
+    "vortex",
+    "weave",
   ],
   // Juggernaut: mid-size maps with cover so the field can hide from the jugg.
   jugg: [
@@ -71,15 +72,10 @@ export const GAMEMODE_MAPS: Record<GameModeId, string[]> = {
     "fortress",
     "snowyvillage",
   ],
-  // 1v1 duels: small, tight, symmetric maps.
+  // 1v1 duels: open, symmetric maps larger than 7x7 so duels have room to move.
   "1v1": [
-    "duelingground",
     "duel",
     "arena",
-    "miniarena",
-    "minicrossroads",
-    "combatring",
-    "tinyring",
     "crossout",
   ],
 };

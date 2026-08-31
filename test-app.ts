@@ -10,7 +10,7 @@ import { createHash } from "crypto";
 import { rooms, type Room } from "./src/rooms.js";
 import { users } from "./src/users.js";
 import { handleCommand } from "./src/commands/index.js";
-import { setWs, toId } from "./src/utils.js";
+import { setWs, toId, splitMessage } from "./src/utils.js";
 import {
   games,
   getCurrentEntity,
@@ -865,13 +865,7 @@ wss.on("connection", (ws) => {
           );
           return;
         }
-        const cmdText = text.slice(PREFIX.length);
-        const spaceIdx = cmdText.indexOf(" ");
-        const cmd = spaceIdx >= 0 ? cmdText.slice(0, spaceIdx) : cmdText;
-        const rest = spaceIdx >= 0 ? cmdText.slice(spaceIdx + 1) : "";
-        const commaIdx = rest.indexOf(",");
-        const args = commaIdx >= 0 ? rest.slice(0, commaIdx).trim() : rest;
-        const val = commaIdx >= 0 ? rest.slice(commaIdx + 1).trim() : "";
+        const { cmd, args, val } = splitMessage(text.slice(PREFIX.length));
         const room = rooms.get("battledome")!;
         const user = users.get(toId(session.username))!;
 

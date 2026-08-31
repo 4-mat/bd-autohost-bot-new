@@ -165,4 +165,30 @@ describe("curated map data", () => {
       ).toBe(true);
     }
   });
+
+  test("11x11/12x12 maps are not shifted down with an all-normal top row", () => {
+    // If a square 11/12 map has an all-normal top row AND becomes fully
+    // symmetric after shifting its content up one row (drop the top row,
+    // append an all-normal row at the bottom), the design was accidentally
+    // offset by one row. Such maps must be re-centered, not shipped shifted.
+    const isSym = (grid: number[][]) => {
+      const rows = grid.length;
+      const cols = grid[0].length;
+      const h = grid.every((r) => r.every((t, j) => t === r[cols - 1 - j]));
+      const v = grid.every((r, i) => r.every((t, j) => t === grid[rows - 1 - i][j]));
+      return h && v;
+    };
+    for (const m of MAPS.values()) {
+      if ((m.rows !== 11 && m.rows !== 12) || m.cols !== m.rows) continue;
+      const topAllNormal = m.grid[0].every((t) => t === Normal);
+      if (!topAllNormal) continue;
+      const shifted = m.grid.slice(1).concat([Array(m.cols).fill(Normal)]);
+      if (isSym(shifted)) {
+        expect(
+          isSym(m.grid),
+          `${m.name}: looks symmetric but is shifted 1 row down — re-center it`,
+        ).toBe(true);
+      }
+    }
+  });
 });
