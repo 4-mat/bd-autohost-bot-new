@@ -27,7 +27,7 @@ A wrong structure only matters when frequency is high — per-hit combat code
 ## Workstreams
 
 ### 1. Combat data shapes (done / in flight)
-- [x] **#200 → #201** `AbilityData.effect` parse-once + combat metadata cache — *merged path: PR #201*
+- [ ] **#200 → #201** `AbilityData.effect` parse-once + combat metadata cache — *in flight: PR #201*
 - [x] Data shape audit written → [docs/data-shape-audit.md](docs/data-shape-audit.md)
 - [ ] **#182** confirm `getPassiveRangeBonus` / `getDefenderDiceMods` inRange hot path is covered by the #201 cache
 - [ ] Precompute `parsePushPull` / `parseMultiHit` / heal detection onto the cached parse (drop ad-hoc regex passes)
