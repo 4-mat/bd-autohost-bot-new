@@ -39,37 +39,36 @@ export enum Terrain {
   Boost = 12,
 }
 
-export const TERRAIN_COLORS: Record<number, string> = {
-  [Terrain.Normal]: "#A9F5A9",
-  [Terrain.Stop]: "#A9A9A9",
-  [Terrain.Water]: "#454FDF",
-  [Terrain.Forest]: "#226622",
-  [Terrain.Ice]: "#33E9E9",
-  [Terrain.Air]: "#B8D3DE",
-  [Terrain.Sticky]: "#CCCC00",
-  [Terrain.Lava]: "#8B0000",
-  [Terrain.Broken]: "#000000",
-  [Terrain.Bone]: "#CCCCAA",
-  [Terrain.Stone]: "#888888",
-  [Terrain.Hearth]: "#FF6633",
-  [Terrain.Boost]: "#A855F7",
+// Colors + display names come from the single source of truth,
+// src/game/terrain-colors.cjs (also drives the map editor, CI parser, and
+// gallery). Entry order there matches the enum order above.
+import terrainColors from "./terrain-colors.cjs";
+
+export const TERRAIN_COLORS: Record<number, string> = {};
+export const TERRAIN_NAMES: Record<number, string> = {};
+
+const TERRAIN_BY_ID: Record<string, Terrain> = {
+  normal: Terrain.Normal,
+  stop: Terrain.Stop,
+  water: Terrain.Water,
+  forest: Terrain.Forest,
+  ice: Terrain.Ice,
+  air: Terrain.Air,
+  sticky: Terrain.Sticky,
+  lava: Terrain.Lava,
+  broken: Terrain.Broken,
+  bone: Terrain.Bone,
+  stone: Terrain.Stone,
+  hearth: Terrain.Hearth,
+  boost: Terrain.Boost,
 };
 
-export const TERRAIN_NAMES: Record<number, string> = {
-  [Terrain.Normal]: "Normal",
-  [Terrain.Stop]: "Stop",
-  [Terrain.Water]: "Water",
-  [Terrain.Forest]: "Forest",
-  [Terrain.Ice]: "Ice",
-  [Terrain.Air]: "Air",
-  [Terrain.Sticky]: "Sticky",
-  [Terrain.Lava]: "Lava",
-  [Terrain.Broken]: "Broken",
-  [Terrain.Bone]: "Bone",
-  [Terrain.Stone]: "Stone",
-  [Terrain.Hearth]: "Hearth",
-  [Terrain.Boost]: "Boost",
-};
+for (const [id, entry] of Object.entries(terrainColors)) {
+  const t = TERRAIN_BY_ID[id];
+  if (t === undefined) continue;
+  TERRAIN_COLORS[t] = entry.color;
+  TERRAIN_NAMES[t] = entry.label;
+}
 
 // Per the BD 4.4 glossary (Map -> Obstructions): "Stop/Bone, Ice, Stone, and
 // Hearth tiles, as well as foes, are considered obstructions." Obstructions
