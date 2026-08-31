@@ -1,0 +1,49 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      # bun install occasionally flakes on tarball extraction (e.g. "Fail
+      # extracting tarball for xlsx"); retry a couple of times before giving up.
+      - name: Install dependencies (with retry)
+        run: |
+          for i in 1 2 3; do
+            if bun install; then
+              exit 0
+            fi
+            echo "bun install failed (attempt $i/3), retrying..."
+            sleep 5
+          done
+          exit 1
+      - run: bun run typecheck
+      - run: bun test
+
+      # Gallery drift guard: regenerate every thumbnail from the committed
+      # map data + terrain palette and fail if the output differs from what's
+      # checked in. Keeps mapeditor/gallery/*.svg and MAPS.md in sync with
+      # src/game/terrain-colors.cjs, src/data/maps.ts, and maps/*.txt.
+      - name: Gallery drift check
+        run: |
+          node mapeditor/seed.cjs
+          node mapeditor/render-gallery.cjs
+          if git diff --exit-code --quiet -- maps/index.json maps/curated.json maps/modes.json mapeditor/gallery; then
+            echo "Gallery is up to date."
+          else
+            echo "::error::Gallery is stale — run 'node mapeditor/seed.cjs && node mapeditor/render-gallery.cjs' and commit the regenerated output."
+            git diff --stat -- maps/index.json maps/curated.json maps/modes.json mapeditor/gallery
+            exit 1
+          fi
