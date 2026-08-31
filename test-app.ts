@@ -148,7 +148,8 @@ function broadcast(msg: string) {
   try {
     const m = JSON.parse(msg);
     if (["chat", "action", "quote", "react"].includes(m.type)) {
-      CHAT_LOG.push({ ...m, seq: ++chatSeq });
+      const stamped = { ...m, seq: ++chatSeq };
+      CHAT_LOG.push(stamped);
       if (CHAT_LOG.length > MAX_LOG) CHAT_LOG.shift();
     }
   } catch {}
@@ -1575,6 +1576,7 @@ function connect() {
     } else if (msg.type === 'chat' || msg.type === 'quote') {
       const text = withSignupLink(msg.text);
       addLine(msg.type, text);
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
       if (isMobile() && mobileView === 'game') {
         showToast(text);
         unread++;
@@ -1588,6 +1590,7 @@ function connect() {
       handleTurn(msg);
     } else if (msg.type === 'action') {
       addLine('action', msg.text, msg.name);
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
     } else if (msg.type === 'pm') {
       addLine('pm', msg.text);
     } else if (msg.type === 'playerlist') {
@@ -1599,6 +1602,7 @@ function connect() {
       addLine('system', '[TEAM] ' + msg.text);
       renderTeamChat();
     } else if (msg.type === 'react') {
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
       addLine('react', msg.user + ' ' + msg.emote);
     } else {
       addLine('system', msg.text);
