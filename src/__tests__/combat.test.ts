@@ -705,7 +705,37 @@ describe("tile-targeting abilities", () => {
     expect(step2.result.messages.join("\n")).toContain(
       "creates a Normal tile at c,4",
     );
-  });
+  })
+
+  // Test all obstruction types (Stop, Bone, Ice, Stone, Hearth)
+  const obstructionTypes = [
+    { terrain: 'Terrain.Stop', name: 'Stop' },
+    { terrain: 'Terrain.Bone', name: 'Bone' },
+    { terrain: 'Terrain.Ice', name: 'Ice' },
+    { terrain: 'Terrain.Hearth', name: 'Hearth' },
+  ];
+
+  for (const obs of obstructionTypes) {
+    it(, () => {
+      const caster = makeEntity({ num: 'P1', name: 'Alice', pos: [2, 2], team: 0 });
+      const whittle = makeAbility({
+        name: 'Whittle', damageType: '', roll: '', targetGroup: 'Tile', range: 'Homing 2',
+        effect: 'create Totem tile on target (removes existing).',
+      });
+      caster.abilities = [whittle];
+      const game = makeGame({ entities: [caster] });
+      game.map[2][3] = obs.terrain;
+
+      const step = startAttack(game, caster, whittle);
+      if (step.done) throw new Error('expected prompt');
+      if (step.prompt.kind !== 'tile') throw new Error('expected tile prompt');
+      const step2 = respondToTile(caster, 'c,4');
+      if (step2.done) throw new Error('expected confirmation');
+      if (step2.prompt.kind !== 'selection') throw new Error('expected selection');
+      if (!step2.prompt.confirmObstruction) throw new Error('expected confirmObstruction');
+    });
+  }
+;
 
   it("offers obstruction tiles but requires confirmation to replace them", () => {
     const caster = makeEntity({
