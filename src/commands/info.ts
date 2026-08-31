@@ -66,6 +66,86 @@ function formatAbilityCard(
     .join("\n");
 }
 
+// Build a list of all class names, weapon names, and ability names
+// available in the given version data.
+type Entry = {
+  kind: "class" | "weapon" | "ability";
+  parent: string;
+  name: string;
+};
+function collectEntries(
+  classes: ReturnType<typeof getVersionData>["classes"],
+  weapons: ReturnType<typeof getVersionData>["weapons"],
+): Entry[] {
+  const out: Entry[] = [];
+  for (const [, c] of classes) {
+    out.push({ kind: "class", parent: c.name, name: c.name });
+    for (const ab of c.abilities)
+      out.push({ kind: "ability", parent: c.name, name: ab.name });
+  }
+  for (const [, w] of weapons) {
+    out.push({ kind: "weapon", parent: w.name, name: w.name });
+    for (const ab of w.abilities)
+      out.push({ kind: "ability", parent: w.name, name: ab.name });
+  }
+  return out;
+}
+
+// Minimum Levenshtein distance between two strings.
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Build an initialism from an ability name: first letter of each word.
+// "Arrow Flurry" → "AF", "Hunter's Mark" → "HM", "Oscillations" → "O".
+function initialism(name: string): string {
+  return name
+    .replace(/[^a-zA-Z\s]/g, "")
+    .split(/\s+/)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+// Return up to `max` suggestions for `query` from `entries`.
+// Priority: exact initialism match first (case-insensitive), then lowest
+// Levenshtein distance. Initialism matches are always included regardless
+// of the Levenshtein threshold since a short abbreviation can look nothing
+// like the full name.
+function getSuggestions(query: string, entries: Entry[], max = 3): string[] {
+  const q = toId(query);
+  const results: { entry: Entry; dist: number }[] = [];
+
+  for (const entry of entries) {
+    const nameId = toId(entry.name);
+    // Exact initialism match (case-insensitive via toId on both sides)
+    if (toId(initialism(entry.name)) === q) {
+      results.push({ entry, dist: -1 }); // -1 sorts before any real distance
+      continue;
+    }
+    // Levenshtein — include if distance <= 3 or <= 40% of query length
+    const dist = levenshtein(q, nameId);
+    if (dist <= Math.max(3, Math.ceil(q.length * 0.4))) {
+      results.push({ entry, dist });
+    }
+  }
+
+  results.sort((a, b) => a.dist - b.dist);
+  return results.slice(0, max).map(({ entry }) => entry.name);
+}
+
 // Search classes → weapons → abilities within the given version data.
 // Returns the rendered message, or null if no match was found.
 function searchVersionData(
@@ -157,6 +237,50 @@ export function infoCommand(
     const result = searchVersionData(id, args, version, classes, weapons);
     if (result) {
       sendPm(target, result);
+      return;
+    }
+
+    const entries = collectEntries(classes, weapons);
+
+    // Short queries (1-3 chars) skip substring search to avoid flooding
+    // results. For these, rely on "Did you mean" which handles initialisms
+    // and typos well. Long-enough partial queries go to substring search.
+    if (id.length >= 3) {
+      const matches = entries
+        .filter((e) => toId(e.name).includes(id) || id.includes(toId(e.name)))
+        .map((e) => e.name);
+
+      if (matches.length > 1) {
+        sendPm(
+          target,
+          `Multiple entries found: ${matches.join(", ")}, ${version}`,
+        );
+        return;
+      }
+      if (matches.length === 1) {
+        // Single substring match — treat it like an exact hit by re-running
+        // searchVersionData with the matched name (will return the card).
+        const matched = searchVersionData(
+          toId(matches[0]),
+          matches[0],
+          version,
+          classes,
+          weapons,
+        );
+        if (matched) {
+          sendPm(target, matched);
+          return;
+        }
+      }
+    }
+
+    // No match — try to suggest close names (initialism or Levenshtein).
+    const suggestions = getSuggestions(id, entries);
+    if (suggestions.length > 0) {
+      sendPm(
+        target,
+        `No data found for "${args}" in ${version}. Did you mean: ${suggestions.join(", ")}?`,
+      );
       return;
     }
 

@@ -325,3 +325,115 @@ describe("infoCommand %wt4.3", () => {
     expect(body).toContain("Inveita");
   });
 });
+
+describe("infoCommand Did You Mean", () => {
+  const { infoCommand } = require("../commands/info.js");
+
+  test("Levenshtein typo suggests correct ability name", async () => {
+    const u = makeUser("Alice");
+    // "arrwflurry" is a Levenshtein distance-1 typo of "arrowflurry"
+    // (missing "o") but does NOT match as a substring, so it falls
+    // through to "Did you mean"
+    infoCommand(u, "wt", "arrwflurry", null);
+    await flush();
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    const body = pmBody(sentMessages[0]);
+    expect(body).toContain("No data found");
+    expect(body).toContain("Did you mean:");
+    expect(body).toContain("Arrow Flurry");
+  });
+
+  test("Initialism match suggests correct name", async () => {
+    const u = makeUser("Alice");
+    // "AF" is the initialism for "Arrow Flurry"
+    infoCommand(u, "wt", "af", null);
+    await flush();
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    const body = pmBody(sentMessages[0]);
+    expect(body).toContain("Did you mean:");
+    expect(body).toContain("Arrow Flurry");
+  });
+
+  test("Partial initialism match suggests correct name", async () => {
+    const u = makeUser("Alice");
+    // "rh" is the initialism for "Rising Hope"
+    infoCommand(u, "wt", "rh", null);
+    await flush();
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    const body = pmBody(sentMessages[0]);
+    expect(body).toContain("Did you mean:");
+    expect(body).toContain("Rising Hope");
+  });
+
+  test("no suggestion when query is far from any entry", async () => {
+    const u = makeUser("Alice");
+    // "xyzxyzxyz" has no plausible suggestion
+    infoCommand(u, "wt", "xyzxyzxyz", null);
+    await flush();
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    const body = pmBody(sentMessages[0]);
+    expect(body).toContain("No data found");
+    // Should not contain "Did you mean:" when nothing is close
+    expect(body).not.toContain("Did you mean:");
+  });
+
+  test("substring match returns multiple entries", async () => {
+    const u = makeUser("Alice");
+    // "voke" matches "Invoke: Ice" and "Invoke: Fire" in 4.3 (using %wt4.3
+    // to avoid hitting "Provoke" which is 4.4-only)
+    infoCommand(u, "wt4.3", "voke", null);
+    await flush();
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    const body = pmBody(sentMessages[0]);
+    expect(body).toContain("Multiple entries found:");
+    expect(body).toContain("Invoke: Ice");
+    expect(body).toContain("Invoke: Fire");
+  });
+
+  test("single substring match returns the ability card directly", async () => {
+    const u = makeUser("Alice");
+    // "sunrays" only matches "Sun Rays" in 4.3 (unique weapon ability)
+    infoCommand(u, "wt4.3", "sunrays", null);
+    await flush();
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    const body = pmBody(sentMessages[0]);
+    // Should return the ability card, not "Multiple entries found"
+    expect(body).toContain("Sun Rays");
+    expect(body).not.toContain("Multiple entries found");
+  });
+
+  test("suggestions include class names on class-name typo", async () => {
+    const u = makeUser("Alice");
+    // "rifetr" is close to "Rifter"
+    infoCommand(u, "wt", "rifetr", null);
+    await flush();
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    const body = pmBody(sentMessages[0]);
+    expect(body).toContain("Did you mean:");
+    expect(body).toContain("Rifter");
+  });
+
+  test("Did you mean works with %wt4.3 pinned version", async () => {
+    const u = makeUser("Alice");
+    // "hm" matches "Harmony" (4.3 Bard) AND "Hunter's Mark" (4.3 Crossbow).
+    // Both are 4.3-only initialism matches — verify a 4.3-scoped
+    // initialism is returned (not a 4.4-only name).
+    infoCommand(u, "wt4.3", "hm", null);
+    await flush();
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    const body = pmBody(sentMessages[0]);
+    expect(body).toContain("Did you mean:");
+    // At least one of the 4.3 initialism matches should appear
+    const hasHarmony = body.includes("Harmony");
+    const hasHuntersMark = body.includes("Hunter's Mark");
+    expect(hasHarmony || hasHuntersMark).toBe(true);
+  });
+});
