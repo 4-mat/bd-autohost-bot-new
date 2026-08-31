@@ -893,13 +893,20 @@
       refreshStatus();
     }
 
+    // Guards against overlapping async restores: mashing Ctrl+Z must not
+    // launch a second applySnapshot while the first is still awaiting the
+    // server (out-of-order replies would land the wrong snapshot).
+    let historyBusy = false;
+
     async function undo() {
+      if (historyBusy) return;
       const snap = state.undoStack.pop();
       if (!snap) {
         toast("Nothing to undo.", "warn");
         return;
       }
       state.redoStack.push(cloneData(state.data));
+      historyBusy = true;
       try {
         await applySnapshot(snap);
         updateHistoryButtons();
@@ -909,16 +916,20 @@
         state.redoStack.pop();
         state.undoStack.push(snap);
         toast("Undo failed: " + e.message, "err");
+      } finally {
+        historyBusy = false;
       }
     }
 
     async function redo() {
+      if (historyBusy) return;
       const snap = state.redoStack.pop();
       if (!snap) {
         toast("Nothing to redo.", "warn");
         return;
       }
       state.undoStack.push(cloneData(state.data));
+      historyBusy = true;
       try {
         await applySnapshot(snap);
         updateHistoryButtons();
@@ -927,6 +938,8 @@
         state.undoStack.pop();
         state.redoStack.push(snap);
         toast("Redo failed: " + e.message, "err");
+      } finally {
+        historyBusy = false;
       }
     }
 
@@ -937,6 +950,18 @@
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
       const k = e.key.toLowerCase();
+      const t = e.target;
+      // Editing text: let the browser's native Ctrl+Z/Y undo the last typed
+      // characters instead of the whole history step (the reviewer flagged
+      // the global handler killing fine-grained text undo).
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable)
+      )
+        return;
       if (k === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
