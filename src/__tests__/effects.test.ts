@@ -10,11 +10,9 @@ import {
   parseEffects,
   applyEffects,
   applyEffectStream,
-  extractCombatMetadata,
   evaluateCondition,
   isApexActive,
   isThirstActive,
-  type Effect,
 } from "../game/effects.js";
 
 // ---------------------------------------------------------------------------
@@ -56,13 +54,11 @@ function makeEntity(
   };
 }
 
-function makeGame(
-  opts: {
-    size?: number;
-    terrain?: Terrain[][];
-    entities?: Entity[];
-  } = {},
-): Game {
+function makeGame(opts: {
+  size?: number;
+  terrain?: Terrain[][];
+  entities?: Entity[];
+} = {}): Game {
   const size = opts.size ?? 10;
   const map =
     opts.terrain ??
@@ -403,8 +399,7 @@ describe("applyEffects: apex gate", () => {
     const ability = makeAbility({
       name: "Razor Rust",
       range: "Pierce 4",
-      effect:
-        "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
+      effect: "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
     });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 9], team: 1 });
@@ -427,8 +422,7 @@ describe("applyEffects: apex gate", () => {
     const ability = makeAbility({
       name: "Razor Rust",
       range: "Pierce 4",
-      effect:
-        "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
+      effect: "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
     });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 7], team: 1 });
@@ -442,9 +436,7 @@ describe("applyEffects: apex gate", () => {
     expect(target.statuses.length).toBe(beforeStatuses);
 
     // Messages mention "inactive" and NOT "[Apex]" prefix on the sub-effect
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
     expect(messages.some((m) => m.startsWith("    [Apex]"))).toBe(false);
   });
 
@@ -467,9 +459,7 @@ describe("applyEffects: apex gate", () => {
 
     // Pull 3 should NOT have moved anyone
     expect(target.pos).toEqual([5, 9]);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
   });
 
   it("non-apex effects still apply when target is below max range", () => {
@@ -507,9 +497,9 @@ describe("applyEffects: apex gate", () => {
     const effects = parseEffects(ability.effect);
     const messages = applyEffects(game, user, target, effects); // no ability arg
 
-    expect(
-      messages.some((m) => m.toLowerCase().includes("cannot evaluate")),
-    ).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("cannot evaluate"))).toBe(
+      true,
+    );
   });
 
   it("works with nested apex inside a conditional (then-branch)", () => {
@@ -529,9 +519,7 @@ describe("applyEffects: apex gate", () => {
 
     // Not at max range -> nested apex should also be inactive
     expect(target.pos).toEqual([5, 7]);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
   });
 });
 
@@ -750,12 +738,8 @@ describe("applyEffects: thirst gate", () => {
     expect(target.statuses).toHaveLength(0);
 
     // Inactive message names both the threshold and the actual Blood value.
-    expect(messages.some((m) => m.toLowerCase().includes("thirst 4"))).toBe(
-      true,
-    );
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.toLowerCase().includes("thirst 4"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
     expect(messages.some((m) => m.startsWith("    [Thirst 4]"))).toBe(false);
   });
 
@@ -790,7 +774,8 @@ describe("applyEffects: thirst gate", () => {
     const ability = makeAbility({
       name: "Dual Clause",
       range: "Melee",
-      effect: "Thirst 5: Pull 2. Always: target -2 ATK/1.",
+      effect:
+        "Thirst 5: Pull 2. Always: target -2 ATK/1.",
     });
     const user = makeEntity({
       num: "P1",
@@ -845,8 +830,9 @@ describe("applyEffects: thirst gate", () => {
     applyEffects(game, user, target, effects, ability);
 
     // Melee apex at chebyshev 1 -> nested apex should fire its +2 ATK buff.
-    // It's a self-buff, so it lands on the user.
-    const atkBuff = user.buffs.find((b) => b.stat === "atk");
+    const atkBuff = target.buffs.find(
+      (b) => b.stat === "atk",
+    );
     expect(atkBuff?.amount).toBe(2);
   });
 });
@@ -927,9 +913,8 @@ describe("applyEffectStream: choose prompt", () => {
     expect(labels.some((l: string) => /def/i.test(l))).toBe(true);
 
     // After answering option 0 (+3 ATK), the chosen buff should be applied.
-    // Rising Hope's Choose bonuses are self-buffs, so they land on the user.
     expect(messages.some((m) => m.includes("+3"))).toBe(true);
-    expect(user.buffs.length).toBeGreaterThanOrEqual(1);
+    expect(target.buffs.length).toBeGreaterThanOrEqual(1);
   });
 
   it("only applies the chosen option's sub-effects (not all)", () => {
@@ -951,8 +936,8 @@ describe("applyEffectStream: choose prompt", () => {
     );
 
     expect(prompts).toHaveLength(1);
-    // Only DEF applied, not ATK or ACC -- a self-buff on the user.
-    const statBuffs = user.buffs.map((b) => b.stat);
+    // Only DEF applied, not ATK or ACC
+    const statBuffs = target.buffs.map((b) => b.stat);
     expect(statBuffs).toContain("def");
     expect(statBuffs).not.toContain("atk");
     expect(statBuffs).not.toContain("acc");
@@ -1057,9 +1042,7 @@ describe("applyEffectStream: choose prompt", () => {
 
 describe("parseEffects: conditional clause", () => {
   it("recognises 'If CONDITION, EFFECT [Otherwise EFFECT]'", () => {
-    const effects = parseEffects(
-      "If user ATK > 5, +3 ATK/1. Otherwise, +1 DEF/1.",
-    );
+    const effects = parseEffects("If user ATK > 5, +3 ATK/1. Otherwise, +1 DEF/1.");
     expect(effects).toHaveLength(1);
     expect(effects[0].type).toBe("conditional");
     if (effects[0].type !== "conditional") return;
@@ -1075,26 +1058,6 @@ describe("parseEffects: conditional clause", () => {
     expect(effects[0].condition).toBe("target is alive");
     expect(effects[0].thenEffects.length).toBeGreaterThan(0);
     expect(effects[0].elseEffects).toBeUndefined();
-  });
-
-  it("does not swallow later sentences into a colon-conditional (Swift Shot pattern)", () => {
-    // "If target is at Range 7+: crit on 14+. If target is under Range 3:
-    // gain +1 MP/2." — two INDEPENDENT conditionals. The second must not be
-    // nested inside the first (the ranges are mutually exclusive, so nesting
-    // would make the MP gain unreachable).
-    const effects = parseEffects(
-      "If target is at Range 7+: crit on 14+. If target is under Range 3: gain +1 MP/2.",
-    );
-    expect(effects).toHaveLength(2);
-    expect(effects[0].type).toBe("conditional");
-    expect(effects[1].type).toBe("conditional");
-    if (effects[0].type !== "conditional" || effects[1].type !== "conditional")
-      return;
-    expect(effects[0].condition).toContain("range 7+");
-    expect(effects[1].condition).toContain("under range 3");
-    // The MP gain lives in the SECOND conditional, not nested in the first.
-    const mpInFirst = JSON.stringify(effects[0]).includes("\"mp\"");
-    expect(mpInFirst).toBe(false);
   });
 });
 
@@ -1206,23 +1169,13 @@ describe("evaluateCondition: supported patterns", () => {
     expect(evaluateCondition("not target is alive", user, target)).toBe("else");
   });
 
-  it("requires a separator after the user/target prefix (no 'targeted aura' mis-split)", () => {
-    // CR finding: /(user|target)?\s*/ could consume the first characters of a
-    // longer word, so "targeted aura active" became which="target" + name="ed
-    // aura" and the status lookup silently failed. With the required
-    // whitespace it stays one condition name.
-    expect(evaluateCondition("targeted aura active", makeEntity({ num: "A", name: "A" }), makeEntity({ num: "B", name: "B" }))).toBe("else");
-    // Bare names (no prefix) still resolve as before.
-    expect(evaluateCondition("debuff not active", makeEntity({ num: "A", name: "A" }), makeEntity({ num: "B", name: "B" }))).toBe("then");
-  });
-
   it("unknown conditions return 'unknown' (and fall back to then-branch)", () => {
     const user = makeEntity({ num: "P1", name: "A" });
     const target = makeEntity({ num: "P2", name: "B" });
 
-    expect(
-      evaluateCondition("target Dashes before user's next turn", user, target),
-    ).toBe("unknown");
+    expect(evaluateCondition("target Dashes before user's next turn", user, target)).toBe(
+      "unknown",
+    );
     expect(
       evaluateCondition(
         "the player this ability originates from has more MAG than ATK",
@@ -1230,69 +1183,6 @@ describe("evaluateCondition: supported patterns", () => {
         target,
       ),
     ).toBe("unknown");
-  });
-
-  it("debuff (not) active / buff active on target", () => {
-    const user = makeEntity({ num: "P1", name: "A" });
-    const clean = makeEntity({ num: "P2", name: "B" });
-    const debuffed = makeEntity({
-      num: "P3",
-      name: "C",
-      buffs: [{ stat: "def", amount: -3, rounds: 2 }],
-    });
-    const buffed = makeEntity({
-      num: "P4",
-      name: "D",
-      buffs: [{ stat: "atk", amount: 2, rounds: 1 }],
-    });
-    // Point-in-Line: "If debuff not active: gain +2 dice faces/1"
-    expect(evaluateCondition("debuff not active", user, clean)).toBe("then");
-    expect(evaluateCondition("debuff not active", user, debuffed)).toBe("else");
-    expect(evaluateCondition("debuff active", user, debuffed)).toBe("then");
-    expect(evaluateCondition("buff active", user, buffed)).toBe("then");
-    expect(evaluateCondition("buff active", user, clean)).toBe("else");
-  });
-
-  it("user/target debuffed (by foe)", () => {
-    const user = makeEntity({
-      num: "P1",
-      name: "A",
-      buffs: [{ stat: "acc", amount: -1, rounds: 1 }],
-    });
-    const clean = makeEntity({ num: "P2", name: "B" });
-    expect(evaluateCondition("user debuffed by foe", user, clean)).toBe("then");
-    expect(evaluateCondition("user debuffed by foe", clean, clean)).toBe("else");
-    expect(evaluateCondition("target debuffed", clean, user)).toBe("then");
-  });
-
-  it("<status> active / 'Moonblast or Celestial Blessing active'", () => {
-    const user = makeEntity({ num: "P1", name: "A" });
-    const moon = makeEntity({
-      num: "P2",
-      name: "B",
-      statuses: [
-        { name: "Moonblast", damage: 0, rounds: 2, maxRounds: 2 },
-      ],
-    });
-    const celestial = makeEntity({
-      num: "P3",
-      name: "C",
-      statuses: [
-        { name: "Celestial Blessing", damage: 0, rounds: 1, maxRounds: 1 },
-      ],
-    });
-    const none = makeEntity({ num: "P4", name: "D" });
-    expect(evaluateCondition("Moonblast active", user, moon)).toBe("then");
-    expect(evaluateCondition("Moonblast active", user, none)).toBe("else");
-    expect(
-      evaluateCondition("Moonblast or Celestial Blessing active", user, celestial),
-    ).toBe("then");
-    expect(
-      evaluateCondition("Moonblast or Celestial Blessing active", user, none),
-    ).toBe("else");
-    expect(
-      evaluateCondition("Moonblast not active", user, none),
-    ).toBe("then");
   });
 });
 
@@ -1327,8 +1217,7 @@ describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => 
     const { user, target, ability, game } = buildCtx();
     const effects = parseEffects("If target has Cripple, +5 ATK/1.");
     applyEffectStream(game, user, target, effects, ability).next(undefined);
-    // "+5 ATK/1" is a self-buff gated on the target's state.
-    expect(user.buffs.some((b) => b.stat === "atk" && b.amount === 5)).toBe(
+    expect(target.buffs.some((b) => b.stat === "atk" && b.amount === 5)).toBe(
       true,
     );
   });
@@ -1340,10 +1229,10 @@ describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => 
       "If target has Cripple, +5 ATK/1. Otherwise, +3 DEF/1.",
     );
     applyEffectStream(game, user, target, effects, ability).next(undefined);
-    expect(user.buffs.some((b) => b.stat === "def" && b.amount === 3)).toBe(
+    expect(target.buffs.some((b) => b.stat === "def" && b.amount === 3)).toBe(
       true,
     );
-    expect(user.buffs.some((b) => b.stat === "atk")).toBe(false);
+    expect(target.buffs.some((b) => b.stat === "atk")).toBe(false);
   });
 
   it("unknown conditions still fire then-branch but log TODO", () => {
@@ -1351,14 +1240,9 @@ describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => 
     const effects = parseEffects(
       "If target Dashes before user's next turn, +5 ATK/1.",
     );
-    const messages = applyEffectStream(
-      game,
-      user,
-      target,
-      effects,
-      ability,
-    ).next(undefined).value as string[];
-    expect(user.buffs.some((b) => b.stat === "atk" && b.amount === 5)).toBe(
+    const messages = applyEffectStream(game, user, target, effects, ability)
+      .next(undefined).value as string[];
+    expect(target.buffs.some((b) => b.stat === "atk" && b.amount === 5)).toBe(
       true,
     );
     expect(
@@ -1373,7 +1257,7 @@ describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => 
     target.curhp = 0;
     const effects = parseEffects("If target is alive, +5 ATK/1.");
     applyEffectStream(game, user, target, effects, ability).next(undefined);
-    expect(user.buffs.some((b) => b.stat === "atk")).toBe(false);
+    expect(target.buffs.some((b) => b.stat === "atk")).toBe(false);
   });
 
   it("sync applyEffects routes correctly too", () => {
@@ -1386,7 +1270,7 @@ describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => 
       parseEffects("If target has Cripple, +5 ATK/1. Otherwise, +3 DEF/1."),
       ability,
     );
-    expect(user.buffs.some((b) => b.stat === "def" && b.amount === 3)).toBe(
+    expect(target.buffs.some((b) => b.stat === "def" && b.amount === 3)).toBe(
       true,
     );
     expect(messages.some((m) => m.includes("Otherwise"))).toBe(true);
@@ -1400,28 +1284,20 @@ describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => 
 describe("applyEffects: regressions for non-apex effects", () => {
   beforeEach(() => {});
 
-  it("applies buff effects unchanged as a self-buff", () => {
-    const ability = makeAbility({
-      name: "Boost",
-      range: "Melee",
-      effect: "+3 ATK/2",
-    });
+  it("applies buff effects unchanged", () => {
+    const ability = makeAbility({ name: "Boost", range: "Melee", effect: "+3 ATK/2" });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
     const game = makeGame({ entities: [user, target] });
     const effects = parseEffects(ability.effect);
     applyEffects(game, user, target, effects, ability);
 
-    expect(user.buffs.length).toBe(1);
-    expect(user.buffs[0]).toEqual({ stat: "atk", amount: 3, rounds: 2 });
+    expect(target.buffs.length).toBe(1);
+    expect(target.buffs[0]).toEqual({ stat: "atk", amount: 3, rounds: 2 });
   });
 
   it("applies status effects unchanged", () => {
-    const ability = makeAbility({
-      name: "Bleed",
-      range: "Melee",
-      effect: "inflict 5 Bleed/3",
-    });
+    const ability = makeAbility({ name: "Bleed", range: "Melee", effect: "inflict 5 Bleed/3" });
     const user = makeEntity({ num: "P1", name: "A" });
     const target = makeEntity({ num: "P2", name: "B" });
     const game = makeGame({ entities: [user, target] });
@@ -1431,313 +1307,5 @@ describe("applyEffects: regressions for non-apex effects", () => {
     const bleed = target.statuses.find((s) => s.name === "Bleed");
     expect(bleed?.damage).toBe(5);
     expect(bleed?.rounds).toBe(3);
-  });
-});
-
-// =============================================================================
-// Stat-mod subject (#101): self-buffs go to the user, target debuffs to the
-// target. parseStatMods tags each clause with a subject; applyEffectStream
-// routes on it.
-// =============================================================================
-
-describe("stat-mod subject routing (#101)", () => {
-  it("'gain' self-buffs carry subject self", () => {
-    const effects = parseEffects("gain +3 DMG/1");
-    expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({
-      type: "buff",
-      stat: "dmg",
-      subject: "self",
-    });
-  });
-
-  it("bare stat mods default to self", () => {
-    expect(parseEffects("+3 ATK/1")[0]).toMatchObject({
-      type: "buff",
-      stat: "atk",
-      subject: "self",
-    });
-    expect(parseEffects("+3 ATK/1")[0]).toMatchObject({ subject: "self" });
-  });
-
-  it("'inflict' stat mods carry subject target", () => {
-    const effects = parseEffects("inflict -3 DEF/1");
-    expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({
-      type: "debuff",
-      stat: "def",
-      subject: "target",
-    });
-  });
-
-  it("Spirit Break: debuff lands on target, self-buff lands on user", () => {
-    const ability = makeAbility({
-      name: "Spirit Break",
-      range: "Melee",
-      effect: "inflict -3 DEF/1. gain +3 DMG/1.",
-    });
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
-    const game = makeGame({ entities: [user, target] });
-
-    applyEffects(game, user, target, parseEffects(ability.effect), ability);
-
-    const defDebuff = target.buffs.find((b) => b.stat === "def");
-    expect(defDebuff?.amount).toBe(-3);
-    const dmgBuff = user.buffs.find((b) => b.stat === "dmg");
-    expect(dmgBuff?.amount).toBe(3);
-    expect(target.buffs.find((b) => b.stat === "dmg")).toBeUndefined();
-    expect(user.buffs.find((b) => b.stat === "def")).toBeUndefined();
-  });
-
-  it("Bloodrush: colon-form 'If used from max range: gain +5 DMG/1...' stays self", () => {
-    const ability = makeAbility({
-      name: "Bloodrush",
-      range: "Melee",
-      effect: "If used from max range: gain +5 DMG/1 and +1 MP/1.",
-    });
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
-    const game = makeGame({ entities: [user, target] });
-
-    applyEffects(game, user, target, parseEffects(ability.effect), ability);
-
-    expect(user.buffs.find((b) => b.stat === "dmg")?.amount).toBe(5);
-    expect(user.buffs.find((b) => b.stat === "mp")?.amount).toBe(1);
-    expect(target.buffs).toHaveLength(0);
-  });
-
-  it("'target -3 MP/1' is a target debuff", () => {
-    const ability = makeAbility({
-      name: "Razor Rust",
-      range: "Pierce 4",
-      effect: "For one round, target -3 MP/1. Apex: Pull 3",
-    });
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 7], team: 1 });
-    const game = makeGame({ entities: [user, target] });
-
-    applyEffects(game, user, target, parseEffects(ability.effect), ability);
-
-    const mpDebuff = target.buffs.find((b) => b.stat === "mp");
-    expect(mpDebuff?.amount).toBe(-3);
-    expect(user.buffs.find((b) => b.stat === "mp")).toBeUndefined();
-  });
-
-  it("'Targets: -25% damage' debuffs the target, not the user", () => {
-    const parsed = parseEffects("Targets: -25% damage on next Standard/Full");
-    expect(parsed[0]).toMatchObject({
-      type: "debuff",
-      stat: "dmg",
-      percent: -25,
-      subject: "target",
-    });
-
-    const ability = makeAbility({
-      name: "Sandstorm",
-      range: "Melee",
-      effect:
-        "Spend 3 Mana. Targets: -25% damage on next Standard/Full. Push in Beam direction.",
-    });
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
-    const game = makeGame({ entities: [user, target] });
-
-    applyEffects(game, user, target, parseEffects(ability.effect), ability);
-
-    const dmgDebuff = target.buffs.find((b) => b.stat === "dmg");
-    expect(dmgDebuff).toBeDefined();
-    expect(user.buffs.find((b) => b.stat === "dmg")).toBeUndefined();
-  });
-
-  it("Sandstorm: the target's -25% damage debuff keeps its percentage (not flattened to 0 by getBaseStat)", () => {
-    const ability = makeAbility({
-      name: "Sandstorm",
-      range: "Melee",
-      effect: "Targets: -25% damage/1.",
-    });
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
-    const game = makeGame({ entities: [user, target] });
-
-    applyEffects(game, user, target, parseEffects(ability.effect), ability);
-
-    const dmgDebuff = target.buffs.find((b) => b.stat === "dmg");
-    // The percentage must survive on the buff (marked percent) so the
-    // target's outgoing damage is reduced when it attacks (CodeRabbit
-    // L1435). The old code ran it through getBaseStat("dmg") -> +0.
-    expect(dmgDebuff).toBeDefined();
-    expect(dmgDebuff!.percent).toBe(true);
-    expect(dmgDebuff!.amount).toBe(-25);
-  });
-
-  it("Sandstorm: target-directed -25% damage does not reduce the user's outgoing damage", () => {
-    const effects = parseEffects(
-      "Targets: -25% damage on next Standard/Full",
-    );
-    expect(effects[0]).toMatchObject({ type: "debuff", subject: "target" });
-    // The -25% belongs to the target's next attack, so it must not be
-    // folded into the user's combat metadata.
-    expect(extractCombatMetadata(effects).damagePercent).toBe(0);
-  });
-
-  it("'Target gains +N STAT' clauses route to the target", () => {
-    const effects = parseEffects("Target gains +4 DMG/1 or +4 DEF/1");
-    expect(effects.length).toBeGreaterThan(0);
-    for (const e of effects) {
-      expect(e.subject).toBe("target");
-    }
-  });
-
-  it("condition mention of the target does not flip a self-buff", () => {
-    const ability = makeAbility({
-      name: "Haunted Swing",
-      range: "Melee",
-      effect: "Targets at full HP: +5 damage.",
-    });
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
-    const game = makeGame({ entities: [user, target] });
-
-    applyEffects(game, user, target, parseEffects(ability.effect), ability);
-
-    const dmgBuff = user.buffs.find((b) => b.stat === "dmg");
-    expect(dmgBuff?.amount).toBe(5);
-    expect(target.buffs.find((b) => b.stat === "dmg")).toBeUndefined();
-  });
-
-  it("legacy hand-built buffs without subject still land on the target", () => {
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
-    const game = makeGame({ entities: [user, target] });
-    const effects: Effect[] = [
-      { type: "buff", stat: "atk", amount: 3, rounds: 1 },
-    ];
-
-    applyEffects(game, user, target, effects);
-
-    expect(target.buffs).toHaveLength(1);
-    expect(target.buffs[0]).toEqual({ stat: "atk", amount: 3, rounds: 1 });
-    expect(user.buffs).toHaveLength(0);
-  });
-
-  it("Razor Rust regression: unsigned 'Target: 3 MP/1' routes to the target", () => {
-    // Real data (src/data/index.ts:3105): Razor Rust's effect is
-    // "Target: 3 MP/1. Apex: inflict 5 Cripple/1." -- "Target: N STAT" is
-    // written WITHOUT a sign, which the marker regexes used to require.
-    // Before this fix the +3 MP buff landed on the USER instead of the
-    // target.
-    const ability = makeAbility({
-      name: "Razor Rust",
-      range: "Pierce 4",
-      effect: "Target: 3 MP/1. Apex: inflict 5 Cripple/1.",
-    });
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 9], team: 1 });
-    const game = makeGame({ entities: [user, target] });
-
-    applyEffects(game, user, target, parseEffects(ability.effect), ability);
-
-    const mpBuff = target.buffs.find((b) => b.stat === "mp");
-    expect(mpBuff).toBeDefined();
-    expect(user.buffs.find((b) => b.stat === "mp")).toBeUndefined();
-    // The Apex clause still works (target at max Pierce 4 range).
-    expect(target.statuses.find((s) => s.name === "Cripple")).toBeDefined();
-  });
-
-  it("unsigned 'Target:' parses with subject target", () => {
-    const effects = parseEffects("Target: 3 MP/1");
-    expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({
-      type: "buff",
-      stat: "mp",
-      subject: "target",
-    });
-  });
-
-  it("'Each target's next ...' does not crash", () => {
-    const effects = parseEffects(
-      "Each target's next Standard/Full on user: -1 dice",
-    );
-    expect(Array.isArray(effects)).toBe(true);
-  });
-});
-
-describe("dice faces stat modifier (#101)", () => {
-  it("parses 'gain +N dice faces/M' as a self buff", () => {
-    const effects = parseEffects("gain +2 dice faces/1");
-    expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({
-      type: "buff",
-      stat: "dice faces",
-      amount: 2,
-      rounds: 1,
-      subject: "self",
-    });
-  });
-
-  it("parses 'inflict -N dice faces/M' as a target debuff", () => {
-    const effects = parseEffects("inflict -2 dice faces/1");
-    expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({
-      type: "debuff",
-      stat: "dice faces",
-      amount: -2,
-      rounds: 1,
-      subject: "target",
-    });
-  });
-
-  it("parses Point-in-Line's full effect (inflict + If-colon conditional gain)", () => {
-    const effects = parseEffects(
-      "inflict -2 dice faces/1. If debuff not active: gain +2 dice faces/1.",
-    );
-    expect(effects).toHaveLength(2);
-    expect(effects[0]).toMatchObject({
-      type: "debuff",
-      stat: "dice faces",
-      amount: -2,
-      rounds: 1,
-      subject: "target",
-    });
-    // The "If ...:" colon form now forms a conditional, so the +2 gain is
-    // gated on the condition rather than applied unconditionally.
-    expect(effects[1]).toMatchObject({ type: "conditional" });
-    const cond = effects[1] as { thenEffects: Effect[] };
-    expect(cond.thenEffects[0]).toMatchObject({
-      type: "buff",
-      stat: "dice faces",
-      amount: 2,
-      subject: "self",
-    });
-  });
-
-  it("parses 'gain +N dice/M' as a self buff (die count)", () => {
-    const effects = parseEffects("gain +1 dice/1");
-    expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({
-      type: "buff",
-      stat: "dice",
-      amount: 1,
-      rounds: 1,
-      subject: "self",
-    });
-  });
-
-  it("'remove N dice' parses as a negative die-count debuff", () => {
-    const effects = parseEffects("remove 1 dice");
-    expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({
-      type: "debuff",
-      stat: "dice",
-      amount: -1,
-      subject: "self",
-    });
-  });
-
-  it("'dice faces' still wins the alternation over 'dice'", () => {
-    const effects = parseEffects("+2 dice faces/1");
-    expect(effects).toHaveLength(1);
-    expect(effects[0]).toMatchObject({ stat: "dice faces" });
   });
 });

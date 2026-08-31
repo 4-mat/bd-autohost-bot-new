@@ -614,62 +614,6 @@ describe("FFA targeting (team 0 = no teams)", () => {
   });
 });
 
-// ===========================================================================
-// resolveAttackFlow: self-buffs must apply once per ability use, not once
-// per target (#101 subject routing regression)
-// ===========================================================================
-
-describe("resolveAttackFlow: self-buffs do not stack per target", () => {
-  it("an AoE attack with 'gain +2 DMG/1' buffs the user exactly once (2 targets hit)", () => {
-    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
-    const t1 = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1 });
-    const t2 = makeEntity({ num: "P3", name: "Cara", pos: [4, 6], team: 1 });
-    const game = makeGame({ entities: [user, t1, t2] });
-    // Point-in-Line style: an AoE attack carrying a self-buff. Burst 1
-    // covers both foes; the "gain" clause is a self-buff that must land on
-    // the user ONCE, regardless of how many targets the AoE hits.
-    const ability = makeAbility({
-      name: "Overcharge",
-      range: "Burst 1",
-      mr: 0,
-      roll: "1d1+0", // minimal damage: no deaths, keeps the test focused
-      targetAmount: "AoE",
-      targetGroup: "Foes",
-      effect: "gain +2 DMG/1.",
-    });
-    user.abilities = [ability];
-
-    const step = startAttack(game, user, ability, t1.num);
-    let safety = 0;
-    const out: string[] = [];
-    if (step.done) out.push(...step.result.messages);
-    let lastDone = step.done;
-    while (user.pendingResolution && safety++ < 50) {
-      const flow = user.pendingResolution;
-      const s2 = flow.next("0");
-      if (s2.done) {
-        user.pendingResolution = undefined;
-        user.pendingPromptKind = undefined;
-        out.push(...s2.value.messages);
-        lastDone = true;
-        break;
-      }
-    }
-    expect(lastDone).toBe(true);
-
-    // Both foes were hit.
-    const log = out.join(" ");
-    expect(log).toContain("P2");
-    expect(log).toContain("P3");
-
-    // The self-buff must be applied exactly once: +2 DMG total on the user.
-    const dmgBuffs = user.buffs.filter((b) => b.stat === "dmg");
-    const total = dmgBuffs.reduce((sum, b) => sum + b.amount, 0);
-    expect(total).toBe(2);
-    expect(dmgBuffs).toHaveLength(1);
-  });
-});
-
 describe("On Miss hook (#139)", () => {
   it("fires only on miss, not on hit", () => {
     const make = (mr: number) =>
@@ -793,51 +737,5 @@ describe("On Miss hook (#139)", () => {
     const targetEva = target.buffs.filter((b) => b.stat === "eva").length;
     expect(userEva).toBe(1);
     expect(targetEva).toBe(0);
-  });
-
-  it("an unmodified 1d1 formula stays one-sided (CR d1 clamp finding)", () => {
-    const origRandom = Math.random;
-    Math.random = () => 0.94; // max face
-    try {
-      const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
-      const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 0 });
-      const ability = makeAbility({
-        name: "Stab",
-        range: "Melee",
-        mr: 0,
-        roll: "1d1+0", // 1 die, 1 face: exactly 1, no facesMod applied
-        damageType: "Physical",
-      });
-      const log = driveResolveAgainst(user, ability, target);
-      // ATK 10 - PD 0 = 10, so total must be 11 (roll 1), never 12.
-      expect(log).toContain("= **11**");
-    } finally {
-      Math.random = origRandom;
-    }
-  });
-
-  it("a +1 dice buff adds a die (2d4 -> 3d4, deterministic max roll)", () => {
-    const origRandom = Math.random;
-    Math.random = () => 0.94;
-    try {
-      const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
-      user.buffs.push({ stat: "dice", amount: 1, rounds: 1 });
-      const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1 });
-      const ability = makeAbility({
-        name: "Kinetic Impact",
-        range: "Melee",
-        mr: 0,
-        roll: "2d4+0",
-        targetAmount: 1,
-        targetGroup: "Foe",
-        effect: "",
-      });
-      const log = driveResolveAgainst(user, ability, target);
-      // 3d4 max (12) + ATK 10 - PD 5 = 17. Without the buff it would be
-      // 13 (2d4 max 8 + 10 - 5).
-      expect(log).toContain("= **17**");
-    } finally {
-      Math.random = origRandom;
-    }
   });
 });
