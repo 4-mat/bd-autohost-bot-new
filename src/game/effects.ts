@@ -459,6 +459,21 @@ function parseClauseStructured(lower: string): Effect[] | null {
     return [{ type: "phase", phase: phaseMatch[1] }];
   }
 
+  // Moon-phase prefix + Per/When triggers: "New Moon: E" / "Per 5 CP: E" /
+  // "When user kills a foe: E" -- gate their sub-effects. Extracted to keep
+  // parseClauseStructured under the cyclomatic-complexity limit.
+  const prefixGate = parseTriggerPrefix(lower);
+  if (prefixGate) return prefixGate;
+
+  const tail = parseTailSimple(lower);
+  if (tail) return tail;
+
+  return null;
+}
+
+/** Single-keyword clauses parsed at the end: Delay / Recoil / Ignore / Multi-Hit.
+ * Extracted to keep parseClauseStructured under the cyclomatic-complexity limit. */
+function parseTailSimple(lower: string): Effect[] | null {
   // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
   const delayMatch =
     lower.match(/^delay[\s-]+(\d+)\s+rounds?$/) ??
@@ -483,6 +498,45 @@ function parseClauseStructured(lower: string): Effect[] | null {
   const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
   if (multiHitMatch) {
     return [{ type: "multiHit", hits: parseInt(multiHitMatch[1]) }];
+  }
+
+  return null;
+}
+
+/**
+ * Clauses that gate their sub-effects behind a prefix word + colon:
+ *   - "New Moon: EFFECT" / "Full Moon: ..." -> a phase-conditional effect.
+ *   - "Per hit: EFFECT" / "Per 5 CP: EFFECT" -> a PerEffect trigger.
+ *   - "When user kills a foe: EFFECT" -> a TriggerEffect.
+ * Returns null when the clause is not one of these prefix-gated forms.
+ */
+function parseTriggerPrefix(lower: string): Effect[] | null {
+  const moonMatch = lower.match(
+    /^(new moon|full moon|waxing|waning):\s*(.+)$/,
+  );
+  if (moonMatch) {
+    return [{
+      type: "conditional",
+      condition: `phase is ${moonMatch[1]}`,
+      thenEffects: parseEffects(moonMatch[2]),
+    }];
+  }
+
+  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
+  if (perMatch) {
+    return [{
+      type: "per",
+      trigger: perMatch[1].trim(),
+      effects: parseEffects(perMatch[2]),
+    }];
+  }
+  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
+  if (whenMatch) {
+    return [{
+      type: "trigger",
+      event: whenMatch[1].trim(),
+      effects: parseEffects(whenMatch[2]),
+    }];
   }
 
   return null;
@@ -1103,7 +1157,22 @@ export function evaluateCondition(
   const word = evalStatWordCompare(lower, user, target);
   if (word !== null) return word;
 
+  const phase = evalMoonPhase(lower, moonPhase);
+  if (phase !== null) return phase;
+
   return "unknown";
+}
+
+/** "phase is new moon" / "phase is full moon" — checks against the game's
+ * active moon phase. When none has been set, the default phase is new moon. */
+function evalMoonPhase(
+  lower: string,
+  moonPhase?: string,
+): ConditionOutcome | null {
+  const m = lower.match(/^phase is (.+)$/);
+  if (!m) return null;
+  const active = (moonPhase ?? "new moon").toLowerCase();
+  return m[1].trim().toLowerCase() === active ? "then" : "else";
 }
 
 /** "5 Blood" / "0 Campaigns" / "no Campaigns" — resource threshold. */
@@ -1474,7 +1543,7 @@ function* handleSwap(
 }
 
 function* handleSimple(
-  { user, messages }: EffectCtx,
+  { game, user, messages }: EffectCtx,
   effect: any,
 ) {
   switch (effect.type) {
@@ -1501,6 +1570,8 @@ function* handleSimple(
       messages.push(`  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`);
       return;
     case "phase":
+      // Only shift the game's moon phase to the named phase.
+      if (game) game.moonPhase = effect.phase;
       messages.push(`  Phase shifts to ${effect.phase}.`);
       return;
     case "multiHit":
@@ -1528,7 +1599,12 @@ function* handleConditional(
   { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: ConditionalEffect,
 ) {
-  const { outcome, messages: condMsgs } = applyConditional(user, target, effect);
+  const { outcome, messages: condMsgs } = applyConditional(
+    user,
+    target,
+    effect,
+    game ? game.moonPhase : undefined,
+  );
   messages.push(...condMsgs);
   // "unknown" defaults to then-branch (legacy fallback). "else" without
   // an else-branch drops the sub-effects entirely.
@@ -1554,6 +1630,32 @@ function* handleThirst(
   }
   const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
   messages.push(...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`));
+}
+
+function* handlePer(
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
+  effect: PerEffect,
+) {
+  if (!perTriggerApplies(effect.trigger, user)) {
+    // Pool below the count (or an unsupported trigger): stays summarized.
+    messages.push(`  [Per ${effect.trigger}]`);
+    return;
+  }
+  const subMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
+  messages.push(...subMsgs.map((m) => `    [Per ${effect.trigger}] ${m}`));
+}
+
+function* handleTrigger(
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
+  effect: TriggerEffect,
+) {
+  if (!triggerApplies(effect.event, user, target)) {
+    // Event not met in this context: stays summarized.
+    messages.push(`  [When ${effect.event}]`);
+    return;
+  }
+  const subMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
+  messages.push(...subMsgs.map((m) => `    [When ${effect.event}] ${m}`));
 }
 
 function* handleApex(
@@ -1612,6 +1714,8 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   thirst: handleThirst,
   apex: handleApex,
   choose: handleChoose,
+  per: handlePer,
+  trigger: handleTrigger,
   teleport: handleSimple,
   move: handleSimple,
   resource: handleSimple,
