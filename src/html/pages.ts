@@ -282,8 +282,27 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   // while the game is NOT yet set. %setgame (and the %endvote winner / %genpos)
   // lock the setup by setting game.modeChosen, so the loadout control must go
   // away as soon as the mode is chosen.
-  let loadout = "";
-  if (!game.started && !game.modeChosen) {
+  const loadout = buildLoadoutControl(game, entity);
+
+  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
+  ${map}${pl}
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
+  ${buildVotePanel(game, entity)}
+  ${loadout}
+  <hr>${phase}${prompt}${actions}
+  ${log}
+  ${buildToasts(game)}
+</div>`;
+}
+
+// Build the class/weapon loadout control, or a "locked" notice once the mode
+// is chosen (%setgame / %endvote winner / %genpos). Extracted from
+// buildPlayerPage to keep its cyclomatic complexity under the limit.
+function buildLoadoutControl(game: Game, entity: Entity): string {
+  if (game.started) return "";
+
+  // The game is NOT set yet — players may change their own class/weapon.
+  if (!game.modeChosen) {
     const data = getVersionData(game.version);
     const classOpts = [...data.classes.values()]
       .map(
@@ -297,25 +316,15 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
           `<option value="${esc(w.name)}"${w.name === entity.weaponName ? " selected" : ""}>${esc(w.name)}</option>`,
       )
       .join("");
-    loadout = `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #57a;border-radius:4px"><b style="color:#8af">Change Loadout</b> <span style="color:#888">(until the game is set)</span><br>
+    return `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #57a;border-radius:4px"><b style="color:#8af">Change Loadout</b> <span style="color:#888">(until the game is set)</span><br>
 <select id="loadout-class" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${classOpts}</select>
 <select id="loadout-weapon" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${weaponOpts}</select>
 <button name="loadout" style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif">Apply</button>
 </div>`;
-  } else if (!game.started && game.modeChosen) {
-    // The game is set but not started: show why the control is gone.
-    loadout = `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #555;border-radius:4px"><b style="color:#888">Loadout locked</b> <span style="color:#888">(the game is set)</span></div>`;
   }
 
-  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
-  ${map}${pl}
-  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
-  ${buildVotePanel(game, entity)}
-  ${loadout}
-  <hr>${phase}${prompt}${actions}
-  ${log}
-  ${buildToasts(game)}
-</div>`;
+  // The game is set but not started: show why the control is gone.
+  return `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #555;border-radius:4px"><b style="color:#888">Loadout locked</b> <span style="color:#888">(the game is set)</span></div>`;
 }
 
 // -- Map (Host + Player shared logic) -----------------------------------------
