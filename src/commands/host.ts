@@ -129,6 +129,7 @@ const HOST_CMDS_NOVAL: Record<string, (room: Room, user: User) => void> = {
   endvote: handleEndVote,
   ffabtn: handleFfaButton,
   nudge: handleNudge,
+  toggleidle: handleToggleIdle,
 };
 
 /** Host commands that pass the full argument string through. */
@@ -1834,6 +1835,7 @@ function handleToggleIdle(room: Room, user: User) {
     room.id,
     `**Players Idle**: ${game.playersIdle ? "Enabled" : "Disabled"}`,
   );
+  broadcastPages(game);
 }
 
 // -- Map generators ------------------------------------------------------------
