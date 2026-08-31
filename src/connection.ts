@@ -2,7 +2,7 @@ import WebSocket from "ws";
 import { EventEmitter } from "events";
 import config from "./config.js";
 import { login } from "./login.js";
-import { setWs, resumeSending } from "./utils.js";
+import { setWs } from "./utils.js";
 
 export const bot = new EventEmitter();
 
@@ -34,9 +34,9 @@ export function connect() {
   const ws = new WebSocket(url);
   currentWs = ws;
 
-  // Install the wrapper before any event handler runs so the open handler's
-  // resumeSending() (and any concurrent drain) can never reach a stale socket
-  // from a previous reconnect or an unset wrapper on first connect.
+  // Install the wrapper before any event handler runs so any drain or queued
+  // message can never reach a stale socket from a previous reconnect or an unset
+  // wrapper on first connect.
   setWs({ send: (msg: string, cb) => ws.send(msg, cb) });
 
   ws.on("open", () => {
@@ -49,8 +49,6 @@ export function connect() {
       reconnectTimer = null;
     }
 
-    // Flush anything queued while the previous socket was down.
-    resumeSending();
   });
 
   ws.on("message", (data) => {

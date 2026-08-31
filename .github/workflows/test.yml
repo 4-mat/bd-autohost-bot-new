@@ -17,6 +17,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
       # bun install occasionally flakes on tarball extraction (e.g. "Fail
       # extracting tarball for xlsx"); retry a couple of times before giving up.
       - name: Install dependencies (with retry)
