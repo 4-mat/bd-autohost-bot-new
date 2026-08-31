@@ -1315,6 +1315,12 @@
       function snapshot() {
         return JSON.stringify(map);
       }
+      // Restore the map to a prior snapshot string. Used by operations that
+      // modify the map in-place and need to roll back on failure (e.g. an
+      // invalid %tile clipboard import).
+      function restoreSnapshot(snap) {
+        map = JSON.parse(snap);
+      }
       function pushHistory() {
         history = history.slice(0, historyIdx + 1);
         history.push(snapshot());
@@ -1775,7 +1781,13 @@
         if (!el) return;
         const parts = [];
         if (selClip) parts.push("copied " + selClip.rows + "×" + selClip.cols);
-        if (selBox) parts.push("selected " + (selBox.r1 - selBox.r0 + 1) + "×" + (selBox.c1 - selBox.c0 + 1));
+        if (selBox)
+          parts.push(
+            "selected " +
+              (selBox.r1 - selBox.r0 + 1) +
+              "×" +
+              (selBox.c1 - selBox.c0 + 1),
+          );
         el.textContent = parts.join(" · ");
       }
 
@@ -1787,7 +1799,11 @@
         selClip = MC.sliceBlock(map, selBox);
         updateSelStatus();
         toast(
-          "Copied " + selClip.rows + "×" + selClip.cols + " block (Ctrl+V to paste)",
+          "Copied " +
+            selClip.rows +
+            "×" +
+            selClip.cols +
+            " block (Ctrl+V to paste)",
           "ok",
         );
       }
@@ -1798,9 +1814,14 @@
           return;
         }
         const before = snapshot();
-        let r = anchorR != null ? anchorR : (selBox ? selBox.r0 : 0);
-        let c = anchorC != null ? anchorC : (selBox ? selBox.c0 : 0);
-        const pasted = MC.pasteBlock(map, selClip, Math.max(0, r), Math.max(0, c));
+        let r = anchorR != null ? anchorR : selBox ? selBox.r0 : 0;
+        let c = anchorC != null ? anchorC : selBox ? selBox.c0 : 0;
+        const pasted = MC.pasteBlock(
+          map,
+          selClip,
+          Math.max(0, r),
+          Math.max(0, c),
+        );
         if (!pasted) {
           toast("Can't paste there — out of bounds", "err");
           return;
@@ -1812,7 +1833,13 @@
         updateSelStatus();
         render();
         toast(
-          "Pasted " + selClip.rows + "×" + selClip.cols + " at " + MC.rowLabel(pasted.r0) + (pasted.c0 + 1),
+          "Pasted " +
+            selClip.rows +
+            "×" +
+            selClip.cols +
+            " at " +
+            MC.rowLabel(pasted.r0) +
+            (pasted.c0 + 1),
           "ok",
         );
       }
@@ -1829,7 +1856,14 @@
         }
         const text = lines.join("\n");
         await copyText(text);
-        toast("Copied %tile commands (" + lines.length + " line" + (lines.length === 1 ? "" : "s") + ")", "ok");
+        toast(
+          "Copied %tile commands (" +
+            lines.length +
+            " line" +
+            (lines.length === 1 ? "" : "s") +
+            ")",
+          "ok",
+        );
       }
 
       async function importTileCmds() {
@@ -1842,16 +1876,30 @@
         if (!text) return;
         const before = snapshot();
         let placed = 0;
+        let importError = null;
         try {
           placed = MC.applyTileCmds(map, text);
         } catch (err) {
-          toast("Could not import: " + err.message, "err");
-          return;
+          importError = err;
+          // applyTileCmds modifies in-place, so on error the map may be
+          // partially modified. Restore the pre-import snapshot so the user
+          // sees no half-applied changes — they can fix and retry.
+          restoreSnapshot(before);
         }
         draftUserEdit = true;
-        if (before !== snapshot()) pushHistory();
         render();
-        toast(placed + " tile" + (placed === 1 ? "" : "s") + " painted from %tile commands", "ok");
+        if (importError) {
+          toast("Could not import: " + importError.message, "err");
+        } else {
+          if (before !== snapshot()) pushHistory();
+          toast(
+            placed +
+              " tile" +
+              (placed === 1 ? "" : "s") +
+              " painted from %tile commands",
+            "ok",
+          );
+        }
       }
 
       /* ------------------------------------------------------------------ */
