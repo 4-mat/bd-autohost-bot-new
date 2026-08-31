@@ -47,3 +47,30 @@ jobs:
             git diff --stat -- maps/index.json maps/curated.json maps/modes.json mapeditor/gallery
             exit 1
           fi
+
+      # Palette single-source guard: terrain hex colors must live ONLY in
+      # src/game/terrain-colors.cjs and the generated gallery SVGs. Any
+      # hardcoded copy elsewhere (engine, mapcore, pages, tests) is a drift
+      # risk — fail so it gets routed through the canonical file.
+      - name: Palette single-source check
+        run: |
+          HEXES=$(node -e 'const c = require("./src/game/terrain-colors.cjs"); for (const id in c) console.log(c[id].color.toLowerCase());')
+          HITS=""
+          for H in $HEXES; do
+            HIT=$(grep -rIn --include="*.ts" --include="*.cjs" --include="*.js" --include="*.html" -i "$H" src mapeditor scripts discord-issue-bot test-app.ts 2>/dev/null \
+              | grep -vi "terrain-colors\.cjs" \
+              | grep -v "gallery/" \
+              # Known coincidental hexes, not terrain tables: the chat PM color
+              # in test-app.ts and the named-color map in mapcore's token palette.
+              | grep -v "msg-pm { color:" \
+              | grep -v "black: '#000000'" || true)
+            if [ -n "$HIT" ]; then
+              HITS="$HITS$HIT"$'\n'
+            fi
+          done
+          if [ -n "$HITS" ]; then
+            echo "::error::Terrain colors are hardcoded outside src/game/terrain-colors.cjs — route them through the canonical palette."
+            printf '%s' "$HITS"
+            exit 1
+          fi
+          echo "Palette is the single source of terrain colors."
