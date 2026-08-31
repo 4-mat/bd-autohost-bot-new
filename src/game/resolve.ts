@@ -816,10 +816,6 @@ function filterByPhase(effects: Effect[], phase: PhaseTiming): Effect[] {
   return effects.filter((e) => e.type === "phaseEffect" && e.phase === phase);
 }
 
-/** Returns effects that fire on hit (all non-PhaseEffect effects). PhaseEffect wrappers are applied at their specific timing points. */
-function filterNonPhase(effects: Effect[]): Effect[] {
-  return effects.filter((e) => e.type !== "phaseEffect");
-}
 
 function* resolveSingleTarget(
   game: Game,
