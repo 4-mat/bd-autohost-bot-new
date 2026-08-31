@@ -811,6 +811,10 @@
         "Max Uses",
         "Cost",
       ];
+      if (!state.data) {
+        toast("Data not loaded yet.", "warn");
+        return;
+      }
       const rows = [headers];
 
       for (const kind of ["class", "weapon"]) {
@@ -841,12 +845,8 @@
           for (const a of abilities) {
             const cost =
               a.cost && a.cost.type
-                ? a.cost.type +
-                  (a.cost.resource ? " " + a.cost.resource : "") +
-                  " " +
-                  (a.cost.amount ?? "")
-                : "";
-            rows.push([
+                ? [a.cost.type, a.cost.resource, a.cost.amount].filter(v => v != null && v !== "").join(" ")
+                : "";rows.push([
               kind,
               item.name,
               item.branch || "",
