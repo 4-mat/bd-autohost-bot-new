@@ -847,8 +847,8 @@
         ? data.customWeapons.map((s) => String(s))
         : [];
       state.data = {
-        classes: JSON.parse(JSON.stringify(classes)),
-        weapons: JSON.parse(JSON.stringify(weapons)),
+        classes,
+        weapons,
         customClasses,
         customWeapons,
       };
@@ -865,6 +865,15 @@
       input.onchange = () => {
         const file = input.files && input.files[0];
         if (!file) return;
+        // Import replaces the whole working set: warn before discarding
+        // unsaved edits (the reviewer flagged silent data loss here).
+        if (
+          state.dirty &&
+          !confirm(
+            "Importing will discard your unsaved edits and replace the whole dataset. Continue?",
+          )
+        )
+          return;
         const reader = new FileReader();
         reader.onload = () => {
           try {
