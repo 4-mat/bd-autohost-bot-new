@@ -1,3 +1,21 @@
+/**
+ * Attack resolution pipeline for bd-autohost-bot-new.
+ *
+ * Declares -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
+ * -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
+ *
+ * Exports:
+ * - ResolutionResult, AttackPrompt, PromptResponse types
+ * - resolveAction(), startAttack(), respondToChoice/Target/Dir/Tile
+ * - Core resolution pipeline: resolveAttackFlow, chooseTargets, resolveTargetAction
+ * - Damage calculation: resolveHitDamage, resolveHeal, resolveSplash
+ * - Cooldown/uses tracking: recordActionUsage, setCooldown
+ * - Modifiers math: extractCombatMetadata, formatDamageModsLine, buildModTags
+ * - Legacy: resolveAction() for existing callers
+ *
+ * Import: `import { resolveAction, startAttack } from "../game/resolve.js"`
+ * or `import { rollAccuracy, dealDamage } from "../game/state.js"`
+ */
 import {
   type Game,
   type Entity,
@@ -20,6 +38,8 @@ import {
   placeTerrain,
   TERRAIN_NAMES,
 } from "./state.js";
+import { modeIdFor } from "../data/gamemodes.js";
+import { matchesTargetGroup } from "./targeting.js";
 import {
   parseEffects,
   applyEffects,
@@ -60,27 +80,7 @@ export function eva43(entity: Entity, damageType: string): number {
 }
 
 export function getEffectiveStat(entity: Entity, stat: string): number {
-  let base = 0;
-  switch (stat) {
-    case "atk":
-      base = entity.atk;
-      break;
-    case "mag":
-      base = entity.mag;
-      break;
-    case "pd":
-      base = entity.pd;
-      break;
-    case "md":
-      base = entity.md;
-      break;
-    case "eva":
-      base = entity.eva;
-      break;
-    case "mp":
-      base = entity.mp;
-      break;
-  }
+  let base = BASE_STATS[stat]?.(entity) ?? 0;
   for (const b of entity.buffs) {
     if (b.stat === stat) base += b.amount;
     // DEF raises both physical and magical defense
@@ -91,6 +91,15 @@ export function getEffectiveStat(entity: Entity, stat: string): number {
   if ((stat === "pd" || stat === "md") && hasStatus(entity, "curse")) base -= 4;
   return Math.max(0, base);
 }
+
+const BASE_STATS: Record<string, (e: Entity) => number> = {
+  atk: (e) => e.atk,
+  mag: (e) => e.mag,
+  pd: (e) => e.pd,
+  md: (e) => e.md,
+  eva: (e) => e.eva,
+  mp: (e) => e.mp,
+};
 
 export function getStatBonus(entity: Entity, stat: string): number {
   let bonus = 0;
@@ -131,6 +140,8 @@ export type AttackPrompt =
     };
 
 export type PromptResponse = string;
+
+type PushPullResult = { type: "push" | "pull"; amount: number };
 
 export type AttackStep =
   | { done: false; prompt: AttackPrompt }
@@ -174,6 +185,99 @@ function* runEffectStream(
   }
 }
 
+/** Prompt for targets when the ability has none pre-selected. Returns
+ * null (with a message already pushed) when no valid target exists. */
+function* chooseTargets(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  initialTarget: string | undefined,
+  result: ResolutionResult,
+): Generator<AttackPrompt, Entity[] | null, PromptResponse> {
+  const candidates = getTargetCandidates(game, user, ability);
+  if (candidates.length === 0) {
+    result.messages.push(
+      `${user.num} uses ${ability.name} but no valid targets found.`,
+    );
+    return null;
+  }
+
+  const targetRef =
+    initialTarget ??
+    (yield {
+      kind: "target",
+      message: `Choose a target for ${ability.name}`,
+      candidates,
+    });
+
+  const targets = findTargets(game, user, ability, targetRef);
+  if (targets.length === 0) {
+    result.messages.push(
+      `${user.num} uses ${ability.name} but no valid targets found.`,
+    );
+    return null;
+  }
+  return targets;
+}
+
+/** If the ability has damageType "Varies", prompt for a variant and return
+ * the resolved ability; otherwise return the ability unchanged. Returns null
+ * (with a message pushed) when the variant choice can't be made. */
+function* resolveVariantChoice(
+  user: Entity,
+  ability: AbilityData,
+  result: ResolutionResult,
+): Generator<AttackPrompt, AbilityData | null, PromptResponse> {
+  if (ability.damageType !== "Varies") return ability;
+
+  if (!ability.variants?.length) {
+    result.messages.push(
+      `${user.num} uses ${ability.name} but it has no damage variants.`,
+    );
+    return null;
+  }
+  const variantId = yield {
+    kind: "selection",
+    message: `Choose the type of ${ability.name}`,
+    options: ability.variants.map((v) => ({ id: v.id, label: v.label })),
+  };
+  const variant = ability.variants.find((v) => v.id === variantId);
+  if (!variant) {
+    result.messages.push(
+      `${user.num} cancels ${ability.name}: unknown variant.`,
+    );
+    return null;
+  }
+  return {
+    ...ability,
+    damageType: variant.damageType,
+    range: variant.range ?? ability.range,
+    effect: variant.effect ?? ability.effect,
+  };
+}
+
+/** Prompt for a selection-based ability (choices / sacrifice / pay costs).
+ * Returns true when paid, false (with a message pushed) when it can't. */
+function* resolveSelection(
+  user: Entity,
+  ability: AbilityData,
+  result: ResolutionResult,
+): Generator<AttackPrompt, boolean, PromptResponse> {
+  if (!abilityNeedsSelection(ability)) return true;
+
+  const choiceId = yield {
+    kind: "selection",
+    message: `Choose an option for ${ability.name}`,
+    options: buildSelectionOptions(ability),
+  };
+  if (applySelection(user, ability, choiceId)) return true;
+
+  result.messages.push(
+    `${user.num} could not pay the cost for ${ability.name}.`,
+  );
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // The pipeline itself:
 // Declare -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
@@ -192,61 +296,25 @@ function* resolveAttackFlow(
   // result.messages.push(`/me declares ${ability.name}`);
 
   // --- Auto-deduct non-prompted costs ---
-  if (ability.cost && !ability.cost.prompt) {
-    if (!autoDeductCost(user, ability.cost)) {
-      result.messages.push(
-        `${user.num} could not pay the cost for ${ability.name}.`,
-      );
-      return result;
-    }
+  if (
+    ability.cost &&
+    !ability.cost.prompt &&
+    !autoDeductCost(user, ability.cost)
+  ) {
+    result.messages.push(
+      `${user.num} could not pay the cost for ${ability.name}.`,
+    );
+    return result;
   }
 
   // --- Selection / Choices / Sacrifice / Pay Costs ---
-  if (abilityNeedsSelection(ability)) {
-    const choiceId = yield {
-      kind: "selection",
-      message: `Choose an option for ${ability.name}`,
-      options: buildSelectionOptions(ability),
-    };
-    const paid = applySelection(user, ability, choiceId);
-    if (!paid) {
-      result.messages.push(
-        `${user.num} could not pay the cost for ${ability.name}.`,
-      );
-      return result;
-    }
-  }
+  const paid = yield* resolveSelection(user, ability, result);
+  if (!paid) return result;
 
   // --- Variant choice for damageType "Varies" ---
-  let active = ability;
-  if (ability.damageType === "Varies") {
-    if (!ability.variants?.length) {
-      result.messages.push(
-        `${user.num} cannot use ${ability.name}: no damage-type variants defined.`,
-      );
-      return result;
-    }
-    const variantId = yield {
-      kind: "selection",
-      message: `Choose the type of ${ability.name}`,
-      options: ability.variants.map((v) => ({ id: v.id, label: v.label })),
-    };
-    const variant = ability.variants.find((v) => v.id === variantId);
-    if (!variant) {
-      result.messages.push(
-        `${user.num} cancels ${ability.name}: unknown variant.`,
-      );
-      return result;
-    }
-    active = {
-      ...ability,
-      damageType: variant.damageType,
-      range: variant.range ?? ability.range,
-      effect: variant.effect ?? ability.effect,
-    };
-  }
+  const active = yield* resolveVariantChoice(user, ability, result);
+  if (!active) return result;
 
-  // --- Direction prompt for AoE abilities ---
   const needsDir = needsDirection(active);
   let dir = user.pendingAction?.direction;
   if (needsDir && !dir) {
@@ -293,31 +361,15 @@ function* resolveAttackFlow(
   } = prepareTargeting(game, user, active, dir);
   let targets = autoTargets;
   if (targets.length === 0) {
-    const candidates = getTargetCandidates(game, user, active);
-
-    if (candidates.length === 0) {
-      result.messages.push(
-        `${user.num} uses ${active.name} but no valid targets found.`,
-      );
-      return result;
-    }
-
-    const targetRef =
-      initialTarget ??
-      (yield {
-        kind: "target",
-        message: `Choose a target for ${active.name}`,
-        candidates,
-      });
-
-    targets = findTargets(game, user, active, targetRef);
-
-    if (targets.length === 0) {
-      result.messages.push(
-        `${user.num} uses ${active.name} but no valid targets found.`,
-      );
-      return result;
-    }
+    const chosen = yield* chooseTargets(
+      game,
+      user,
+      active,
+      initialTarget,
+      result,
+    );
+    if (chosen === null) return result;
+    targets = chosen;
   }
 
   const targetNames = targets.map((t) => t.num).join(", ");
@@ -343,75 +395,142 @@ function* resolveAttackFlow(
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   for (const target of targets) {
-    if (isAttack) {
-      let confusionApplied = false;
-      for (let h = 0; h < effectiveHitCount; h++) {
-        const label =
-          effectiveHitCount > 1 ? ` (Hit ${h + 1}/${effectiveHitCount})` : "";
-        const singleResult: ResolutionResult = yield* resolveSingleTarget(
-          game,
-          user,
-          active,
-          target,
-          combat,
-          label,
-          confusionApplied,
-        );
-        result.messages.push(...singleResult.messages);
-        result.deaths.push(...singleResult.deaths);
+    const userDefeated = yield* resolveTargetAction(
+      game,
+      user,
+      active,
+      target,
+      combat,
+      effectiveHitCount,
+      isAttack,
+      isHeal,
+      pushPullResult,
+      result,
+    );
+    if (userDefeated) break;
+  }
 
-        if (!confusionApplied && singleResult.confusionTriggered) {
-          confusionApplied = true;
-        }
+  resolveSplashFor(
+    game,
+    user,
+    active,
+    targets,
+    combat,
+    isAttack,
+    isAoE,
+    result,
+  );
 
-        if (
-          pushPullResult &&
-          singleResult.messages.some((m) => m.includes("HIT"))
-        ) {
-          applyPushPull(game, user, target, pushPullResult, result);
-        }
-      }
-    } else if (isHeal) {
-      const healResult = resolveHeal(game, user, active, target);
-      result.messages.push(...healResult.messages);
-    } else {
-      const statusResult: ResolutionResult = yield* resolveNonDamaging(
+  // --- After Resolving (cooldowns, use tracking, win check) ---
+  recordActionUsage(user, active);
+  checkActionWin(game, result);
+
+  return result;
+}
+
+/** Apply splash damage to nearby tiles when a single-target attack hits. */
+function resolveSplashFor(
+  game: Game,
+  user: Entity,
+  active: AbilityData,
+  targets: Entity[],
+  combat: CombatMetadata,
+  isAttack: boolean,
+  isAoE: boolean,
+  result: ResolutionResult,
+): void {
+  if (!isAttack || isAoE || targets.length === 0) return;
+  const splashResult = resolveSplash(game, user, active, targets[0], combat);
+  result.messages.push(...splashResult.messages);
+  result.deaths.push(...splashResult.deaths);
+}
+
+/** Resolve one ability against one target (attack hits / heal / status).
+ * Returns true if the attacker (user) was defeated and resolution should stop. */
+function* resolveTargetAction(
+  game: Game,
+  user: Entity,
+  active: AbilityData,
+  target: Entity,
+  combat: CombatMetadata,
+  effectiveHitCount: number,
+  isAttack: boolean,
+  isHeal: boolean,
+  pushPullResult: PushPullResult | null,
+  result: ResolutionResult,
+): Generator<AttackPrompt, boolean, PromptResponse> {
+  if (isAttack) {
+    let confusionApplied = false;
+    for (let h = 0; h < effectiveHitCount; h++) {
+      const label =
+        effectiveHitCount > 1 ? ` (Hit ${h + 1}/${effectiveHitCount})` : "";
+      const singleResult: ResolutionResult = yield* resolveSingleTarget(
         game,
         user,
         active,
         target,
+        combat,
+        label,
+        confusionApplied,
       );
-      result.messages.push(...statusResult.messages);
-      result.deaths.push(...statusResult.deaths);
+      result.messages.push(...singleResult.messages);
+      result.deaths.push(...singleResult.deaths);
+
+      // If the attacker was defeated by recoil or confusion, stop remaining hits
+      if (singleResult.deaths.some((d) => d.num === user.num)) {
+        return true;
+      }
+
+      if (!confusionApplied && singleResult.confusionTriggered) {
+        confusionApplied = true;
+      }
+
+      if (
+        pushPullResult &&
+        singleResult.messages.some((m) => m.includes("HIT"))
+      ) {
+        applyPushPull(game, user, target, pushPullResult, result);
+      }
     }
+  } else if (isHeal) {
+    const healResult = resolveHeal(game, user, active, target);
+    result.messages.push(...healResult.messages);
+  } else {
+    const statusResult: ResolutionResult = yield* resolveNonDamaging(
+      game,
+      user,
+      active,
+      target,
+    );
+    result.messages.push(...statusResult.messages);
+    result.deaths.push(...statusResult.deaths);
   }
+  return false;
+}
 
-  if (isAttack && !isAoE && targets.length > 0) {
-    const splashResult = resolveSplash(game, user, active, targets[0], combat);
-    result.messages.push(...splashResult.messages);
-    result.deaths.push(...splashResult.deaths);
-  }
-
-  // --- After Resolving (cooldowns, use tracking, win check) ---
+/** Track cooldown + use count after an ability resolves. */
+function recordActionUsage(user: Entity, active: AbilityData) {
   setCooldown(user, active);
   const { uses } = parseFrequency(active.frequency);
   if (active.maxUses ?? uses) {
     user.usesUsed[active.name] = (user.usesUsed[active.name] ?? 0) + 1;
   }
-  // Bug fix carried over: check win condition once after all deaths this
-  // action, not once per death (was producing duplicate "Game over!" lines
-  // on multi-kill splash/AoE).
-  if (result.deaths.length > 0 && isWinCondition(game)) {
-    result.gameOver = true;
-    const winner = game.entities[0];
-    result.messages.push(
-      winner
-        ? `**Game over! ${winner.num} (${winner.name}) wins!**`
-        : "**Game over! No survivors!**",
-    );
-  }
+}
 
-  return result;
+/**
+ * Check win condition once after all deaths this action (not once per
+ * death — that produced duplicate "Game over!" lines on multi-kill
+ * splash/AoE).
+ */
+function checkActionWin(game: Game, result: ResolutionResult) {
+  if (result.deaths.length === 0 || !isWinCondition(game)) return;
+  result.gameOver = true;
+  const winner = game.entities[0];
+  result.messages.push(
+    winner
+      ? `**Game over! ${winner.num} (${winner.name}) wins!**`
+      : "**Game over! No survivors!**",
+  );
 }
 
 export function startAttack(
@@ -426,6 +545,8 @@ export function startAttack(
   }
   const flow = resolveAttackFlow(game, user, ability, target);
   user.pendingResolution = flow;
+  // undefined passed as initial prompt input — advanceAttack handles the
+  // undefined case by yielding a prompt kind for the caller to respond to.
   return advanceAttack(user, flow, undefined as unknown as PromptResponse);
 }
 
@@ -712,39 +833,7 @@ export function isValidTarget(
   group: string,
 ): boolean {
   if (target.curhp <= 0) return false;
-  const g = group.toLowerCase();
-  // FFA / no-team games put everyone on team 0: "Foe" means anyone but
-  // self, "Ally" targets nobody, and ally-groups resolve to self only.
-  // Mirrors the GUI candidate filter in pages.ts so the direct-target
-  // path agrees with the AoE path (isValidGroupTarget in state.ts).
-  const noTeams = user.team === 0;
-  const foeCheck = noTeams
-    ? target.num !== user.num
-    : target.team !== user.team;
-  const allyCheck = noTeams
-    ? false
-    : target.team === user.team && target.num !== user.num;
-  const selfOrAllyCheck = noTeams
-    ? target.num === user.num
-    : target.team === user.team;
-
-  if (g.includes("self and allies") || g.includes("self and ally"))
-    return selfOrAllyCheck;
-  if (g.includes("allies and self")) return selfOrAllyCheck;
-  if (g.includes("self or ally") || g.includes("self or allies"))
-    return selfOrAllyCheck;
-  if (g.includes("self or foe")) return true;
-  if (g.includes("foe or ally")) return target.num !== user.num;
-  if (g.includes("self, foes, allies") || g.includes("self, foes, and allies"))
-    return true;
-
-  if (g === "self") return target.num === user.num;
-  if (g === "ally") return allyCheck;
-  if (g === "foe") return foeCheck;
-  if (g === "any") return true;
-  if (g === "tile") return false;
-
-  return true;
+  return matchesTargetGroup(user, target, group.toLowerCase());
 }
 
 function* resolveSingleTarget(
@@ -775,109 +864,168 @@ function* resolveSingleTarget(
 
   // --- Hit resolves first (damage to target first) ---
   if (hit) {
-    const damageRoll = rollDice(ability.roll);
-    const userOff = combat.ignore.atkMag
-      ? 0
-      : offensiveStat(user, ability.damageType);
-    const targetDef = applyIgnoreToDefense(
-      defensiveStat(target, ability.damageType),
-      combat.ignore,
+    const resolved = yield* resolveHitDamage(
+      game,
+      user,
+      ability,
+      target,
+      combat,
+      crit,
+      hitLabel,
+      result,
     );
-
-    let baseDamage = damageRoll.total + userOff - targetDef;
-
-    if (crit) {
-      const critRoll = rollDice(ability.roll);
-      baseDamage += critRoll.total;
-      result.messages.push(
-        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
-      );
-    }
-
-    const bleed = hasStatus(user, "bleed") ? 5 : 0;
-    // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
-    // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
-    // multiplicative 1.69x. extractCombatMetadata already summed the
-    // percent values additively.
-    let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
-    finalDamage += combat.flatDamage;
-    finalDamage = Math.max(0, Math.floor(finalDamage));
-    finalDamage = Math.max(0, finalDamage - bleed);
-
-    const dmgResult = dealDamage(target, finalDamage);
-    const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
-    result.messages.push(
-      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
-    );
-    emitDamageModTrail(result.messages, combat, finalDamage);
-
-    if (dmgResult.shieldAbsorbed > 0) {
-      result.messages.push(
-        `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
-      );
-    }
-
-    const effects = parseEffects(ability.effect);
-    const effectMsgs = yield* runEffectStream(
-      applyEffectStream(game, user, target, effects, ability),
-    );
-    result.messages.push(...effectMsgs);
-
-    // Apply recoil damage after hit damage (reuse the parsed `effects`
-    // array rather than re-running the regex-based clause splitter).
-    // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
-    // Recoil 25%" combo reflects the boosted total.
-    for (const e of effects) {
-      if (e.type === "recoil") {
-        const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
-        dealDamage(user, recoilDmg);
-        result.messages.push(
-          `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
+    if (resolved === "user-defeated") return result;
+  } else {
+    // --- On Miss: apply miss-only effects to the attacker ---
+    const allEffects = parseEffects(ability.effect);
+    const onMiss = allEffects.filter((e) => e.type === "onMiss");
+    if (onMiss.length > 0) {
+      result.messages.push(`  [On Miss]`);
+      for (const om of onMiss) {
+        if (om.type !== "onMiss") continue;
+        const missMsgs: string[] = yield* runEffectStream(
+          applyEffectStream(game, user, user, om.effects, ability),
         );
+        result.messages.push(...missMsgs);
       }
-    }
-
-    if (target.curhp <= 0) {
-      result.messages.push(
-        `  **${target.num} (${target.name}) has been defeated!**`,
-      );
-      removeEntity(game, target);
-      result.deaths.push(target);
-    }
-
-    // Check if recoil killed the user (after target death is recorded)
-    if (user.curhp <= 0) {
-      result.messages.push(
-        `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
-      );
-      removeEntity(game, user);
-      result.deaths.push(user);
-      return result;
     }
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
-  if (isConfused(user) && accRoll >= 16 && !confusionAlreadyApplied) {
-    const offStat = Math.max(
-      getEffectiveStat(user, "atk"),
-      getEffectiveStat(user, "mag"),
-    );
-    dealDamage(user, offStat);
-    result.messages.push(
-      `  **${user.num} is Confused!** Takes **${offStat}** self-damage from their own ${offStat === getEffectiveStat(user, "atk") ? "ATK" : "MAG"} (${user.curhp}/${user.maxhp} HP).`,
-    );
-    result.confusionTriggered = true;
+  resolveConfusionSelfDamage(
+    game,
+    user,
+    accRoll,
+    confusionAlreadyApplied,
+    result,
+  );
 
-    if (user.curhp <= 0) {
+  return result;
+}
+
+/**
+ * Resolve the damage portion of a hit: roll, crit, modifiers, recoil,
+ * and deaths. Returns "user-defeated" if recoil killed the attacker.
+ */
+function* resolveHitDamage(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  target: Entity,
+  combat: CombatMetadata,
+  crit: boolean,
+  hitLabel: string,
+  result: ResolutionResult,
+): Generator<AttackPrompt, "user-defeated" | "done", string> {
+  const damageRoll = rollDice(ability.roll);
+  const userOff = combat.ignore.atkMag
+    ? 0
+    : offensiveStat(user, ability.damageType);
+  const targetDef = applyIgnoreToDefense(
+    defensiveStat(target, ability.damageType),
+    combat.ignore,
+  );
+
+  let baseDamage = damageRoll.total + userOff - targetDef;
+
+  if (crit) {
+    const critRoll = rollDice(ability.roll);
+    baseDamage += critRoll.total;
+    result.messages.push(
+      `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+    );
+  }
+
+  const bleed = hasStatus(user, "bleed") ? 5 : 0;
+  // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
+  // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
+  // multiplicative 1.69x. extractCombatMetadata already summed the
+  // percent values additively.
+  let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
+  finalDamage += combat.flatDamage;
+  finalDamage = Math.max(0, Math.floor(finalDamage));
+  finalDamage = Math.max(0, finalDamage - bleed);
+
+  const dmgResult = dealDamage(target, finalDamage);
+  const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
+  result.messages.push(
+    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+  );
+  emitDamageModTrail(result.messages, combat, finalDamage);
+
+  if (dmgResult.shieldAbsorbed > 0) {
+    result.messages.push(
+      `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
+    );
+  }
+
+  const effects = parseEffects(ability.effect);
+  const effectMsgs = yield* runEffectStream(
+    applyEffectStream(game, user, target, effects, ability),
+  );
+  result.messages.push(...effectMsgs);
+
+  // Apply recoil damage after hit damage (reuse the parsed `effects`
+  // array rather than re-running the regex-based clause splitter).
+  // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
+  // Recoil 25%" combo reflects the boosted total.
+  for (const e of effects) {
+    if (e.type === "recoil") {
+      const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
+      dealDamage(user, recoilDmg);
       result.messages.push(
-        `  **${user.num} (${user.name}) has been defeated by Confusion!**`,
+        `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
       );
-      removeEntity(game, user);
-      result.deaths.push(user);
     }
   }
 
-  return result;
+  if (target.curhp <= 0) {
+    result.messages.push(
+      `  **${target.num} (${target.name}) has been defeated!**`,
+    );
+    removeEntity(game, target);
+    result.deaths.push(target);
+  }
+
+  // Check if recoil killed the user (after target death is recorded)
+  if (user.curhp <= 0) {
+    result.messages.push(
+      `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
+    );
+    removeEntity(game, user);
+    result.deaths.push(user);
+    return "user-defeated";
+  }
+
+  return "done";
+}
+
+/** Self-damage from Confusion, applied after the hit resolves. */
+function resolveConfusionSelfDamage(
+  game: Game,
+  user: Entity,
+  accRoll: number,
+  confusionAlreadyApplied: boolean,
+  result: ResolutionResult,
+) {
+  if (!isConfused(user) || accRoll < 16 || confusionAlreadyApplied) return;
+  const offStat = Math.max(
+    getEffectiveStat(user, "atk"),
+    getEffectiveStat(user, "mag"),
+  );
+  dealDamage(user, offStat);
+  result.messages.push(
+    `  **${user.num} is Confused!** Takes **${offStat}** self-damage from their own ${offStat === getEffectiveStat(user, "atk") ? "ATK" : "MAG"} (${user.curhp}/${user.maxhp} HP).`,
+  );
+  result.confusionTriggered = true;
+
+  if (user.curhp <= 0) {
+    result.messages.push(
+      `  **${user.num} (${user.name}) has been defeated by Confusion!**`,
+    );
+    removeEntity(game, user);
+    result.deaths.push(user);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -947,18 +1095,30 @@ function emitDamageModTrail(
   combat: CombatMetadata,
   finalDamage: number,
 ): void {
-  if (
-    combat.damagePercent === 0 &&
-    combat.flatDamage === 0 &&
-    !combat.ignore.atkMag &&
-    !combat.ignore.def &&
-    !combat.ignore.halfDef &&
-    !combat.ignore.quarterDef &&
-    combat.ignore.defReduction === 0 &&
-    combat.ignore.other.length === 0 &&
-    !combat.ignore.outsideFactors
-  )
-    return;
+  if (!hasDamageMods(combat)) return;
+  log.push(
+    `  *Damage Modifiers applied:* ${buildModTags(combat).join(", ")} -> **${finalDamage}**`,
+  );
+}
+
+/** Whether any damage modifier changed the math (no trail if none). */
+function hasDamageMods(combat: CombatMetadata): boolean {
+  const { ignore } = combat;
+  return (
+    combat.damagePercent !== 0 ||
+    combat.flatDamage !== 0 ||
+    ignore.atkMag ||
+    ignore.def ||
+    ignore.halfDef ||
+    ignore.quarterDef ||
+    ignore.defReduction > 0 ||
+    ignore.other.length > 0 ||
+    ignore.outsideFactors
+  );
+}
+
+/** Human-readable tags describing the applied damage modifiers. */
+function buildModTags(combat: CombatMetadata): string[] {
   const tags: string[] = [];
   if (combat.damagePercent !== 0) {
     const sign = combat.damagePercent > 0 ? "+" : "";
@@ -976,9 +1136,7 @@ function emitDamageModTrail(
     tags.push(`Ignores ${combat.ignore.defReduction} DEF`);
   if (combat.ignore.outsideFactors) tags.push("Ignores outside damage factors");
   for (const o of combat.ignore.other) tags.push(`Ignores ${o}`);
-  log.push(
-    `  *Damage Modifiers applied:* ${tags.join(", ")} -> **${finalDamage}**`,
-  );
+  return tags;
 }
 
 function setCooldown(entity: Entity, ability: AbilityData) {
@@ -987,7 +1145,23 @@ function setCooldown(entity: Entity, ability: AbilityData) {
 }
 
 function isWinCondition(game: Game): boolean {
-  if (game.mode.includes("ffa") || game.mode.includes("pvp")) {
+  // game.mode is stored uppercase (e.g. "FFA", "2V2", "NTR", "JUGG");
+  // normalize before matching so mode rules always resolve correctly.
+  const mode = game.mode.toLowerCase();
+  const id = modeIdFor(game.mode);
+  if (id === "jugg") {
+    // Juggernaut: the jugg side wins by surviving; the field wins by
+    // killing the jugg. Handled by the jugg-designation logic elsewhere —
+    // here a generic "one side left" check still applies.
+    const teams = new Map<number, boolean>();
+    for (const e of game.entities) {
+      if (!teams.has(e.team)) teams.set(e.team, false);
+      if (e.curhp > 0) teams.set(e.team, true);
+    }
+    return [...teams.values()].filter(Boolean).length <= 1;
+  }
+  if (id === "ffa" || id === "ntr" || id === "pvp" || id === "1v1" ||
+      mode.includes("ffa") || mode.includes("pvp")) {
     return game.entities.filter((e) => e.curhp > 0).length <= 1;
   }
   const teams = new Map<number, boolean>();

@@ -1,6 +1,7 @@
 import {
   TERRAIN_COLORS,
   TERRAIN_NAMES,
+  getCurrentEntity,
   getReachableTiles,
   getEffectiveMp,
   hasLineOfSight,
@@ -367,7 +368,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     }
     actions += `<div style="margin-top:6px">${btn("%endturn", "End Turn")}</div>`;
   } else {
-    const cur = getCurrentTurnEntity(game);
+    const cur = getCurrentEntity(game);
     const curLabel = cur ? `${cur.num} (${cur.name})` : "...";
     phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
@@ -486,8 +487,9 @@ function buildMapTable(
     html += `<td style="${HEADER_CELL}"><b>${String.fromCharCode(65 + r)}</b></td>`;
 
     for (let c = 0; c < cols; c++) {
+
       const terrain = game.map[r][c];
-      const color = TERRAIN_COLORS[terrain] ?? "#99E599";
+      const color = TERRAIN_COLORS[terrain] ?? TERRAIN_COLORS[0];
       const entity = game.entities.find(
         (e) => e.curhp > 0 && e.pos[0] === r && e.pos[1] === c,
       );
@@ -979,14 +981,7 @@ function buildAbilityButton(
 
   // Single target abilities: show ability + each target as separate buttons
   if (targets.length > 0 && ab.targetAmount !== "AoE") {
-    let html = "";
-    for (const t of targets) {
-      const label = `${ab.name} -> ${t.num}`;
-      const cmd = `%use ${ab.name} @ ${t.name}`;
-      html += btn(cmd, label, "font-size:11px;padding:2px 6px");
-    }
-    html += `<br>`;
-    return html;
+    return buildTargetButtons(ab, targets);
   }
 
   // AoE abilities
@@ -1001,16 +996,7 @@ function buildAbilityButton(
 
   // Tile targeting
   if (tiles.length > 0) {
-    let html = `<span style="color:#888;font-size:10px">${ab.name}:</span> `;
-    for (const t of tiles) {
-      html += btn(
-        `%use ${ab.name} @ ${t},${entity.name}`,
-        t,
-        "font-size:10px;padding:1px 4px",
-      );
-    }
-    html += "<br>";
-    return html;
+    return buildTileButtons(ab, entity, tiles);
   }
 
   // Fallback
@@ -1021,81 +1007,127 @@ function buildAbilityButton(
   );
 }
 
+/** One button per valid target for a single-target ability. */
+function buildTargetButtons(ab: AbilityData, targets: Entity[]): string {
+  let html = "";
+  for (const t of targets) {
+    html += btn(
+      `%use ${ab.name} @ ${t.name}`,
+      `${ab.name} -> ${t.num}`,
+      "font-size:11px;padding:2px 6px",
+    );
+  }
+  return html + "<br>";
+}
+
+/** One small button per valid tile for a Tile-targeting ability. */
+function buildTileButtons(
+  ab: AbilityData,
+  entity: Entity,
+  tiles: string[],
+): string {
+  let html = `<span style="color:#888;font-size:10px">${ab.name}:</span> `;
+  for (const t of tiles) {
+    html += btn(
+      `%use ${ab.name} @ ${t},${entity.name}`,
+      t,
+      "font-size:10px;padding:1px 4px",
+    );
+  }
+  return html + "<br>";
+}
+
 // -- Target Resolution Helpers ------------------------------------------------
+
+/** Shared gate: the entity hasn't used up this ability's level/cooldown/uses. */
+function abilityReadyFor(entity: Entity, ab: AbilityData): boolean {
+  if (!entity.isJuggernaut && typeof ab.level === "string") return false;
+
+  if (typeof ab.level === "number" && ab.level > 0) {
+    if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
+      return false;
+  }
+
+  if (entity.cooldowns[ab.name]) return false;
+
+  const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
+  if (maxUses) {
+    const used = entity.usesUsed[ab.name] ?? 0;
+    if (used >= maxUses) return false;
+  }
+  return true;
+}
 
 function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
   return entity.abilities.filter((ab) => {
-    if (
-      ab.actionType === "Passive" ||
-      ab.actionType === "Reaction" ||
-      ab.actionType === "Trigger"
-    )
-      return false;
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
-
-    if (typeof ab.level === "number" && ab.level > 0) {
-      if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
-        return false;
-    }
-
-    if (entity.cooldowns[ab.name]) return false;
-
-    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
-    if (maxUses) {
-      const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= maxUses) return false;
-    }
-
-    if (ab.actionType === "Standard" && entity.standardUsed) return false;
-    if (ab.actionType === "Swift" && entity.swiftUsed) return false;
-    // Issue #3: Free/Swift must be used before the Standard action.
-    if (
-      entity.standardUsed &&
-      (ab.actionType === "Free" || ab.actionType === "Swift")
-    )
-      return false;
-    if (ab.actionType === "Movement" && entity.movementUsed) return false;
-    if (
-      ab.actionType === "Full" &&
-      (entity.standardUsed || entity.movementUsed)
-    )
-      return false;
-
+    if (!abilityReadyFor(entity, ab)) return false;
+    if (!canUseActionType(ab, entity)) return false;
     return true;
   });
 }
 
+/** Whether the entity still has the action type this ability needs. */
+function canUseActionType(ab: AbilityData, entity: Entity): boolean {
+  const type = ab.actionType;
+  if (type === "Passive" || type === "Reaction" || type === "Trigger")
+    return false;
+  // Issue #3: Free/Swift must be used before the Standard action.
+  if (type === "Free") return !entity.standardUsed;
+  if (type === "Swift") return !entity.swiftUsed && !entity.standardUsed;
+  if (type === "Standard") return !entity.standardUsed;
+  if (type === "Movement") return !entity.movementUsed;
+  if (type === "Full") return !entity.standardUsed && !entity.movementUsed;
+  return true;
+}
+
+/** Can be used before the Standard action: Free/Swift/Trigger/Movement, or a triggered Reaction. */
+function isPreMoveAction(ab: AbilityData, entity: Entity): boolean {
+  const type = ab.actionType;
+  return (
+    type === "Free" ||
+    type === "Swift" ||
+    type === "Trigger" ||
+    type === "Movement" ||
+    (type === "Reaction" && entity.triggered)
+  );
+}
+
 function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
   return entity.abilities.filter((ab) => {
-    if (
-      ab.actionType !== "Free" &&
-      ab.actionType !== "Swift" &&
-      ab.actionType !== "Trigger" &&
-      ab.actionType !== "Movement" &&
-      !(ab.actionType === "Reaction" && entity.triggered)
-    )
-      return false;
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
-
-    if (typeof ab.level === "number" && ab.level > 0) {
-      if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
-        return false;
-    }
-
-    if (entity.cooldowns[ab.name]) return false;
-
-    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
-    if (maxUses) {
-      const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= maxUses) return false;
-    }
-
+    if (!abilityReadyFor(entity, ab)) return false;
+    if (!isPreMoveAction(ab, entity)) return false;
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;
-
     return true;
   });
+}
+
+/** Whether `e` fits the ability's target group (Foe/Ally/Self/Any/…) from `user`. */
+function matchesTargetGroup(
+  ab: AbilityData,
+  user: Entity,
+  e: Entity,
+): boolean {
+  switch (ab.targetGroup) {
+    case "Foe":
+      if (user.team === 0) return e.num !== user.num;
+      return e.team !== user.team;
+    case "Ally":
+      if (e.num === user.num) return false;
+      if (user.team === 0) return false;
+      return e.team === user.team;
+    case "Self":
+      return e.num === user.num;
+    case "Any":
+    case "Foe or Ally":
+      return true;
+    default:
+      if (ab.targetGroup.includes("Ally") && !ab.targetGroup.includes("Foe")) {
+        if (e.num === user.num) return true;
+        if (user.team === 0) return false;
+        return e.team === user.team;
+      }
+      return true;
+  }
 }
 
 function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
@@ -1107,38 +1139,7 @@ function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
     )
       return false;
     if (e.curhp <= 0) return false;
-
-    switch (ab.targetGroup) {
-      case "Foe":
-        if (user.team === 0) {
-          if (e.num === user.num) return false;
-        } else {
-          if (e.team === user.team) return false;
-        }
-        break;
-      case "Ally":
-        if (e.num === user.num) return false;
-        if (user.team === 0) return false;
-        if (e.team !== user.team) return false;
-        break;
-      case "Self":
-        if (e.num !== user.num) return false;
-        break;
-      case "Any":
-        break;
-      case "Foe or Ally":
-        break;
-      default:
-        if (
-          ab.targetGroup.includes("Ally") &&
-          !ab.targetGroup.includes("Foe")
-        ) {
-          if (e.num === user.num) return true;
-          if (user.team === 0) return false;
-          if (e.team !== user.team) return false;
-        }
-        break;
-    }
+    if (!matchesTargetGroup(ab, user, e)) return false;
 
     if (ab.range !== "Global" && ab.range !== "Self") {
       if (!inRange(game, user.pos, e.pos, ab.range)) return false;
@@ -1168,7 +1169,4 @@ function getValidTiles(game: Game, ab: AbilityData, user: Entity): string[] {
   return tiles;
 }
 
-function getCurrentTurnEntity(game: Game): Entity | null {
-  const num = game.turnOrder[game.turnIndex];
-  return game.entities.find((e) => e.num === num) ?? null;
-}
+
