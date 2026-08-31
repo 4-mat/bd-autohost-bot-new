@@ -1270,11 +1270,11 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   }
   const entity = getEntity(game, user.name);
   if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
-  if (game.modeChosen) {
-    return sendPm(user.name, "The game is already set — loadouts are locked.");
-  }
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
+  }
+  if (game.modeChosen) {
+    return sendPm(user.name, "The game is already set — loadouts are locked.");
   }
   if (!applyClassChange(game, room, entity, parts[0])) {
     return sendPm(user.name, `Unknown class: ${parts[0]}. Use %wt to look up.`);
