@@ -914,6 +914,10 @@ function resolvePendingAction(
     return null;
   }
 
+  // The action resolved and the turn advanced — clear the pending action
+  // so it isn't re-run on a later turn.
+  entity.pendingAction = null;
+
   return acted;
 }
 
