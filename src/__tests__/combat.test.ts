@@ -738,7 +738,8 @@ describe("On Miss hook (#139)", () => {
     const targetEva = target.buffs.filter((b) => b.stat === "eva").length;
     expect(userEva).toBe(1);
     expect(targetEva).toBe(0);
-
+  });
+});
 
 describe("eva43", () => {
   it("computes PE from PD and ME from MD", () => {
