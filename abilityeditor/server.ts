@@ -471,25 +471,43 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       // Full state restore (undo/redo in server mode): rebuild every Map from
       // a snapshot() payload so the client can push a restored history state
       // back without fetchData clobbering it.
+      if (!body || typeof body !== "object") {
+        send(res, 400, { error: "replace needs a snapshot object body" });
+        return;
+      }
       const { classes: cls, weapons: wpn, customClasses: cc, customWeapons: cw } = body;
+      // Validate BEFORE clearing: an empty/malformed payload must not wipe the
+      // live Maps (a bad undo/redo round would otherwise leave the editor
+      // empty until a manual reload).
+      const okClasses = Array.isArray(cls) && cls.length > 0;
+      const okWeapons = Array.isArray(wpn) && wpn.length > 0;
+      if (!okClasses && !okWeapons) {
+        send(res, 400, { error: "replace needs a non-empty classes/weapons snapshot" });
+        return;
+      }
       classes.clear();
       weapons.clear();
       branches.clear();
-      sourceNames.clear();
       customClassIds.clear();
       customWeaponIds.clear();
-      if (Array.isArray(cls)) {
-        for (const c of cls) {
-          if (c && typeof c.name === "string" && c.name.trim()) {
-            classes.set(toId(c.name), defaultClass(c.name, c));
-          }
+      // Rename provenance survives the restore: sourceNames is only written on
+      // rename and is never part of a snapshot, so do NOT clear it here (the
+      // original handler wiped it and left it empty, breaking codegen lookups
+      // after undo/redo). Keep existing mappings and default any restored id
+      // that has none to its own name so regenerateSource can still find the
+      // source block.
+      for (const c of okClasses ? cls : []) {
+        if (c && typeof c.name === "string" && c.name.trim()) {
+          const id = toId(c.name);
+          classes.set(id, defaultClass(c.name, c));
+          if (!sourceNames.has(id)) sourceNames.set(id, c.name);
         }
       }
-      if (Array.isArray(wpn)) {
-        for (const w of wpn) {
-          if (w && typeof w.name === "string" && w.name.trim()) {
-            weapons.set(toId(w.name), defaultWeapon(w.name, w));
-          }
+      for (const w of okWeapons ? wpn : []) {
+        if (w && typeof w.name === "string" && w.name.trim()) {
+          const id = toId(w.name);
+          weapons.set(id, defaultWeapon(w.name, w));
+          if (!sourceNames.has(id)) sourceNames.set(id, w.name);
         }
       }
       // Rebuild the branch index from the restored weapons, mirroring
