@@ -940,13 +940,16 @@
       back.innerHTML =
         '<div class="modal"><h3>Copy ability to…</h3><div class="field"><label>Item type</label><select id="copy-kind">' +
         kindOpts +
-        '</select></div><div class="field"><label>Destination (' +
-        (state.kind === "class" ? "class" : "weapon") +
-        ')</label><select id="copy-item"></select></div><div class="actions"><button data-act="cancel">Cancel</button><button data-act="copy" class="primary">Copy</button></div></div>';
+        '</select></div><div class="field"><label id="copy-dest-label"></label><select id="copy-item"></select></div><div class="actions"><button data-act="cancel">Cancel</button><button data-act="copy" class="primary">Copy</button></div></div>';
       document.body.appendChild(back);
       const kindSel = back.querySelector("#copy-kind");
       const itemSel = back.querySelector("#copy-item");
+      const destLabel = back.querySelector("#copy-dest-label");
       function refresh(kind) {
+        // The destination label must follow the dropdown, not the source
+        // item's kind (the reviewer flagged it showing "class" while
+        // targeting a weapon).
+        destLabel.textContent = "Destination (" + kind + ")";
         itemSel.innerHTML = renderItems(kind);
       }
       refresh(kindSel.value);
