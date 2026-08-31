@@ -160,6 +160,11 @@ export interface PhaseTimingEffect {
   effects: Effect[];
 }
 
+export interface PhaseEffect {
+  type: "phase";
+  phase: string;
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -183,6 +188,7 @@ export type Effect =
   | PerEffect
   | TriggerEffect
   | PhaseTimingEffect
+  | PhaseEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -394,138 +400,168 @@ function parseClause(clause: string): Effect[] {
 }
 
 /** Structured clauses with a fixed keyword prefix (If/Thirst/Apex/...). */
-function parseClauseStructured(lower: string): Effect[] | null {
-  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]" or "If CONDITION: EFFECT"
-  // The colon form lets glossary authors write "If you control moon: gain +1"
-  // without the comma before the effect, which is easier to read inside
-  // longer abilities. Master only accepted the comma form, so we add `:`.
-  const ifMatch = lower.match(
-    /^if\s+(.+?)[,:]\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
-  );
-  if (ifMatch) {
-    return [
+type StructuredClause = {
+  re: RegExp;
+  build: (m: RegExpMatchArray) => Effect[] | null;
+};
+
+// Clause-prefix matchers, tried in order. Each entry matches a structured
+// clause shape ("If ...", "Thirst N: ...", "Apex: ...", ...) and builds the
+// corresponding effect; `build` returns null to fall through to the next
+// matcher (only "Choose" does that, when no option survived parsing).
+const STRUCTURED_CLAUSES: StructuredClause[] = [
+  {
+    // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]" or "If CONDITION: EFFECT"
+    // The colon form lets glossary authors write "If you control moon: gain +1"
+    // without the comma before the effect, which is easier to read inside
+    // longer abilities. Master only accepted the comma form, so we add `:`.
+    re: /^if\s+(.+?)[,:]\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
+    build: (m) => [
       {
         type: "conditional",
-        condition: ifMatch[1].trim(),
-        thenEffects: parseEffects(ifMatch[2]),
-        elseEffects: ifMatch[3] ? parseEffects(ifMatch[3]) : undefined,
+        condition: m[1].trim(),
+        thenEffects: parseEffects(m[2]),
+        elseEffects: m[3] ? parseEffects(m[3]) : undefined,
       },
-    ];
-  }
-
-  // Thirst: "Thirst N: EFFECT"
-  const thirstMatch = lower.match(/^thirst\s+(\d+):\s*(.+)$/);
-  if (thirstMatch) {
-    return [
+    ],
+  },
+  {
+    // Thirst: "Thirst N: EFFECT"
+    re: /^thirst\s+(\d+):\s*(.+)$/,
+    build: (m) => [
       {
         type: "thirst",
-        threshold: parseInt(thirstMatch[1]),
-        effects: parseEffects(thirstMatch[2]),
+        threshold: parseInt(m[1]),
+        effects: parseEffects(m[2]),
       },
-    ];
-  }
-
-  // Apex: "Apex: EFFECT"
-  const apexMatch = lower.match(/^apex:\s*(.+)$/);
-  if (apexMatch) {
-    return [{ type: "apex", effects: parseEffects(apexMatch[1]) }];
-  }
-
-  // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
-  // Optional colon + "one" prefix to match real glossary variants.
-  const chooseMatch = lower.match(/^choose\s*:?\s+(?:one:\s*)?(.+)$/);
-  if (chooseMatch) {
-    const options = chooseMatch[1]
-      .split(/\s+or\s+/)
-      .map((o) => parseEffects(o.trim()))
-      .filter((o) => o.length > 0);
-    if (options.length > 0) return [{ type: "choose", options }];
-  }
-
-  // Channel: "Channel STAT for N rounds"
-  const channelMatch = lower.match(
-    /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
-  );
-  if (channelMatch) {
-    return [
+    ],
+  },
+  {
+    // Apex: "Apex: EFFECT"
+    re: /^apex:\s*(.+)$/,
+    build: (m) => [{ type: "apex", effects: parseEffects(m[1]) }],
+  },
+  {
+    // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
+    // Optional colon + "one" prefix to match real glossary variants.
+    re: /^choose\s*:?\s+(?:one:\s*)?(.+)$/,
+    build: (m) => {
+      const options = m[1]
+        .split(/\s+or\s+/)
+        .map((o) => parseEffects(o.trim()))
+        .filter((o) => o.length > 0);
+      return options.length > 0 ? [{ type: "choose", options }] : null;
+    },
+  },
+  {
+    // Channel: "Channel STAT for N rounds"
+    re: /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
+    build: (m) => [
       {
         type: "channel",
-        stat: channelMatch[1],
-        rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
+        stat: m[1],
+        rounds: m[2] ? parseInt(m[2]) : 1,
       },
-    ];
-  }
-
-  // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
-  // Used when a single ability clause triggers a different effect on each
-  // moon phase. Master has no support for this; without it glossary lines
-  // like "New Moon: gain +1 initiative" fall through to the default parser
-  // and are misread as an Apex on an empty name.
-  const phaseCondMatch = lower.match(
-    /^(new moon|waxing|full moon|waning):\s*(.+)$/,
-  );
-  if (phaseCondMatch) {
-    return [
+    ],
+  },
+  {
+    // Phase-prefixed: "Before accuracy: EFFECT" / "On Miss: EFFECT" / "Regard: EFFECT".
+    // The resolver pulls these out of the per-hit stream and fires them at
+    // the matching timing point (resolve.ts filterByPhase).
+    re: /^(before accuracy|before acc|before damage|on miss|regard(?:less)?):\s*(.+)$/,
+    build: (m) => {
+      const phaseMap: Record<string, PhaseTiming> = {
+        "before accuracy": "before-acc",
+        "before acc": "before-acc",
+        "before damage": "before-damage",
+        "on miss": "on-miss",
+        "regardless": "regardless",
+        "regard": "regardless",
+      };
+      return [
+        {
+          type: "phaseEffect",
+          phase: phaseMap[m[1]],
+          effects: parseEffects(m[2]),
+        },
+      ];
+    },
+  },
+  {
+    // Phase: "Phase: PHASE_NAME" (moon-phase state, not a timing hook)
+    re: /^phase:\s*(new moon|waxing|full moon|waning)$/,
+    build: (m) => [{ type: "phase", phase: m[1] }],
+  },
+  {
+    // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
+    // Used when a single ability clause triggers a different effect on each
+    // moon phase. Master has no support for this; without it glossary lines
+    // like "New Moon: gain +1 initiative" fall through to the default parser
+    // and are misread as an Apex on an empty name.
+    re: /^(new moon|waxing|full moon|waning):\s*(.+)$/,
+    build: (m) => [
       {
         type: "conditional",
-        condition: `phase is ${phaseCondMatch[1]}`,
-        thenEffects: parseEffects(phaseCondMatch[2]),
+        condition: `phase is ${m[1]}`,
+        thenEffects: parseEffects(m[2]),
       },
-    ];
-  }
-
-  // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
-  const delayMatch =
-    lower.match(/^delay[\s-]+(\d+)\s+rounds?$/) ??
-    lower.match(/^delay-?(\d+)$/);
-  if (delayMatch) {
-    return [{ type: "delay", rounds: parseInt(delayMatch[1]) }];
-  }
-
-  // Recoil: "Recoil N%"
-  const recoilMatch = lower.match(/^recoil\s+(\d+)%$/);
-  if (recoilMatch) {
-    return [{ type: "recoil", percent: parseInt(recoilMatch[1]) }];
-  }
-
-  // Ignore: "Ignore(s) X"
-  const ignoreMatch = lower.match(/^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/);
-  if (ignoreMatch) {
-    return [{ type: "ignore", what: ignoreMatch[1].trim() }];
-  }
-
-  // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
-  const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
-  if (multiHitMatch) {
-    return [{ type: "multiHit", hits: parseInt(multiHitMatch[1]) }];
-  }
-
-  // Per: "Per hit: EFFECT" / "Per 5 CP: EFFECT" / "Per X: EFFECT"
-  // Used by triggers that scale with a quantity (hits, CP spent, AP spent).
-  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
-  if (perMatch) {
-    return [
+    ],
+  },
+  {
+    // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
+    re: /^delay[\s-]+(\d+)(?:\s+rounds?)?$|^delay-?(\d+)$/,
+    build: (m) => [
+      { type: "delay", rounds: parseInt(m[1] ?? m[2]) },
+    ],
+  },
+  {
+    // Recoil: "Recoil N%"
+    re: /^recoil\s+(\d+)%$/,
+    build: (m) => [{ type: "recoil", percent: parseInt(m[1]) }],
+  },
+  {
+    // Ignore: "Ignore(s) X"
+    re: /^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/,
+    build: (m) => [{ type: "ignore", what: m[1].trim() }],
+  },
+  {
+    // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
+    re: /multi[\s-]hit[:\s]+(\d+)/,
+    build: (m) => [{ type: "multiHit", hits: parseInt(m[1]) }],
+  },
+  {
+    // Per: "Per hit: EFFECT" / "Per 5 CP: EFFECT" / "Per X: EFFECT"
+    // Used by triggers that scale with a quantity (hits, CP spent, AP spent).
+    re: /^per\s+(.+?):\s*(.+)$/,
+    build: (m) => [
       {
         type: "per",
-        trigger: perMatch[1].trim(),
-        effects: parseEffects(perMatch[2]),
+        trigger: m[1].trim(),
+        effects: parseEffects(m[2]),
       },
-    ];
-  }
-
-  // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
-  // Generic reactive trigger; the resolver dispatches on the event string.
-  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
-  if (whenMatch) {
-    return [
+    ],
+  },
+  {
+    // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
+    // Generic reactive trigger; the resolver dispatches on the event string.
+    re: /^when\s+(.+?):\s*(.+)$/,
+    build: (m) => [
       {
         type: "trigger",
-        event: whenMatch[1].trim(),
-        effects: parseEffects(whenMatch[2]),
+        event: m[1].trim(),
+        effects: parseEffects(m[2]),
       },
-    ];
-  }
+    ],
+  },
+];
 
+function parseClauseStructured(lower: string): Effect[] | null {
+  for (const { re, build } of STRUCTURED_CLAUSES) {
+    const m = lower.match(re);
+    if (!m) continue;
+    const out = build(m);
+    if (out) return out;
+  }
   return null;
 }
 

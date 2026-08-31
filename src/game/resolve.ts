@@ -861,15 +861,6 @@ function* resolveSingleTarget(
 
   // --- Hit resolves first (damage to target first) ---
   if (hit) {
-    const damageRoll = rollDice(ability.roll);
-    const userOff = combat.ignore.atkMag
-      ? 0
-      : offensiveStat(user, ability.damageType);
-    const targetDef = applyIgnoreToDefense(
-      defensiveStat(target, ability.damageType),
-      combat.ignore,
-    );
-
     // --- Before Damage ---
     const beforeDmgEffects = filterByPhase(allEffects, "before-damage");
     if (beforeDmgEffects.length > 0) {
@@ -879,83 +870,37 @@ function* resolveSingleTarget(
       result.messages.push(...dmgMsgs);
     }
 
-    let baseDamage = damageRoll.total + userOff - targetDef;
-
-    if (crit) {
-      const critRoll = rollDice(ability.roll);
-      baseDamage += critRoll.total;
-      result.messages.push(
-        `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
-      );
-    }
-
-    const bleed = hasStatus(user, "bleed") ? 5 : 0;
-    // Apply damage modifiers: "+N% damage" / "+N DMG" / "-N% damage".
-    // BD 4.4 stacks these additively, so two "+30%" clauses = +60%, not a
-    // multiplicative 1.69x. extractCombatMetadata already summed the
-    // percent values additively.
-    let finalDamage = baseDamage * (1 + combat.damagePercent / 100);
-    finalDamage += combat.flatDamage;
-    finalDamage = Math.max(0, Math.floor(finalDamage));
-    finalDamage = Math.max(0, finalDamage - bleed);
-
-    const dmgResult = dealDamage(target, finalDamage);
-    const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
-    result.messages.push(
-      `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    const resolved = yield* resolveHitDamage(
+      game,
+      user,
+      ability,
+      target,
+      combat,
+      crit,
+      hitLabel,
+      result,
+      allEffects,
     );
-    emitDamageModTrail(result.messages, combat, finalDamage);
-
-    if (dmgResult.shieldAbsorbed > 0) {
-      result.messages.push(
-        `  **Shield** absorbed **${dmgResult.shieldAbsorbed}** damage.${dmgResult.shieldBreaks ? " Shield broken!" : ""}`,
-      );
-    }
-
-    // --- On Hit effects (non-phase-tagged effects fire here) ---
-    const onHitEffects = filterNonPhase(allEffects);
-    const effectMsgs = yield* runEffectStream(
-      applyEffectStream(game, user, target, onHitEffects, ability),
-    );
-    result.messages.push(...effectMsgs);
-
-    // Apply recoil damage after hit damage (reuse the parsed `effects`
-    // array rather than re-running the regex-based clause splitter).
-    // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
-    // Recoil 25%" combo reflects the boosted total.
-    for (const e of allEffects) {
-      if (e.type === "recoil") {
-        const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
-        dealDamage(user, recoilDmg);
-        result.messages.push(
-          `  **Recoil!** ${user.num} takes **${recoilDmg}** (${e.percent}% of ${finalDamage}) (${user.curhp}/${user.maxhp} HP).`,
-        );
-      }
-    }
-
-    if (target.curhp <= 0) {
-      result.messages.push(
-        `  **${target.num} (${target.name}) has been defeated!**`,
-      );
-      removeEntity(game, target);
-      result.deaths.push(target);
-    }
-
-    // Check if recoil killed the user (after target death is recorded)
-    if (user.curhp <= 0) {
-      result.messages.push(
-        `  **${user.num} (${user.name}) has been defeated by Recoil!**`,
-      );
-      removeEntity(game, user);
-      result.deaths.push(user);
-      return result;
-    }
+    if (resolved === "user-defeated") return result;
   } else {
     // --- On Miss ---
-    const onMissEffects = filterByPhase(allEffects, "on-miss");
+    // Two parse shapes reach here: the legacy top-level wrapper
+    // ("On Miss: ..." -> type "onMiss") and the clause-level phase prefix
+    // ("On Miss: ..." -> phaseEffect with phase "on-miss"). Flatten both to
+    // their inner effects (the onMiss wrapper has no effect-stream handler)
+    // and route self-targeted buffs to the ATTACKER (recipient = user), not
+    // the defender, mirroring the pre-phase handler.
+    const onMissEffects = allEffects.flatMap((e) =>
+      e.type === "onMiss"
+        ? e.effects
+        : e.type === "phaseEffect" && e.phase === "on-miss"
+          ? e.effects
+          : [],
+    );
     if (onMissEffects.length > 0) {
+      result.messages.push(`  [On Miss]`);
       const missMsgs = yield* runEffectStream(
-        applyEffectStream(game, user, target, onMissEffects, ability),
+        applyEffectStream(game, user, user, onMissEffects, ability),
       );
       result.messages.push(...missMsgs);
     }
@@ -995,6 +940,7 @@ function* resolveHitDamage(
   crit: boolean,
   hitLabel: string,
   result: ResolutionResult,
+  allEffects: Effect[],
 ): Generator<AttackPrompt, "user-defeated" | "done", string> {
   const damageRoll = rollDice(ability.roll);
   const userOff = combat.ignore.atkMag
@@ -1038,17 +984,18 @@ function* resolveHitDamage(
     );
   }
 
-  const effects = parseEffects(ability.effect);
+  // --- On Hit effects (non-phase-tagged effects fire here) ---
+  const onHitEffects = filterNonPhase(allEffects);
   const effectMsgs = yield* runEffectStream(
-    applyEffectStream(game, user, target, effects, ability),
+    applyEffectStream(game, user, target, onHitEffects, ability),
   );
   result.messages.push(...effectMsgs);
 
-  // Apply recoil damage after hit damage (reuse the parsed `effects`
-  // array rather than re-running the regex-based clause splitter).
-  // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
-  // Recoil 25%" combo reflects the boosted total.
-  for (const e of effects) {
+  // Apply recoil damage after hit damage (reuse the parsed effects array
+  // rather than re-running the regex-based clause splitter). Recoil scales
+  // off the post-mod `finalDamage` so a "+30% damage / Recoil 25%" combo
+  // reflects the boosted total.
+  for (const e of allEffects) {
     if (e.type === "recoil") {
       const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
       dealDamage(user, recoilDmg);
