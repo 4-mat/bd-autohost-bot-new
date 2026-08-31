@@ -270,6 +270,9 @@ function* resolveAttackFlow(
         );
         return result;
       }
+      // Any other response is invalid - bail out instead of yielding an empty direction prompt.
+      result.messages.push(`${user.num} cancels ${ability.name}.`);
+      return result;
     }
 
     dir = yield {
