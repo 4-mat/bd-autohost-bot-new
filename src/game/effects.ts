@@ -2617,7 +2617,7 @@ function walkPhaseAware(
   moonPhase: string | undefined,
   visit: (e: Effect) => void,
 ): void {
-  const phase = (moonPhase ?? "new moon").toLowerCase().trim();
+  const phase = moonPhase?.toLowerCase().trim();
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
       const want = e.condition
@@ -2626,7 +2626,7 @@ function walkPhaseAware(
         .map((s) => s.trim());
       if (phase && want.includes(phase)) {
         walkPhaseAware(e.thenEffects, phase, visit);
-      } else if (e.elseEffects) {
+      } else if (phase && e.elseEffects) {
         // "Otherwise:" branch applies when the active phase doesn't match.
         walkPhaseAware(e.elseEffects, phase, visit);
       }
@@ -2727,46 +2727,69 @@ function mergeCombatMetadata(
   moonPhase?: string,
   phaseChoice?: string,
 ): void {
-  const phase = (moonPhase ?? "new moon").toLowerCase().trim();
+  const phase = moonPhase?.toLowerCase().trim();
   const choice = phaseChoice?.toLowerCase().trim();
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("subweapon is ")) {
-      // Only the matching branch's sub-effects count; the non-matching
-      // branches are dead code for this user's equipped subweapon — unless
-      // there's an "Otherwise:" branch, which applies on a mismatch.
-      const want = e.condition.slice("subweapon is ".length);
-      if (subweapon && subweapon === want) {
-        mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
-      } else if (subweapon && e.elseEffects) {
-        mergeCombatMetadata(out, e.elseEffects, subweapon, phase, choice);
-      }
+      mergeSubweaponConditional(out, e, subweapon, phase, choice);
       continue;
     }
     if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
-      // Phase-gated branches (Lunar Phase's "Waxing: +2 dice faces") count
-      // only while the current moon phase matches. The condition is either
-      // "phase is X" or the slash-combo "phase is X or Y"; both are knowable
-      // at metadata time, so unlike If/Apex/Thirst gates we descend here.
-      const want = e.condition
-        .slice("phase is ".length)
-        .split(" or ")
-        .map((s) => s.trim());
-      // The user's chosen 2nd phase (Far Side of the Moon / Fatal
-      // Moonlight) counts too: evaluateCondition fires a "phase is X"
-      // branch when EITHER the active phase or the chosen phase matches,
-      // so ability metadata must fold both in for the damage math.
-      if (
-        (phase && want.includes(phase)) ||
-        (choice && want.includes(choice))
-      ) {
-        mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
-      } else if ((phase || choice) && e.elseEffects) {
-        // "Otherwise:" branch applies when neither phase matches.
-        mergeCombatMetadata(out, e.elseEffects, subweapon, phase, choice);
-      }
+      mergePhaseConditional(out, e, phase, choice, subweapon);
       continue;
     }
     mergeOneEffect(out, e);
+  }
+}
+
+/**
+ * "Gladius: +N dice" branches: only the branch matching the user's equipped
+ * subweapon counts (the rest are dead code for this user), unless there's an
+ * "Otherwise:" branch, which applies on a mismatch.
+ */
+function mergeSubweaponConditional(
+  out: CombatMetadata,
+  e: Effect,
+  subweapon: string | undefined,
+  phase: string | undefined,
+  choice: string | undefined,
+): void {
+  const want = (e as { condition: string }).condition.slice("subweapon is ".length);
+  if (subweapon && subweapon === want) {
+    mergeCombatMetadata(out, (e as ConditionalEffect).thenEffects, subweapon, phase, choice);
+  } else if (subweapon && (e as ConditionalEffect).elseEffects) {
+    mergeCombatMetadata(out, (e as ConditionalEffect).elseEffects, subweapon, phase, choice);
+  }
+}
+
+/**
+ * Phase-gated branches (Lunar Phase's "Waxing: +2 dice faces") count only
+ * while the current moon phase matches. The condition is either "phase is X"
+ * or the slash-combo "phase is X or Y"; both are knowable at metadata time.
+ * The user's chosen 2nd phase (Far Side of the Moon / Fatal Moonlight) counts
+ * too: evaluateCondition fires a "phase is X" branch when EITHER the active
+ * phase or the chosen phase matches, so ability metadata folds both in.
+ */
+function mergePhaseConditional(
+  out: CombatMetadata,
+  e: Effect,
+  phase: string | undefined,
+  choice: string | undefined,
+  subweapon: string | undefined,
+): void {
+  const cond = e as ConditionalEffect;
+  const want = cond.condition
+    .slice("phase is ".length)
+    .split(" or ")
+    .map((s) => s.trim());
+  if (
+    (phase && want.includes(phase)) ||
+    (choice && want.includes(choice))
+  ) {
+    mergeCombatMetadata(out, cond.thenEffects, subweapon, phase, choice);
+  } else if ((phase || choice) && cond.elseEffects) {
+    // "Otherwise:" branch applies when neither phase matches.
+    mergeCombatMetadata(out, cond.elseEffects, subweapon, phase, choice);
   }
 }
 
