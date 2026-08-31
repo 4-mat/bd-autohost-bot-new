@@ -848,6 +848,20 @@ function* resolveSingleTarget(
       result,
     );
     if (resolved === "user-defeated") return result;
+  } else {
+    // --- On Miss: apply miss-only effects to the attacker ---
+    const allEffects = parseEffects(ability.effect);
+    const onMiss = allEffects.filter((e) => e.type === "onMiss");
+    if (onMiss.length > 0) {
+      result.messages.push(`  [On Miss]`);
+      for (const om of onMiss) {
+        if (om.type !== "onMiss") continue;
+        const missMsgs: string[] = yield* runEffectStream(
+          applyEffectStream(game, user, user, om.effects, ability),
+        );
+        result.messages.push(...missMsgs);
+      }
+    }
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
