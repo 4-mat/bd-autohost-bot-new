@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   core:
-    name: Core (typecheck + tests)
+    name: Core (typecheck + tests + complexity)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +34,12 @@ jobs:
       # job below covers it.
       - name: Test
         run: bun test src
+
+      # Cyclomatic-complexity gate: fails when any function exceeds the
+      # threshold in .oxlintrc.json (currently 15). Keeps new hotspots from
+      # landing even though the pre-commit hook only warns.
+      - name: Complexity scan
+        run: ./scripts/complexity-scan.sh
 
   bot:
     name: Discord bot (typecheck + tests)

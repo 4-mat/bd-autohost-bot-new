@@ -6,12 +6,8 @@ import {
   type AbilityData,
   Terrain,
 } from "../game/state.js";
-import {
-  parseEffects,
-  extractCombatMetadata,
-} from "../game/effects.js";
-import { startAttack } from "../game/resolve.js";
-
+import { parseEffects, extractCombatMetadata } from "../game/effects.js";
+import { startAttack, isValidTarget } from "../game/resolve.js";
 setWs({ send() {} });
 
 // ---------------------------------------------------------------------------
@@ -111,6 +107,7 @@ function makeAbility(
 beforeEach(() => {});
 
 // ===========================================================================
+// ===========================================================================
 // resolveAttackFlow: multi-hit stops once the target is defeated (#180)
 // ===========================================================================
 
@@ -139,6 +136,84 @@ describe("resolveAttackFlow: multi-hit vs defeated target", () => {
     expect(defeated.length).toBe(1);
     expect(log).not.toContain("(Hit 2/3");
     expect(log).not.toContain("(Hit 3/3");
+  });
+});
+
+// ===========================================================================
+// isValidTarget — group matching (single-target path)
+// ===========================================================================
+
+describe("isValidTarget", () => {
+  // Team-mode fixtures: the FFA (team 0) behavior is covered by the
+  // dedicated "FFA targeting" describe below.
+  const user = () =>
+    makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 1 });
+  const foe = () =>
+    makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 2 });
+  const ally = () =>
+    makeEntity({ num: "P3", name: "Cara", pos: [5, 4], team: 1 });
+
+  it("'Self or Foe' accepts the user and foes but not allies", () => {
+    expect(isValidTarget(user(), user(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), foe(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), ally(), "Self or Foe")).toBe(false);
+  });
+
+  it("basic groups still behave", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Self")).toBe(true);
+    expect(isValidTarget(u, ally(), "Self")).toBe(false);
+    expect(isValidTarget(u, ally(), "Ally")).toBe(true);
+    expect(isValidTarget(u, foe(), "Ally")).toBe(false);
+    expect(isValidTarget(u, foe(), "Foe")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe")).toBe(false);
+    expect(isValidTarget(u, foe(), "Foe or Ally")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe or Ally")).toBe(true);
+    expect(isValidTarget(u, u, "Any")).toBe(true);
+  });
+
+  it("legacy 'Foe(s)' targets foes, not allies (matches AoE path)", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Foe(s)")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe(s)")).toBe(false);
+  });
+
+  it("'Allies and Self' targets allies and self", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Allies and Self")).toBe(true);
+    expect(isValidTarget(u, ally(), "Allies and Self")).toBe(true);
+    expect(isValidTarget(u, foe(), "Allies and Self")).toBe(false);
+  });
+
+  it("'Tile or Foe' targets foes, not the user or allies", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Tile or Foe")).toBe(true);
+    expect(isValidTarget(u, u, "Tile or Foe")).toBe(false);
+    expect(isValidTarget(u, ally(), "Tile or Foe")).toBe(false);
+  });
+
+  it("'Self, Foes, Allies' accepts the user, foes, and allies", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(u, foe(), "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(u, ally(), "Self, Foes, Allies")).toBe(true);
+  });
+
+  it("rejects dead targets", () => {
+    expect(
+      isValidTarget(
+        user(),
+        makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }),
+        "Foe",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects unrecognized target groups (matches the AoE path)", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Bogus")).toBe(false);
+    expect(isValidTarget(u, foe(), "Self, Allies")).toBe(false);
+    expect(isValidTarget(u, u, "Everyone")).toBe(false);
   });
 });
 
@@ -262,9 +337,7 @@ describe("extractCombatMetadata", () => {
   });
 
   it("does NOT descend into Thirst sub-effects (would over-apply when blood < threshold)", () => {
-    const meta = extractCombatMetadata(
-      parseEffects("Thirst 4: Multi-Hit: 3"),
-    );
+    const meta = extractCombatMetadata(parseEffects("Thirst 4: Multi-Hit: 3"));
     expect(meta.additionalHits).toBe(0);
   });
 
@@ -274,18 +347,14 @@ describe("extractCombatMetadata", () => {
     // at runtime. resolve.ts handles per-branch metadata through the
     // legacy buff pipeline; metadata here is top-level only.
     const meta = extractCombatMetadata(
-      parseEffects(
-        "If target is alive, +30% damage. Otherwise, +10% damage.",
-      ),
+      parseEffects("If target is alive, +30% damage. Otherwise, +10% damage."),
     );
     expect(meta.damagePercent).toBe(0);
   });
 
   it("does NOT descend into Choose option sub-effects at extract time", () => {
     const meta = extractCombatMetadata(
-      parseEffects(
-        "Choose: Multi-Hit: 2 or +30% damage or Ignores DEF.",
-      ),
+      parseEffects("Choose: Multi-Hit: 2 or +30% damage or Ignores DEF."),
     );
     // All clauses are inside the Choose gate, so the metadata extractor
     // treats them as gated and leaves the top-level metadata at zero.
@@ -470,9 +539,7 @@ describe("resolveAttackFlow: damage mods surface in the log", () => {
     // extracted metadata must not report a damage percent that was
     // nested inside an Apex clause, otherwise the resolve math treats
     // it as always-on.
-    const meta = extractCombatMetadata(
-      parseEffects("Apex: +50% damage"),
-    );
+    const meta = extractCombatMetadata(parseEffects("Apex: +50% damage"));
     expect(meta.damagePercent).toBe(0);
   });
 });
@@ -534,14 +601,174 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
     // Both P2 and P3 damage lines should carry the +50% mod tag.
     expect(log).toContain("P2");
     expect(log).toContain("P3");
-    const p2Trail = log.split("\n").find((line) =>
-      line.includes("Damage Modifiers applied") && line.includes("P2"),
-    );
-    const p3Trail = log.split("\n").find((line) =>
-      line.includes("Damage Modifiers applied") && line.includes("P3"),
-    );
+    const p2Trail = log
+      .split("\n")
+      .find(
+        (line) =>
+          line.includes("Damage Modifiers applied") && line.includes("P2"),
+      );
+    const p3Trail = log
+      .split("\n")
+      .find(
+        (line) =>
+          line.includes("Damage Modifiers applied") && line.includes("P3"),
+      );
     // The mod trails reference just the damageValue; for each target we
     // confirm at least one line contains the +50% tag.
     expect(log).toMatch(/\+50% damage/);
+  });
+});
+
+describe("FFA targeting (team 0 = no teams)", () => {
+  it("treats every other player as a Foe and no one as an Ally", () => {
+    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 0 });
+    expect(isValidTarget(p1, p2, "Foe")).toBe(true);
+    expect(isValidTarget(p1, p2, "Ally")).toBe(false);
+    expect(isValidTarget(p1, p1, "Foe")).toBe(false);
+    expect(isValidTarget(p1, p2, "Self or Foe")).toBe(true);
+    expect(isValidTarget(p1, p2, "Self and Allies")).toBe(false);
+    expect(isValidTarget(p1, p1, "Self and Allies")).toBe(true);
+    expect(isValidTarget(p1, p2, "Self and Ally")).toBe(false);
+    expect(isValidTarget(p1, p1, "Self and Ally")).toBe(true);
+    expect(isValidTarget(p1, p2, "Allies and Self")).toBe(false);
+    expect(isValidTarget(p1, p1, "Allies and Self")).toBe(true);
+    expect(isValidTarget(p1, p2, "Foe or Ally")).toBe(true);
+  });
+
+  it("keeps team-mode targeting unchanged", () => {
+    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 1 });
+    const p3 = makeEntity({ num: "P3", name: "Carol", pos: [2, 4], team: 2 });
+    expect(isValidTarget(p1, p2, "Ally")).toBe(true);
+    expect(isValidTarget(p1, p2, "Foe")).toBe(false);
+    expect(isValidTarget(p1, p3, "Foe")).toBe(true);
+    expect(isValidTarget(p1, p3, "Ally")).toBe(false);
+  });
+});
+
+describe("On Miss hook (#139)", () => {
+  it("fires only on miss, not on hit", () => {
+    const make = (mr: number) =>
+      makeAbility({
+        name: "Glancing Blow",
+        range: "Melee",
+        mr,
+        roll: "1d6+0",
+        effect: "On Miss: +2 EVA/1.",
+      });
+    const userHit = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const missLog = driveResolveAgainst(
+      makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 }),
+      make(30),
+      makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, eva: 0 }),
+    );
+    expect(missLog).toContain("[On Miss]");
+    expect(missLog).toContain("MISS");
+    const hitLog = driveResolveAgainst(
+      userHit,
+      make(0),
+      makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, eva: 0 }),
+    );
+    expect(hitLog).not.toContain("[On Miss]");
+    expect(hitLog).toContain("HIT");
+  });
+
+  it("applies every effect in a multi-effect On Miss clause (#139)", () => {
+    const ability = makeAbility({
+      name: "Stumble",
+      range: "Melee",
+      mr: 30,
+      roll: "1d6+0",
+      effect: "On Miss: +2 EVA/1. +3 ACC/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    const log = driveResolveAgainst(user, ability, target);
+    expect(log).toContain("[On Miss]");
+    // Both buffs from the clause must land (not just the first).
+    expect(log).toContain("+2 EVA");
+    expect(log).toContain("+3 ACC");
+    // Buffs are self-targeted, so they land on the attacker, not the defender.
+    const userBuffs = Object.fromEntries(
+      user.buffs.map((b) => [b.stat, b.amount]),
+    );
+    expect(userBuffs["eva"]).toBe(2);
+    expect(userBuffs["acc"]).toBe(3);
+  });
+
+  it("routes self-targeted On Miss buffs to the attacker, not the defender (#139)", () => {
+    const ability = makeAbility({
+      name: "Glancing Blow",
+      range: "Melee",
+      mr: 30,
+      roll: "1d6+0",
+      effect: "On Miss: +2 EVA/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    driveResolveAgainst(user, ability, target);
+    const userEva = user.buffs.filter((b) => b.stat === "eva").length;
+    const targetEva = target.buffs.filter((b) => b.stat === "eva").length;
+    expect(userEva).toBe(1);
+    expect(targetEva).toBe(0);
+  });
+
+  it("routes On Miss buffs nested inside a conditional to the attacker (#139)", () => {
+    const ability = makeAbility({
+      name: "Counter",
+      range: "Melee",
+      mr: 30,
+      roll: "1d6+0",
+      effect: "On Miss: If user mp >= 0, +2 EVA/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    const log = driveResolveAgainst(user, ability, target);
+    expect(log).toContain("[On Miss]");
+    // The buff sits inside a conditional branch, so it must still route to
+    // the attacker through the recursion, never to the defender.
+    const userEva = user.buffs.filter((b) => b.stat === "eva").length;
+    const targetEva = target.buffs.filter((b) => b.stat === "eva").length;
+    expect(userEva).toBe(1);
+    expect(targetEva).toBe(0);
   });
 });
