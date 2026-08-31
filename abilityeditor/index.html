@@ -894,6 +894,98 @@
       });
     }
 
+    // ---------- cross-branch copy ----------
+
+    // Flush a card's pending edits (same deferred-save path as flushAbility)
+    // so the copy uses the latest typed values. Returns the collected ability
+    // record, or null if the current item is gone.
+    async function abilityFromCard(card) {
+      const item = currentItem();
+      if (!item) return null;
+      const ability = collectAbility(card);
+      if (!ability.name || !String(ability.name).trim()) return null;
+      return ability;
+    }
+
+    function copyAbilityModal(idx) {
+      const source = currentItem();
+      if (!source) return;
+      const sourceName = source.name;
+
+      const back = document.createElement("div");
+      back.className = "modal-backdrop";
+      const kinds = ["class", "weapon"];
+      const kindOpts = kinds
+        .map(
+          (k) =>
+            '<option value="' +
+            k +
+            '">' +
+            (k === "class" ? "Classes" : "Weapons") +
+            "</option>",
+        )
+        .join("");
+      const renderItems = (kind) =>
+        state.data[kind === "class" ? "classes" : "weapons"]
+          .filter((x) => x.name !== sourceName || kind !== state.kind)
+          .map(
+            (x) =>
+              '<option value="' +
+              esc(x.name) +
+              '">' +
+              esc(x.name) +
+              "</option>",
+          )
+          .join("");
+      back.innerHTML =
+        '<div class="modal"><h3>Copy ability to…</h3><div class="field"><label>Item type</label><select id="copy-kind">' +
+        kindOpts +
+        '</select></div><div class="field"><label>Destination (' +
+        (state.kind === "class" ? "class" : "weapon") +
+        ')</label><select id="copy-item"></select></div><div class="actions"><button data-act="cancel">Cancel</button><button data-act="copy" class="primary">Copy</button></div></div>';
+      document.body.appendChild(back);
+      const kindSel = back.querySelector("#copy-kind");
+      const itemSel = back.querySelector("#copy-item");
+      function refresh(kind) {
+        itemSel.innerHTML = renderItems(kind);
+      }
+      refresh(kindSel.value);
+      kindSel.addEventListener("change", () => refresh(kindSel.value));
+
+      const close = () => back.remove();
+      back.addEventListener("click", async (e) => {
+        if (e.target === back) return close();
+        const act = e.target.closest("button")?.dataset.act;
+        if (act === "cancel") return close();
+        if (act !== "copy") return;
+        const destKind = kindSel.value;
+        const destName = itemSel.value;
+        if (!destName) {
+          toast("Pick a destination item to copy into.", "warn");
+          return;
+        }
+        const card = document.querySelector("#detail .ability-card[data-idx='" + idx + "']");
+        const ability = card ? await abilityFromCard(card) : null;
+        if (!ability) {
+          toast("That ability is missing a name.", "err");
+          return;
+        }
+        const copy = JSON.parse(JSON.stringify(ability));
+        try {
+          await api("/api/ability", {
+            kind: destKind,
+            owner: destName,
+            action: "add",
+            ability: copy,
+          });
+          close();
+          toast('Copied "' + copy.name + '" to ' + destName + ".", "ok");
+        } catch (err) {
+          toast(err.message, "err");
+        }
+      });
+    }
+
     // ---------- detail editor ----------
     function field(id, label, value, extra) {
       return (
@@ -990,7 +1082,9 @@
           choices,
           { textarea: true, full: true },
         ) +
-        '<div class="card-actions"><button class="mini danger" data-act="del-ability" data-idx="' +
+        '<div class="card-actions"><button class="mini" data-act="copy-ability" data-idx="' +
+        idx +
+        '">Copy to…</button><button class="mini danger" data-act="del-ability" data-idx="' +
         idx +
         '">Delete ability</button></div>'
       );
@@ -1351,6 +1445,7 @@
       const act = actEl.dataset.act;
       if (act === "add-ability") addAbility();
       else if (act === "del-ability") deleteAbility(Number(actEl.dataset.idx));
+      else if (act === "copy-ability") copyAbilityModal(Number(actEl.dataset.idx));
       else if (act === "del-custom") deleteCustom();
     });
 
