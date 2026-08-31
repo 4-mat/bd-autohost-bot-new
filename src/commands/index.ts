@@ -163,46 +163,6 @@ export function handleCommand(
     return;
   }
   if (GAME_COMMANDS.has(id)) {
-
-
-  // Game commands (movement, attacks, display)
-  if (
-    id === "info" ||
-    id === "map" ||
-    id === "pl" ||
-    id === "to" ||
-    id === "move" ||
-    id === "attack" ||
-    id === "use" ||
-    id === "dash" ||
-    id === "confirm" ||
-    id === "cancel" ||
-    id === "target" ||
-    id === "choose" ||
-    id === "vote" ||
-    id === "votestatus" ||
-    id === "unvote" ||
-    id === "leave" ||
-    id === "endturn" ||
-    id === "next" ||
-    id === "back" ||
-    id === "undo" ||
-    id === "r" ||
-    id === "roll" ||
-    id === "dice" ||
-    id === "hp" ||
-    id === "cut" ||
-    id === "timer" ||
-    id === "checkrange" ||
-    id === "cr" ||
-    id === "premove" ||
-    id === "passmove" ||
-    id === "pass" ||
-    id === "status" ||
-    id === "regp" ||
-    id === "target" ||
-    id === "choose"
-  ) {
     gameCommand(room, user, id, args, val, pm);
     return;
   }
