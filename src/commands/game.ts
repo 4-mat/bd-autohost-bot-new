@@ -1420,7 +1420,7 @@ function handleGridToggle(game: Game, user: User, args: string) {
     entity = named;
   } else if (!isHost) {
     // No name: non-host players toggle their own view even outside their turn.
-    entity = getEntity(game, user.name) ?? getCurrentEntity(game);
+    entity = getEntity(game, user.name);
     if (!entity) return sendPm(user.name, "No entity found for you.");
   }
 
