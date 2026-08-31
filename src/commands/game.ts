@@ -816,21 +816,8 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   pushSnapshot(game);
 
-  let acted = "";
-
-  // Stunned entities can't act — skip their action and clear pending
-  if (isStunned(entity)) {
-    if (entity.pendingAction) {
-      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
-      entity.pendingAction = null;
-    } else {
-      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
-    }
-  } else if (entity.pendingAction) {
-    const done = resolvePendingAction(game, user, entity);
-    if (done === null) return; // prompt needs an answer — turn not advanced
-    acted = done;
-  }
+  const acted = actTurnEntity(game, user, entity);
+  if (acted === null) return; // prompt needs an answer — turn not advanced
 
   if (
     acted ||
@@ -861,6 +848,31 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+/** Resolve the current entity's action on turn advance: stunned entities
+ * skip (and clear any pending action), pending actions resolve via
+ * resolvePendingAction. Returns the acted summary, or null when a prompt
+ * needs an answer (turn must not advance). */
+function actTurnEntity(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  // Stunned entities can't act — skip their action and clear pending
+  if (isStunned(entity)) {
+    if (entity.pendingAction) {
+      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
+      entity.pendingAction = null;
+    } else {
+      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
+    }
+    return "";
+  }
+  if (entity.pendingAction) {
+    return resolvePendingAction(game, user, entity);
+  }
+  return "";
 }
 
 /** Handle a death at turn advance: game over, or skip to the next living
