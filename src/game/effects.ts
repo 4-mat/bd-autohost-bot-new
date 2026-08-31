@@ -2617,7 +2617,7 @@ function walkPhaseAware(
   moonPhase: string | undefined,
   visit: (e: Effect) => void,
 ): void {
-  const phase = moonPhase?.toLowerCase().trim();
+  const phase = (moonPhase ?? "new moon").toLowerCase().trim();
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
       const want = e.condition
@@ -2626,7 +2626,7 @@ function walkPhaseAware(
         .map((s) => s.trim());
       if (phase && want.includes(phase)) {
         walkPhaseAware(e.thenEffects, phase, visit);
-      } else if (phase && e.elseEffects) {
+      } else if (e.elseEffects) {
         // "Otherwise:" branch applies when the active phase doesn't match.
         walkPhaseAware(e.elseEffects, phase, visit);
       }
@@ -2727,7 +2727,7 @@ function mergeCombatMetadata(
   moonPhase?: string,
   phaseChoice?: string,
 ): void {
-  const phase = moonPhase?.toLowerCase().trim();
+  const phase = (moonPhase ?? "new moon").toLowerCase().trim();
   const choice = phaseChoice?.toLowerCase().trim();
   for (const e of effects) {
     if (e.type === "conditional" && e.condition.startsWith("subweapon is ")) {
