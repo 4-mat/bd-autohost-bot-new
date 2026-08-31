@@ -127,6 +127,7 @@ const HOST_CMDS_NOVAL: Record<string, (room: Room, user: User) => void> = {
   start: handleStart,
   close: handleClose,
   endvote: handleEndVote,
+  toggleidle: handleToggleIdle,
   ffabtn: handleFfaButton,
   nudge: handleNudge,
 };
