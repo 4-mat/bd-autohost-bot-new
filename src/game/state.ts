@@ -127,14 +127,14 @@ export interface AbilityData {
   roll: string;
   damageType: "Physical" | "Magical" | "Varies" | "";
   actionType:
-  | "Standard"
-  | "Full"
-  | "Movement"
-  | "Swift"
-  | "Free"
-  | "Trigger"
-  | "Reaction"
-  | "Passive";
+    | "Standard"
+    | "Full"
+    | "Movement"
+    | "Swift"
+    | "Free"
+    | "Trigger"
+    | "Reaction"
+    | "Passive";
   targetAmount: number | "AoE";
   targetGroup: string;
   range: string;
@@ -318,6 +318,8 @@ export interface Game {
   chatLog: ChatEntry[];
   toasts: ChatEntry[];
   signupsOpen: boolean;
+  /** Whether players are idle (toggled by %playersidle). */
+  playersIdle: boolean;
   /** Gamemode votes: entity num -> voted mode id. Active between %close and %endvote. */
   votes: Record<string, string>;
   /** Whether gamemode voting is open (opened by %close, closed by %endvote). */
