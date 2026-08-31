@@ -825,20 +825,30 @@
     function importData(raw) {
       const data = JSON.parse(raw);
       if (!data || typeof data !== "object") throw new Error("Not a valid JSON object.");
-      const classes = Array.isArray(data.classes) ? data.classes : [];
-      const weapons = Array.isArray(data.weapons) ? data.weapons : [];
+      // Filter invalid entries (missing a name) FIRST so the custom-id lists
+      // below can never reference a dropped entry.
+      const classes = Array.isArray(data.classes)
+        ? data.classes.filter((c) => c && c.name)
+        : [];
+      const weapons = Array.isArray(data.weapons)
+        ? data.weapons.filter((w) => w && w.name)
+        : [];
       if (classes.length + weapons.length === 0)
         throw new Error("No classes or weapons found in that file.");
       // Accept both the editor's own format and a bare { classes, weapons }.
+      // Only entries the payload EXPLICITLY lists as custom are custom: a
+      // bare payload carries no custom lists, so its entries are treated as
+      // regular data (marking every imported entry as custom would silently
+      // exclude all of them from "Save to Bot", which skips customs).
       const customClasses = Array.isArray(data.customClasses)
         ? data.customClasses.map((s) => String(s))
-        : classes.map((c) => toId(String(c && c.name)));
+        : [];
       const customWeapons = Array.isArray(data.customWeapons)
         ? data.customWeapons.map((s) => String(s))
-        : weapons.map((w) => toId(String(w && w.name)));
+        : [];
       state.data = {
-        classes: JSON.parse(JSON.stringify(classes.filter((c) => c && c.name))),
-        weapons: JSON.parse(JSON.stringify(weapons.filter((w) => w && w.name))),
+        classes: JSON.parse(JSON.stringify(classes)),
+        weapons: JSON.parse(JSON.stringify(weapons)),
         customClasses,
         customWeapons,
       };
