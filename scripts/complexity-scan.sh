@@ -55,25 +55,20 @@ printf '%s' "$RAW" > "$TMP_FILE"
 # Run parser to generate the report (text or json)
 MODE_ENV="$MODE" TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE"
 
-rm -f "$TMP_FILE"
-
 # Propagate scanner failure: if oxlint itself failed (config, resolution, etc.),
-# exit with its code so CI does not pass silently.
+# exit with its code so CI does not pass silently; a broken scan must not be
+# masked as clean.
 if [ $SCAN_EXIT -ne 0 ]; then
+  rm -f "$TMP_FILE"
+  echo "error: oxlint failed (exit $SCAN_EXIT); scan did not complete" >&2
   exit $SCAN_EXIT
-fi
-
-# Gate mode: an oxlint execution failure must fail the gate even when no
-# complexity diagnostic is present; otherwise a broken scan is masked as clean.
-if [ "$OXLINT_RC" -ne 0 ]; then
-  echo "error: oxlint failed (exit $OXLINT_RC); scan did not complete" >&2
-  exit "$OXLINT_RC"
 fi
 
 # Gate on parsed results: run parser in JSON mode and check if any functions
 # exceed the threshold. This avoids the crude grep which matches "complexity"
 # in "Maximum allowed is 15" or parser warnings.
 JSON_OUT="$(MODE_ENV=json TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE" 2>/dev/null)"
+rm -f "$TMP_FILE"
 # Count elements in JSON array (handles empty array "[]")
 COUNT=$(printf '%s' "$JSON_OUT" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
 if [ "$COUNT" -gt 0 ]; then
