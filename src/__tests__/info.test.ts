@@ -1,40 +1,51 @@
-import { describe, expect, test, beforeEach } from "bun:test";
-import * as utils from "../utils.js";
+import { describe, expect, test, beforeEach, mock } from "bun:test";
+import * as realUtils from "../utils.js";
 // Force data module initialization so getVersionData returns populated maps
 import { loadGameData } from "../data/index.js";
 import { loadGameData43 } from "../data/version43.js";
 import { games, type Game, type Entity, Terrain } from "../game/state.js";
 
+// The send queue in utils.ts is a module-level global shared with every
+// other test file in this process: bun queues one message per 400ms and the
+// full suite's traffic can sit ahead of ours for seconds. Instead of racing
+// that, mock the module for THIS file only so sendPm captures synchronously
+// into a local buffer. (mock.module is per-test-file; other files keep the
+// real utils.)
+let sentMessages: string[] = [];
+mock.module("../utils.js", () => ({
+  ...realUtils,
+  send(_room: string, msg: string) {
+    sentMessages.push(msg);
+  },
+  sendPm(user: string, msg: string) {
+    sentMessages.push(`|/pm ${user}, ${msg}`);
+  },
+}));
+
 // Load game data once (idempotent, fills 4.4 + 4.3 maps)
 loadGameData();
 loadGameData43();
-
-let sentMessages: string[] = [];
-
-// Wait long enough for utils.send's throttled drain() to deliver everything
-// in the queue. The first message goes out immediately; subsequent ones
-// are throttled by setTimeout(drain, 400).
-async function flush() {
-  await new Promise((r) => setTimeout(r, 500));
-}
-
-beforeEach(() => {
-  sentMessages = [];
-  games.clear();
-  // Patch ws.send so any send() / sendPm() call lands in our buffer.
-  // Messages from sendPm look like: "|/pm {name}, {body}"
-  utils.setWs({
-    send(msg: string) {
-      sentMessages.push(msg);
-    },
-  });
-});
 
 // Extract PM body from a ws.send-formatted PM message (format: "|/pm Name, body")
 function pmBody(raw: string): string {
   const idx = raw.indexOf(", ");
   return idx === -1 ? raw : raw.slice(idx + 2);
 }
+
+// True if any captured message addressed as a PM contains the given text.
+async function waitForPm(bodyPart: string): Promise<boolean> {
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline) {
+    if (sentMessages.map(pmBody).some((b) => b.includes(bodyPart))) return true;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  return sentMessages.map(pmBody).some((b) => b.includes(bodyPart));
+}
+
+beforeEach(() => {
+  sentMessages = [];
+  games.clear();
+});
 
 function makeEntity(
   overrides: Partial<Entity> & { num: string; name: string },
@@ -144,11 +155,9 @@ describe("infoCommand version selection", () => {
     const room = makeRoom("battledome");
 
     infoCommand(user, "wt", "rifter", room);
-    await flush();
 
     // Room game (4.3) should have been used — a response should be sent
-    expect(sentMessages.length).toBeGreaterThan(0);
-    expect(pmBody(sentMessages[0])).toContain("Rifter");
+    expect(await waitForPm("Rifter")).toBe(true);
   });
 
   test("spectator not in game.entities falls back to user-game", async () => {
@@ -174,11 +183,9 @@ describe("infoCommand version selection", () => {
     const room = makeRoom("battledome");
 
     infoCommand(user, "wt", "rifter", room);
-    await flush();
 
     // Should fall back to user's 4.4 game and still return a response
-    expect(sentMessages.length).toBeGreaterThan(0);
-    expect(pmBody(sentMessages[0])).toContain("Rifter");
+    expect(await waitForPm("Rifter")).toBe(true);
   });
 
   test("unknown room with matching user game uses user game version", async () => {
@@ -192,22 +199,18 @@ describe("infoCommand version selection", () => {
     const room = makeRoom("someOtherRoom");
 
     infoCommand(u, "wt", "rifter", room);
-    await flush();
 
     // No game for "someOtherRoom" -> fallback to user-game 4.3
-    expect(sentMessages.length).toBeGreaterThan(0);
-    expect(pmBody(sentMessages[0])).toContain("Rifter");
+    expect(await waitForPm("Rifter")).toBe(true);
   });
 
   test("no room and no user game uses 4.4 default", async () => {
     const u = makeUser("nobody");
 
     infoCommand(u, "wt", "rifter", null);
-    await flush();
 
     // Should fall through to 4.4 default
-    expect(sentMessages.length).toBeGreaterThan(0);
-    expect(pmBody(sentMessages[0])).toContain("Rifter");
+    expect(await waitForPm("Rifter")).toBe(true);
   });
 
   test("%wt ability lookup resolves via ability search", async () => {
@@ -217,26 +220,20 @@ describe("infoCommand version selection", () => {
     // see if %wt resolves it via the ability search path (class/weapon
     // match comes first, ability search is the fallback).
     infoCommand(u, "wt", "arrowflurry", null);
-    await flush();
 
-    expect(sentMessages.length).toBeGreaterThan(0);
-    const body = pmBody(sentMessages[0]);
     // Should find the Crossbow ability card
-    expect(body).toContain("Crossbow");
-    expect(body).toContain("Arrow Flurry");
+    expect(await waitForPm("Crossbow")).toBe(true);
+    expect(await waitForPm("Arrow Flurry")).toBe(true);
   });
 
   test("%wtm is reserved for monster moves (stub)", async () => {
     const u = makeUser("Alice");
 
     infoCommand(u, "wtm", "someskill", null);
-    await flush();
 
-    expect(sentMessages.length).toBeGreaterThan(0);
-    const body = pmBody(sentMessages[0]);
-    expect(body).toContain("No monster data loaded yet");
-    expect(body).toContain("issues/290");
-    expect(body).toContain("%wtm");
+    expect(await waitForPm("No monster data loaded yet")).toBe(true);
+    expect(await waitForPm("issues/290")).toBe(true);
+    expect(await waitForPm("%wtm")).toBe(true);
   });
 });
 
@@ -261,13 +258,10 @@ describe("infoCommand %wt4.3", () => {
 
     // %wt4.3 should return 4.3 Bard (which has "Harmony" as an ability)
     infoCommand(u, "wt4.3", "bard", room);
-    await flush();
 
-    expect(sentMessages.length).toBeGreaterThan(0);
-    const body = pmBody(sentMessages[0]);
-    expect(body).toContain("Bard");
+    expect(await waitForPm("Bard")).toBe(true);
     // 4.3-only ability — proves the override worked
-    expect(body).toContain("Harmony");
+    expect(await waitForPm("Harmony")).toBe(true);
   });
 
   test("ignores user game version and always resolves in 4.3", async () => {
@@ -283,45 +277,33 @@ describe("infoCommand %wt4.3", () => {
     const u = makeUser("Bob");
     // No room context at all — %wt would default to 4.4
     infoCommand(u, "wt4.3", "bard", null);
-    await flush();
 
-    expect(sentMessages.length).toBeGreaterThan(0);
-    const body = pmBody(sentMessages[0]);
-    expect(body).toContain("Bard");
-    expect(body).toContain("Harmony");
+    expect(await waitForPm("Bard")).toBe(true);
+    expect(await waitForPm("Harmony")).toBe(true);
   });
 
   test("returns not-found message with 4.3 version in error", async () => {
     const u = makeUser("Alice");
     // "xyznotaclassthing" does not exist in any version
     infoCommand(u, "wt4.3", "xyznotaclassthing", null);
-    await flush();
 
-    expect(sentMessages.length).toBeGreaterThan(0);
-    const body = pmBody(sentMessages[0]);
-    expect(body).toContain("4.3");
-    expect(body).toContain("No data found");
+    expect(await waitForPm("No data found")).toBe(true);
+    expect(await waitForPm("4.3")).toBe(true);
   });
 
   test("usage error uses the correct command name", async () => {
     const u = makeUser("Alice");
     infoCommand(u, "wt4.3", "", null);
-    await flush();
 
-    expect(sentMessages.length).toBeGreaterThan(0);
-    const body = pmBody(sentMessages[0]);
-    expect(body).toContain("Usage: %wt4.3");
+    expect(await waitForPm("Usage: %wt4.3")).toBe(true);
   });
 
   test("resolves 4.3-only ability by name", async () => {
     const u = makeUser("Alice");
     // "Inveita" is a 4.3-only Runes ability
     infoCommand(u, "wt4.3", "inveita", null);
-    await flush();
 
-    expect(sentMessages.length).toBeGreaterThan(0);
-    const body = pmBody(sentMessages[0]);
-    expect(body).toContain("Runes");
-    expect(body).toContain("Inveita");
+    expect(await waitForPm("Runes")).toBe(true);
+    expect(await waitForPm("Inveita")).toBe(true);
   });
 });
