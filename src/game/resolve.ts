@@ -140,6 +140,16 @@ export interface SelectionOption {
   label: string;
 }
 
+/** Result of picking the attack's target: either a map tile (for
+ * tile-placement abilities) or a set of entities. */
+interface TileSelection {
+  shouldPromptTile: boolean;
+  tilePos: [number, number] | null;
+  targets: Entity[];
+  hitCount: number;
+  isAoE: boolean;
+}
+
 export type AttackPrompt =
   | {
       kind: "selection";
@@ -337,16 +347,7 @@ function* resolveAttackFlow(
   // result.messages.push(`/me declares ${ability.name}`);
 
   // --- Auto-deduct non-prompted costs ---
-  if (
-    ability.cost &&
-    !ability.cost.prompt &&
-    !autoDeductCost(user, ability.cost)
-  ) {
-    result.messages.push(
-      `${user.num} could not pay the cost for ${ability.name}.`,
-    );
-    return result;
-  }
+  if (!payAutoCost(user, ability, result)) return result;
 
   // --- Selection / Choices / Sacrifice / Pay Costs ---
   const paid = yield* resolveSelection(user, ability, result);
@@ -361,102 +362,21 @@ function* resolveAttackFlow(
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   // Tile-group abilities that actually place terrain (Whittle, Mending
-  // Mantel, ...) target a map tile instead of an entity: collect in-range
-  // tiles, yield a "tile" prompt, and resolve the chosen reference into a
-  // position. Passives whose targetGroup is "Tile" but whose effects carry
-  // no tile clause (Bloom, Mantrap, ...) fall through to entity targeting.
-  const isTileAbility = /^tiles?$/i.test(active.targetGroup);
+  // Mantel, ...) target a map tile instead of an entity, with optional
+  // obstruction-replacement confirmation; everything else targets entities.
   const effects = parseEffects(active.effect);
-  const shouldPromptTile =
-    isTileAbility && effects.some((e) => e.type === "tile");
-  let tilePos: [number, number] | null = null;
-  let targets: Entity[] = [];
-  let hitCount = 0;
-  let isAoE = false;
-
-  if (shouldPromptTile) {
-    const candidates = getTileCandidates(game, user, active);
-
-    if (candidates.length === 0) {
-      result.messages.push(
-        `${user.num} uses ${active.name} but no valid tiles in range.`,
-      );
-      return result;
-    }
-
-    const tileRef =
-      initialTarget ??
-      (yield {
-        kind: "tile",
-        message: `Choose a tile for ${active.name}`,
-        candidates,
-      });
-
-    tilePos = parseTileRef(tileRef);
-    if (
-      !tilePos ||
-      tilePos[0] < 0 ||
-      tilePos[0] >= game.map.length ||
-      tilePos[1] < 0 ||
-      tilePos[1] >= game.map[0].length ||
-      !candidates.includes(posToStr(tilePos[0], tilePos[1]))
-    ) {
-      result.messages.push(
-        `${user.num} uses ${active.name} but the chosen tile is invalid.`,
-      );
-      return result;
-    }
-
-    // Obstruction tiles (Stop/Bone/Ice/Stone/Hearth) are replaceable, but
-    // only with explicit confirmation.
-    if (isObstruction(game.map[tilePos[0]][tilePos[1]])) {
-      const tileName =
-        TERRAIN_NAMES[game.map[tilePos[0]][tilePos[1]]] ?? "obstruction";
-      const decision = yield {
-        kind: "selection",
-        message: `Replace the ${tileName} obstruction at ${posToStr(
-          tilePos[0],
-          tilePos[1],
-        )}?`,
-        options: [
-          { id: "yes", label: "Yes, replace it" },
-          { id: "no", label: "Cancel" },
-        ],
-        confirmObstruction: true,
-      };
-      if (decision !== "yes") {
-        result.messages.push(`${user.num} cancels ${ability.name}.`);
-        return result;
-      }
-    }
-  } else {
-    const prepared = prepareTargeting(game, user, ability);
-    hitCount = prepared.hits;
-    isAoE = prepared.isAoE;
-    targets = prepared.targets;
-    if (targets.length === 0) {
-      const chosen = yield* chooseTargets(
-        game,
-        user,
-        active,
-        initialTarget,
-        result,
-      );
-      if (chosen === null) return result;
-      targets = chosen;
-    }
-  }
-
-  const targetNames = targets.map((t) => t.num).join(", ");
-  const rollStr = active.roll ? ` ${active.roll}` : "";
-  const actionTypeStr = active.actionType === "Reaction" ? " (Reaction)" : "";
-  result.messages.push(
-    `/me ${active.name} @ ${
-      shouldPromptTile && tilePos
-        ? posToStr(tilePos[0], tilePos[1])
-        : targetNames
-    }, MR ${active.mr},${rollStr}${actionTypeStr}`,
+  const tileSel = yield* resolveTileSelection(
+    game,
+    user,
+    ability,
+    active,
+    initialTarget,
+    result,
   );
+  if (tileSel === null) return result;
+  const { shouldPromptTile, tilePos, targets, hitCount, isAoE } = tileSel;
+
+  announceAttack(result, active, targets, shouldPromptTile, tilePos);
 
   const isAttack =
     active.damageType === "Physical" || active.damageType === "Magical";
@@ -518,6 +438,148 @@ function* resolveAttackFlow(
   checkActionWin(game, result);
 
   return result;
+}
+
+/** Push the `/me … @ target` attack announce line to the result. */
+function announceAttack(
+  result: ResolutionResult,
+  active: AbilityData,
+  targets: Entity[],
+  shouldPromptTile: boolean,
+  tilePos: [number, number] | null,
+): void {
+  const targetNames = targets.map((t) => t.num).join(", ");
+  const rollStr = active.roll ? ` ${active.roll}` : "";
+  const actionTypeStr = active.actionType === "Reaction" ? " (Reaction)" : "";
+  result.messages.push(
+    `/me ${active.name} @ ${
+      shouldPromptTile && tilePos
+        ? posToStr(tilePos[0], tilePos[1])
+        : targetNames
+    }, MR ${active.mr},${rollStr}${actionTypeStr}`,
+  );
+}
+
+/** Choose the attack target: a map tile for tile-placement abilities
+ * (with obstruction-replacement confirmation) or one or more entities.
+ * Returns null when the attack cannot continue. */
+function* resolveTileSelection(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  active: AbilityData,
+  initialTarget: string | undefined,
+  result: ResolutionResult,
+): Generator<AttackPrompt, TileSelection | null, PromptResponse> {
+  const isTileAbility = /^tiles?$/i.test(active.targetGroup);
+  const effects = parseEffects(active.effect);
+  const shouldPromptTile =
+    isTileAbility && effects.some((e) => e.type === "tile");
+
+  if (!shouldPromptTile) {
+    const prepared = prepareTargeting(game, user, ability);
+    let targets = prepared.targets;
+    if (targets.length === 0) {
+      const chosen = yield* chooseTargets(
+        game,
+        user,
+        active,
+        initialTarget,
+        result,
+      );
+      if (chosen === null) return null;
+      targets = chosen;
+    }
+    return {
+      shouldPromptTile: false,
+      tilePos: null,
+      targets,
+      hitCount: prepared.hits,
+      isAoE: prepared.isAoE,
+    };
+  }
+
+  const candidates = getTileCandidates(game, user, active);
+  if (candidates.length === 0) {
+    result.messages.push(
+      `${user.num} uses ${active.name} but no valid tiles in range.`,
+    );
+    return null;
+  }
+
+  const tileRef =
+    initialTarget ??
+    (yield {
+      kind: "tile",
+      message: `Choose a tile for ${active.name}`,
+      candidates,
+    });
+
+  const tilePos = parseTileRef(tileRef);
+  if (
+    !tilePos ||
+    tilePos[0] < 0 ||
+    tilePos[0] >= game.map.length ||
+    tilePos[1] < 0 ||
+    tilePos[1] >= game.map[0].length ||
+    !candidates.includes(posToStr(tilePos[0], tilePos[1]))
+  ) {
+    result.messages.push(
+      `${user.num} uses ${active.name} but the chosen tile is invalid.`,
+    );
+    return null;
+  }
+
+  // Obstruction tiles (Stop/Bone/Ice/Stone/Hearth) are replaceable, but
+  // only with explicit confirmation.
+  if (isObstruction(game.map[tilePos[0]][tilePos[1]])) {
+    const confirmed = yield* confirmObstructionReplacement(
+      game,
+      user,
+      ability,
+      tilePos,
+      result,
+    );
+    if (!confirmed) return null;
+  }
+
+  return {
+    shouldPromptTile: true,
+    tilePos,
+    targets: [],
+    hitCount: 0,
+    isAoE: false,
+  };
+}
+
+/** Ask the host to confirm replacing an obstruction tile. Returns false
+ * when the player cancels. */
+function* confirmObstructionReplacement(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  tilePos: [number, number],
+  result: ResolutionResult,
+): Generator<AttackPrompt, boolean, PromptResponse> {
+  const tileName =
+    TERRAIN_NAMES[game.map[tilePos[0]][tilePos[1]]] ?? "obstruction";
+  const decision = yield {
+    kind: "selection",
+    message: `Replace the ${tileName} obstruction at ${posToStr(
+      tilePos[0],
+      tilePos[1],
+    )}?`,
+    options: [
+      { id: "yes", label: "Yes, replace it" },
+      { id: "no", label: "Cancel" },
+    ],
+    confirmObstruction: true,
+  };
+  if (decision !== "yes") {
+    result.messages.push(`${user.num} cancels ${ability.name}.`);
+    return false;
+  }
+  return true;
 }
 
 /** Apply splash damage to nearby tiles when a single-target attack hits. */
@@ -756,6 +818,26 @@ function buildSelectionOptions(ability: AbilityData): SelectionOption[] {
     }
   }
   return opts.length > 0 ? opts : [{ id: "confirm", label: "Confirm" }];
+}
+
+/** Auto-deduct non-prompted costs; returns false when the cost cannot
+ * be paid (and a failure message was pushed to the result). */
+function payAutoCost(
+  user: Entity,
+  ability: AbilityData,
+  result: ResolutionResult,
+): boolean {
+  if (
+    ability.cost &&
+    !ability.cost.prompt &&
+    !autoDeductCost(user, ability.cost)
+  ) {
+    result.messages.push(
+      `${user.num} could not pay the cost for ${ability.name}.`,
+    );
+    return false;
+  }
+  return true;
 }
 
 function autoDeductCost(user: Entity, cost: AbilityCost): boolean {

@@ -1451,6 +1451,31 @@ function* handleSwap(
   );
 }
 
+/** Place terrain for a `tile` effect: announce the placed tile when a
+ * position is known and the terrain fits, otherwise defer placement. */
+function handleTilePlacement(
+  {
+    game,
+    user,
+    messages,
+    tilePos,
+  }: Pick<EffectCtx, "game" | "user" | "messages" | "tilePos">,
+  effect: any,
+) {
+  if (tilePos && placeTerrain(game.map, tilePos, effect.terrain)) {
+    const [tr, tc] = tilePos;
+    messages.push(
+      `  ${user.num} creates a ${
+        TERRAIN_NAMES[effect.terrain] ?? "terrain"
+      } tile at ${posToStr(tr, tc)}.`,
+    );
+    return;
+  }
+  messages.push(
+    `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
+  );
+}
+
 function* handleSimple(
   { game, user, messages, tilePos }: EffectCtx,
   effect: any,
@@ -1490,18 +1515,7 @@ function* handleSimple(
       messages.push(`  ${user.num} takes ${effect.percent}% recoil on damage dealt.`);
       return;
     case "tile":
-      if (tilePos && placeTerrain(game.map, tilePos, effect.terrain)) {
-        const [tr, tc] = tilePos;
-        messages.push(
-          `  ${user.num} creates a ${
-            TERRAIN_NAMES[effect.terrain] ?? "terrain"
-          } tile at ${posToStr(tr, tc)}.`,
-        );
-        return;
-      }
-      messages.push(
-        `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
-      );
+      handleTilePlacement({ game, user, messages, tilePos }, effect);
       return;
     case "unknown":
       messages.push(`  ${effect.text}`);
