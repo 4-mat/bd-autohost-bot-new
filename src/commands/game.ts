@@ -793,6 +793,9 @@ function resolveEntityTurnAction(
     if (entity.pendingAction) {
       send(game.room, `${entity.num} is **Stunned** — action wasted!`);
       entity.pendingAction = null;
+      entity.pendingResolution = undefined;
+      entity.pendingPromptKind = undefined;
+      entity.pendingPrompt = undefined;
     } else {
       send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
     }
