@@ -224,33 +224,49 @@ function failAct(game: Game, entity: Entity, reason: string) {
   logEntry(game, entity, `${entity.num} (${entity.name}) idles (${reason})`);
 }
 
-function handleMove(game: Game, user: User, cmd: string, args: string) {
-  const { entity, rest: posStr } = resolveActor(game, user, args);
-  if (!entity) return;
-
+/** Guard checks before a move/dash: stunned/rooted/already-moved/etc.
+ * Fails the action and notifies the user when movement is not allowed. */
+function canMove(
+  game: Game,
+  user: User,
+  entity: Entity,
+  cmd: string,
+): boolean {
   if (isStunned(entity)) {
     failAct(game, entity, "Stunned");
-    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+    sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+    return false;
   }
   if (isRooted(entity)) {
     failAct(game, entity, "Rooted");
-    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+    sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+    return false;
   }
   if (entity.movementUsed) {
     failAct(game, entity, "already moved");
-    return sendPm(user.name, `${entity.num} already moved this turn.`);
+    sendPm(user.name, `${entity.num} already moved this turn.`);
+    return false;
   }
   if (cmd === "dash" && entity.dashUsed) {
     failAct(game, entity, "already dashed");
-    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+    sendPm(user.name, `${entity.num} already dashed this turn.`);
+    return false;
   }
   if (cmd === "dash" && entity.standardUsed) {
     failAct(game, entity, "Dash is a Full action");
-    return sendPm(
+    sendPm(
       user.name,
       `${entity.num} already used their Standard — Dash is a Full action.`,
     );
+    return false;
   }
+  return true;
+}
+
+function handleMove(game: Game, user: User, cmd: string, args: string) {
+  const { entity, rest: posStr } = resolveActor(game, user, args);
+  if (!entity) return;
+  if (!canMove(game, user, entity, cmd)) return;
 
   const pos = parsePos(posStr);
   if (!pos)
@@ -1127,6 +1143,53 @@ function handlePassMove(game: Game, user: User) {
 
 // -- Interactive movement path handlers ----------------------------------------
 
+/** Resolve the movement actor from args (host may name one; otherwise the
+ * current-turn entity) and run the stunned/rooted/already-moved guards.
+ * Returns the entity, or null after sending the failure message. */
+function resolveMoveActor(
+  game: Game,
+  user: User,
+  name: string,
+  checkDashUsed: boolean,
+): Entity | null {
+  const isHost = toId(user.name) === toId(game.host);
+  let entity: Entity | null = null;
+  if (name && isHost) {
+    entity = getEntity(game, name);
+    if (!entity) {
+      sendPm(user.name, `Unknown entity: ${name}`);
+      return null;
+    }
+  } else {
+    entity = getCurrentEntity(game);
+  }
+  if (!entity) {
+    sendPm(user.name, "No active turn.");
+    return null;
+  }
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    sendPm(user.name, "It's not your turn.");
+    return null;
+  }
+  if (isStunned(entity)) {
+    sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+    return null;
+  }
+  if (isRooted(entity)) {
+    sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+    return null;
+  }
+  if (entity.movementUsed) {
+    sendPm(user.name, `${entity.num} already moved this turn.`);
+    return null;
+  }
+  if (checkDashUsed && entity.dashUsed) {
+    sendPm(user.name, `${entity.num} already dashed this turn.`);
+    return null;
+  }
+  return entity;
+}
+
 function handlePathStep(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
 
@@ -1143,47 +1206,13 @@ function handlePathStep(game: Game, user: User, args: string) {
     posStr = parts.slice(0, -1).join(",");
   }
 
-  let entity: Entity | null = null;
-  if (entityName && isHost) {
-    entity = getEntity(game, entityName);
-    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
-  } else {
-    entity = getCurrentEntity(game);
-  }
-
-  if (!entity) return sendPm(user.name, "No active turn.");
-  if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
-  }
-  if (isStunned(entity)) {
-    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
-  }
-  if (isRooted(entity)) {
-    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
-  }
-  if (entity.movementUsed) {
-    return sendPm(user.name, `${entity.num} already moved this turn.`);
-  }
-  if (entity.dashUsed) {
-    return sendPm(user.name, `${entity.num} already dashed this turn.`);
-  }
+  const entity = resolveMoveActor(game, user, entityName, true);
+  if (!entity) return;
 
   const pos = parsePos(posStr);
   if (!pos)
     return sendPm(user.name, "Invalid tile. Use: %pathstep e4[,entity]");
-
-  const rows = game.map.length;
-  const cols = game.map[0]?.length ?? 0;
-  if (pos[0] < 0 || pos[0] >= rows || pos[1] < 0 || pos[1] >= cols) {
-    return sendPm(user.name, "That tile is off the map.");
-  }
-  if (!isStandable(game.map[pos[0]][pos[1]])) {
-    return sendPm(user.name, "That tile cannot be moved onto.");
-  }
-  const occupied = game.entities.some(
-    (e) => e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
-  );
-  if (occupied) return sendPm(user.name, "That tile is occupied.");
+  if (!isValidPathStep(game, user, entity, pos)) return;
 
   const mk = movementKey(game, entity);
   const path = pathState.get(mk) ?? [];
@@ -1194,8 +1223,7 @@ function handlePathStep(game: Game, user: User, args: string) {
   // adjacency. Otherwise it must be adjacent to the current tip to be appended
   // as the next step.
   if (idx >= 0) {
-    const candidate = path.slice(0, idx + 1);
-    pathState.set(mk, candidate);
+    pathState.set(mk, path.slice(0, idx + 1));
     broadcastPages(game);
     return;
   }
@@ -1216,30 +1244,40 @@ function handlePathStep(game: Game, user: User, args: string) {
   broadcastPages(game);
 }
 
+/** Validate that pos is an on-map, unoccupied, standable tile, sending the
+ * failure message and returning false when invalid. */
+function isValidPathStep(
+  game: Game,
+  user: User,
+  entity: Entity,
+  pos: [number, number],
+): boolean {
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  if (pos[0] < 0 || pos[0] >= rows || pos[1] < 0 || pos[1] >= cols) {
+    sendPm(user.name, "That tile is off the map.");
+    return false;
+  }
+  if (!isStandable(game.map[pos[0]][pos[1]])) {
+    sendPm(user.name, "That tile cannot be moved onto.");
+    return false;
+  }
+  const occupied = game.entities.some(
+    (e) => e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
+  );
+  if (occupied) {
+    sendPm(user.name, "That tile is occupied.");
+    return false;
+  }
+  return true;
+}
+
 function handleConfirmMove(game: Game, user: User, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
-
-  let entity = getCurrentEntity(game);
   const name = args.trim();
-  if (isHost && name) {
-    const named = getEntity(game, name);
-    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
-    entity = named;
-  }
-
-  if (!entity) return sendPm(user.name, "No active turn.");
-  if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
-  }
-  if (isStunned(entity)) {
-    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
-  }
-  if (isRooted(entity)) {
-    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
-  }
-  if (entity.movementUsed) {
-    return sendPm(user.name, `${entity.num} already moved this turn.`);
-  }
+  // resolveMoveActor resolves the host-named entity or the current-turn
+  // entity and runs the movement guards.
+  const entity = resolveMoveActor(game, user, name, false);
+  if (!entity) return;
 
   const mk = movementKey(game, entity);
   const path = pathState.get(mk);

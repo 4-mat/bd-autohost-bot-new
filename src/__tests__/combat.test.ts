@@ -594,7 +594,7 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
 });
 
 
-// describe("FFA targeting (team 0 = no teams)", () => {
+describe("FFA targeting (team 0 = no teams)", () => {
   it("treats every other player as a Foe and no one as an Ally", () => {
     const p1 = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
     const p2 = makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 0 });

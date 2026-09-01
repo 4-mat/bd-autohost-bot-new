@@ -284,6 +284,89 @@ function* resolveSelection(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
+/** Auto-deduct non-prompted costs; returns false when the cost cannot be
+ * paid (and a failure message was pushed to the result). */
+function payAutoCost(
+  user: Entity,
+  ability: AbilityData,
+  result: ResolutionResult,
+): boolean {
+  if (
+    ability.cost &&
+    !ability.cost.prompt &&
+    !autoDeductCost(user, ability.cost)
+  ) {
+    result.messages.push(
+      `${user.num} could not pay the cost for ${ability.name}.`,
+    );
+    return false;
+  }
+  return true;
+}
+
+/** Resolve the AoE direction: reuse a pendingAction direction when present,
+ * otherwise prompt with only directions that have valid targets. Returns
+ * { cancelled: true } when the attack must be cancelled; otherwise
+ * { cancelled: false, dir } with dir possibly undefined when no direction
+ * is needed. */
+function* resolveDirectionFlow(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  active: AbilityData,
+  result: ResolutionResult,
+): Generator<AttackPrompt, { cancelled: boolean; dir?: string }, PromptResponse> {
+  if (user.pendingAction?.direction) {
+    return { cancelled: false, dir: user.pendingAction.direction };
+  }
+  if (!needsDirection(active)) {
+    return { cancelled: false };
+  }
+
+  const valid = getDirectionCandidates(active)
+    .map((d) => ({
+      dir: d,
+      targets: getAoETargets(game, user, active.range, active.targetGroup, d),
+    }))
+    .filter((d) => d.targets.length > 0);
+
+  if (valid.length === 0) {
+    const choice = yield {
+      kind: "selection",
+      message: `No valid targets in any direction for ${ability.name}.`,
+      options: [{ id: "undo", label: "↶ Undo — choose a different action" }],
+    };
+    result.messages.push(
+      choice === "undo"
+        ? `${user.num} cancels ${ability.name} (no valid targets).`
+        : `${user.num} cancels ${ability.name}.`,
+    );
+    return { cancelled: true };
+  }
+
+  const dir = yield {
+    kind: "direction",
+    message: `Choose a direction for ${ability.name}`,
+    candidates: valid.map((d) => d.dir),
+    candidateTargets: valid.map((d) => d.targets.map((t) => t.name).join(", ")),
+  };
+  return { cancelled: false, dir };
+}
+
+/** Push the `/me … @ target` attack announce line to the result. */
+function announceAttack(
+  result: ResolutionResult,
+  active: AbilityData,
+  targets: Entity[],
+): void {
+  const targetNames = targets.map((t) => t.num).join(", ");
+  const rollStr = active.roll ? ` ${active.roll}` : "";
+  const actionTypeStr = active.actionType === "Reaction" ? " (Reaction)" : "";
+  result.messages.push(
+    `/me ${active.name} @ ${targetNames}, MR ${active.mr},${rollStr}${actionTypeStr}`,
+  );
+}
+
 function* resolveAttackFlow(
   game: Game,
   user: Entity,
@@ -296,16 +379,7 @@ function* resolveAttackFlow(
   // result.messages.push(`/me declares ${ability.name}`);
 
   // --- Auto-deduct non-prompted costs ---
-  if (
-    ability.cost &&
-    !ability.cost.prompt &&
-    !autoDeductCost(user, ability.cost)
-  ) {
-    result.messages.push(
-      `${user.num} could not pay the cost for ${ability.name}.`,
-    );
-    return result;
-  }
+  if (!payAutoCost(user, ability, result)) return result;
 
   // --- Selection / Choices / Sacrifice / Pay Costs ---
   const paid = yield* resolveSelection(user, ability, result);
@@ -315,43 +389,16 @@ function* resolveAttackFlow(
   const active = yield* resolveVariantChoice(user, ability, result);
   if (!active) return result;
 
-  const needsDir = needsDirection(active);
-  let dir = user.pendingAction?.direction;
-  if (needsDir && !dir) {
-    const dirs = getDirectionCandidates(active);
-    const valid = dirs
-      .map((d) => ({
-        dir: d,
-        targets: getAoETargets(game, user, active.range, active.targetGroup, d),
-      }))
-      .filter((d) => d.targets.length > 0);
-
-    if (valid.length === 0) {
-      const choice = yield {
-        kind: "selection",
-        message: `No valid targets in any direction for ${ability.name}.`,
-        options: [{ id: "undo", label: "↶ Undo — choose a different action" }],
-      };
-      if (choice === "undo") {
-        result.messages.push(
-          `${user.num} cancels ${ability.name} (no valid targets).`,
-        );
-        return result;
-      }
-      // Any other response is invalid - bail out instead of yielding an empty direction prompt.
-      result.messages.push(`${user.num} cancels ${ability.name}.`);
-      return result;
-    }
-
-    dir = yield {
-      kind: "direction",
-      message: `Choose a direction for ${ability.name}`,
-      candidates: valid.map((d) => d.dir),
-      candidateTargets: valid.map((d) =>
-        d.targets.map((t) => t.name).join(", "),
-      ),
-    };
-  }
+  // --- Direction prompt for AoE abilities ---
+  const dirChoice = yield* resolveDirectionFlow(
+    game,
+    user,
+    ability,
+    active,
+    result,
+  );
+  if (dirChoice.cancelled) return result;
+  const dir = dirChoice.dir;
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   const {
@@ -372,12 +419,7 @@ function* resolveAttackFlow(
     targets = chosen;
   }
 
-  const targetNames = targets.map((t) => t.num).join(", ");
-  const rollStr = active.roll ? ` ${active.roll}` : "";
-  const actionTypeStr = active.actionType === "Reaction" ? " (Reaction)" : "";
-  result.messages.push(
-    `/me ${active.name} @ ${targetNames}, MR ${active.mr},${rollStr}${actionTypeStr}`,
-  );
+  announceAttack(result, active, targets);
 
   const isAttack =
     active.damageType === "Physical" || active.damageType === "Magical";
