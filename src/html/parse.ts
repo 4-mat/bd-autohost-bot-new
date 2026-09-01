@@ -1,6 +1,7 @@
 import {
   Terrain,
   games,
+  findGameForRoom,
   startingSubweapon,
   type Game,
   type Entity,
@@ -111,40 +112,72 @@ function parsePlayerRows(html: string): ParsedPlayer[] {
   const players: ParsedPlayer[] = [];
 
   for (let i = 1; i < rows.length; i++) {
-    const cells = extractCells(rows[i][1]);
-    if (cells.length < 10) continue;
-
-    const num = strip(cells[0]).match(/^(P\d+)$/);
-    if (!num) continue;
-
-    const cw = strip(cells[2]);
-    const cwMatch = cw.match(/^(.+?)\((\d+)\)\/(.+?)\((\d+)\)$/);
-    const className = cwMatch ? cwMatch[1] : cw.split("/")[0] || cw;
-    const classLevel = cwMatch ? parseInt(cwMatch[2]) : 1;
-    const weaponName = cwMatch ? cwMatch[3] : cw.split("/")[1] || "";
-    const weaponLevel = cwMatch ? parseInt(cwMatch[4]) : 1;
-
-    const hpMatch = strip(cells[3]).match(/(\d+)\/(\d+)/);
-
-    players.push({
-      num: num[1],
-      name: strip(cells[1]),
-      className,
-      weaponName,
-      classLevel,
-      weaponLevel,
-      hp: hpMatch ? parseInt(hpMatch[1]) : 0,
-      maxhp: hpMatch ? parseInt(hpMatch[2]) : 0,
-      atk: parseInt(strip(cells[4])) || 0,
-      mag: parseInt(strip(cells[5])) || 0,
-      pd: parseInt(strip(cells[6])) || 0,
-      md: parseInt(strip(cells[7])) || 0,
-      eva: parseInt(strip(cells[8])) || 0,
-      mp: parseInt(strip(cells[9])) || 0,
-    });
+    const player = parsePlayerRow(rows[i][1]);
+    if (player) players.push(player);
   }
 
   return players;
+}
+
+/** Parse one player row into a ParsedPlayer, or null when the row is malformed. */
+function parsePlayerRow(rowHtml: string): ParsedPlayer | null {
+  const cells = extractCells(rowHtml);
+  if (cells.length < 10) return null;
+
+  const num = strip(cells[0]).match(/^(P\d+)$/);
+  if (!num) return null;
+
+  const { className, weaponName, classLevel, weaponLevel } = parseCw(
+    strip(cells[2]),
+  );
+  const { hp, maxhp } = parseHp(strip(cells[3]));
+
+  return {
+    num: num[1],
+    name: strip(cells[1]),
+    className,
+    weaponName,
+    classLevel,
+    weaponLevel,
+    hp,
+    maxhp,
+    atk: parseInt(strip(cells[4])) || 0,
+    mag: parseInt(strip(cells[5])) || 0,
+    pd: parseInt(strip(cells[6])) || 0,
+    md: parseInt(strip(cells[7])) || 0,
+    eva: parseInt(strip(cells[8])) || 0,
+    mp: parseInt(strip(cells[9])) || 0,
+  };
+}
+
+/** Parse a "Class (Lv)/Weapon (Lv)" cell into its four parts. */
+function parseCw(
+  cw: string,
+): {
+  className: string;
+  weaponName: string;
+  classLevel: number;
+  weaponLevel: number;
+} {
+  const m = cw.match(/^(.+?)\((\d+)\)\/(.+?)\((\d+)\)$/);
+  if (!m) {
+    const [className, weaponName = ""] = cw
+      .split("/")
+      .map((part) => part.trim());
+    return { className: className || cw, weaponName, classLevel: 1, weaponLevel: 1 };
+  }
+  return {
+    className: m[1].trim(),
+    classLevel: parseInt(m[2]),
+    weaponName: m[3].trim(),
+    weaponLevel: parseInt(m[4]),
+  };
+}
+
+/** Parse a "cur/max" HP cell. */
+function parseHp(hpCell: string): { hp: number; maxhp: number } {
+  const m = hpCell.match(/(\d+)\/(\d+)/);
+  return { hp: m ? parseInt(m[1]) : 0, maxhp: m ? parseInt(m[2]) : 0 };
 }
 
 function parseTurnOrder(html: string): string[] {
@@ -172,13 +205,6 @@ export function parseKyubsInfo(html: string): KyubsInfo | null {
   if (players.length === 0) return null;
   const turnOrderNames = parseTurnOrder(html);
   return { map, players, turnOrderNames };
-}
-
-function findGameForRoom(roomid: string): Game | null {
-  for (const game of games.values()) {
-    if (game.room === roomid) return game;
-  }
-  return null;
 }
 
 export function handleKyubsInfo(roomid: string, html: string) {

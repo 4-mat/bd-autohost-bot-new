@@ -1,89 +1,181 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import {
   send,
-  sendPm,
   setWs,
   resumeSending,
   resetSendQueueForTests,
+  getSendQueueForTests,
 } from "../utils.js";
 
-// The module-level send queue is shared across test files (Bun runs files in
-// the same process), so other files' leftover drain chains can leak into
-// these tests. Reset to a clean state before each test.
+// ---------------------------------------------------------------------------
+// send queue — message preservation across socket outages
+// ---------------------------------------------------------------------------
+
+// The module-level queue/sending state is shared process-wide and other test
+// files (combat/choice/confirm) install their own setWs at import, so reset
+// the queue before every test to start from a known state.
 beforeEach(() => {
   resetSendQueueForTests();
 });
 
-const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// A fake ws whose `send` throws (and/or errors via callback) until `open`
+// flips true, mimicking a socket that (re)connects mid-queue. The callback
+// is invoked the same way the real `ws` package does: async send failure
+// surfaces as `cb(err)`, synchronous refusal as a throw.
+function makeFakeSocket() {
+  const sent: string[] = [];
+  let open = false;
+  setWs({
+    send: (msg: string, cb?: (err?: Error) => void) => {
+      if (!open) {
+        throw new Error("WebSocket is not open");
+      }
+      sent.push(msg);
+      cb?.();
+    },
+  });
+  return { sent, open: () => (open = true) };
+}
 
-describe("send queue resilience", () => {
-  it("preserves queued messages when the socket send throws", async () => {
-    const sent: string[] = [];
-    let down = true;
-    setWs({
-      send: (msg: string) => {
-        if (down) throw new Error("socket not open");
-        sent.push(msg);
-      },
-    });
+// A fake ws that reports failure through the send callback instead of
+// throwing (the async-error path the real library can take).
+function makeFakeSocketCbError() {
+  const sent: string[] = [];
+  let open = false;
+  setWs({
+    send: (msg: string, cb?: (err?: Error) => void) => {
+      if (!open) {
+        cb?.(new Error("WebSocket is not open"));
+        return;
+      }
+      sent.push(msg);
+      cb?.();
+    },
+  });
+  return { sent, open: () => (open = true) };
+}
 
-    send("room1", "one");
-    send("room1", "two");
+// A fake ws whose send callback stays pending until the test fires it,
+// so a test can order a reconnect (resumeSending) before the in-flight
+// send reports its failure -- the exact race that used to strand the
+// retained queue head.
+function makeFakeSocketDeferred() {
+  const sent: string[] = [];
+  let open = false;
+  let pendingCb: ((err?: Error) => void) | null = null;
+  setWs({
+    send: (msg: string, cb?: (err?: Error) => void) => {
+      if (!open) {
+        pendingCb = cb ?? null;
+        return;
+      }
+      sent.push(msg);
+      cb?.();
+    },
+  });
+  return {
+    sent,
+    open: () => {
+      open = true;
+    },
+    failPending: (err?: Error) => {
+      const cb = pendingCb;
+      pendingCb = null;
+      cb?.(err);
+    },
+  };
+}
 
-    // Nothing flushed while the socket is down.
-    await settle(50);
-    expect(sent).toEqual([]);
+describe("send queue", () => {
+  it("caps the queue at MAX_SEND_QUEUE and drops the oldest messages", () => {
+    const sock = makeFakeSocket();
 
-    // Socket reopens: resumeSending() flushes the backlog.
-    down = false;
+    // Socket is down: every send throws and accumulates in the queue.
+    for (let i = 0; i < 2005; i++) {
+      send("battledome", `msg-${i}`);
+    }
+
+    expect(getSendQueueForTests().length).toBe(2000);
+    // The 5 oldest (msg-0..msg-4) were dropped; the newest 2000 remain,
+    // still in order.
+    expect(getSendQueueForTests()[0].msg).toBe("msg-5");
+    expect(getSendQueueForTests()[1999].msg).toBe("msg-2004");
+  });
+
+  it("caps the queue while a send is in flight, keeping the in-flight head", () => {
+    const sock = makeFakeSocketDeferred();
+    // The first send goes in flight (its callback stays pending), so the
+    // cap trim must preserve it and evict the oldest non-head entry.
+    send("battledome", "head");
+    for (let i = 0; i < 2005; i++) {
+      send("battledome", `msg-${i}`);
+    }
+    const q = getSendQueueForTests();
+    expect(q.length).toBe(2000);
+    expect(q[0].msg).toBe("head"); // in-flight head survives
+    expect(q[1].msg).toBe("msg-6"); // oldest non-head entries were dropped
+    expect(q[1999].msg).toBe("msg-2004"); // newest entries remain
+  });
+
+  it("keeps a message queued when the socket is down, then flushes on resume", async () => {
+    const sock = makeFakeSocket();
+
+    send("battledome", "hello");
+    // ws.send threw: the message must NOT be dropped.
+    expect(sock.sent).toEqual([]);
+
+    sock.open();
     resumeSending();
-    await settle(900); // 400ms spacing between queued sends
-    expect(sent).toEqual(["|one", "|two"]);
+    // Wait out the chained 400ms drains so no timer bleeds into the next
+    // test (the module-level queue is shared within this file).
+    await new Promise((r) => setTimeout(r, 500));
+    expect(sock.sent).toEqual(["|hello"]);
   });
 
-  it("keeps a failed message at the front of the queue for retry", async () => {
-    const sent: string[] = [];
-    let failNext = true;
-    setWs({
-      send: (msg: string) => {
-        if (failNext) {
-          failNext = false;
-          throw new Error("transient failure");
-        }
-        sent.push(msg);
-      },
-    });
+  it("preserves the whole backlog in order across the outage", async () => {
+    const sock = makeFakeSocket();
 
-    send("room1", "first");
-    send("room1", "second");
+    send("battledome", "one");
+    send("pm-bob", "two");
+    send("battledome", "three");
+    expect(sock.sent).toEqual([]);
 
-    // First send attempt fails; the message must not be dropped.
+    sock.open();
     resumeSending();
-    await settle(900);
-    expect(sent).toEqual(["|first", "|second"]);
+    // Wait for the chained 400ms drains to flush the backlog.
+    await new Promise((r) => setTimeout(r, 1300));
+    // PM messages are sent without the room prefix.
+    expect(sock.sent).toEqual(["|one", "two", "|three"]);
   });
 
-  it("flush leaves the queue drained for the next message", async () => {
-    const sent: string[] = [];
-    setWs({ send: (msg: string) => sent.push(msg) });
+  it("retains the head when the send callback reports an error, then resumes", async () => {
+    const sock = makeFakeSocketCbError();
 
-    send("room1", "alpha");
-    await settle(900);
-    expect(sent).toEqual(["|alpha"]);
+    send("battledome", "hello");
+    // The failure came through the callback: the message must NOT be dropped.
+    expect(sock.sent).toEqual([]);
 
-    send("room1", "beta");
-    await settle(900);
-    expect(sent).toEqual(["|alpha", "|beta"]);
+    sock.open();
+    resumeSending();
+    await new Promise((r) => setTimeout(r, 500));
+    expect(sock.sent).toEqual(["|hello"]);
   });
 
-  it("sendPm prefixes messages with the PM path but no room pipe", async () => {
-    const sent: string[] = [];
-    setWs({ send: (msg: string) => sent.push(msg) });
+  it("restarts draining when a late send-callback error raced a reconnect", async () => {
+    const sock = makeFakeSocketDeferred();
 
-    sendPm("Alice", "hello");
-    await settle(900);
-    // The room key is lowercased (toId) but the PM payload keeps the
-    // original-cased display name.
-    expect(sent).toEqual(["|/pm Alice, hello"]);
+    send("battledome", "hello");
+    // The send is in flight: ws.send() was called but its callback is
+    // still pending (sending === true).
+
+    sock.open();
+    resumeSending();
+    // resumeSending() is a no-op here (a send is in flight), but the late
+    // callback error below must still restart the drain so the retained
+    // head is not stranded.
+
+    sock.failPending(new Error("socket dropped mid-flight"));
+    await new Promise((r) => setTimeout(r, 500));
+    expect(sock.sent).toEqual(["|hello"]);
   });
 });

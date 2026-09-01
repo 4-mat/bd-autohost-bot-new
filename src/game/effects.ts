@@ -219,6 +219,11 @@ export interface PhaseTimingEffect {
   effects: Effect[];
 }
 
+export interface OnMissEffect {
+  type: "onMiss";
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
   | StatMod
@@ -252,6 +257,7 @@ export type Effect =
   | RequiresEffect
   | SwitchWeaponEffect
   | PhaseTimingEffect
+  | OnMissEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -410,13 +416,22 @@ export function parseEffects(text: string): Effect[] {
 }
 
 function parseEffectsUncached(normalized: string): Effect[] {
+  // "On Miss: <effects>" wraps subsequent effects so they only fire
+  // when the attack misses.  The prefix is case-insensitive and may
+  // appear at the start of the entire ability text.
+  const lowerFull = normalized.toLowerCase();
+  const onMissMatch = lowerFull.match(/^on\s+miss:\s*(.+)$/i);
+  if (onMissMatch) {
+    const inner = parseEffects(onMissMatch[1].trim());
+    return [{ type: "onMiss", effects: inner }];
+  }
+
   // Conditional statements span multiple splitClauses pieces, so try the
   // whole normalized text as a single conditional effect first. If the WHOLE
   // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return
   // one effect rather than splitting on the inner period and losing context.
   // The regex tolerates either ", " or ". " before "Otherwise", and an
   // optional trailing period at the end of the else-branch.
-  const lowerFull = normalized.toLowerCase();
   const fullIfMatch = lowerFull.match(
     /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
@@ -475,6 +490,17 @@ function looksLikeEffectStart(text: string): boolean {
   );
 }
 
+/** Whether position `i` ends a clause: a period/comma/" and " at depth 0,
+ * excluding periods and commas inside dice notation like 2d6+1 or 1d8,2. */
+function isClauseBoundary(text: string, i: number): boolean {
+  if (isInsideDice(text, i)) return false;
+  const ch = text[i];
+  if (ch === ".") return true;
+  if (ch === "," && !text.slice(i).match(/^,\s*(?:and|or)\s/i)) return true;
+  if (ch === " " && text.slice(i).match(/^ and /i)) return true;
+  return false;
+}
+
 function splitClauses(text: string): string[] {
   const clauses: string[] = [];
   let depth = 0;
@@ -491,52 +517,17 @@ function splitClauses(text: string): string[] {
     if (ch === "(" || ch === "[") depth++;
     else if (ch === ")" || ch === "]") depth--;
     else if (depth === 0) {
-      // A period inside a decimal number (e.g. "-1.5 dice faces",
-      // "x1.25") is not a clause boundary -- only sentence periods are.
-      const isDecimalDot =
-        /\d/.test(text[i - 1] ?? "") && /\d/.test(text[i + 1] ?? "");
-      // A period after a bare number is a numbered-list marker ("4. After
-      // damage"), not a sentence end -- keep it attached to the item.
-      const isListMarkerDot = /^\d+$/.test(current.trim());
-      if (
-        ch === "." &&
-        !isInsideDice(text, i) &&
-        !isDecimalDot &&
-        !isListMarkerDot
-      ) {
+      if (isPeriodBoundary(text, i, current)) {
         if (current.trim()) clauses.push(current.trim());
         current = "";
         continue;
       }
-      if (ch === ",") {
-        const inNumberedItem = /^\d+[.:]\s/.test(current.trim());
-        const commaStartsNewItem = /^,\s*\d+[.:]\s/.test(text.slice(i));
-        const isCommaSplit =
-          !isInsideDice(text, i) &&
-          !text.slice(i).match(/^,\s*(?:and|or)\s/i) &&
-          !/^(thirst\s+\d+:|apex:|ignores?\b|if\b|gladius:|scutum:|pilum:)/i.test(
-            current.trim(),
-          ) &&
-          // A comma inside a numbered list item ("5. For one round, attacks
-          // ...") is mid-item, not a clause boundary -- unless it introduces
-          // the next item ("..., 6. The user ...").
-          !(inNumberedItem && !commaStartsNewItem);
-        if (isCommaSplit) {
-          if (current.trim()) clauses.push(current.trim());
-          current = "";
-          continue;
-        }
+      if (ch === "," && isCommaBoundary(text, i, current)) {
+        if (current.trim()) clauses.push(current.trim());
+        current = "";
+        continue;
       }
-      if (
-        text.slice(i).match(/^ and /i) &&
-        !isInsideDice(text, i) &&
-        !/^(thirst\s+\d+:|apex:|ignores?\b|if\b|gladius:|scutum:|pilum:)/i.test(
-          current.trim(),
-        ) &&
-        // Only treat " and " as a clause boundary when the right side
-        // starts an effect of its own.
-        looksLikeEffectStart(text.slice(i + 5))
-      ) {
+      if (isAndBoundary(text, i, current)) {
         if (current.trim()) clauses.push(current.trim());
         current = "";
         i += 4;
@@ -548,6 +539,57 @@ function splitClauses(text: string): string[] {
   if (current.trim()) clauses.push(current.trim());
 
   return clauses;
+}
+
+/**
+ * A period ends a clause unless it is inside dice notation, inside a
+ * decimal number ("-1.5 dice faces"), or a numbered-list marker ("4.
+ * After damage").
+ */
+function isPeriodBoundary(text: string, i: number, current: string): boolean {
+  if (text[i] !== ".") return false;
+  if (isInsideDice(text, i)) return false;
+  const isDecimalDot = /\d/.test(text[i - 1] ?? "") && /\d/.test(text[i + 1] ?? "");
+  if (isDecimalDot) return false;
+  return !/^\d+$/.test(current.trim());
+}
+
+/**
+ * A comma ends a clause unless it is inside dice notation, introduces an
+ * "and/or" pairing, continues a guard prefix (thirst/apex/ignore/if or a
+ * subweapon label), or sits mid-item inside a numbered list.
+ */
+function isCommaBoundary(text: string, i: number, current: string): boolean {
+  if (isInsideDice(text, i)) return false;
+  if (text.slice(i).match(/^,\s*(?:and|or)\s/i)) return false;
+  if (
+    /^(thirst\s+\d+:|apex:|ignores?\b|if\b|gladius:|scutum:|pilum:)/i.test(
+      current.trim(),
+    )
+  )
+    return false;
+  // A comma inside a numbered list item ("5. For one round, attacks ...")
+  // is mid-item, not a clause boundary -- unless it introduces the next
+  // item ("..., 6. The user ...").
+  const inNumberedItem = /^\d+[.:]\s/.test(current.trim());
+  const commaStartsNewItem = /^,\s*\d+[.:]\s/.test(text.slice(i));
+  return !(inNumberedItem && !commaStartsNewItem);
+}
+
+/**
+ * " and " ends a clause only when the right side starts an effect of its
+ * own (and it isn't inside dice notation or a guard prefix).
+ */
+function isAndBoundary(text: string, i: number, current: string): boolean {
+  if (!text.slice(i).match(/^ and /i)) return false;
+  if (isInsideDice(text, i)) return false;
+  if (
+    /^(thirst\s+\d+:|apex:|ignores?\b|if\b|gladius:|scutum:|pilum:)/i.test(
+      current.trim(),
+    )
+  )
+    return false;
+  return looksLikeEffectStart(text.slice(i + 5));
 }
 
 function isInsideDice(text: string, pos: number): boolean {
@@ -566,368 +608,10 @@ function isInsideDice(text: string, pos: number): boolean {
 }
 
 function parseClause(clause: string): Effect[] {
-  // Drop a numbered-list marker ("1. " / "7: ") so table entries like
-  // "5. For one round, ..." parse as their content. Markers like "10
-  // Shield/1" are untouched (the token after the digits isn't a marker).
-  const lower = clause.replace(/^\d+[.:]\s/, "").toLowerCase().trim();
-  const effects: Effect[] = [];
+  const lower = clause.toLowerCase().trim();
 
-  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
-  const ifMatch = lower.match(
-    /^if\s+(.+?)[,:]\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
-  );
-  if (ifMatch) {
-    const thenEffects = parseEffects(ifMatch[2]);
-    const elseEffects = ifMatch[3] ? parseEffects(ifMatch[3]) : undefined;
-    effects.push({
-      type: "conditional",
-      condition: ifMatch[1].trim(),
-      thenEffects,
-      elseEffects,
-    });
-    return effects;
-  }
-
-  // Thirst: "Thirst N: EFFECT"
-  const thirstMatch = lower.match(/^thirst\s+(\d+):\s*(.+)$/);
-  if (thirstMatch) {
-    effects.push({
-      type: "thirst",
-      threshold: parseInt(thirstMatch[1]),
-      effects: parseEffects(thirstMatch[2]),
-    });
-    return effects;
-  }
-
-  // Apex: "Apex: EFFECT"
-  const apexMatch = lower.match(/^apex:\s*(.+)$/);
-  if (apexMatch) {
-    effects.push({
-      type: "apex",
-      effects: parseEffects(apexMatch[1]),
-    });
-    return effects;
-  }
-
-  // "Choose another Phase (doesn't shift)" -- Far Side of the Moon. Prompts
-  // the user for a SECOND phase that can power Lunar Rod effects; it never
-  // shifts the active phase itself. Must run before the generic Choose branch
-  // (which would otherwise treat "another phase (doesn't shift)" as an option).
-  if (/^choose (?:another|a) phase/.test(lower)) {
-    effects.push({ type: "choosePhase" });
-    return effects;
-  }
-
-  // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
-  // Optional colon + "one" prefix to match real glossary variants.
-  const chooseMatch = lower.match(/^choose\s*:?\s+(?:one:\s*)?(.+)$/);
-  if (chooseMatch) {
-    const options = chooseMatch[1]
-      .split(/\s+or\s+/)
-      .map((o) => parseEffects(o.trim()))
-      .filter((o) => o.length > 0);
-    if (options.length > 0) {
-      effects.push({ type: "choose", options });
-      return effects;
-    }
-  }
-
-  // Channel: "Channel STAT for N rounds"
-  const channelMatch = lower.match(
-    /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
-  );
-  if (channelMatch) {
-    effects.push({
-      type: "channel",
-      stat: channelMatch[1],
-      rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
-    });
-    return effects;
-  }
-
-  // Phase-prefixed: "Before accuracy: EFFECT" / "On Miss: EFFECT" / etc.
-  const phasePrefixMatch = lower.match(
-    /^(before accuracy|before damage|on miss|regard(?:less)?):\s*(.+)$/,
-  );
-  if (phasePrefixMatch) {
-    const phaseMap: Record<string, PhaseTiming> = {
-      "before accuracy": "before-acc",
-      "before damage": "before-damage",
-      "on miss": "on-miss",
-      "regardless": "regardless",
-      "regard": "regardless",
-    };
-    effects.push({
-      type: "phaseEffect",
-      phase: phaseMap[phasePrefixMatch[1]],
-      effects: parseEffects(phasePrefixMatch[2]),
-    });
-    return effects;
-  }
-
-  // Per: "Per hit: EFFECT" / "Per 5 CP: EFFECT" / "Per X: EFFECT"
-  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
-  if (perMatch) {
-    effects.push({
-      type: "per",
-      trigger: perMatch[1].trim(),
-      effects: parseEffects(perMatch[2]),
-    });
-    return effects;
-  }
-
-  // Reaction/Trigger-prefixed triggers: "Reaction: When X: EFFECT" /
-  // "Trigger: When X: EFFECT" -- the action-economy label is redundant
-  // with the ability's actionType, so strip it and parse the When clause.
-  const reactWhenMatch = lower.match(
-    /^(?:reaction|trigger):\s*when\s+(.+?):\s*(.+)$/,
-  );
-  if (reactWhenMatch) {
-    effects.push({
-      type: "trigger",
-      event: reactWhenMatch[1].trim(),
-      effects: parseEffects(reactWhenMatch[2]),
-    });
-    return effects;
-  }
-
-  // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
-  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
-  if (whenMatch) {
-    effects.push({
-      type: "trigger",
-      event: whenMatch[1].trim(),
-      effects: parseEffects(whenMatch[2]),
-    });
-    return effects;
-  }
-
-  // "No Phase shift next turn" / "User's Phase disabled next turn" -- the
-  // Lunar Rod (Harvest Moon / Celestial Blessing) can suppress the next
-  // turn's auto-advance. nextTurn consumes the game-level flag.
-  if (
-    /^(?:no|skip)\s+phase shift(?: next turn)?$/.test(lower) ||
-    /^user'?s phase disabled next turn$/.test(lower)
-  ) {
-    effects.push({ type: "skipPhaseShift" });
-    return effects;
-  }
-
-  // "Two effects if user has 2 Phases" (Fatal Moonlight header) -- marker.
-  // The double-application itself is driven by evaluateCondition matching
-  // the user's chosen 2nd phase, so no runtime behavior lives here.
-  if (/^two effects? if (?:the )?user has (?:2|two) phases?$/.test(lower)) {
-    effects.push({ type: "doubleEffects" });
-    return effects;
-  }
-
-  // Phase slash-combo: "New/Full Moon: EFFECT" / "Waxing/Waning: EFFECT" --
-  // two phases share one branch; the other two are the implicit else. The
-  // else can arrive either as an inline "... Otherwise: Y" (Harvest Moon's
-  // "1d10+2" plus-sign keeps the whole text in ONE clause) or as a separate
-  // clause (Blood Moon), which parseEffects' loop attaches below.
-  // "New/Full Moon" writes the first phase as a bare "new" (and the data
-  // only ever shortens "new"/"full"), so both spellings are accepted and
-  // normalized before building the condition.
-  const slashPhaseMatch = lower.match(
-    /^(new moon|new|waxing|full moon|full|waning)\s*\/\s*(new moon|waxing|full moon|waning):\s*(.+)$/,
-  );
-  if (slashPhaseMatch) {
-    const norm = (p: string) =>
-      p === "new" ? "new moon" : p === "full" ? "full moon" : p;
-    const body = slashPhaseMatch[3];
-    const elseAt = body.search(/\s+otherwise,?\s*:?\s*/i);
-    const thenText = elseAt >= 0 ? body.slice(0, elseAt) : body;
-    const elseText =
-      elseAt >= 0
-        ? body.slice(elseAt).replace(/^\s+otherwise,?\s*:?\s*/i, "")
-        : undefined;
-    effects.push({
-      type: "conditional",
-      condition: `phase is ${norm(slashPhaseMatch[1])} or ${norm(slashPhaseMatch[2])}`,
-      thenEffects: parseEffects(thenText),
-      elseEffects: elseText ? parseEffects(elseText) : undefined,
-    });
-    return effects;
-  }
-
-  // Phase: "Phase: PHASE_NAME"
-  const phaseMatch = lower.match(
-    /^phase:\s*(new moon|waxing|full moon|waning)$/,
-  );
-  if (phaseMatch) {
-    effects.push({ type: "phase", phase: phaseMatch[1] });
-    return effects;
-  }
-
-  // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
-  const phaseCondMatch = lower.match(
-    /^(new moon|waxing|full moon|waning):\s*(.+)$/,
-  );
-  if (phaseCondMatch) {
-    effects.push({
-      type: "conditional",
-      condition: `phase is ${phaseCondMatch[1]}`,
-      thenEffects: parseEffects(phaseCondMatch[2]),
-    });
-    return effects;
-  }
-
-  // Subweapon requirement: "Requires Pilum." / "Requires Gladius or Pilum."
-  // (Gladius class). Gated abilities may only be used while the named
-  // subweapon is equipped; the resolve layer surfaces this as a marker.
-  const requiresMatch = lower.match(/^requires\s+(.+?)\s*\.?$/);
-  if (requiresMatch) {
-    const weapons = parseSubweaponList(requiresMatch[1]);
-    if (weapons.length > 0) {
-      effects.push({ type: "requires", weapons });
-      return effects;
-    }
-  }
-
-  // Switch subweapon: "Switch to Pilum." / "swap to Gladius" /
-  // "Switch to Gladius or Scutum." / "Start in Gladius."
-  const switchMatch = lower.match(
-    /^(?:switch|swap)\s+to\s+(.+?)\s*\.?$|^start\s+in\s+(.+?)\s*\.?$/,
-  );
-  if (switchMatch) {
-    const weapons = parseSubweaponList(switchMatch[1] ?? switchMatch[2]);
-    if (weapons.length > 0) {
-      effects.push({ type: "switchWeapon", to: weapons });
-      return effects;
-    }
-  }
-
-  // "Swap subweapons (Standard)" -- free-form swap action.
-  if (/^swap subweapons?/.test(lower)) {
-    effects.push({
-      type: "switchWeapon",
-      to: ["gladius", "scutum", "pilum"],
-    });
-    return effects;
-  }
-
-  // Subweapon-conditional sub-effect: "Gladius: EFFECT" / "Scutum: EFFECT" /
-  // "Pilum: EFFECT" -- each branch applies only while that subweapon is held.
-  const subweaponCondMatch = lower.match(
-    /^(gladius|scutum|pilum):\s*(.+)$/,
-  );
-  if (subweaponCondMatch) {
-    effects.push({
-      type: "conditional",
-      condition: `subweapon is ${subweaponCondMatch[1]}`,
-      thenEffects: parseEffects(subweaponCondMatch[2]),
-    });
-    return effects;
-  }
-
-  // Delay: "Delay N rounds" or "Delay-N"
-  const delayMatch = lower.match(/^delay[\s-]+(\d+)\s+rounds?$/);
-  if (delayMatch) {
-    effects.push({ type: "delay", rounds: parseInt(delayMatch[1]) });
-    return effects;
-  }
-
-  // Recoil: "Recoil N%"
-  const recoilMatch = lower.match(/^recoil\s+(\d+)%$/);
-  if (recoilMatch) {
-    effects.push({ type: "recoil", percent: parseInt(recoilMatch[1]) });
-    return effects;
-  }
-
-  // Crit threshold: "Crit on 18+" / "Crit on 14+" -- lowers the roll
-  // Range modifier: "+1 Range" (Lunar Phase New Moon). A standing passive
-  // bonus that extends every range by the given amount; consumed statically
-  // by getPassiveRangeBonus during targeting.
-  const rangeModMatch = lower.match(/^([+-])\s*(\d+)\s+range$/);
-  if (rangeModMatch) {
-    effects.push({
-      type: "rangeMod",
-      amount: (rangeModMatch[1] === "-" ? -1 : 1) * parseInt(rangeModMatch[2]),
-    });
-    return effects;
-  }
-
-  // Defender-side dice penalty: "-N dice on attacks targeting user" (Lunar
-  // Phase Full Moon). Applies to the ATTACKER's roll when this entity is the
-  // target; resolve.ts folds it into the per-target combat metadata.
-  const targetingDiceMatch = lower.match(
-    /^([+-])\s*(\d+(?:\.\d+)?)\s+dice\s+on\s+attacks?\s+targeting\s+(?:user|self)$/,
-  );
-  if (targetingDiceMatch) {
-    effects.push({
-      type: "targetingDiceMod",
-      amount:
-        (targetingDiceMatch[1] === "-" ? -1 : 1) *
-        parseFloat(targetingDiceMatch[2]),
-    });
-    return effects;
-  }
-
-  // needed to crit from the engine default of 20.
-  const critModMatch = lower.match(/^crit\s+on\s+(\d+)\+?$/);
-  if (critModMatch) {
-    effects.push({ type: "critMod", threshold: parseInt(critModMatch[1]) });
-    return effects;
-  }
-
-  // Dice modifiers: "+1 dice" / "+1 base dice" / "+4 dice faces" /
-  // "-1.5 dice faces" / "+1 dice/1". Optional "gain/gains" verb. We
-  // deliberately do NOT accept a "label:" prefix (e.g. "Melee on Bounty:
-  // +1 dice") -- those clauses are gated conditions, and extractCombatMetadata
-  // would otherwise apply them to every attack as unconditional dice.
-  const diceModMatch = lower.match(
-    /^(?:(?:gain|gains)\s*)?([+-])\s*(\d+(?:\.\d+)?)\s+(?:(base)\s+)?dice(?:\s+faces)?(?:\s*\/\s*(\d+))?$/,
-  );
-  if (diceModMatch) {
-    const sign = diceModMatch[1] === "-" ? -1 : 1;
-    const kind = diceModMatch[3]
-      ? "baseDice"
-      : /faces/.test(diceModMatch[0])
-        ? "diceFaces"
-        : "dice";
-    effects.push({
-      type: "diceMod",
-      kind,
-      amount: sign * parseFloat(diceModMatch[2]),
-      rounds: diceModMatch[4] ? parseInt(diceModMatch[4]) : undefined,
-    });
-    return effects;
-  }
-
-  // Miss-rate modifier: "+2 MR" / "-1 MR" / "+3 MR/1" (with duration).
-  const mrModMatch = lower.match(/^([+-])\s*(\d+)\s+mr(?:\s*\/\s*(\d+))?$/);
-  if (mrModMatch) {
-    const sign = mrModMatch[1] === "-" ? -1 : 1;
-    effects.push({
-      type: "mrMod",
-      amount: sign * parseInt(mrModMatch[2]),
-      rounds: mrModMatch[3] ? parseInt(mrModMatch[3]) : undefined,
-    });
-    return effects;
-  }
-
-  // Ignore: "Ignore(s) X"
-  const ignoreMatch = lower.match(/^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/);
-  if (ignoreMatch) {
-    effects.push({ type: "ignore", what: ignoreMatch[1].trim() });
-    return effects;
-  }
-
-  // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
-  const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
-  if (multiHitMatch) {
-    effects.push({ type: "multiHit", hits: parseInt(multiHitMatch[1]) });
-    return effects;
-  }
-
-  // Delay-land: "Delay attacks always land" or "Delay-N" already handled above
-  // Handle "Delay-1. May delay up to +2 more turns." as just delay
-  const delaySimple = lower.match(/^delay-?(\d+)$/);
-  if (delaySimple) {
-    effects.push({ type: "delay", rounds: parseInt(delaySimple[1]) });
-    return effects;
-  }
+  const clauseMatch = parseClauseStructured(lower);
+  if (clauseMatch) return clauseMatch;
 
   // Inflict: "inflict N Status/M" or "inflict Status/M" or "N Status/M" or "Status/M"
   const statusEffects = parseStatusInflict(lower);
@@ -959,113 +643,535 @@ function parseClause(clause: string): Effect[] {
 
   // Tile placement: "Place X tiles" or "X tiles"
   const tileEffect = parseTilePlacement(lower);
-  if (tileEffect) {
-    effects.push(tileEffect);
-    return effects;
-  }
+  if (tileEffect) return [tileEffect];
 
   // Fallback: unknown
-  effects.push({ type: "unknown", text: clause });
-  return effects;
+  return [{ type: "unknown", text: clause }];
 }
 
-function parseStatusInflict(lower: string): Effect[] {
-  const effects: Effect[] = [];
+/** Structured clauses with a fixed keyword prefix (If/Thirst/Apex/...). */
+function parseConditionalClause(lower: string): Effect[] | null {
+  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
 
-  // Pattern: "inflict N Status/M" or "inflict Status/M"
-  // Also: "N Status/M" standalone, or "Status/M" standalone
-  // Also: "inflict N status for M rounds"
-
-  // Try "inflict N Status for M rounds"
-  const formalMatch = lower.match(
-    /inflict\s+(\d+)?\s*([a-z]+)\s+(?:for\s+)?(\d+)\s+rounds?/,
+  const ifMatch = lower.match(
+    /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
   );
-  if (formalMatch) {
-    const name = capitalize(formalMatch[2]);
-    const dmg = formalMatch[1] ? parseInt(formalMatch[1]) : 0;
-    const rounds = parseInt(formalMatch[3]);
-    if (STATUS_NAMES.includes(formalMatch[2])) {
-      effects.push({ type: "status", name, damage: dmg, rounds });
-      return effects;
-    }
+  if (ifMatch) {
+    return [{
+      type: "conditional",
+      condition: ifMatch[1].trim(),
+      thenEffects: parseEffects(ifMatch[2]),
+      elseEffects: ifMatch[3] ? parseEffects(ifMatch[3]) : undefined,
+    }];
   }
+  return null;
+}
 
-  // Try "inflict N Status/M"
-  const slashMatch = lower.match(/inflict\s+(\d+)?\s*([a-z]+)\s*\/\s*(\d+)/);
-  if (slashMatch) {
-    const statusName = slashMatch[2];
-    const name = capitalize(statusName);
-    const dmg = slashMatch[1] ? parseInt(slashMatch[1]) : 0;
-    const rounds = parseInt(slashMatch[3]);
-    if (STATUS_NAMES.includes(statusName)) {
-      effects.push({
+function parseThirstClause(lower: string): Effect[] | null {
+  // Thirst: "Thirst N: EFFECT"
+
+  const thirstMatch = lower.match(/^thirst\s+(\d+):\s*(.+)$/);
+  if (thirstMatch) {
+    return [{
+      type: "thirst",
+      threshold: parseInt(thirstMatch[1]),
+      effects: parseEffects(thirstMatch[2]),
+    }];
+  }
+  return null;
+}
+
+function parseApexClause(lower: string): Effect[] | null {
+  // Apex: "Apex: EFFECT"
+
+  const apexMatch = lower.match(/^apex:\s*(.+)$/);
+  if (apexMatch) {
+    return [{ type: "apex", effects: parseEffects(apexMatch[1]) }];
+  }
+  return null;
+}
+
+function parseChoosePhaseClause(lower: string): Effect[] | null {
+  // "Choose another Phase (doesn't shift)" -- Far Side of the Moon. Prompts
+  // the user for a SECOND phase that can power Lunar Rod effects; it never
+  // shifts the active phase itself. Must run before the generic Choose branch
+  // (which would otherwise treat "another phase (doesn't shift)" as an option).
+
+  if (/^choose (?:another|a) phase/.test(lower)) {
+    return [{ type: "choosePhase" }];
+  }
+  return null;
+}
+
+function parseChooseClause(lower: string): Effect[] | null {
+  // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
+  // Optional colon + "one" prefix to match real glossary variants.
+
+  const chooseMatch = lower.match(/^choose\s*:?\s+(?:one:\s*)?(.+)$/);
+  if (chooseMatch) {
+    const options = chooseMatch[1]
+      .split(/\s+or\s+/)
+      .map((o) => parseEffects(o.trim()))
+      .filter((o) => o.length > 0);
+    if (options.length > 0) return [{ type: "choose", options }];
+  }
+  return null;
+}
+
+function parseChannelClause(lower: string): Effect[] | null {
+  // Channel: "Channel STAT for N rounds"
+
+  const channelMatch = lower.match(
+    /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
+  );
+  if (channelMatch) {
+    return [{
+      type: "channel",
+      stat: channelMatch[1],
+      rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
+    }];
+  }
+  return null;
+}
+
+function parsePhaseClause(lower: string): Effect[] | null {
+  // Phase: "Phase: PHASE_NAME"
+
+  const phaseMatch = lower.match(
+    /^phase:\s*(new moon|waxing|full moon|waning)$/,
+  );
+  if (phaseMatch) {
+    return [{ type: "phase", phase: phaseMatch[1] }];
+  }
+  return null;
+}
+
+function parseDelayClause(lower: string): Effect[] | null {
+  // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
+
+  const delayMatch =
+    lower.match(/^delay[\s-]+(\d+)\s+rounds?$/) ??
+    lower.match(/^delay-?(\d+)$/);
+  if (delayMatch) {
+    return [{ type: "delay", rounds: parseInt(delayMatch[1]) }];
+  }
+  return null;
+}
+
+function parseRecoilClause(lower: string): Effect[] | null {
+  // Recoil: "Recoil N%"
+
+  const recoilMatch = lower.match(/^recoil\s+(\d+)%$/);
+  if (recoilMatch) {
+    return [{ type: "recoil", percent: parseInt(recoilMatch[1]) }];
+  }
+  return null;
+}
+
+function parseIgnoreClause(lower: string): Effect[] | null {
+  // Ignore: "Ignore(s) X"
+
+  const ignoreMatch = lower.match(/^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/);
+  if (ignoreMatch) {
+    return [{ type: "ignore", what: ignoreMatch[1].trim() }];
+  }
+  return null;
+}
+
+function parseMultiHitClause(lower: string): Effect[] | null {
+  // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
+
+  const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
+  if (multiHitMatch) {
+    return [{ type: "multiHit", hits: parseInt(multiHitMatch[1]) }];
+  }
+  return null;
+}
+
+function parsePhasePrefixClause(lower: string): Effect[] | null {
+  // Phase-prefixed: "Before accuracy: EFFECT" / "On Miss: EFFECT" / etc.
+
+  const phasePrefixMatch = lower.match(
+    /^(before accuracy|before damage|on miss|regard(?:less)?):\s*(.+)$/,
+  );
+  if (phasePrefixMatch) {
+    const phaseMap: Record<string, PhaseTiming> = {
+      "before accuracy": "before-acc",
+      "before damage": "before-damage",
+      "on miss": "on-miss",
+      "regardless": "regardless",
+      "regard": "regardless",
+    };
+    return [{
+      type: "phaseEffect",
+      phase: phaseMap[phasePrefixMatch[1]],
+      effects: parseEffects(phasePrefixMatch[2]),
+    }];
+  }
+  return null;
+}
+
+function parsePerClause(lower: string): Effect[] | null {
+  // Per: "Per hit: EFFECT" / "Per 5 CP: EFFECT" / "Per X: EFFECT"
+
+  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
+  if (perMatch) {
+    return [{
+      type: "per",
+      trigger: perMatch[1].trim(),
+      effects: parseEffects(perMatch[2]),
+    }];
+  }
+  return null;
+}
+
+function parseReactWhenClause(lower: string): Effect[] | null {
+  // Reaction/Trigger-prefixed triggers: "Reaction: When X: EFFECT" /
+  // "Trigger: When X: EFFECT" -- the action-economy label is redundant
+  // with the ability's actionType, so strip it and parse the When clause.
+
+  const reactWhenMatch = lower.match(
+    /^(?:reaction|trigger):\s*when\s+(.+?):\s*(.+)$/,
+  );
+  if (reactWhenMatch) {
+    return [{
+      type: "trigger",
+      event: reactWhenMatch[1].trim(),
+      effects: parseEffects(reactWhenMatch[2]),
+    }];
+  }
+  return null;
+}
+
+function parseWhenClause(lower: string): Effect[] | null {
+  // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
+
+  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
+  if (whenMatch) {
+    return [{
+      type: "trigger",
+      event: whenMatch[1].trim(),
+      effects: parseEffects(whenMatch[2]),
+    }];
+  }
+  return null;
+}
+
+function parseBareClause(lower: string): Effect[] | null {
+  // "No Phase shift next turn" / "User's Phase disabled next turn" -- the
+  // Lunar Rod (Harvest Moon / Celestial Blessing) can suppress the next
+  // turn's auto-advance. nextTurn consumes the game-level flag.
+
+  if (
+    /^(?:no|skip)\s+phase shift(?: next turn)?$/.test(lower) ||
+    /^user'?s phase disabled next turn$/.test(lower)
+  ) {
+    return [{ type: "skipPhaseShift" }];
+  }
+  return null;
+}
+
+function parseDoubleEffectsClause(lower: string): Effect[] | null {
+  // "Two effects if user has 2 Phases" (Fatal Moonlight header) -- marker.
+  // The double-application itself is driven by evaluateCondition matching
+  // the user's chosen 2nd phase, so no runtime behavior lives here.
+
+  if (/^two effects? if (?:the )?user has (?:2|two) phases?$/.test(lower)) {
+    return [{ type: "doubleEffects" }];
+  }
+  return null;
+}
+
+function parseSlashPhaseClause(lower: string): Effect[] | null {
+  // Phase slash-combo: "New/Full Moon: EFFECT" / "Waxing/Waning: EFFECT" --
+  // two phases share one branch; the other two are the implicit else. The
+  // else can arrive either as an inline "... Otherwise: Y" (Harvest Moon's
+  // "1d10+2" plus-sign keeps the whole text in ONE clause) or as a separate
+  // clause (Blood Moon), which parseEffects' loop attaches below.
+  // "New/Full Moon" writes the first phase as a bare "new" (and the data
+  // only ever shortens "new"/"full"), so both spellings are accepted and
+  // normalized before building the condition.
+
+  const slashPhaseMatch = lower.match(
+    /^(new moon|new|waxing|full moon|full|waning)\s*\/\s*(new moon|waxing|full moon|waning):\s*(.+)$/,
+  );
+  if (slashPhaseMatch) {
+    const norm = (p: string) =>
+      p === "new" ? "new moon" : p === "full" ? "full moon" : p;
+    const body = slashPhaseMatch[3];
+    const elseAt = body.search(/\s+otherwise,?\s*:?\s*/i);
+    const thenText = elseAt >= 0 ? body.slice(0, elseAt) : body;
+    const elseText =
+      elseAt >= 0
+        ? body.slice(elseAt).replace(/^\s+otherwise,?\s*:?\s*/i, "")
+        : undefined;
+    return [{
+      type: "conditional",
+      condition: `phase is ${norm(slashPhaseMatch[1])} or ${norm(slashPhaseMatch[2])}`,
+      thenEffects: parseEffects(thenText),
+      elseEffects: elseText ? parseEffects(elseText) : undefined,
+    }];
+  }
+  return null;
+}
+
+function parsePhaseCondClause(lower: string): Effect[] | null {
+  // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
+
+  const phaseCondMatch = lower.match(
+    /^(new moon|waxing|full moon|waning):\s*(.+)$/,
+  );
+  if (phaseCondMatch) {
+    return [{
+      type: "conditional",
+      condition: `phase is ${phaseCondMatch[1]}`,
+      thenEffects: parseEffects(phaseCondMatch[2]),
+    }];
+  }
+  return null;
+}
+
+function parseRequiresClause(lower: string): Effect[] | null {
+  // Subweapon requirement: "Requires Pilum." / "Requires Gladius or Pilum."
+  // (Gladius class). Gated abilities may only be used while the named
+  // subweapon is equipped; the resolve layer surfaces this as a marker.
+
+  const requiresMatch = lower.match(/^requires\s+(.+?)\s*\.?$/);
+  if (requiresMatch) {
+    const weapons = parseSubweaponList(requiresMatch[1]);
+    if (weapons.length > 0) return [{ type: "requires", weapons }];
+  }
+  return null;
+}
+
+function parseSwitchClause(lower: string): Effect[] | null {
+  // Switch subweapon: "Switch to Pilum." / "swap to Gladius" /
+  // "Switch to Gladius or Scutum." / "Start in Gladius."
+
+  const switchMatch = lower.match(
+    /^(?:switch|swap)\s+to\s+(.+?)\s*\.?$|^start\s+in\s+(.+?)\s*\.?$/,
+  );
+  if (switchMatch) {
+    const weapons = parseSubweaponList(switchMatch[1] ?? switchMatch[2]);
+    if (weapons.length > 0) return [{ type: "switchWeapon", to: weapons }];
+  }
+  return null;
+}
+
+function parseSwapSubweaponsClause(lower: string): Effect[] | null {
+  // "Swap subweapons (Standard)" -- free-form swap action.
+
+  if (/^swap subweapons?/.test(lower)) {
+    return [{ type: "switchWeapon", to: ["gladius", "scutum", "pilum"] }];
+  }
+  return null;
+}
+
+function parseSubweaponCondClause(lower: string): Effect[] | null {
+  // Subweapon-conditional sub-effect: "Gladius: EFFECT" / "Scutum: EFFECT" /
+  // "Pilum: EFFECT" -- each branch applies only while that subweapon is held.
+
+  const subweaponCondMatch = lower.match(
+    /^(gladius|scutum|pilum):\s*(.+)$/,
+  );
+  if (subweaponCondMatch) {
+    return [{
+      type: "conditional",
+      condition: `subweapon is ${subweaponCondMatch[1]}`,
+      thenEffects: parseEffects(subweaponCondMatch[2]),
+    }];
+  }
+  return null;
+}
+
+function parseRangeModClause(lower: string): Effect[] | null {
+  // Range modifier: "+1 Range" (Lunar Phase New Moon). A standing passive
+  // bonus that extends every range by the given amount; consumed statically
+  // by getPassiveRangeBonus during targeting.
+
+  const rangeModMatch = lower.match(/^([+-])\s*(\d+)\s+range$/);
+  if (rangeModMatch) {
+    return [{
+      type: "rangeMod",
+      amount: (rangeModMatch[1] === "-" ? -1 : 1) * parseInt(rangeModMatch[2]),
+    }];
+  }
+  return null;
+}
+
+function parseTargetingDiceClause(lower: string): Effect[] | null {
+  // Defender-side dice penalty: "-N dice on attacks targeting user" (Lunar
+  // Phase Full Moon). Applies to the ATTACKER's roll when this entity is the
+  // target; resolve.ts folds it into the per-target combat metadata.
+
+  const targetingDiceMatch = lower.match(
+    /^([+-])\s*(\d+(?:\.\d+)?)\s+dice\s+on\s+attacks?\s+targeting\s+(?:user|self)$/,
+  );
+  if (targetingDiceMatch) {
+    return [{
+      type: "targetingDiceMod",
+      amount:
+        (targetingDiceMatch[1] === "-" ? -1 : 1) *
+        parseFloat(targetingDiceMatch[2]),
+    }];
+  }
+  return null;
+}
+
+function parseCritModClause(lower: string): Effect[] | null {
+  // Crit threshold: "Crit on 18+" / "Crit on 14+" -- lowers the roll
+  // needed to crit from the engine default of 20.
+
+  const critModMatch = lower.match(/^crit\s+on\s+(\d+)\+?$/);
+  if (critModMatch) {
+    return [{ type: "critMod", threshold: parseInt(critModMatch[1]) }];
+  }
+  return null;
+}
+
+function parseDiceModClause(lower: string): Effect[] | null {
+  // Dice modifiers: "+1 dice" / "+1 base dice" / "+4 dice faces" /
+  // "-1.5 dice faces" / "+1 dice/1". Optional "gain/gains" verb. We
+  // deliberately do NOT accept a "label:" prefix (e.g. "Melee on Bounty:
+  // +1 dice") -- those clauses are gated conditions, and extractCombatMetadata
+  // would otherwise apply them to every attack as unconditional dice.
+
+  const diceModMatch = lower.match(
+    /^(?:(?:gain|gains)\s*)?([+-])\s*(\d+(?:\.\d+)?)\s+(?:(base)\s+)?dice(?:\s+faces)?(?:\s*\/\s*(\d+))?$/,
+  );
+  if (diceModMatch) {
+    const sign = diceModMatch[1] === "-" ? -1 : 1;
+    const kind = diceModMatch[3]
+      ? "baseDice"
+      : /faces/.test(diceModMatch[0])
+        ? "diceFaces"
+        : "dice";
+    return [{
+      type: "diceMod",
+      kind,
+      amount: sign * parseFloat(diceModMatch[2]),
+      rounds: diceModMatch[4] ? parseInt(diceModMatch[4]) : undefined,
+    }];
+  }
+  return null;
+}
+
+function parseMrModClause(lower: string): Effect[] | null {
+  // Miss-rate modifier: "+2 MR" / "-1 MR" / "+3 MR/1" (with duration).
+
+  const mrModMatch = lower.match(/^([+-])\s*(\d+)\s+mr(?:\s*\/\s*(\d+))?$/);
+  if (mrModMatch) {
+    const sign = mrModMatch[1] === "-" ? -1 : 1;
+    return [{
+      type: "mrMod",
+      amount: sign * parseInt(mrModMatch[2]),
+      rounds: mrModMatch[3] ? parseInt(mrModMatch[3]) : undefined,
+    }];
+  }
+  return null;
+}
+function parseClauseStructured(lower: string): Effect[] | null {
+  const parsers: ReadonlyArray<(lower: string) => Effect[] | null> = [
+    parseConditionalClause,
+    parseThirstClause,
+    parseApexClause,
+    parseChoosePhaseClause,
+    parseChooseClause,
+    parseChannelClause,
+    parsePhaseClause,
+    parseDelayClause,
+    parseRecoilClause,
+    parseIgnoreClause,
+    parseMultiHitClause,
+    parsePhasePrefixClause,
+    parsePerClause,
+    parseReactWhenClause,
+    parseWhenClause,
+    parseBareClause,
+    parseDoubleEffectsClause,
+    parseSlashPhaseClause,
+    parsePhaseCondClause,
+    parseRequiresClause,
+    parseSwitchClause,
+    parseSwapSubweaponsClause,
+    parseSubweaponCondClause,
+    parseRangeModClause,
+    parseTargetingDiceClause,
+    parseCritModClause,
+    parseDiceModClause,
+    parseMrModClause,
+  ];
+  for (const parse of parsers) {
+    const effects = parse(lower);
+    if (effects) return effects;
+  }
+  return null;
+}
+
+interface StatusPattern {
+  re: RegExp;
+  /** Extract name/damage/rounds from a match; null when the pattern has no status. */
+  extract: (m: RegExpMatchArray) => { name: string; damage: number; rounds: number } | null;
+}
+
+// Patterns tried in order: "inflict N Status for M rounds", "inflict N
+// Status/M", standalone "N Status/M", standalone "Status/M", "inflict
+// Status/M", and bare "inflict Status".
+const STATUS_PATTERNS: StatusPattern[] = [
+  {
+    re: /inflict\s+(\d+)?\s*([a-z]+)\s+(?:for\s+)?(\d+)\s+rounds?/,
+    extract: (m) => ({
+      name: m[2],
+      damage: m[1] ? parseInt(m[1]) : 0,
+      rounds: parseInt(m[3]),
+    }),
+  },
+  {
+    re: /inflict\s+(\d+)?\s*([a-z]+)\s*\/\s*(\d+)/,
+    extract: (m) => ({
+      name: m[2],
+      damage: m[1] ? parseInt(m[1]) : 0,
+      rounds: parseInt(m[3]),
+    }),
+  },
+  {
+    re: /^(\d+)?\s*([a-z]+)\s*\/\s*(\d+)$/,
+    extract: (m) => ({
+      name: m[2],
+      damage: m[1] ? parseInt(m[1]) : 0,
+      rounds: parseInt(m[3]),
+    }),
+  },
+  {
+    re: /^([a-z]+)\s*\/\s*(\d+)$/,
+    extract: (m) => ({ name: m[1], damage: 0, rounds: parseInt(m[2]) }),
+  },
+  {
+    re: /inflict\s+([a-z]+)\s*\/\s*(\d+)/,
+    extract: (m) => ({ name: m[1], damage: 0, rounds: parseInt(m[2]) }),
+  },
+  {
+    re: /inflict\s+([a-z]+)$/,
+    extract: (m) => ({ name: m[1], damage: 0, rounds: 1 }),
+  },
+];
+
+function parseStatusInflict(lower: string): Effect[] {
+  for (const { re, extract } of STATUS_PATTERNS) {
+    const m = lower.match(re);
+    if (!m) continue;
+    const parsed = extract(m);
+    if (!parsed || !STATUS_NAMES.includes(parsed.name)) continue;
+    return [
+      {
         type: "status",
-        name,
-        damage: dmg,
-        rounds,
-      });
-      return effects;
-    }
+        name: capitalize(parsed.name),
+        damage: parsed.damage,
+        rounds: parsed.rounds,
+      },
+    ];
   }
-
-  // Try standalone "N Status/M" (e.g. "3 Bleed/1", "2 Cripple/1")
-  const standaloneMatch = lower.match(/^(\d+)?\s*([a-z]+)\s*\/\s*(\d+)$/);
-  if (standaloneMatch) {
-    const statusName = standaloneMatch[1] ? "" : standaloneMatch[2];
-    if (STATUS_NAMES.includes(statusName)) {
-      effects.push({
-        type: "status",
-        name: capitalize(statusName),
-        damage: standaloneMatch[1] ? parseInt(standaloneMatch[1]) : 0,
-        rounds: parseInt(standaloneMatch[3]),
-      });
-      return effects;
-    }
-  }
-
-  // Try standalone "Status/M" (e.g. "Slow/1", "Stun/1")
-  const nonDmgMatch = lower.match(/^([a-z]+)\s*\/\s*(\d+)$/);
-  if (nonDmgMatch) {
-    if (STATUS_NAMES.includes(nonDmgMatch[1])) {
-      effects.push({
-        type: "status",
-        name: capitalize(nonDmgMatch[1]),
-        damage: 0,
-        rounds: parseInt(nonDmgMatch[2]),
-      });
-      return effects;
-    }
-  }
-
-  // "inflict Status/M" without damage number
-  const inflictMatch = lower.match(/inflict\s+([a-z]+)\s*\/\s*(\d+)/);
-  if (inflictMatch) {
-    if (STATUS_NAMES.includes(inflictMatch[1])) {
-      effects.push({
-        type: "status",
-        name: capitalize(inflictMatch[1]),
-        damage: 0,
-        rounds: parseInt(inflictMatch[2]),
-      });
-      return effects;
-    }
-  }
-
-  // Bare "inflict Status" without duration
-  const bareMatch = lower.match(/inflict\s+([a-z]+)$/);
-  if (bareMatch) {
-    if (STATUS_NAMES.includes(bareMatch[1])) {
-      effects.push({
-        type: "status",
-        name: capitalize(bareMatch[1]),
-        damage: 0,
-        rounds: 1,
-      });
-      return effects;
-    }
-  }
-
-  return effects;
+  return [];
 }
 
 function parseStatMods(lower: string): Effect[] {
@@ -1483,42 +1589,61 @@ export function isApexActive(
     return false;
   }
 
-  switch (type) {
-    case "burst":
-      return ch === max;
-    case "range":
-    case "homing":
-    case "star":
-      return mh === max;
-    case "pierce":
-    case "line": {
-      if (cardinal) return mh === max;
-      if (diagonal) return absDr === Math.ceil(max / 2);
-      return false;
-    }
-    case "cone": {
-      if (absDr > absDc) return absDr === max;
-      if (absDc > absDr) return absDc === max;
-      return false;
-    }
-    case "beam": {
-      // "Apex includes the final row/column of Beam ranges." The final
-      // row/column is a 3-tile strip at depth == max (one tile perpendicular
-      // to each side of the beam centerline).
-      if (Math.max(absDr, absDc) !== max) return false;
-      if (Math.min(absDr, absDc) > 1) return false;
-      // Centerline LOS: from user toward the centerline of the beam at the
-      // target's depth cardinal axis.
-      if (dr === 0)
-        return hasLineOfSight(game, user.pos, [user.pos[0], target.pos[1]]);
-      if (dc === 0)
-        return hasLineOfSight(game, user.pos, [target.pos[0], user.pos[1]]);
-      // Diagonal beam — direct LOS to target.
-      return hasLineOfSight(game, user.pos, target.pos);
-    }
-  }
-  return false;
+  const apexCheck = APEX_CHECKS[type];
+  return apexCheck
+    ? apexCheck({ game, user, target, dr, dc, absDr, absDc, mh, ch, max })
+    : false;
 }
+
+/** Inputs a per-range-type apex distance check needs. */
+type ApexCtx = {
+  game: Game;
+  user: Entity;
+  target: Entity;
+  dr: number;
+  dc: number;
+  absDr: number;
+  absDc: number;
+  mh: number;
+  ch: number;
+  max: number;
+};
+
+/** Per-range-type "is target at max range" checks for Apex. */
+const APEX_CHECKS: Record<string, (ctx: ApexCtx) => boolean> = {
+  burst: ({ ch, max }) => ch === max,
+  range: ({ mh, max }) => mh === max,
+  homing: ({ mh, max }) => mh === max,
+  star: ({ mh, max }) => mh === max,
+  pierce: ({ dr, dc, absDr, absDc, mh, max }) =>
+    dr === 0 || dc === 0
+      ? mh === max
+      : absDr === absDc && absDr === Math.ceil(max / 2),
+  line: ({ dr, dc, absDr, absDc, mh, max }) =>
+    dr === 0 || dc === 0
+      ? mh === max
+      : absDr === absDc && absDr === Math.ceil(max / 2),
+  cone: ({ absDr, absDc, max }) => {
+    if (absDr > absDc) return absDr === max;
+    if (absDc > absDr) return absDc === max;
+    return false;
+  },
+  beam: ({ game, user, target, dr, dc, absDr, absDc, max }) => {
+    // "Apex includes the final row/column of Beam ranges." The final
+    // row/column is a 3-tile strip at depth == max (one tile perpendicular
+    // to each side of the beam centerline).
+    if (Math.max(absDr, absDc) !== max) return false;
+    if (Math.min(absDr, absDc) > 1) return false;
+    // Centerline LOS: from user toward the centerline of the beam at the
+    // target's depth cardinal axis.
+    if (dr === 0)
+      return hasLineOfSight(game, user.pos, [user.pos[0], target.pos[1]]);
+    if (dc === 0)
+      return hasLineOfSight(game, user.pos, [target.pos[0], user.pos[1]]);
+    // Diagonal beam — direct LOS to target.
+    return hasLineOfSight(game, user.pos, target.pos);
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Effect Application
@@ -1583,23 +1708,45 @@ export function evaluateCondition(
 ): ConditionOutcome {
   const lower = text.toLowerCase().trim();
 
-  // Resource equalities like "5 Blood" / "0 Campaigns" / "no Campaigns" --
-  // checked *before* the generic "not / no" negation wrapper so that
-  // "no Campaigns" reads as "<user> has Campaigns == 0" rather than
-  // "negation(<something unknown>)". We require the bare resource token
-  // to be a known resource name (or its plural form, e.g. "Campaigns" ->
-  // "Campaign") to avoid swallowing natural-language phrases like
-  // "no target has Stun" as a resource lookup.
-  const resourceEqMatch = lower.match(/^(\d+|zero|no)\s+([a-z]+)$/);
-  if (resourceEqMatch) {
-    const raw = resourceEqMatch[1];
-    const value = raw === "zero" || raw === "no" ? 0 : parseInt(raw);
-    const resource = canonicalResource(resourceEqMatch[2]);
-    if (resource) {
-      return (user.resources[resource] ?? 0) >= value ? "then" : "else";
-    }
-  }
+  const resourceEq = evalResourceEquality(lower, user);
+  if (resourceEq !== null) return resourceEq;
 
+  const negate = evalNegation(lower, user, target);
+  if (negate !== null) return negate;
+
+  const phase = evalPhase(lower, user, moonPhase);
+  if (phase !== null) return phase;
+
+  const subweapon = evalSubweapon(lower, user);
+  if (subweapon !== null) return subweapon;
+
+  const alive = evalAlive(lower, target);
+  if (alive !== null) return alive;
+
+  const status = evalHasStatus(lower, user, target);
+  if (status !== null) return status;
+
+  const resource = evalHasResource(lower, user, target);
+  if (resource !== null) return resource;
+
+  const sign = evalStatSign(lower, user, target);
+  if (sign !== null) return sign;
+
+  const cmp = evalStatCompare(lower, user, target);
+  if (cmp !== null) return cmp;
+
+  const word = evalStatWordCompare(lower, user, target);
+  if (word !== null) return word;
+
+  return "unknown";
+}
+
+/** "phase is new moon" / "phase is new moon or full moon" / "user has 2 Phases". */
+function evalPhase(
+  lower: string,
+  user: Entity,
+  moonPhase: string | undefined,
+): ConditionOutcome | null {
   // Moon-phase condition, generated by the "New Moon: EFFECT" / "Full Moon:"
   // parser branch (condition text: "phase is new moon" / "phase is full moon").
   const phaseMatch = lower.match(/^phase is (new moon|waxing|full moon|waning)$/);
@@ -1635,11 +1782,18 @@ export function evaluateCondition(
 
   // "user has 2 Phases" -- Far Side of the Moon stores a chosen second phase
   // on the user (entity.phaseChoice); the condition holds while one exists.
-  const twoPhasesMatch = lower.match(/^user has (?:2|two) phases?$/);
-  if (twoPhasesMatch) {
+  if (/^user has (?:2|two) phases?$/.test(lower)) {
     return user.phaseChoice ? "then" : "else";
   }
 
+  return null;
+}
+
+/** "subweapon is gladius" / "subweapon is scutum" / "subweapon is pilum". */
+function evalSubweapon(
+  lower: string,
+  user: Entity,
+): ConditionOutcome | null {
   // Subweapon condition, generated by the "Gladius: EFFECT" / "Scutum: EFFECT"
   // / "Pilum: EFFECT" parser branch (condition text: "subweapon is gladius"
   // etc.). Resolves against the user's equipped subweapon; entities without a
@@ -1651,106 +1805,154 @@ export function evaluateCondition(
     const current = normalizeSubweapon(user.subweapon) ?? "";
     return current === subweaponMatch[1] ? "then" : "else";
   }
+  return null;
+}
 
-  // Negation wrappers
-  const negateMatch = lower.match(/^(?:not|no)\s+(.+)$/);
-  if (negateMatch) {
-    const inner = evaluateCondition(negateMatch[1], user, target, moonPhase);
-    if (inner === "then") return "else";
-    if (inner === "else") return "then";
-    return "unknown";
-  }
+/** "5 Blood" / "0 Campaigns" / "no Campaigns" — resource threshold. */
+function evalResourceEquality(
+  lower: string,
+  user: Entity,
+): ConditionOutcome | null {
+  // Checked *before* the generic "not / no" negation wrapper so that
+  // "no Campaigns" reads as "<user> has Campaigns == 0" rather than
+  // "negation(<something unknown>)". The bare token must be a known
+  // resource name (or its plural) so natural-language phrases like
+  // "no target has Stun" aren't swallowed as a resource lookup.
+  const m = lower.match(/^(\d+|zero|no)\s+([a-z]+)$/);
+  if (!m) return null;
+  const raw = m[1];
+  const value = raw === "zero" || raw === "no" ? 0 : parseInt(raw);
+  const resource = canonicalResource(m[2]);
+  if (!resource) return null;
+  return (user.resources[resource] ?? 0) >= value ? "then" : "else";
+}
 
-  // target is alive / dead / dies
-  const aliveMatch = lower.match(/^target is (alive|dead)$/);
-  if (aliveMatch) {
-    const wantAlive = aliveMatch[1] === "alive";
+/** "not ..." / "no ..." — flips any wrapped condition. */
+function evalNegation(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(/^(?:not|no)\s+(.+)$/);
+  if (!m) return null;
+  const inner = evaluateCondition(m[1], user, target);
+  if (inner === "then") return "else";
+  if (inner === "else") return "then";
+  return "unknown";
+}
+
+/** "target is alive/dead" / "target dies" / "target has been killed". */
+function evalAlive(lower: string, target: Entity): ConditionOutcome | null {
+  const m = lower.match(/^target is (alive|dead)$/);
+  if (m) {
+    const wantAlive = m[1] === "alive";
     return target.curhp > 0 === wantAlive ? "then" : "else";
   }
-  if (
-    lower === "target dies" ||
-    /target has been (killed|defeated)/.test(lower)
-  ) {
+  if (lower === "target dies" || /target has been (killed|defeated)/.test(lower)) {
     return target.curhp <= 0 ? "then" : "else";
   }
+  return null;
+}
 
-  // user/target has Status (matches any STATUS_NAMES)
-  const statusMatch = lower.match(/^(user|target) has (?:a |an )?([a-z ]+?)$/);
-  if (statusMatch) {
-    const which = statusMatch[1];
-    const candidates = statusMatch[2]
-      .trim()
-      .split(/\s+or\s+|\s*,\s*/)
-      .map((s) => s.trim().split(/\s+/).pop()!)
-      .filter(Boolean);
-    const entity = which === "user" ? user : target;
-    for (const cand of candidates) {
-      const has = entity.statuses.some((s) => toId(s.name) === toId(cand));
-      if (has) return "then";
-    }
-    return "else";
+/** "user/target has <status>" — matches any candidate name. */
+function evalHasStatus(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(/^(user|target) has (?:a |an )?([a-z ]+?)$/);
+  if (!m) return null;
+  const which = m[1];
+  const candidates = m[2]
+    .trim()
+    .split(/\s+or\s+|\s*,\s*/)
+    .map((s) => s.trim().split(/\s+/).pop()!)
+    .filter(Boolean);
+  const entity = which === "user" ? user : target;
+  for (const cand of candidates) {
+    const has = entity.statuses.some((s) => toId(s.name) === toId(cand));
+    if (has) return "then";
   }
+  return "else";
+}
 
-  // user/target has N <resource>
-  const resourceMatch = lower.match(/^(user|target) has (\d+)\s+([a-z]+)$/);
-  if (resourceMatch) {
-    const which = resourceMatch[1];
-    const amount = parseInt(resourceMatch[2]);
-    const resource = resourceMatch[3];
-    const entity = which === "user" ? user : target;
-    return (entity.resources[resource] ?? 0) >= amount ? "then" : "else";
-  }
+/** "user/target has N <resource>". */
+function evalHasResource(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(/^(user|target) has (\d+)\s+([a-z]+)$/);
+  if (!m) return null;
+  const which = m[1];
+  const amount = parseInt(m[2]);
+  const resource = m[3];
+  const entity = which === "user" ? user : target;
+  return (entity.resources[resource] ?? 0) >= amount ? "then" : "else";
+}
 
-  // user/target Stat positive|negative|zero
-  const signMatch = lower.match(
+/** "user/target <stat> positive|negative|zero". */
+function evalStatSign(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(
     /^(user|target)\s+(atk|mag|pd|md|eva|mp|acc|cr)\s+(positive|negative|zero)$/,
   );
-  if (signMatch) {
-    const which = signMatch[1];
-    const stat = signMatch[2];
-    const sign = signMatch[3];
-    const entity = which === "user" ? user : target;
-    const v = getRawStat(entity, stat);
-    if (sign === "positive") return v > 0 ? "then" : "else";
-    if (sign === "negative") return v < 0 ? "then" : "else";
-    return v === 0 ? "then" : "else";
-  }
+  if (!m) return null;
+  const which = m[1];
+  const stat = m[2];
+  const sign = m[3];
+  const entity = which === "user" ? user : target;
+  const v = getRawStat(entity, stat);
+  if (sign === "positive") return v > 0 ? "then" : "else";
+  if (sign === "negative") return v < 0 ? "then" : "else";
+  return v === 0 ? "then" : "else";
+}
 
-  // user Stat > N / < N / >= / <= / =
-  const cmpMatch = lower.match(
+/** "user/target <stat> > N" / ">=" / "<" / "<=" / "=". */
+function evalStatCompare(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(
     /^(user|target)\s+(atk|mag|pd|md|eva|mp|acc|cr)\s*(>=|<=|>|<|=)\s*(-?\d+)$/,
   );
-  if (cmpMatch) {
-    const which = cmpMatch[1];
-    const stat = cmpMatch[2];
-    const op = cmpMatch[3];
-    const value = parseInt(cmpMatch[4]);
-    const entity = which === "user" ? user : target;
-    const v = getRawStat(entity, stat);
-    if (op === ">") return v > value ? "then" : "else";
-    if (op === ">=") return v >= value ? "then" : "else";
-    if (op === "<") return v < value ? "then" : "else";
-    if (op === "<=") return v <= value ? "then" : "else";
-    return v === value ? "then" : "else";
-  }
+  if (!m) return null;
+  const which = m[1];
+  const stat = m[2];
+  const op = m[3];
+  const value = parseInt(m[4]);
+  const entity = which === "user" ? user : target;
+  const v = getRawStat(entity, stat);
+  if (op === ">") return v > value ? "then" : "else";
+  if (op === ">=") return v >= value ? "then" : "else";
+  if (op === "<") return v < value ? "then" : "else";
+  if (op === "<=") return v <= value ? "then" : "else";
+  return v === value ? "then" : "else";
+}
 
-  // user Stat greater than / less than N (word variant)
-  const wordCmpMatch = lower.match(
+/** "user/target <stat> greater than|less than|equal to N". */
+function evalStatWordCompare(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(
     /^(user|target)'?s?\s+(atk|mag|pd|md|eva|mp|acc|cr)\s+(greater than|less than|equal to)\s+(-?\d+)$/,
   );
-  if (wordCmpMatch) {
-    const which = wordCmpMatch[1];
-    const stat = wordCmpMatch[2];
-    const op = wordCmpMatch[3];
-    const value = parseInt(wordCmpMatch[4]);
-    const entity = which === "user" ? user : target;
-    const v = getRawStat(entity, stat);
-    if (op === "greater than") return v > value ? "then" : "else";
-    if (op === "less than") return v < value ? "then" : "else";
-    return v === value ? "then" : "else";
-  }
-
-  return "unknown";
+  if (!m) return null;
+  const which = m[1];
+  const stat = m[2];
+  const op = m[3];
+  const value = parseInt(m[4]);
+  const entity = which === "user" ? user : target;
+  const v = getRawStat(entity, stat);
+  if (op === "greater than") return v > value ? "then" : "else";
+  if (op === "less than") return v < value ? "then" : "else";
+  return v === value ? "then" : "else";
 }
 
 /**
@@ -1814,547 +2016,526 @@ export interface EffectChoosePrompt {
  * chosen sub-effects, etc.) flow correctly via `yield*` so the resolve
  * pipeline keeps a single structure of prompts.
  */
+type EffectCtx = {
+  game: Game;
+  user: Entity;
+  target: Entity;
+  ability?: AbilityData;
+  messages: string[];
+  routeBuffsToUser: boolean;
+};
+
+/**
+ * A single effect-type handler. Pushes log lines into `ctx.messages` and
+ * may `yield` prompts (choose) or recurse into sub-effects via
+ * `yield* applyEffectStream(...)`.
+ */
+type EffectHandler = (
+  ctx: EffectCtx,
+  effect: any,
+) => Generator<EffectChoosePrompt, void, string>;
+
+function* handleStatus(
+  { target, messages }: EffectCtx,
+  effect: StatusInflict,
+) {
+  const hasShield = target.statuses.some((s) => toId(s.name) === "shield");
+  if (hasShield && effect.damage === 0) {
+    messages.push(`  ${target.num}'s Shield blocks ${effect.name}!`);
+    return;
+  }
+  const existing = target.statuses.find((s) => s.name === effect.name);
+  if (existing) {
+    existing.rounds = Math.max(existing.rounds, effect.rounds);
+    existing.damage = Math.max(existing.damage, effect.damage);
+    messages.push(
+      `  ${target.num}'s ${effect.name} refreshed (${effect.rounds} rounds).`,
+    );
+  } else {
+    target.statuses.push({
+      name: effect.name,
+      damage: effect.damage,
+      rounds: effect.rounds,
+      maxRounds: effect.rounds,
+      removable: true,
+    });
+    messages.push(
+      `  ${target.num} afflicted with ${effect.name}${effect.damage > 0 ? ` (${effect.damage}/${effect.rounds})` : ` (${effect.rounds} rounds)`}.`,
+    );
+  }
+}
+
+function* handleStatMod(
+  { target, messages }: EffectCtx,
+  effect: StatMod,
+) {
+  const mult = effect.type === "buff" ? 1 : -1;
+  if (effect.percent) {
+    const baseStat = getBaseStat(target, effect.stat);
+    const amount = mult * Math.floor(baseStat * (Math.abs(effect.percent) / 100));
+    target.buffs.push({
+      stat: effect.stat,
+      amount,
+      rounds: effect.rounds ?? 1,
+    });
+    messages.push(
+      `  ${target.num} ${effect.type === "buff" ? "gains" : "loses"} ${mult > 0 ? "+" : ""}${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
+    );
+  } else {
+    target.buffs.push({
+      stat: effect.stat,
+      amount: effect.amount,
+      rounds: effect.rounds ?? 1,
+    });
+    messages.push(
+      `  ${target.num} ${effect.type === "buff" ? "gains +" : "loses "}${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+    );
+  }
+}
+
+function* handleDamageMod(
+  { target, messages }: EffectCtx,
+  effect: DamageMod,
+) {
+  const label = effect.percent
+    ? `${effect.percent > 0 ? "+" : ""}${effect.percent}% damage`
+    : `${effect.flat! > 0 ? "+" : ""}${effect.flat} DMG`;
+  messages.push(`  ${target.num} ${label}${effect.rounds ? `/${effect.rounds}` : ""}.`);
+}
+
+function* handleHeal(
+  { user, target, messages }: EffectCtx,
+  effect: HealEffect,
+) {
+  if (effect.amount) {
+    const prev = target.curhp;
+    target.curhp = Math.min(target.maxhp, target.curhp + effect.amount);
+    const healed = target.curhp - prev;
+    messages.push(
+      `  ${target.num} healed for ${healed} HP (${target.curhp}/${target.maxhp}).`,
+    );
+  } else {
+    messages.push(`  ${user.num} heals ${target.num}. (Manual resolution needed)`);
+  }
+}
+
+function* handleShield(
+  { target, messages }: EffectCtx,
+  effect: ShieldEffect,
+) {
+  const existingShield = target.statuses.find((s) => s.name === "Shield");
+  if (existingShield) {
+    existingShield.damage = Math.max(existingShield.damage, effect.amount);
+    existingShield.rounds = Math.max(existingShield.rounds, effect.rounds);
+  } else {
+    target.statuses.push({
+      name: "Shield",
+      damage: effect.amount,
+      rounds: effect.rounds,
+      maxRounds: effect.rounds,
+      removable: true,
+    });
+  }
+  messages.push(
+    `  ${target.num} gains Shield ${effect.amount} for ${effect.rounds} rounds.`,
+  );
+}
+
+function* handleDisplacement(
+  { game, user, target, messages }: EffectCtx,
+  effect: Displacement,
+) {
+  const source = effect.type === "push"
+    ? effect.toward === "user"
+      ? user.pos
+      : target.pos
+    : user.pos;
+  const { moved, path } = effect.type === "push"
+    ? pushEntity(game, target, source, effect.amount ?? 1)
+    : pullEntity(game, target, source, effect.amount ?? 1);
+  if (moved > 0) {
+    const pathStr = path.map((p) => `${p[0]},${p[1]}`).join(" -> ");
+    messages.push(
+      `  ${target.num} ${effect.type === "push" ? "pushed" : "pulled"} ${moved} tile${moved > 1 ? "s" : ""} to ${pathStr}.`,
+    );
+  } else {
+    messages.push(`  ${target.num} could not be ${effect.type === "push" ? "pushed" : "pulled"}.`);
+  }
+}
+
+function* handleSwap(
+  { user, target, messages }: EffectCtx,
+  _effect: Displacement,
+) {
+  const tmpPos = [...user.pos] as [number, number];
+  user.pos = [...target.pos] as [number, number];
+  target.pos = tmpPos;
+  messages.push(
+    `  ${user.num} and ${target.num} swap positions -> ${user.num} at ${user.pos[0]},${user.pos[1]}, ${target.num} at ${target.pos[0]},${target.pos[1]}.`,
+  );
+}
+
+function* handleSimple(
+  { user, messages }: EffectCtx,
+  effect: any,
+) {
+  switch (effect.type) {
+    case "teleport":
+      messages.push(
+        `  ${user.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
+      );
+      return;
+    case "move":
+      messages.push(
+        `  ${user.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
+      );
+      return;
+    case "resource":
+      messages.push(`  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`);
+      return;
+    case "delay":
+      messages.push(`  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`);
+      return;
+    case "ignore":
+      messages.push(`  Ignores ${effect.what}.`);
+      return;
+    case "channel":
+      messages.push(`  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`);
+      return;
+    case "phase":
+      messages.push(`  Phase shifts to ${effect.phase}.`);
+      return;
+    case "multiHit":
+      messages.push(`  Attack gains +${effect.hits - 1} additional hits.`);
+      return;
+    case "recoil":
+      // Recoil damage itself is applied in resolve.ts after on-hit damage
+      // is dealt. Here we just announce the marker so the log is readable.
+      messages.push(`  ${user.num} takes ${effect.percent}% recoil on damage dealt.`);
+      return;
+    case "tile":
+      messages.push(
+        `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
+      );
+      return;
+    case "unknown":
+      messages.push(`  ${effect.text}`);
+      return;
+    default:
+      return;
+  }
+}
+
+function* handleConditional(
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
+  effect: ConditionalEffect,
+) {
+  const { outcome, messages: condMsgs } = applyConditional(user, target, effect);
+  messages.push(...condMsgs);
+  // "unknown" defaults to then-branch (legacy fallback). "else" without
+  // an else-branch drops the sub-effects entirely.
+  if (outcome === "then" || outcome === "unknown") {
+    const thenMsgs = yield* applyEffectStream(game, user, target, effect.thenEffects, ability, routeBuffsToUser);
+    messages.push(...thenMsgs.map((m) => `    ${m}`));
+  }
+  if (outcome === "else" && effect.elseEffects) {
+    const elseMsgs = yield* applyEffectStream(game, user, target, effect.elseEffects, ability, routeBuffsToUser);
+    messages.push(...elseMsgs.map((m) => `    ${m}`));
+  }
+}
+
+function* handleThirst(
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
+  effect: ThirstEffect,
+) {
+  if (!isThirstActive(user, effect)) {
+    messages.push(
+      `  [Thirst ${effect.threshold}] inactive (Blood ${user.resources.blood ?? 0} < ${effect.threshold}).`,
+    );
+    return;
+  }
+  const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
+  messages.push(...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`));
+}
+
+function* handleApex(
+  { game, user, target, ability, messages }: EffectCtx,
+  effect: ApexEffect,
+) {
+  if (!ability) {
+    messages.push(`  [Apex] -- cannot evaluate without ability context.`);
+    return;
+  }
+  if (!isApexActive(game, user, target, ability)) {
+    messages.push(`  [Apex] inactive (target not at max listed range of ${ability.range}).`);
+    return;
+  }
+  const apexMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability);
+  messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
+}
+
+function* handleChoose(
+  { game, user, target, ability, messages }: EffectCtx,
+  effect: ChooseEffect,
+) {
+  // Yield a prompt. Resolve.ts feeds back the chosen option id and we
+  // recurse into the chosen branch's sub-effects through the stream so any
+  // nested APEX/THIRST/CHOICE inside the chosen branch also gets prompted.
+  const clauseId = `choose-${messages.length}`;
+  const chosenId = yield {
+    kind: "choose",
+    clauseId,
+    message: `Choose one option for the effect`,
+    options: effect.options.map((opts, i) => ({
+      id: `${clauseId}:${i}`,
+      label: opts.length
+        ? opts.map((o) => summariseEffect(o)).join("; ")
+        : `Option ${i + 1}`,
+    })),
+  } satisfies EffectChoosePrompt;
+  const idx = parseChosenIdx(chosenId, effect.options.length);
+  messages.push(`  [Choose] user picked option ${idx + 1}.`);
+  const chosenMsgs = yield* applyEffectStream(game, user, target, effect.options[idx], ability);
+  messages.push(...chosenMsgs.map((m) => `    ${m}`));
+}
+
+/** Dispatch an effect of any type to its handler. */
+function* handleChoosePhase(
+  { user, messages }: EffectCtx,
+  _effect: any,
+) {
+  // Far Side of the Moon: pick a second phase (never shifts the active
+  // one). Stored on the user so "user has 2 Phases" conditions read it.
+  const clauseId = `phase-${messages.length}`;
+  const chosenId = yield {
+    kind: "choose",
+    clauseId,
+    message: "Choose another Phase (doesn't shift the current one)",
+    options: MOON_PHASE_CYCLE.map((p, i) => ({
+      id: `${clauseId}:${i}`,
+      label: formatPhase(p),
+    })),
+  } satisfies EffectChoosePrompt;
+  const idx = parseChosenIdx(chosenId, MOON_PHASE_CYCLE.length);
+  const picked = MOON_PHASE_CYCLE[idx];
+  user.phaseChoice = picked;
+  messages.push(
+    `  ${user.num} picks **${formatPhase(picked)}** as a second Phase.`,
+  );
+}
+
+function* handlePhase(
+  { game, messages }: EffectCtx,
+  effect: any,
+) {
+  // Track the active moon phase on the game so "Phase is X"
+  // conditions (e.g. "New Moon:") evaluate correctly downstream.
+  game.moonPhase = effect.phase;
+  messages.push(`  Phase shifts to ${effect.phase}.`);
+}
+
+function* handleSkipPhaseShift(
+  { game, messages }: EffectCtx,
+  _effect: any,
+) {
+  // Harvest Moon / Celestial Blessing: no auto-advance at the next
+  // turn boundary. nextTurn consumes (resets) the flag.
+  game.skipMoonPhaseShift = true;
+  messages.push(`  No Phase shift next turn.`);
+}
+
+function* handleRequires(
+  { messages }: EffectCtx,
+  effect: RequiresEffect,
+) {
+  messages.push(`  Requires ${effect.weapons.map(capitalize).join(" or ")}.`);
+}
+
+function* handleSwitchWeapon(
+  { user, messages }: EffectCtx,
+  effect: SwitchWeaponEffect,
+) {
+  if (effect.to.length === 1) {
+    user.subweapon = effect.to[0];
+    messages.push(`  ${user.num} switches to ${capitalize(effect.to[0])}.`);
+    return;
+  }
+  // Multi-option switch ("Switch to Gladius or Scutum"): ask the
+  // player which subweapon to equip, same prompt machinery as
+  // `choose` clauses so resolve.ts can relay it to the user.
+  const clauseId = `switch-${messages.length}`;
+  const chosenId = yield {
+    kind: "choose",
+    clauseId,
+    message: `Choose a subweapon to switch to`,
+    options: effect.to.map((w, i) => ({
+      id: `${clauseId}:${i}`,
+      label: capitalize(w),
+    })),
+  } satisfies EffectChoosePrompt;
+  const idx = parseChosenIdx(chosenId, effect.to.length);
+  user.subweapon = effect.to[idx];
+  messages.push(`  ${user.num} switches to ${capitalize(effect.to[idx])}.`);
+}
+
+function* handleCritMod(
+  { messages }: EffectCtx,
+  effect: CritModEffect,
+) {
+  messages.push(`  Crit threshold lowered to ${effect.threshold}+.`);
+}
+
+function* handleDiceMod(
+  { messages }: EffectCtx,
+  effect: DiceModEffect,
+) {
+  const kindLabel =
+    effect.kind === "baseDice"
+      ? "base dice"
+      : effect.kind === "diceFaces"
+        ? "dice faces"
+        : "dice";
+  messages.push(
+    `  Attack gains ${effect.amount > 0 ? "+" : ""}${effect.amount} ${kindLabel}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+  );
+}
+
+function* handleMrMod(
+  { messages }: EffectCtx,
+  effect: MrModEffect,
+) {
+  messages.push(
+    `  Miss Rate ${effect.amount > 0 ? "+" : ""}${effect.amount}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+  );
+}
+
+function* handlePhaseEffect(
+  ctx: EffectCtx,
+  effect: PhaseTimingEffect,
+) {
+  // Phase effects are applied at specific timing points in the pipeline.
+  // When reached at the right phase, expand sub-effects.
+  for (const sub of effect.effects) {
+    const subMsgs = yield* applyEffectStream(
+      ctx.game,
+      ctx.user,
+      ctx.target,
+      [sub],
+      ctx.ability,
+    );
+    ctx.messages.push(...subMsgs);
+  }
+}
+
+function* handlePer(
+  ctx: EffectCtx,
+  effect: PerEffect,
+) {
+  // Per-X triggers fire at their applicable resolution event. These
+  // effects reach the stream on a successful hit (resolve.ts applies
+  // non-phase effects after damage), so "Per hit:" dispatches its
+  // sub-effects now. Resource-count triggers ("Per 5 CP:") dispatch
+  // when the user's pool meets the count. Triggers that can't be
+  // confirmed from the current stream context keep a summary log.
+  const { game, user, target, ability, messages } = ctx;
+  if (perTriggerApplies(effect.trigger, user)) {
+    messages.push(`  [Per ${effect.trigger}]:`);
+    const perMsgs = yield* applyEffectStream(
+      game,
+      user,
+      target,
+      effect.effects,
+      ability,
+    );
+    messages.push(...perMsgs.map((m) => `    ${m}`));
+  } else {
+    messages.push(
+      `  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`,
+    );
+  }
+}
+
+function* handleTrigger(
+  ctx: EffectCtx,
+  effect: TriggerEffect,
+) {
+  // When-X triggers fire when their event condition is met. These
+  // effects reach the stream on a successful hit, so hit-context
+  // events ("When user damages a foe", "When user kills foe") dispatch
+  // their sub-effects now; other events keep a summary log.
+  const { game, user, target, ability, messages } = ctx;
+  if (triggerApplies(effect.event, user, target)) {
+    messages.push(`  [When ${effect.event}]:`);
+    const trigMsgs = yield* applyEffectStream(
+      game,
+      user,
+      target,
+      effect.effects,
+      ability,
+    );
+    messages.push(...trigMsgs.map((m) => `    ${m}`));
+  } else {
+    messages.push(
+      `  [When ${effect.event}]: ${summariseEffects(effect.effects)}`,
+    );
+  }
+}
+
+const EFFECT_HANDLERS: Record<string, EffectHandler> = {
+  status: handleStatus,
+  buff: handleStatMod,
+  debuff: handleStatMod,
+  damageMod: handleDamageMod,
+  heal: handleHeal,
+  shield: handleShield,
+  push: handleDisplacement,
+  pull: handleDisplacement,
+  swap: handleSwap,
+  conditional: handleConditional,
+  thirst: handleThirst,
+  apex: handleApex,
+  choose: handleChoose,
+  choosePhase: handleChoosePhase,
+  skipPhaseShift: handleSkipPhaseShift,
+  requires: handleRequires,
+  switchWeapon: handleSwitchWeapon,
+  critMod: handleCritMod,
+  diceMod: handleDiceMod,
+  mrMod: handleMrMod,
+  phaseEffect: handlePhaseEffect,
+  per: handlePer,
+  trigger: handleTrigger,
+  teleport: handleSimple,
+  move: handleSimple,
+  resource: handleSimple,
+  delay: handleSimple,
+  ignore: handleSimple,
+  channel: handleSimple,
+  phase: handlePhase,
+  multiHit: handleSimple,
+  recoil: handleSimple,
+  tile: handleSimple,
+  unknown: handleSimple,
+};
+
 export function* applyEffectStream(
   game: Game,
   user: Entity,
   target: Entity,
   effects: Effect[],
   ability?: AbilityData,
+  routeBuffsToUser = false,
 ): Generator<EffectChoosePrompt, string[], string> {
   const messages: string[] = [];
+  const ctx: EffectCtx = { game, user, target, ability, messages, routeBuffsToUser };
 
   for (const effect of effects) {
-    switch (effect.type) {
-      case "status": {
-        const hasShield = target.statuses.some(
-          (s) => toId(s.name) === "shield",
-        );
-        if (hasShield && effect.damage === 0) {
-          messages.push(`  ${target.num}'s Shield blocks ${effect.name}!`);
-          break;
-        }
-        const existing = target.statuses.find((s) => s.name === effect.name);
-        if (existing) {
-          existing.rounds = Math.max(existing.rounds, effect.rounds);
-          existing.damage = Math.max(existing.damage, effect.damage);
-          messages.push(
-            `  ${target.num}'s ${effect.name} refreshed (${effect.rounds} rounds).`,
-          );
-        } else {
-          target.statuses.push({
-            name: effect.name,
-            damage: effect.damage,
-            rounds: effect.rounds,
-            maxRounds: effect.rounds,
-            removable: true,
-          });
-          messages.push(
-            `  ${target.num} afflicted with ${effect.name}${effect.damage > 0 ? ` (${effect.damage}/${effect.rounds})` : ` (${effect.rounds} rounds)`}.`,
-          );
-        }
-        break;
-      }
-
-      case "buff": {
-        if (effect.percent) {
-          const baseStat = getBaseStat(target, effect.stat);
-          const amount = Math.floor(baseStat * (effect.percent / 100));
-          target.buffs.push({
-            stat: effect.stat,
-            amount,
-            rounds: effect.rounds ?? 1,
-          });
-          messages.push(
-            `  ${target.num} gains +${effect.percent}% ${effect.stat.toUpperCase()} (+${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
-          );
-        } else {
-          target.buffs.push({
-            stat: effect.stat,
-            amount: effect.amount,
-            rounds: effect.rounds ?? 1,
-          });
-          messages.push(
-            `  ${target.num} gains +${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-          );
-        }
-        break;
-      }
-
-      case "debuff": {
-        if (effect.percent) {
-          const baseStat = getBaseStat(target, effect.stat);
-          const amount = -Math.floor(
-            baseStat * (Math.abs(effect.percent) / 100),
-          );
-          target.buffs.push({
-            stat: effect.stat,
-            amount,
-            rounds: effect.rounds ?? 1,
-          });
-          messages.push(
-            `  ${target.num} loses ${effect.percent}% ${effect.stat.toUpperCase()} (${amount})${effect.rounds ? `/${effect.rounds}` : ""}.`,
-          );
-        } else {
-          target.buffs.push({
-            stat: effect.stat,
-            amount: effect.amount,
-            rounds: effect.rounds ?? 1,
-          });
-          messages.push(
-            `  ${target.num} loses ${effect.amount} ${effect.stat.toUpperCase()}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-          );
-        }
-        break;
-      }
-
-      case "damageMod": {
-        const label = effect.percent
-          ? `${effect.percent > 0 ? "+" : ""}${effect.percent}% damage`
-          : `${effect.flat! > 0 ? "+" : ""}${effect.flat} DMG`;
-        messages.push(
-          `  ${target.num} ${label}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-        );
-        break;
-      }
-
-      case "heal": {
-        if (effect.amount) {
-          const prev = target.curhp;
-          target.curhp = Math.min(target.maxhp, target.curhp + effect.amount);
-          const healed = target.curhp - prev;
-          messages.push(
-            `  ${target.num} healed for ${healed} HP (${target.curhp}/${target.maxhp}).`,
-          );
-        } else {
-          messages.push(
-            `  ${user.num} heals ${target.num}. (Manual resolution needed)`,
-          );
-        }
-        break;
-      }
-
-      case "teleport": {
-        messages.push(
-          `  ${user.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
-        );
-        break;
-      }
-
-      case "move": {
-        messages.push(
-          `  ${user.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
-        );
-        break;
-      }
-
-      case "resource": {
-        messages.push(
-          `  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`,
-        );
-        break;
-      }
-
-      case "delay": {
-        messages.push(
-          `  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`,
-        );
-        break;
-      }
-
-      case "ignore": {
-        messages.push(`  Ignores ${effect.what}.`);
-        break;
-      }
-
-      case "channel": {
-        messages.push(
-          `  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`,
-        );
-        break;
-      }
-
-      case "phase": {
-        // Track the active moon phase on the game so "Phase is X"
-        // conditions (e.g. "New Moon:") evaluate correctly downstream.
-        game.moonPhase = effect.phase;
-        messages.push(`  Phase shifts to ${effect.phase}.`);
-        break;
-      }
-
-      case "choosePhase": {
-        // Far Side of the Moon: pick a second phase (never shifts the active
-        // one). Stored on the user so "user has 2 Phases" conditions read it.
-        const clauseId = `phase-${messages.length}`;
-        const chosenId = yield {
-          kind: "choose",
-          clauseId,
-          message: "Choose another Phase (doesn't shift the current one)",
-          options: MOON_PHASE_CYCLE.map((p, i) => ({
-            id: `${clauseId}:${i}`,
-            label: formatPhase(p),
-          })),
-        } satisfies EffectChoosePrompt;
-        const idx = parseChosenIdx(chosenId, MOON_PHASE_CYCLE.length);
-        const picked = MOON_PHASE_CYCLE[idx];
-        user.phaseChoice = picked;
-        messages.push(
-          `  ${user.num} picks **${formatPhase(picked)}** as a second Phase.`,
-        );
-        break;
-      }
-
-      case "skipPhaseShift": {
-        // Harvest Moon / Celestial Blessing: no auto-advance at the next
-        // turn boundary. nextTurn consumes (resets) the flag.
-        game.skipMoonPhaseShift = true;
-        messages.push(`  No Phase shift next turn.`);
-        break;
-      }
-
-      case "rangeMod": {
-        // Standing passive bonus ("+N Range") -- consumed statically by
-        // getPassiveRangeBonus during targeting; nothing to stream.
-        break;
-      }
-
-      case "targetingDiceMod": {
-        // Defender-side dice penalty -- consumed statically by
-        // getDefenderDiceMods when this entity is attacked.
-        break;
-      }
-
-      case "doubleEffects": {
-        // Fatal Moonlight marker: two effects fire while the user holds a
-        // 2nd Phase (evaluateCondition matches both phases). No-op here.
-        break;
-      }
-
-      case "unknown": {
-        messages.push(`  ${effect.text}`);
-        break;
-      }
-
-      case "shield": {
-        const existingShield = target.statuses.find((s) => s.name === "Shield");
-        if (existingShield) {
-          existingShield.damage = Math.max(
-            existingShield.damage,
-            effect.amount,
-          );
-          existingShield.rounds = Math.max(
-            existingShield.rounds,
-            effect.rounds,
-          );
-        } else {
-          target.statuses.push({
-            name: "Shield",
-            damage: effect.amount,
-            rounds: effect.rounds,
-            maxRounds: effect.rounds,
-            removable: true,
-          });
-        }
-        messages.push(
-          `  ${target.num} gains Shield ${effect.amount} for ${effect.rounds} rounds.`,
-        );
-        break;
-      }
-
-      case "push": {
-        const pushSource = effect.toward === "user" ? user.pos : target.pos;
-        const { moved: pushMoved, path: pushPath } = pushEntity(
-          game,
-          target,
-          pushSource,
-          effect.amount ?? 1,
-        );
-        if (pushMoved > 0) {
-          const pathStr = pushPath.map((p) => `${p[0]},${p[1]}`).join(" -> ");
-          messages.push(
-            `  ${target.num} pushed ${pushMoved} tile${pushMoved > 1 ? "s" : ""} to ${pathStr}.`,
-          );
-        } else {
-          messages.push(`  ${target.num} could not be pushed.`);
-        }
-        break;
-      }
-
-      case "pull": {
-        const { moved: pullMoved, path: pullPath } = pullEntity(
-          game,
-          target,
-          user.pos,
-          effect.amount ?? 1,
-        );
-        if (pullMoved > 0) {
-          const pathStr = pullPath.map((p) => `${p[0]},${p[1]}`).join(" -> ");
-          messages.push(
-            `  ${target.num} pulled ${pullMoved} tile${pullMoved > 1 ? "s" : ""} to ${pathStr}.`,
-          );
-        } else {
-          messages.push(`  ${target.num} could not be pulled.`);
-        }
-        break;
-      }
-
-      case "swap": {
-        const tmpPos = [...user.pos] as [number, number];
-        user.pos = [...target.pos] as [number, number];
-        target.pos = tmpPos;
-        messages.push(
-          `  ${user.num} and ${target.num} swap positions -> ${user.num} at ${user.pos[0]},${user.pos[1]}, ${target.num} at ${target.pos[0]},${target.pos[1]}.`,
-        );
-        break;
-      }
-
-      case "multiHit": {
-        messages.push(`  Attack gains +${effect.hits - 1} additional hits.`);
-        break;
-      }
-
-      case "recoil": {
-        // Recoil damage itself is applied in resolve.ts after on-hit damage
-        // is dealt. Here we just announce the marker so the log is readable.
-        messages.push(
-          `  ${user.num} takes ${effect.percent}% recoil on damage dealt.`,
-        );
-        break;
-      }
-
-      case "critMod": {
-        // The crit threshold itself is consumed by extractCombatMetadata /
-        // rollAccuracy in resolve.ts; here we just announce the marker so
-        // the effect stream log reads naturally.
-        messages.push(
-          `  Crit threshold lowered to ${effect.threshold}+.`,
-        );
-        break;
-      }
-
-      case "diceMod": {
-        const kindLabel =
-          effect.kind === "baseDice"
-            ? "base dice"
-            : effect.kind === "diceFaces"
-              ? "dice faces"
-              : "dice";
-        messages.push(
-          `  Attack gains ${effect.amount > 0 ? "+" : ""}${effect.amount} ${kindLabel}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-        );
-        break;
-      }
-
-      case "mrMod": {
-        messages.push(
-          `  Miss Rate ${effect.amount > 0 ? "+" : ""}${effect.amount}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-        );
-        break;
-      }
-
-      case "requires": {
-        messages.push(
-          `  Requires ${effect.weapons.map(capitalize).join(" or ")}.`,
-        );
-        break;
-      }
-
-      case "switchWeapon": {
-        if (effect.to.length === 1) {
-          user.subweapon = effect.to[0];
-          messages.push(`  ${user.num} switches to ${capitalize(effect.to[0])}.`);
-        } else {
-          // Multi-option switch ("Switch to Gladius or Scutum"): ask the
-          // player which subweapon to equip, same prompt machinery as
-          // `choose` clauses so resolve.ts can relay it to the user.
-          const clauseId = `switch-${messages.length}`;
-          const chosenId = yield {
-            kind: "choose",
-            clauseId,
-            message: `Choose a subweapon to switch to`,
-            options: effect.to.map((w, i) => ({
-              id: `${clauseId}:${i}`,
-              label: capitalize(w),
-            })),
-          } satisfies EffectChoosePrompt;
-          const idx = parseChosenIdx(chosenId, effect.to.length);
-          user.subweapon = effect.to[idx];
-          messages.push(`  ${user.num} switches to ${capitalize(effect.to[idx])}.`);
-        }
-        break;
-      }
-
-      case "conditional": {
-        const { outcome, messages: condMsgs } = applyConditional(
-          user,
-          target,
-          effect,
-          game.moonPhase,
-        );
-        messages.push(...condMsgs);
-        // "unknown" defaults to then-branch (legacy fallback). "else" without
-        // an else-branch drops the sub-effects entirely.
-        if (outcome === "then" || outcome === "unknown") {
-          const thenMsgs = yield* applyEffectStream(
-            game,
-            user,
-            target,
-            effect.thenEffects,
-            ability,
-          );
-          messages.push(...thenMsgs.map((m) => `    ${m}`));
-        }
-        if (outcome === "else" && effect.elseEffects) {
-          const elseMsgs = yield* applyEffectStream(
-            game,
-            user,
-            target,
-            effect.elseEffects,
-            ability,
-          );
-          messages.push(...elseMsgs.map((m) => `    ${m}`));
-        }
-        break;
-      }
-
-      case "thirst": {
-        if (!isThirstActive(user, effect)) {
-          messages.push(
-            `  [Thirst ${effect.threshold}] inactive (Blood ${user.resources.blood ?? 0} < ${effect.threshold}).`,
-          );
-          break;
-        }
-        const thirstMsgs = yield* applyEffectStream(
-          game,
-          user,
-          target,
-          effect.effects,
-          ability,
-        );
-        messages.push(
-          ...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`),
-        );
-        break;
-      }
-
-      case "apex": {
-        if (!ability) {
-          messages.push(`  [Apex] -- cannot evaluate without ability context.`);
-          break;
-        }
-        if (!isApexActive(game, user, target, ability)) {
-          messages.push(
-            `  [Apex] inactive (target not at max listed range of ${ability.range}).`,
-          );
-          break;
-        }
-        const apexMsgs = yield* applyEffectStream(
-          game,
-          user,
-          target,
-          effect.effects,
-          ability,
-        );
-        messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
-        break;
-      }
-
-      case "choose": {
-        // Yield a prompt. Resolve.ts feeds back the chosen option id and
-        // we recurse into the chosen branch's sub-effects through the stream
-        // so any nested APEX/THIRST/CHOICE inside the chosen branch also
-        // gets prompted.
-        const clauseId = `choose-${messages.length}`;
-        const chosenId = yield {
-          kind: "choose",
-          clauseId,
-          message: `Choose one option for the effect`,
-          options: effect.options.map((opts, i) => ({
-            id: `${clauseId}:${i}`,
-            label: opts.length
-              ? opts.map((o) => summariseEffect(o)).join("; ")
-              : `Option ${i + 1}`,
-          })),
-        } satisfies EffectChoosePrompt;
-        const idx = parseChosenIdx(chosenId, effect.options.length);
-        messages.push(`  [Choose] user picked option ${idx + 1}.`);
-        const chosenMsgs = yield* applyEffectStream(
-          game,
-          user,
-          target,
-          effect.options[idx],
-          ability,
-        );
-        messages.push(...chosenMsgs.map((m) => `    ${m}`));
-        break;
-      }
-
-      case "tile": {
-        messages.push(
-          `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
-        );
-        break;
-      }
-
-      case "phaseEffect": {
-        // Phase effects are applied at specific timing points in the pipeline.
-        // When reached at the right phase, expand sub-effects.
-        for (const sub of effect.effects) {
-          const subMsgs = yield* applyEffectStream(
-            game, user, target, [sub], ability,
-          );
-          messages.push(...subMsgs);
-        }
-        break;
-      }
-
-      case "per": {
-        // Per-X triggers fire at their applicable resolution event. These
-        // effects reach the stream on a successful hit (resolve.ts applies
-        // non-phase effects after damage), so "Per hit:" dispatches its
-        // sub-effects now. Resource-count triggers ("Per 5 CP:") dispatch
-        // when the user's pool meets the count. Triggers that can't be
-        // confirmed from the current stream context keep a summary log.
-        if (perTriggerApplies(effect.trigger, user)) {
-          messages.push(`  [Per ${effect.trigger}]:`);
-          const perMsgs = yield* applyEffectStream(
-            game,
-            user,
-            target,
-            effect.effects,
-            ability,
-          );
-          messages.push(...perMsgs.map((m) => `    ${m}`));
-        } else {
-          messages.push(
-            `  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`,
-          );
-        }
-        break;
-      }
-
-      case "trigger": {
-        // When-X triggers fire when their event condition is met. These
-        // effects reach the stream on a successful hit, so hit-context
-        // events ("When user damages a foe", "When user kills foe") dispatch
-        // their sub-effects now; other events keep a summary log.
-        if (triggerApplies(effect.event, user, target)) {
-          messages.push(`  [When ${effect.event}]:`);
-          const trigMsgs = yield* applyEffectStream(
-            game,
-            user,
-            target,
-            effect.effects,
-            ability,
-          );
-          messages.push(...trigMsgs.map((m) => `    ${m}`));
-        } else {
-          messages.push(
-            `  [When ${effect.event}]: ${summariseEffects(effect.effects)}`,
-          );
-        }
-        break;
-      }
-
+    const handler = EFFECT_HANDLERS[effect.type];
+    if (handler) {
+      yield* handler(ctx, effect);
+    } else {
+      // No registered handler: surface the raw clause text.
+      messages.push(`  ${(effect as { text?: string }).text ?? ""}`);
     }
   }
 
@@ -2439,83 +2620,37 @@ function drainApplyStream(
 }
 
 function summariseEffect(eff: Effect): string {
-  switch (eff.type) {
-    case "status":
-      return `inflict ${eff.damage || 0} ${eff.name}/${eff.rounds}`;
-    case "buff":
-      return `+${eff.amount} ${eff.stat}${eff.rounds ? `/${eff.rounds}` : ""}`;
-    case "debuff":
-      return `${eff.amount} ${eff.stat}${eff.rounds ? `/${eff.rounds}` : ""}`;
-    case "heal":
-      return `heal ${eff.amount ?? "?"} HP`;
-    case "shield":
-      return `Shield ${eff.amount}/${eff.rounds}`;
-    case "push":
-      return `push ${eff.amount ?? 1}`;
-    case "pull":
-      return `pull ${eff.amount ?? 1}${eff.toward === "user" ? " toward user" : ""}`;
-    case "swap":
-      return "swap positions";
-    case "teleport":
-      return `teleport${eff.range ? ` to ${eff.range}` : ""}`;
-    case "move":
-      return `move up to ${eff.amount}`;
-    case "resource":
-      return `${eff.action} ${eff.amount} ${eff.resource}`;
-    case "damageMod":
-      return `${eff.percent ?? ""}${eff.flat != null ? eff.flat + " DMG" : ""}`;
-    case "delay":
-      return `delay ${eff.rounds}r`;
-    case "recoil":
-      return `recoil ${eff.percent}%`;
-    case "ignore":
-      return `ignore ${eff.what}`;
-    case "critMod":
-      return `crit on ${eff.threshold}+`;
-    case "diceMod":
-      return `${eff.amount > 0 ? "+" : ""}${eff.amount} ${eff.kind === "baseDice" ? "base dice" : eff.kind === "diceFaces" ? "dice faces" : "dice"}`;
-    case "mrMod":
-      return `${eff.amount > 0 ? "+" : ""}${eff.amount} MR${eff.rounds ? `/${eff.rounds}` : ""}`;
-    case "requires":
-      return `requires ${eff.weapons.join(" or ")}`;
-    case "switchWeapon":
-      return `switch to ${eff.to.join(" or ")}`;
-    case "channel":
-      return `channel ${eff.stat} for ${eff.rounds}r`;
-    case "phase":
-      return `phase ${eff.phase}`;
-    case "choosePhase":
-      return "choose another phase";
-    case "skipPhaseShift":
-      return "no phase shift next turn";
-    case "rangeMod":
-      return `${eff.amount > 0 ? "+" : ""}${eff.amount} range`;
-    case "targetingDiceMod":
-      return `${eff.amount > 0 ? "+" : ""}${eff.amount} dice on attacks targeting user`;
-    case "doubleEffects":
-      return "two effects if user has 2 phases";
-    case "multiHit":
-      return `multi-hit ${eff.hits}`;
-    case "apex":
-      return "apex (...)";
-    case "thirst":
-      return `thirst ${eff.threshold} (...)`;
-    case "choose":
-      return "choose (...)";
-    case "conditional":
-      return `if [${eff.condition}]`;
-    case "delayLand":
-      return "delay attacks always land";
-    case "per":
-      return `per ${eff.trigger} (...)`;
-    case "trigger":
-      return `when ${eff.event} (...)`;
-    case "phaseEffect":
-      return `[${eff.phase}] ...`;
-    case "unknown":
-      return eff.text.slice(0, 40);
-  }
+  const fn = SUMMARISE[eff.type];
+  return fn ? fn(eff as any) : "";
 }
+
+/** Per-effect-type one-line summary, used in choose-prompt option labels. */
+const SUMMARISE: Record<string, (eff: any) => string> = {
+  status: (e) => `inflict ${e.damage || 0} ${e.name}/${e.rounds}`,
+  buff: (e) => `+${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
+  debuff: (e) => `${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
+  heal: (e) => `heal ${e.amount ?? "?"} HP`,
+  shield: (e) => `Shield ${e.amount}/${e.rounds}`,
+  push: (e) => `push ${e.amount ?? 1}`,
+  pull: (e) => `pull ${e.amount ?? 1}${e.toward === "user" ? " toward user" : ""}`,
+  swap: () => "swap positions",
+  teleport: (e) => `teleport${e.range ? ` to ${e.range}` : ""}`,
+  move: (e) => `move up to ${e.amount}`,
+  resource: (e) => `${e.action} ${e.amount} ${e.resource}`,
+  damageMod: (e) => `${e.percent ?? ""}${e.flat != null ? e.flat + " DMG" : ""}`,
+  delay: (e) => `delay ${e.rounds}r`,
+  recoil: (e) => `recoil ${e.percent}%`,
+  ignore: (e) => `ignore ${e.what}`,
+  channel: (e) => `channel ${e.stat} for ${e.rounds}r`,
+  phase: (e) => `phase ${e.phase}`,
+  multiHit: (e) => `multi-hit ${e.hits}`,
+  apex: () => "apex (...)",
+  thirst: (e) => `thirst ${e.threshold} (...)`,
+  choose: () => "choose (...)",
+  conditional: (e) => `if [${e.condition}]`,
+  delayLand: () => "delay attacks always land",
+  unknown: (e) => e.text.slice(0, 40),
+};
 
 function parseChosenIdx(chosenId: string, total: number): number {
   const m = chosenId.match(/:(\d+)$/);
@@ -2740,6 +2875,60 @@ export function extractCombatMetadata(
  *     ability into +50% at any range). resolveSingleTarget re-evaluates
  *     each gate per hit through the entity.buffs/statuses path instead.
  */
+/**
+ * Fold a conditional effect's relevant branch into combat metadata. Handles
+ * the subweapon-gated ("subweapon is X") and phase-gated ("phase is X" /
+ * "phase is X or Y") conditions, which are knowable at metadata time.
+ * Returns true when the effect was a handled conditional (caller should
+ * continue), false otherwise.
+ */
+function mergeConditionalCombatMetadata(
+  out: CombatMetadata,
+  e: Effect,
+  subweapon?: string,
+  phase?: string,
+  choice?: string,
+): boolean {
+  if (e.type !== "conditional") return false;
+
+  if (e.condition.startsWith("subweapon is ")) {
+    // Only the matching branch's sub-effects count; the non-matching
+    // branches are dead code for this user's equipped subweapon — unless
+    // there's an "Otherwise:" branch, which applies on a mismatch.
+    const want = e.condition.slice("subweapon is ".length);
+    if (subweapon && subweapon === want) {
+      mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
+    } else if (subweapon && e.elseEffects) {
+      mergeCombatMetadata(out, e.elseEffects, subweapon, phase, choice);
+    }
+    return true;
+  }
+
+  if (e.condition.startsWith("phase is ")) {
+    // Phase-gated branches (Lunar Phase's "Waxing: +2 dice faces") count
+    // only while the current moon phase matches. The condition is either
+    // "phase is X" or the slash-combo "phase is X or Y"; both are knowable
+    // at metadata time, so unlike If/Apex/Thirst gates we descend here.
+    const want = e.condition
+      .slice("phase is ".length)
+      .split(" or ")
+      .map((s) => s.trim());
+    // The user's chosen 2nd phase (Far Side of the Moon / Fatal
+    // Moonlight) counts too: evaluateCondition fires a "phase is X"
+    // branch when EITHER the active phase or the chosen phase matches,
+    // so ability metadata must fold both in for the damage math.
+    if ((phase && want.includes(phase)) || (choice && want.includes(choice))) {
+      mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
+    } else if ((phase || choice) && e.elseEffects) {
+      // "Otherwise:" branch applies when neither phase matches.
+      mergeCombatMetadata(out, e.elseEffects, subweapon, phase, choice);
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function mergeCombatMetadata(
   out: CombatMetadata,
   effects: Effect[],
@@ -2750,78 +2939,72 @@ function mergeCombatMetadata(
   const phase = moonPhase?.toLowerCase().trim();
   const choice = phaseChoice?.toLowerCase().trim();
   for (const e of effects) {
-    if (e.type === "conditional" && e.condition.startsWith("subweapon is ")) {
-      // Only the matching branch's sub-effects count; the non-matching
-      // branches are dead code for this user's equipped subweapon — unless
-      // there's an "Otherwise:" branch, which applies on a mismatch.
-      const want = e.condition.slice("subweapon is ".length);
-      if (subweapon && subweapon === want) {
-        mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
-      } else if (subweapon && e.elseEffects) {
-        mergeCombatMetadata(out, e.elseEffects, subweapon, phase, choice);
+    if (e.type === "conditional") {
+      if (mergeConditionalCombatMetadata(out, e, subweapon, phase, choice)) {
+        continue;
       }
-      continue;
     }
-    if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
-      // Phase-gated branches (Lunar Phase's "Waxing: +2 dice faces") count
-      // only while the current moon phase matches. The condition is either
-      // "phase is X" or the slash-combo "phase is X or Y"; both are knowable
-      // at metadata time, so unlike If/Apex/Thirst gates we descend here.
-      const want = e.condition
-        .slice("phase is ".length)
-        .split(" or ")
-        .map((s) => s.trim());
-      // The user's chosen 2nd phase (Far Side of the Moon / Fatal
-      // Moonlight) counts too: evaluateCondition fires a "phase is X"
-      // branch when EITHER the active phase or the chosen phase matches,
-      // so ability metadata must fold both in for the damage math.
-      if (
-        (phase && want.includes(phase)) ||
-        (choice && want.includes(choice))
-      ) {
-        mergeCombatMetadata(out, e.thenEffects, subweapon, phase, choice);
-      } else if ((phase || choice) && e.elseEffects) {
-        // "Otherwise:" branch applies when neither phase matches.
-        mergeCombatMetadata(out, e.elseEffects, subweapon, phase, choice);
-      }
-      continue;
-    }
-    if (e.type === "damageMod") {
+    foldCombatEffect(out, e);
+  }
+}
+
+/** Fold a single non-conditional effect into the running combat metadata. */
+function foldCombatEffect(out: CombatMetadata, e: Effect): void {
+  switch (e.type) {
+    case "damageMod":
       if (e.percent) out.damagePercent += e.percent;
       if (typeof e.flat === "number") out.flatDamage += e.flat;
-    } else if (e.type === "multiHit") {
+      break;
+    case "multiHit":
       out.additionalHits = Math.max(out.additionalHits, e.hits - 1);
-    } else if (e.type === "ignore") {
+      break;
+    case "ignore":
       classifyIgnore(e.what, out.ignore);
-    } else if (e.type === "critMod") {
+      break;
+    case "critMod":
       out.critThreshold =
         out.critThreshold === null
           ? e.threshold
           : Math.min(out.critThreshold, e.threshold);
-    } else if (e.type === "diceMod") {
-      if (e.kind === "dice") out.extraDice += e.amount;
-      else if (e.kind === "diceFaces") out.extraDiceFaces += e.amount;
-      else out.extraBaseDice += e.amount;
-    } else if (e.type === "mrMod") {
+      break;
+    case "diceMod":
+      foldDiceMod(out, e);
+      break;
+    case "mrMod":
       out.mrMod += e.amount;
-    } else if (e.type === "buff" || e.type === "debuff") {
-      // parseStatMods emits a "buff"/"debuff" with stat: "dmg" for the
-      // every-day "+50% damage", "+5 DMG", "-10% damage" clauses --
-      // because the regex matches "damage" / "dmg" as a stat name and
-      // folds them onto the dmg alias. Those are damage modifiers, not
-      // self-buffs, so the resolve layer reads them here. The
-      // buff/debuff still lands on `target.buffs` so legacy code that
-      // scans entity.buffs for damage modifiers keeps working too.
-      if (e.stat === "dmg") {
-        // parseStatMods bakes the sign into percent / amount, so a
-        // debuff for "-10% damage" arrives here with percent = -10.
-        if (typeof e.percent === "number") {
-          out.damagePercent += e.percent;
-        } else if (typeof e.amount === "number" && e.percent === undefined) {
-          out.flatDamage += e.amount;
-        }
-      }
-    }
+      break;
+    case "buff":
+    case "debuff":
+      foldDmgStatMod(out, e);
+      break;
+  }
+}
+
+/** Fold a diceMod effect into the running combat metadata by kind. */
+function foldDiceMod(out: CombatMetadata, e: Effect): void {
+  if (e.type !== "diceMod") return;
+  if (e.kind === "dice") out.extraDice += e.amount;
+  else if (e.kind === "diceFaces") out.extraDiceFaces += e.amount;
+  else out.extraBaseDice += e.amount;
+}
+
+/**
+ * Fold a buff/debuff whose stat is "dmg" into damage modifiers.
+ * parseStatMods emits a "buff"/"debuff" with stat: "dmg" for the
+ * every-day "+50% damage", "+5 DMG", "-10% damage" clauses -- because the
+ * regex matches "damage" / "dmg" as a stat name and folds them onto the
+ * dmg alias. Those are damage modifiers, not self-buffs, so the resolve
+ * layer reads them here. The buff/debuff still lands on `target.buffs` so
+ * legacy code that scans entity.buffs for damage modifiers keeps working.
+ * parseStatMods bakes the sign into percent / amount, so a debuff for
+ * "-10% damage" arrives here with percent = -10.
+ */
+function foldDmgStatMod(out: CombatMetadata, e: Effect): void {
+  if ((e.type !== "buff" && e.type !== "debuff") || e.stat !== "dmg") return;
+  if (typeof e.percent === "number") {
+    out.damagePercent += e.percent;
+  } else if (typeof e.amount === "number" && e.percent === undefined) {
+    out.flatDamage += e.amount;
   }
 }
 
@@ -2875,31 +3058,7 @@ function classifyIgnoreFragment(
   }
 
   if (lower.includes("def")) {
-    // Order matters: a fractional "1/2 DEF" / "1/4 DEF" / "half DEF" /
-    // "quarter DEF" overrides a plain "5 DEF" -> the latter reads as
-    // "Ignores half DEF AND 5 DEF" which means (def/2 - 5). But BD's text
-    // typically gives them in a single clause. Without a clean
-    // multi-clause parser we take the strongest effect (full-zero >
-    // quarter > half > numeric subtract). If you see both strongest and
-    // subtract in real data, file an issue and we'll revisit.
-    if (lower.includes("half") || lower.includes("1/2")) {
-      out.halfDef = true;
-      return;
-    }
-    if (lower.includes("quarter") || lower.includes("1/4")) {
-      out.quarterDef = true;
-      return;
-    }
-    if (/^\s*\d+\s*$/.test(lower)) {
-      out.defReduction = Math.max(out.defReduction, parseInt(lower));
-      return;
-    }
-    const num = lower.match(/(\d+)/);
-    if (num) {
-      out.defReduction = Math.max(out.defReduction, parseInt(num[1]));
-      return;
-    }
-    out.def = true;
+    classifyDefIgnore(lower, out);
     return;
   }
 
@@ -2909,4 +3068,32 @@ function classifyIgnoreFragment(
   }
 
   out.other.push(lower);
+}
+
+/** Classify a DEF ignore clause. Order matters: a fractional "1/2 DEF" /
+ * "1/4 DEF" / "half DEF" / "quarter DEF" overrides a plain "5 DEF" -> the
+ * latter reads as "Ignores half DEF AND 5 DEF" which means (def/2 - 5). But
+ * BD's text typically gives them in a single clause. Without a clean
+ * multi-clause parser we take the strongest effect (full-zero > quarter >
+ * half > numeric subtract). If you see both strongest and subtract in real
+ * data, file an issue and we'll revisit. */
+function classifyDefIgnore(lower: string, out: CombatIgnoreMetadata): void {
+  if (lower.includes("half") || lower.includes("1/2")) {
+    out.halfDef = true;
+    return;
+  }
+  if (lower.includes("quarter") || lower.includes("1/4")) {
+    out.quarterDef = true;
+    return;
+  }
+  if (/^\s*\d+\s*$/.test(lower)) {
+    out.defReduction = Math.max(out.defReduction, parseInt(lower));
+    return;
+  }
+  const num = lower.match(/(\d+)/);
+  if (num) {
+    out.defReduction = Math.max(out.defReduction, parseInt(num[1]));
+    return;
+  }
+  out.def = true;
 }

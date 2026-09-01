@@ -294,6 +294,18 @@ describe("getReachableTiles", () => {
     expect(reachable.has(posToStr(0, 1))).toBe(false); // cost 0, excluded by design
     expect(reachable.has(posToStr(0, 2))).toBe(true); // 1 MP left after free pass
   });
+
+  it("excludes tiles occupied by living entities (matches push/pull)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [1, 2] });
+    const foe = makeEntity({ num: "F1", name: "Foe", pos: [2, 2], team: 1 });
+    const game = makeGame({ entities: [p1, foe], turnOrder: ["P1", "F1"] });
+    const reachable = getReachableTiles(game, [1, 2], 1);
+    expect(reachable.has(posToStr(1, 1))).toBe(true); // left
+    expect(reachable.has(posToStr(0, 2))).toBe(true); // up
+    expect(reachable.has(posToStr(1, 3))).toBe(true); // right
+    expect(reachable.has(posToStr(2, 2))).toBe(false); // occupied by foe
+    expect(reachable.size).toBe(3);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -562,6 +574,51 @@ describe("getAoETargets", () => {
     expect(nums).toContain("P2");
     expect(nums).not.toContain("P3");
   });
+
+  it("normalized group 'Self, Foes, Allies' targets allies and foes", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 1 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self, Foes, Allies");
+    expect(targets.map((t) => t.num).sort()).toEqual(["P2", "P3"]);
+  });
+
+  it("group 'Self or Foe' targets foes but excludes allies", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 1 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Self or Foe");
+    expect(targets.map((t) => t.num)).toEqual(["P2"]);
+  });
+
+  it("legacy group 'Foe(s)' targets foes", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 1 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Foe(s)");
+    expect(targets.map((t) => t.num)).toEqual(["P2"]);
+  });
+
+  it("group 'Allies and Self' targets allies", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 1 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Allies and Self");
+    expect(targets.map((t) => t.num)).toEqual(["P3"]);
+  });
+
+  it("group 'Tile or Foe' targets foes", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [2, 2], team: 1 });
+    const p2 = makeEntity({ num: "P2", name: "B", pos: [2, 3], team: 2 });
+    const p3 = makeEntity({ num: "P3", name: "C", pos: [2, 1], team: 1 });
+    const game = makeGame({ entities: [p1, p2, p3] });
+    const targets = getAoETargets(game, p1, "Burst 1", "Tile or Foe");
+    expect(targets.map((t) => t.num)).toEqual(["P2"]);
+  });
 });
 
 describe("getSplashTargets", () => {
@@ -772,6 +829,16 @@ describe("checkGameOver", () => {
     const winner = checkGameOver(game);
     expect(winner?.num).toBe("P1");
     expect(game.phase).toBe("ended");
+  });
+
+  it("zero survivors: phase ends with null winner (a draw)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 0 });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 0 });
+    const game = makeGame({ entities: [p1, p2] });
+    const winner = checkGameOver(game);
+    expect(winner).toBeNull();
+    expect(game.phase).toBe("ended");
+    expect(game.winner).toBeNull();
   });
 
   it("returns null in team mode when both teams alive", () => {
@@ -1310,6 +1377,151 @@ describe("nextTurn end-of-turn death", () => {
     expect(result.died).toBe(false);
     expect(result.entity?.num).toBe("P2");
   });
+
+  it("hands the turn to the shifted-in entity when the active actor died mid-turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 is acting
+    // P2 dies mid-turn (recoil/confusion) and is removed; P3 shifts into
+    // index 1. nextTurn must hand the turn to P3, not skip it.
+    removeEntity(game, p2);
+    const result = nextTurn(game, { actorDied: true });
+    expect(result.entity?.num).toBe("P3");
+    expect(game.turnIndex).toBe(1);
+  });
+
+  it("wraps to the first entity when the last actor dies mid-turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C", curhp: 1 });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 2; // P3 is acting (last in order)
+    removeEntity(game, p3); // P3 dies mid-turn; removal clamps turnIndex to 0
+    const result = nextTurn(game, { actorDied: true });
+    expect(result.entity?.num).toBe("P1");
+    expect(game.turnIndex).toBe(0);
+  });
+
+  it("advances the round when the last actor dies mid-turn (round wrap)", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C", curhp: 1 });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 2; // P3 (last slot) is acting
+    game.round = 1;
+    removeEntity(game, p3); // dies mid-turn; removal wraps turnIndex to 0
+    const result = nextTurn(game, { actorDied: true });
+    expect(result.entity?.num).toBe("P1");
+    expect(game.turnIndex).toBe(0);
+    expect(game.round).toBe(2); // removeEntity advanced the round for the completed cycle
+  });
+
+  it("does not advance the round when a mid-slot actor dies mid-turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 1 });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 (mid-slot) is acting
+    game.round = 1;
+    removeEntity(game, p2); // dies mid-turn; P3 shifts into slot 1 (no wrap)
+    const result = nextTurn(game, { actorDied: true });
+    expect(result.entity?.num).toBe("P3");
+    expect(game.turnIndex).toBe(1);
+    expect(game.round).toBe(1); // cycle NOT complete
+  });
+
+  it("advances the round when a start-of-turn death in the final slot wraps the turn pointer", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C", curhp: 0 }); // dead but still present
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 is acting; P3 is next in the final slot
+    game.round = 1;
+    const result = nextTurn(game);
+    expect(result.entity?.num).toBe("P1"); // P3 removed at start, pointer wrapped to P1
+    expect(game.turnIndex).toBe(0);
+    expect(game.round).toBe(2); // full cycle completed via the start-of-turn wrap
+  });
+
+  it("removes a dead-but-present entity instead of handing it the turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 0 }); // dead but still present
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 was the actor but died and its corpse was missed
+    const result = nextTurn(game, { actorDied: true });
+    expect(result.entity?.num).toBe("P3");
+    expect(game.entities.find((e) => e.num === "P2")).toBeUndefined();
+  });
+
+  it("advances past an entity that dies at the start of its turn", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({
+      num: "P2",
+      name: "B",
+      curhp: 5,
+      statuses: [
+        { name: "Bleed", damage: 99, rounds: 3, maxRounds: 3, removable: true },
+      ],
+    });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 0; // P1's turn is ending; P2's turn begins and bleeds out
+    const result = nextTurn(game);
+    expect(result.entity?.num).toBe("P3");
+    expect(result.died).toBe(true);
+    expect(game.entities.find((x) => x.num === "P2")).toBeUndefined();
+  });
+
+  it("ends the game when the last survivors die across the turn transition", () => {
+    const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
+    map[0][0] = Terrain.Lava;
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 20, pos: [0, 0] });
+    const p2 = makeEntity({
+      num: "P2",
+      name: "B",
+      curhp: 5,
+      pos: [2, 2],
+      statuses: [
+        { name: "Bleed", damage: 99, rounds: 3, maxRounds: 3, removable: true },
+      ],
+    });
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+      terrain: map,
+    });
+    // P1 ends its turn on lava and dies; P2's turn begins and bleeds out.
+    game.turnIndex = 0;
+    const result = nextTurn(game);
+    expect(result.entity).toBeNull();
+    expect(result.died).toBe(true);
+    expect(game.phase).toBe("ended");
+    expect(game.entities.length).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1337,6 +1549,79 @@ describe("removeEntity", () => {
     game.votes = { p1: "FFA", p2: "2v2" };
     removeEntity(game, p1);
     expect(game.votes).toEqual({ p2: "2v2" });
+  });
+
+  it("drops the vote even when the wrap path returns early", () => {
+    // The removed entity holds the FINAL turn slot during play, so the
+    // wrap path (round++, early return) runs — the vote must still go.
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 2; // P3 is the current actor in the final slot
+    game.round = 1;
+    game.votes = { p1: "FFA", p2: "2v2", p3: "JUGG" };
+    const wrapped = removeEntity(game, p3);
+    expect(wrapped).toBe(true);
+    expect(game.round).toBe(2);
+    expect(game.votes).toEqual({ p1: "FFA", p2: "2v2" });
+  });
+
+  it("flags removal of the current actor so nextTurn skips no one", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 is the current actor
+    // P2 (the current actor) leaves mid-turn: P3 shifts into slot 1.
+    removeEntity(game, p2);
+    expect(game.turnIndex).toBe(1);
+    expect(getCurrentEntity(game)?.num).toBe("P3");
+    expect(game.removedCurrentActor).toBe(true);
+    // The next %endturn must hand the turn to P3 without double-advancing.
+    const result = nextTurn(game);
+    expect(game.removedCurrentActor).toBe(false);
+    expect(result.entity?.num).toBe("P3");
+  });
+
+  it("does not flag non-actor removals", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const p3 = makeEntity({ num: "P3", name: "C" });
+    const game = makeGame({
+      entities: [p1, p2, p3],
+      turnOrder: ["P1", "P2", "P3"],
+    });
+    game.turnIndex = 1; // P2 is the current actor
+    // P1 (before the actor) is removed -> index shifts down, no flag.
+    removeEntity(game, p1);
+    expect(game.removedCurrentActor).toBeUndefined();
+    expect(game.turnIndex).toBe(0);
+  });
+
+  it("reports corpse removal through died so callers re-check game over", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 0 }); // corpse
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+      turnIndex: 0,
+      phase: "playing",
+    });
+    // Hand the turn to P1 (the corpse is at the END of the order, so it
+    // won't be visited) — instead drive the corpse path directly: put the
+    // corpse at the pointer and confirm nextTurn reports died.
+    game.turnOrder = ["P2", "P1"];
+    game.turnIndex = 0;
+    const result = nextTurn(game);
+    expect(result.died).toBe(true);
+    expect(result.entity?.num).toBe("P1");
   });
 });
 
