@@ -1,5 +1,4 @@
 import { send, sendPm, toId } from "../utils.js";
-import { games, type Game } from "../game/state.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
 import { hostCommand } from "./host.js";

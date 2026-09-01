@@ -1,4 +1,3 @@
-import { Terrain } from "../game/state.js";
 import type { MapDef } from "./maps.js";
 
 export const volunteerMaps: MapDef[] = [

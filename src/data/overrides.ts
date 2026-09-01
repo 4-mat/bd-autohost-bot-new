@@ -83,8 +83,8 @@ export function applyEditorSnapshot(snap: EditorSnapshot | null): number {
   }
   // The snapshot is authoritative: drop entries the editor removed (deleted
   // customs, renamed-away built-ins) so the running process mirrors it exactly.
-  for (const k of [...classes.keys()]) if (!seenClasses.has(k)) classes.delete(k);
-  for (const k of [...weapons.keys()]) if (!seenWeapons.has(k)) weapons.delete(k);
+  for (const k of classes.keys()) if (!seenClasses.has(k)) classes.delete(k);
+  for (const k of weapons.keys()) if (!seenWeapons.has(k)) weapons.delete(k);
   return applied;
 }
 

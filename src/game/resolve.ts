@@ -34,15 +34,11 @@ import {
   parseFrequency,
   needsDirection,
   getDirectionCandidates,
-  DIRECTION_LABELS,
-  placeTerrain,
-  TERRAIN_NAMES,
 } from "./state.js";
 import { modeIdFor } from "../data/gamemodes.js";
 import { matchesTargetGroup } from "./targeting.js";
 import {
   parseEffects,
-  applyEffects,
   applyEffectStream,
   extractCombatMetadata,
   type CombatMetadata,
@@ -331,7 +327,7 @@ function* resolveAttackFlow(
   if (!active) return result;
 
   // --- Direction prompt for AoE abilities ---
-  const dir = yield* resolveDirection(user, ability, active);
+  const _dir = yield* resolveDirection(user, ability, active);
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   const {
@@ -695,44 +691,6 @@ function getTargetCandidates(
     }
     return false;
   });
-}
-
-function getTileCandidates(
-  game: Game,
-  user: Entity,
-  ability: AbilityData,
-): string[] {
-  const tiles: string[] = [];
-  const rangeStr = ability.range.toLowerCase().trim();
-  const rangeMatch = rangeStr.match(/(?:range|homing)\s*(\d+)/);
-  const range = rangeMatch ? parseInt(rangeMatch[1]) : 3;
-
-  for (let r = 0; r < game.map.length; r++) {
-    for (let c = 0; c < game.map[0].length; c++) {
-      const d = Math.abs(r - user.pos[0]) + Math.abs(c - user.pos[1]);
-      if (d === 0) continue;
-      if (d > range) continue;
-      tiles.push(posToStr(r, c));
-    }
-  }
-  return tiles;
-}
-
-function parseTileRef(ref: string): [number, number] | null {
-  const parts = ref.split(",");
-  if (parts.length === 2) {
-    const r = parseInt(parts[0]);
-    const c = parseInt(parts[1]);
-    if (!isNaN(r) && !isNaN(c)) return [r, c];
-  }
-  // Letter-number format: A1, B3, etc.
-  const match = ref.match(/^([a-zA-Z])\s*(\d+)$/);
-  if (match) {
-    const r = match[1].toUpperCase().charCodeAt(0) - 65;
-    const c = parseInt(match[2]) - 1;
-    if (r >= 0 && c >= 0) return [r, c];
-  }
-  return null;
 }
 
 // ---------------------------

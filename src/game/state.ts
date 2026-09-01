@@ -12,8 +12,6 @@
  * or `import { rollDice, toId } from "../utils.js"`
  */
 import { rollDice, posToStr, toId } from "../utils.js";
-import { send, sendPm } from "../utils.js";
-import { rooms } from "../rooms.js";
 import type { GameVersion } from "../data/index.js";
 import type {
   AttackPrompt,
@@ -1052,7 +1050,7 @@ export function processStartOfTurn(
   const messages: string[] = [];
 
   // Apply status damage (DoT)
-  for (const status of [...entity.statuses]) {
+  for (const status of entity.statuses) {
     if (status.damage > 0) {
       dealDamage(entity, status.damage);
       messages.push(
@@ -1111,7 +1109,7 @@ export function processEndOfTurn(
   }
 
   // Tick status durations
-  for (const status of [...entity.statuses]) {
+  for (const status of entity.statuses) {
     status.rounds--;
     if (status.rounds <= 0) {
       messages.push(`  ${entity.num}'s ${status.name} wore off.`);

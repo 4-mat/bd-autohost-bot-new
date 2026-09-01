@@ -628,6 +628,7 @@ describe("choose and target prompts", () => {
     const game = makeGame({ entities: [caster] });
     games.set(game.id, game);
 
+    // eslint-disable-next-line require-yield -- deliberately models a throw without yielding first
     caster.pendingResolution = (function* () {
       throw new Error("boom");
     })() as typeof caster.pendingResolution;

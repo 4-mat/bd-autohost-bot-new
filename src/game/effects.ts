@@ -2,17 +2,15 @@ import {
   type Game,
   type Entity,
   type AbilityData,
-  type StatusEffect,
   Terrain,
   chebyshev,
-  dealDamage,
   hasLineOfSight,
   inRange,
   manhattan,
   pushEntity,
   pullEntity,
 } from "./state.js";
-import { rollDice, toId } from "../utils.js";
+import { toId } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Effect types
@@ -180,23 +178,6 @@ const STATUS_NAMES = [
   "slow",
   "stun",
   "shield",
-];
-
-const STAT_NAMES = [
-  "atk",
-  "mag",
-  "pd",
-  "md",
-  "def",
-  "eva",
-  "mp",
-  "acc",
-  "cr",
-  "dmg",
-  "range",
-  "mdef",
-  "pdef",
-  "damage",
 ];
 
 const RESOURCE_NAMES = [
@@ -820,17 +801,6 @@ function getBaseStat(entity: Entity, stat: string): number {
   }
 }
 
-// Local copy of `getEffectiveStat` -- same logic that resolve.ts inlines,
-// kept local so effects.ts stays self-contained. Used in places where a
-// clamped (>= 0) stat is what we need, e.g. damage scaling.
-function getEffStat(entity: Entity, stat: string): number {
-  let base = getBaseStat(entity, stat);
-  for (const b of entity.buffs) {
-    if (b.stat === stat) base += b.amount;
-  }
-  return Math.max(0, base);
-}
-
 // Unclamped variant -- used by condition evaluation so the sign check can
 // detect a stat that has debuffed below zero. The clamped helper would mask
 // negatives back to 0 and cause "Stat is negative" to misfire on heavily
@@ -926,7 +896,7 @@ export function isApexActive(
   const max = parseInt(m[2]);
 
   const cardinal = dr === 0 || dc === 0;
-  const diagonal = !cardinal && absDr === absDc;
+  const _diagonal = !cardinal && absDr === absDc;
 
   // Beam LOS / off-axis geometry isn't modelled correctly by inRange's
   // inBeam helper, so beam is handled separately below (with its own
@@ -1307,6 +1277,7 @@ type EffectHandler = (
   effect: any,
 ) => Generator<EffectChoosePrompt, void, string>;
 
+// eslint-disable-next-line require-yield
 function* handleStatus(
   { target, messages }: EffectCtx,
   effect: StatusInflict,
@@ -1337,6 +1308,7 @@ function* handleStatus(
   }
 }
 
+// eslint-disable-next-line require-yield
 function* handleStatMod(
   { target, messages }: EffectCtx,
   effect: StatMod,
@@ -1365,6 +1337,7 @@ function* handleStatMod(
   }
 }
 
+// eslint-disable-next-line require-yield
 function* handleDamageMod(
   { target, messages }: EffectCtx,
   effect: DamageMod,
@@ -1375,6 +1348,7 @@ function* handleDamageMod(
   messages.push(`  ${target.num} ${label}${effect.rounds ? `/${effect.rounds}` : ""}.`);
 }
 
+// eslint-disable-next-line require-yield
 function* handleHeal(
   { user, target, messages }: EffectCtx,
   effect: HealEffect,
@@ -1391,6 +1365,7 @@ function* handleHeal(
   }
 }
 
+// eslint-disable-next-line require-yield
 function* handleShield(
   { target, messages }: EffectCtx,
   effect: ShieldEffect,
@@ -1413,6 +1388,7 @@ function* handleShield(
   );
 }
 
+// eslint-disable-next-line require-yield
 function* handleDisplacement(
   { game, user, target, messages }: EffectCtx,
   effect: Displacement,
@@ -1435,6 +1411,7 @@ function* handleDisplacement(
   }
 }
 
+// eslint-disable-next-line require-yield
 function* handleSwap(
   { user, target, messages }: EffectCtx,
   _effect: Displacement,
@@ -1447,6 +1424,7 @@ function* handleSwap(
   );
 }
 
+// eslint-disable-next-line require-yield
 function* handleSimple(
   { user, messages }: EffectCtx,
   effect: any,

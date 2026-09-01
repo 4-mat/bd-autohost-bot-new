@@ -1,4 +1,4 @@
-import { Terrain, games, findGameForRoom, type Game, type Entity } from "../game/state.js";
+import { Terrain, games, findGameForRoom } from "../game/state.js";
 import { classes, weapons } from "../data/index.js";
 import { toId } from "../utils.js";
 import { broadcastPages } from "../commands/game.js";
