@@ -234,7 +234,7 @@ export const VOTE_OPTIONS: VoteOption[] = [
   },
   {
     id: "JUGG",
-    label: "Juggernaut",
+    label: "Jugg",
     description:
       "One player is a super-powered Juggernaut; everyone else works together to take them down.",
     // Needs at least a Juggernaut + two fielders — 2 players would just be a 1v1.
