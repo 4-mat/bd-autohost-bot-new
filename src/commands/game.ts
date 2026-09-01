@@ -784,6 +784,32 @@ function handleCancel(game: Game, user: User) {
   broadcastPages(game);
 }
 
+/** Resolve the current entity's action at turn advance: stunned entities
+ * waste or skip their action; pending actions resolve or return null when
+ * a prompt still needs an answer. Returns the performed action, an empty
+ * string when the turn was passed, or null when the turn must not advance. */
+function resolveEntityTurnAction(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  if (isStunned(entity)) {
+    if (entity.pendingAction) {
+      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
+      entity.pendingAction = null;
+    } else {
+      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
+    }
+    return "";
+  }
+  if (entity.pendingAction) {
+    const done = resolvePendingAction(game, user, entity);
+    if (done === null) return null; // prompt needs an answer
+    return done;
+  }
+  return "";
+}
+
 function handleAdvanceTurn(game: Game, user: User) {
   const entity = getCurrentEntity(game);
   const phase = game.phase;
@@ -799,21 +825,10 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   pushSnapshot(game);
 
-  let acted = "";
-
-  // Stunned entities can't act — skip their action and clear pending
-  if (isStunned(entity)) {
-    if (entity.pendingAction) {
-      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
-      entity.pendingAction = null;
-    } else {
-      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
-    }
-  } else if (entity.pendingAction) {
-    const done = resolvePendingAction(game, user, entity);
-    if (done === null) return; // prompt needs an answer — turn not advanced
-    acted = done;
-  }
+  // Resolve the current entity's turn: stunned entities waste/skip their
+  // action; pending actions either resolve or need a prompt answer.
+  const acted = resolveEntityTurnAction(game, user, entity);
+  if (acted === null) return; // prompt needs an answer — turn not advanced
 
   if (
     acted ||
