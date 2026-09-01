@@ -15,3 +15,6 @@ AGENTS.md
 abilityeditor/customs.local.json
 abilityeditor/runtime-data.json
 dist-editor/
+
+# Local agent skills (installed locally, never committed)
+.agents/

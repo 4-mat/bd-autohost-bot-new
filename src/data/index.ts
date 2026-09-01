@@ -1,3 +1,12 @@
+/**
+ * Central data registry for bd-autohost-bot-new.
+ *
+ * Exports type interfaces (AbilityData, GameVersion, ClassData, WeaponData)
+ * and Map registries (classes, weapons, branches, WhatIs, Reference).
+ *
+ * Import: `import { classes, weapons, AbilityData } from "../data/index.js"`
+ * or `import config from "../config.js"` for effect configs.
+ */
 export type GameVersion = "4.3" | "4.4";
 
 export interface AbilityCost {

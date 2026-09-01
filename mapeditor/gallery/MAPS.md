@@ -79,25 +79,19 @@ Push changes to those files and this page regenerates itself. For an interactive
 | --- |
 | <img src="./l.svg" width="128" alt="l"><br>[l](./l.svg) |
 
-## 5×5 (1)
-
-|  |
-| --- |
-| <img src="./example-ntr.svg" width="128" alt="example-ntr"><br>[example-ntr](./example-ntr.svg) |
-
-## 5×6 (10)
+## 5×5 (11)
 
 |  |  |  |  |
 | --- | --- | --- | --- |
-| <img src="./bifurcation.svg" width="128" alt="bifurcation"><br>[bifurcation](./bifurcation.svg) | <img src="./duelingground.svg" width="128" alt="duelingground"><br>[duelingground](./duelingground.svg) | <img src="./minicrossroads.svg" width="128" alt="minicrossroads"><br>[minicrossroads](./minicrossroads.svg) | <img src="./ntr.svg" width="128" alt="ntr"><br>[ntr](./ntr.svg) |
+| <img src="./bifurcation.svg" width="128" alt="bifurcation"><br>[bifurcation](./bifurcation.svg) | <img src="./duelingground.svg" width="128" alt="duelingground"><br>[duelingground](./duelingground.svg) | <img src="./example-ntr.svg" width="128" alt="example-ntr"><br>[example-ntr](./example-ntr.svg) | <img src="./minicrossroads.svg" width="128" alt="minicrossroads"><br>[minicrossroads](./minicrossroads.svg) |
 
 |  |  |  |  |
 | --- | --- | --- | --- |
-| <img src="./nyoom.svg" width="128" alt="nyoom"><br>[nyoom](./nyoom.svg) | <img src="./pond.svg" width="128" alt="pond"><br>[pond](./pond.svg) | <img src="./sprint.svg" width="128" alt="sprint"><br>[sprint](./sprint.svg) | <img src="./unabletorun.svg" width="128" alt="unabletorun"><br>[unabletorun](./unabletorun.svg) |
+| <img src="./ntr.svg" width="128" alt="ntr"><br>[ntr](./ntr.svg) | <img src="./nyoom.svg" width="128" alt="nyoom"><br>[nyoom](./nyoom.svg) | <img src="./pond.svg" width="128" alt="pond"><br>[pond](./pond.svg) | <img src="./sprint.svg" width="128" alt="sprint"><br>[sprint](./sprint.svg) |
 
-|  |  |
-| --- | --- |
-| <img src="./vortex.svg" width="128" alt="vortex"><br>[vortex](./vortex.svg) | <img src="./weave.svg" width="128" alt="weave"><br>[weave](./weave.svg) |
+|  |  |  |
+| --- | --- | --- |
+| <img src="./unabletorun.svg" width="128" alt="unabletorun"><br>[unabletorun](./unabletorun.svg) | <img src="./vortex.svg" width="128" alt="vortex"><br>[vortex](./vortex.svg) | <img src="./weave.svg" width="128" alt="weave"><br>[weave](./weave.svg) |
 
 ## 5×7 (3)
 
