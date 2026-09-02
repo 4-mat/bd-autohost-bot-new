@@ -1,4 +1,5 @@
 import { send, sendPm, toId } from "../utils.js";
+import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
 import {
   classes,
@@ -10,7 +11,12 @@ import {
 import { WhatIs, Reference } from "../data/index.js";
 import { modeDescription, describeModes } from "../data/gamemodes.js";
 
-export function infoCommand(user: User, cmd: string, args: string) {
+export function infoCommand(
+  room: Room | null,
+  user: User,
+  cmd: string,
+  args: string,
+) {
   const target = user.name;
 
   if (cmd === "wt") {
@@ -19,43 +25,43 @@ export function infoCommand(user: User, cmd: string, args: string) {
 
     // List every game mode (the doc's "/rfaq modes").
     if (id === "modes" || id === "gamemodes") {
-      sendPm(target, describeModes());
+      sendInfo(room, target, describeModes());
       return;
     }
 
     // Check WhatIs database
     const entry = WhatIs.get(id);
     if (entry) {
-      sendPm(target, entry);
+      sendInfo(room, target, entry);
       return;
     }
 
     // Single mode lookup (e.g. %wt pvpj, %wt ntr).
     const mode = modeDescription(args);
     if (mode) {
-      sendPm(target, mode);
+      sendInfo(room, target, mode);
       return;
     }
 
     // Check weapons
     const weapon = weapons.get(id);
     if (weapon) {
-      const lines = [`**${weapon.name}** (${weapon.branch})`];
+      const lines = [`<b>${escHtml(weapon.name)}</b> (${escHtml(weapon.branch)})`];
       for (const ab of weapon.abilities) {
-        lines.push(buildAbilityLine(ab));
+        lines.push(buildAbilityHtml(ab));
       }
-      sendPm(target, lines.join("\n"));
+      sendInfo(room, target, lines.join("<br>"));
       return;
     }
 
     // Check classes
     const cls = classes.get(id);
     if (cls) {
-      const lines = [`**${cls.name}**`];
+      const lines = [`<b>${escHtml(cls.name)}</b>`];
       for (const ab of cls.abilities) {
-        lines.push(buildAbilityLine(ab));
+        lines.push(buildAbilityHtml(ab));
       }
-      sendPm(target, lines.join("\n"));
+      sendInfo(room, target, lines.join("<br>"));
       return;
     }
 
@@ -75,7 +81,19 @@ export function infoCommand(user: User, cmd: string, args: string) {
   }
 }
 
-function buildAbilityLine(ab: {
+function sendInfo(room: Room | null, target: string, text: string) {
+  if (room) {
+    send(room.id, `/addhtmlbox <div style="padding:4px 8px;font-size:13px">${text}</div>`);
+  } else {
+    sendPm(target, text);
+  }
+}
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildAbilityHtml(ab: {
   name: string;
   level: number | "EX1" | "EX2";
   frequency: string;
@@ -86,5 +104,5 @@ function buildAbilityLine(ab: {
   range: string;
   effect: string;
 }): string {
-  return `  **${ab.name}** (Lv.${ab.level}) - ${ab.frequency}, MR ${ab.mr}, ${ab.roll}, ${ab.damageType} ${ab.actionType}, ${ab.range}: ${ab.effect}`;
+  return `  <b>${escHtml(ab.name)}</b> (Lv.${ab.level}) - ${escHtml(ab.frequency)}, MR ${ab.mr}, ${escHtml(ab.roll)}, ${escHtml(ab.damageType)} ${escHtml(ab.actionType)}, ${escHtml(ab.range)}: ${escHtml(ab.effect)}`;
 }
