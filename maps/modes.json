@@ -1,0 +1,62 @@
+{
+  "modes": {
+    "ffa": [
+      "arena",
+      "battledome",
+      "colosseum",
+      "moshpit",
+      "skytemple",
+      "squiggle",
+      "sunsets",
+      "zonestelu",
+      "tictactoe",
+      "stonehenge"
+    ],
+    "ntr": [
+      "ntr",
+      "bifurcation",
+      "nyoom",
+      "pond",
+      "duelingground",
+      "sprint",
+      "unabletorun",
+      "minicrossroads",
+      "vortex",
+      "weave"
+    ],
+    "jugg": [
+      "madhouse",
+      "volcano",
+      "demonsheart",
+      "lavaflows",
+      "corridor",
+      "hidenseek",
+      "amazeing",
+      "yggdrasil"
+    ],
+    "pvp": [
+      "islands",
+      "trench",
+      "trenches",
+      "frostbite",
+      "valley",
+      "canyon",
+      "junction",
+      "hallways",
+      "fortress",
+      "snowyvillage"
+    ],
+    "1v1": [
+      "duel",
+      "arena",
+      "crossout"
+    ]
+  },
+  "labels": {
+    "ffa": "FFA",
+    "ntr": "NTR",
+    "jugg": "JUGG",
+    "pvp": "PvP",
+    "1v1": "1v1"
+  }
+}

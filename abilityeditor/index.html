@@ -1,0 +1,1510 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%2324557A'/><text x='50' y='68' font-size='52' font-family='monospace' font-weight='bold' text-anchor='middle' fill='%23fff'>A</text></svg>" />
+    <title>Battle Dome Ability Editor</title>
+    <style>
+      :root {
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --panel-2: #f2f3f5;
+        --border: #b9b9b9;
+        --border-soft: #d8d8d8;
+        --text: #212529;
+        --text-dim: #666666;
+        --accent: #24567a;
+        --accent-2: #2b5e8c;
+        --ok: #1a7f37;
+        --warn: #b25e00;
+        --err: #c33;
+        --radius: 5px;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: Verdana, Tahoma, "Segoe UI", Arial, sans-serif;
+        font-size: 12px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ---------- header ---------- */
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border);
+        background: #ffffff;
+        flex-wrap: wrap;
+      }
+      .logo {
+        font-size: 15px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-right: 6px;
+      }
+      .logo .em {
+        font-size: 17px;
+      }
+      .logo span.acc {
+        color: var(--accent-2);
+      }
+      .spacer {
+        flex: 1;
+      }
+      #status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #bbb;
+        display: inline-block;
+      }
+      .dot.on {
+        background: var(--ok);
+      }
+      .dot.err {
+        background: var(--err);
+      }
+      #dirty-chip {
+        display: none;
+        background: #fff4e5;
+        border: 1px solid #e6a23c;
+        color: #b25e00;
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      #dirty-chip.show {
+        display: inline-block;
+      }
+      button {
+        font-family: inherit;
+        font-size: 12px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: #fff;
+        color: var(--text);
+        padding: 4px 12px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--panel-2);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.primary:hover {
+        background: var(--accent-2);
+      }
+      button.danger {
+        color: var(--err);
+      }
+      button.danger:hover {
+        background: #fdecec;
+      }
+      button.mini {
+        padding: 2px 8px;
+        font-size: 11px;
+      }
+
+      /* ---------- layout ---------- */
+      main {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      aside {
+        width: 260px;
+        min-width: 200px;
+        border-right: 1px solid var(--border);
+        background: var(--panel);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      #tabs {
+        display: flex;
+        border-bottom: 1px solid var(--border);
+      }
+      #tabs button {
+        flex: 1;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        padding: 8px 4px;
+        font-weight: 600;
+        color: var(--text-dim);
+      }
+      #tabs button.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+      #search {
+        margin: 8px;
+        padding: 5px 8px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        font-family: inherit;
+        font-size: 12px;
+      }
+      #item-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0 6px 8px;
+      }
+      .item-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 8px;
+        border-radius: var(--radius);
+        cursor: pointer;
+      }
+      .item-row:hover {
+        background: var(--panel-2);
+      }
+      .item-row.active {
+        background: #e7eef4;
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .item-row .branch {
+        color: var(--text-dim);
+        font-size: 10px;
+        margin-left: auto;
+      }
+      .badge {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        border-radius: 3px;
+        padding: 1px 5px;
+        color: #fff;
+        background: #7c3aed;
+      }
+      #new-btns {
+        display: flex;
+        gap: 6px;
+        padding: 8px;
+        border-top: 1px solid var(--border);
+      }
+      #new-btns button {
+        flex: 1;
+      }
+
+      /* ---------- editor panel ---------- */
+      #editor {
+        flex: 1;
+        overflow-y: auto;
+        padding: 14px 18px;
+      }
+      #empty-state {
+        color: var(--text-dim);
+        text-align: center;
+        margin-top: 60px;
+        font-size: 13px;
+        line-height: 1.8;
+      }
+      .detail-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .detail-head h2 {
+        font-size: 16px;
+      }
+      .detail-head .sub {
+        color: var(--text-dim);
+        font-size: 11px;
+      }
+      .grid {
+        display: grid;
+        gap: 8px;
+      }
+      .grid.stats {
+        grid-template-columns: repeat(7, minmax(60px, 1fr));
+        margin: 10px 0;
+      }
+      .grid.ability-grid {
+        grid-template-columns: 2fr 1fr 1.4fr;
+      }
+      .grid.ability-grid2 {
+        grid-template-columns: 1fr 1.2fr 1.2fr 0.8fr;
+      }
+      .field label {
+        display: block;
+        font-size: 10px;
+        color: var(--text-dim);
+        margin-bottom: 2px;
+      }
+      .field input,
+      .field select,
+      .field textarea {
+        width: 100%;
+        padding: 4px 6px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        font-family: inherit;
+        font-size: 12px;
+        background: #fff;
+        color: var(--text);
+      }
+      .field textarea {
+        resize: vertical;
+        min-height: 52px;
+      }
+      .field input:focus,
+      .field select:focus,
+      .field textarea:focus {
+        outline: 2px solid #bcd6ea;
+        border-color: var(--accent);
+      }
+      .section-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        margin: 16px 0 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .section-title .count {
+        font-weight: 400;
+      }
+      .ability-card {
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius);
+        background: var(--panel);
+        margin-bottom: 8px;
+      }
+      .ability-card .card-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        cursor: pointer;
+      }
+      .ability-card .card-head:hover {
+        background: var(--panel-2);
+      }
+      .ability-card.open .card-head {
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .ability-card .caret {
+        color: var(--text-dim);
+        transition: transform 0.12s;
+      }
+      .ability-card.open .caret {
+        transform: rotate(90deg);
+      }
+      .ability-card .card-name {
+        font-weight: 600;
+      }
+      .ability-card .card-meta {
+        color: var(--text-dim);
+        font-size: 11px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .ability-card .card-meta .lv {
+        background: var(--panel-2);
+        border-radius: 3px;
+        padding: 0 5px;
+      }
+      .ability-card .card-body {
+        display: none;
+        padding: 10px;
+        gap: 8px;
+      }
+      .ability-card.open .card-body {
+        display: grid;
+      }
+      .card-body .full {
+        grid-column: 1 / -1;
+      }
+      .card-actions {
+        grid-column: 1 / -1;
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+      .hint {
+        color: var(--text-dim);
+        font-size: 11px;
+      }
+      .inline {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .inline label.inline-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+      }
+      #toasts {
+        position: fixed;
+        bottom: 14px;
+        right: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        z-index: 100;
+      }
+      .toast {
+        background: #1f2933;
+        color: #fff;
+        padding: 8px 14px;
+        border-radius: 6px;
+        font-size: 12px;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+        max-width: 440px;
+        animation: slidein 0.15s ease;
+      }
+      .toast.ok {
+        background: var(--ok);
+      }
+      .toast.err {
+        background: var(--err);
+      }
+      .toast.warn {
+        background: var(--warn);
+      }
+      @keyframes slidein {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+      }
+      .modal {
+        background: #fff;
+        border-radius: 8px;
+        padding: 18px;
+        width: 340px;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+      }
+      .modal h3 {
+        margin-bottom: 10px;
+        font-size: 14px;
+      }
+      .modal .field {
+        margin-bottom: 10px;
+      }
+      .modal .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      @media (max-width: 760px) {
+        main {
+          flex-direction: column;
+        }
+        aside {
+          width: 100%;
+          min-width: 0;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+          max-height: 200px;
+        }
+        .grid.stats {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="logo"><span class="em">✦</span> Battle Dome <span class="acc">Ability Editor</span></div>
+      <div id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></div>
+      <span class="spacer"></span>
+      <span id="dirty-chip">● unsaved edits</span>
+      <button id="btn-revert" title="Discard all unsaved edits (reload data from src/data/index.ts)">Revert</button>
+      <button id="btn-save" class="primary" title="Regenerate src/data/index.ts with the current edits (customs are excluded)">Save to Bot</button>
+    </header>
+    <main>
+      <aside>
+        <div id="tabs">
+          <button data-kind="class" class="active">Classes</button>
+          <button data-kind="weapon">Weapons</button>
+        </div>
+        <input id="search" type="text" placeholder="Search…" spellcheck="false" />
+        <div id="item-list"></div>
+        <div id="new-btns">
+          <button id="btn-new" class="primary">＋ New</button>
+        </div>
+      </aside>
+      <section id="editor">
+        <div id="empty-state">
+          Select a class or weapon to edit.<br />
+          <span class="hint">Edits apply to the running bot immediately and are mirrored to the test client<br />(<b>npm run testapp</b> → localhost:4000) for live testing. “Save to Bot” writes them<br />into <b>src/data/index.ts</b> as a minimal diff for your PR.</span>
+        </div>
+        <div id="detail" style="display:none"></div>
+      </section>
+    </main>
+    <div id="toasts"></div>
+    <script>
+    const $ = (s) => document.querySelector(s);
+    const esc = (s) =>
+      String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+    const state = {
+      kind: "class",
+      selected: null,
+      filter: "",
+      data: { classes: [], weapons: [], customClasses: [], customWeapons: [] },
+      pending: false,
+      dirty: false,
+    };
+
+    // ---- public demo (static) mode ----
+    const STATIC = !!(window.__BD_EDITOR_DATA__);
+    const REPO = window.__BD_EDITOR_REPO__ || "";
+    const LS_KEY = "bd-editor-demo:v1";
+    const toId = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, "EX1", "EX2"];
+    const ACTIONS = [
+      "Standard", "Full", "Movement", "Swift", "Free", "Trigger", "Reaction", "Passive", "",
+    ];
+    const DAMAGE_TYPES = ["Physical", "Magical", ""];
+    const STATS = ["hp", "atk", "mag", "pd", "md", "eva", "mp"];
+
+    function list() {
+      return state.data[state.kind === "class" ? "classes" : "weapons"];
+    }
+    function customListFor(kind) {
+      return kind === "class" ? state.data.customClasses : state.data.customWeapons;
+    }
+    function isCustomName(name) {
+      const list = customListFor(state.kind);
+      return list.includes(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
+    }
+    function getItem(name) {
+      return list().find((x) => x.name === name) || null;
+    }
+
+    // ---------- toast ----------
+    function toast(text, tone) {
+      const t = document.createElement("div");
+      t.className = "toast " + (tone || "");
+      t.textContent = text;
+      $("#toasts").appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
+    // ---------- api ----------
+    async function api(path, body) {
+      if (STATIC) return staticApi(path, body);
+      const res = await fetch(path, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+      return data;
+    }
+
+    // ---------- public demo (static) mode ----------
+    // The demo build injects window.__BD_EDITOR_DATA__ (a snapshot of the bot's
+    // data). In static mode there is no server: edits live in this page's
+    // memory, custom test classes/weapons persist in localStorage, and
+    // "Propose to Bot" drafts a GitHub issue that a workflow turns into a PR.
+
+    function seedStatic() {
+      const base = window.__BD_EDITOR_DATA__ || { classes: [], weapons: [] };
+      const data = {
+        classes: (base.classes || []).map((c) => JSON.parse(JSON.stringify(c))),
+        weapons: (base.weapons || []).map((w) => JSON.parse(JSON.stringify(w))),
+        customClasses: [],
+        customWeapons: [],
+      };
+      try {
+        const saved = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+        for (const c of saved) {
+          if (!c || !c.entry || !c.entry.name) continue;
+          // Skip stale customs whose name now belongs to a built-in entry
+          // (e.g. the demo was rebuilt and it became a real class).
+          if (c.kind === "class" && data.classes.some((x) => x.name === c.entry.name)) continue;
+          if (c.kind === "weapon" && data.weapons.some((x) => x.name === c.entry.name)) continue;
+          if (c.kind === "class") {
+            data.classes.push(c.entry);
+            data.customClasses.push(toId(c.entry.name));
+          } else if (c.kind === "weapon") {
+            data.weapons.push(c.entry);
+            data.customWeapons.push(toId(c.entry.name));
+          }
+        }
+      } catch (e) {
+        /* corrupt storage — start fresh */
+      }
+      state.data = data;
+    }
+
+    function persistCustoms() {
+      try {
+        const out = [];
+        for (const kind of ["class", "weapon"]) {
+          const arr = state.data[kind === "class" ? "classes" : "weapons"];
+          const list = customListFor(kind);
+          for (const item of arr) {
+            if (list.includes(toId(item.name))) {
+              out.push({ kind, entry: item });
+            }
+          }
+        }
+        localStorage.setItem(LS_KEY, JSON.stringify(out));
+      } catch (e) {
+        toast("Could not save customs to this browser: " + e.message, "warn");
+      }
+    }
+
+    function staticApi(path, body) {
+      switch (path) {
+        case "/api/data":
+          return Promise.resolve(state.data);
+        case "/api/status":
+          return Promise.resolve({
+            pendingRegen: false,
+            customCount: state.data.customClasses.length + state.data.customWeapons.length,
+          });
+        case "/api/update":
+          return Promise.resolve({ ok: true }); // GUI applies the patch locally
+        case "/api/ability":
+          return staticAbility(body);
+        case "/api/custom":
+          return staticAddCustom(body);
+        case "/api/custom/remove":
+          return staticRemoveCustom(body);
+        case "/api/reset":
+          seedStatic();
+          return Promise.resolve({ ok: true });
+        default:
+          return Promise.reject(new Error("Unknown endpoint in demo mode: " + path));
+      }
+    }
+
+    function staticAbility(body) {
+      const arr = state.data[body.kind === "class" ? "classes" : "weapons"];
+      const item = arr.find((x) => x.name === body.owner);
+      if (!item) return Promise.reject(new Error("Item not found: " + body.owner));
+      const abilities = item.abilities || (item.abilities = []);
+      if (body.action === "save") {
+        const i = abilities.findIndex((x) => x.name === body.name);
+        // Renaming into an id another ability already uses must be rejected
+        // (mirrors the server-side guard in abilityeditor/server.ts).
+        const rawName = body.ability?.name;
+        if (typeof rawName !== "string" || !rawName.trim()) {
+          return Promise.reject(new Error("ability needs a name"));
+        }
+        body.ability.name = rawName.trim();
+        const newId = toId(body.ability.name);
+        if (i >= 0 && newId !== toId(String(body.name)) && abilities.some((x) => toId(String(x.name)) === newId)) {
+          return Promise.reject(new Error("An ability with that name already exists"));
+        }
+        if (i >= 0) abilities[i] = body.ability;
+        else abilities.push(body.ability);
+      } else if (body.action === "add") {
+        abilities.push(body.ability);
+      } else if (body.action === "remove") {
+        const i = abilities.findIndex((x) => x.name === body.name);
+        if (i >= 0) abilities.splice(i, 1);
+      }
+      // Persist custom entries so their edits survive a reload in demo mode.
+      const kindList = customListFor(body.kind);
+      if (kindList.includes(toId(item.name))) persistCustoms();
+      return Promise.resolve({ ok: true });
+    }
+
+    function staticAddCustom(body) {
+      const kind = body.kind === "weapon" ? "weapon" : "class";
+      const arr = state.data[kind === "class" ? "classes" : "weapons"];
+      const name = String((body.item && body.item.name) || "").trim();
+      if (!name) return Promise.reject(new Error("Name is required."));
+      if (arr.some((x) => x.name === name)) {
+        return Promise.reject(new Error('An entry named "' + name + '" already exists.'));
+      }
+      const entry = { name };
+      if (kind === "weapon") entry.branch = "Bow";
+      entry.stats = {};
+      for (const st of STATS) entry.stats[st] = "0";
+      entry.description = "";
+      entry.abilities = [];
+      arr.push(entry);
+      const id = toId(name);
+      const kindList = customListFor(kind);
+      if (!kindList.includes(id)) kindList.push(id);
+      persistCustoms();
+      return Promise.resolve({ ok: true });
+    }
+
+    function staticRemoveCustom(body) {
+      const kind = body.kind === "weapon" ? "weapon" : "class";
+      const arr = state.data[kind === "class" ? "classes" : "weapons"];
+      const i = arr.findIndex((x) => x.name === body.name);
+      if (i >= 0) arr.splice(i, 1);
+      const kindList = customListFor(kind);
+      state.data[kind === "class" ? "customClasses" : "customWeapons"] = kindList.filter(
+        (id) => id !== toId(body.name),
+      );
+      persistCustoms();
+      return Promise.resolve({ ok: true });
+    }
+
+    function buildProposal() {
+      const base = window.__BD_EDITOR_DATA__ || { classes: [], weapons: [] };
+      const updates = [];
+      const adds = [];
+      for (const kind of ["class", "weapon"]) {
+        const cur = state.data[kind === "class" ? "classes" : "weapons"];
+        const baseList = base[kind === "class" ? "classes" : "weapons"];
+        for (const item of cur) {
+          if (isCustomName(item.name)) {
+            adds.push({ kind, entry: item });
+          } else {
+            const b = baseList.find((x) => x.name === item.name);
+            if (b && JSON.stringify(b) !== JSON.stringify(item)) {
+              updates.push({ kind, name: item.name, entry: item });
+            }
+          }
+        }
+      }
+      return { updates, adds };
+    }
+
+    async function proposeToBot() {
+      const p = buildProposal();
+      const total = p.updates.length + p.adds.length;
+      if (total === 0) {
+        toast("Nothing to propose — your edits match the bot's current data.", "ok");
+        return;
+      }
+      const lines = ["## Ability Editor proposal", ""];
+      lines.push("Proposed from the public Ability Editor demo.");
+      lines.push("");
+      lines.push("### Summary");
+      lines.push("");
+      if (p.updates.length) {
+        lines.push("- " + p.updates.length + " edit(s): " + p.updates.map((u) => u.name).join(", "));
+      }
+      if (p.adds.length) {
+        lines.push("- " + p.adds.length + " new: " + p.adds.map((a) => a.entry.name).join(", "));
+      }
+      lines.push("");
+      lines.push("### Payload");
+      lines.push("");
+      lines.push("```json");
+      lines.push(JSON.stringify(p));
+      lines.push("```");
+      const title =
+        "Ability: " +
+        (p.updates.length ? "Edit " + p.updates.map((u) => u.name).join(", ") : "") +
+        (p.updates.length && p.adds.length ? " + " : "") +
+        (p.adds.length ? "Add " + p.adds.map((a) => a.entry.name).join(", ") : "");
+      const body = lines.join("\n");
+      const url =
+        "https://github.com/" +
+        REPO +
+        "/issues/new?title=" +
+        encodeURIComponent(title) +
+        "&body=" +
+        encodeURIComponent(body);
+      // GitHub rejects very long URLs — for big proposals open a blank issue
+      // and hand the body to the clipboard instead.
+      if (url.length > 6000) {
+        try {
+          await navigator.clipboard.writeText(body);
+          toast(
+            "Proposal is large — the issue body was copied to your clipboard. Paste it into the opened issue.",
+            "warn",
+          );
+        } catch {
+          toast(
+            "Proposal is too large for a URL. Open a blank issue and paste the payload manually.",
+            "warn",
+          );
+        }
+        window.open(
+          "https://github.com/" + REPO + "/issues/new?title=" + encodeURIComponent(title),
+          "_blank",
+        );
+        return;
+      }
+      window.open(url, "_blank");
+      toast("Proposal drafted — a GitHub issue should open in a new tab.", "ok");
+    }
+
+    async function fetchData() {
+      const d = STATIC ? state.data : await api("/api/data");
+      state.data = d;
+      renderList();
+      if (state.selected) {
+        if (getItem(state.selected)) renderDetail();
+        else state.selected = null;
+      }
+      if (!state.selected) {
+        $("#empty-state").style.display = "";
+        $("#detail").style.display = "none";
+      }
+    }
+
+    // ---------- sidebar ----------
+    function renderList() {
+      const items = list().filter((x) =>
+        x.name.toLowerCase().includes(state.filter.toLowerCase()),
+      );
+      const rows = items
+        .map((x) => {
+          const custom = isCustomName(x.name);
+          return (
+            '<div class="item-row' +
+            (state.selected === x.name ? " active" : "") +
+            '" data-name="' +
+            esc(x.name) +
+            '" tabindex="0" role="button" aria-label="' +
+            esc("Select " + x.name) +
+            '">' +
+            (custom ? '<span class="badge">CUSTOM</span>' : "") +
+            "<span>" +
+            esc(x.name) +
+            "</span>" +
+            (state.kind === "weapon" && x.branch
+              ? '<span class="branch">' + esc(x.branch) + "</span>"
+              : "") +
+            "</div>"
+          );
+        })
+        .join("");
+      $("#item-list").innerHTML =
+        rows || '<div class="hint" style="padding:10px">Nothing found.</div>';
+      document.querySelectorAll("#tabs button").forEach((b) =>
+        b.classList.toggle("active", b.dataset.kind === state.kind),
+      );
+      $("#btn-new").textContent = "＋ New " + (state.kind === "class" ? "Class" : "Weapon");
+    }
+
+    // ---------- status ----------
+    async function refreshStatus() {
+      if (STATIC) {
+        state.pending = false;
+        $("#dirty-chip").classList.toggle("show", state.pending || state.dirty);
+        $("#dot").className = "dot on";
+        const nCustom = state.data.customClasses.length + state.data.customWeapons.length;
+        $("#status-text").textContent =
+          "demo mode · " +
+          list().length +
+          " " +
+          state.kind +
+          (state.kind === "class" ? "es" : "s") +
+          (nCustom ? " · " + nCustom + " custom" : "");
+        return;
+      }
+      try {
+        const s = await api("/api/status");
+        state.pending = !!s.pendingRegen;
+        $("#dirty-chip").classList.toggle("show", state.pending || state.dirty);
+        $("#dot").className = "dot on";
+        $("#status-text").textContent =
+          "connected · " + list().length + " " + state.kind + (state.kind === "class" ? "es" : "s") +
+          (s.customCount ? " · " + s.customCount + " custom" : "");
+      } catch (e) {
+        $("#dot").className = "dot err";
+        $("#status-text").textContent = "offline — is the editor server running? (npm run editor)";
+      }
+    }
+
+    // ---------- modal ----------
+    function promptModal(title, label, placeholder, onOk) {
+      const back = document.createElement("div");
+      back.className = "modal-backdrop";
+      back.innerHTML =
+        '<div class="modal"><h3>' +
+        esc(title) +
+        '</h3><div class="field"><label>' +
+        esc(label) +
+        '</label><input id="modal-input" type="text" placeholder="' +
+        esc(placeholder) +
+        '" spellcheck="false" /></div><div class="actions"><button data-act="cancel">Cancel</button><button data-act="ok" class="primary">OK</button></div></div>';
+      document.body.appendChild(back);
+      const input = back.querySelector("#modal-input");
+      setTimeout(() => input.focus(), 30);
+      const done = (val) => {
+        back.remove();
+        if (val !== null) onOk(val);
+      };
+      back.addEventListener("click", (e) => {
+        if (e.target === back) done(null);
+        const act = e.target.closest("button")?.dataset.act;
+        if (act === "cancel") done(null);
+        else if (act === "ok") done(input.value.trim() || null);
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") done(input.value.trim() || null);
+        if (e.key === "Escape") done(null);
+      });
+    }
+
+    // ---------- detail editor ----------
+    function field(id, label, value, extra) {
+      return (
+        '<div class="field' +
+        (extra && extra.full ? " full" : "") +
+        '"><label>' +
+        label +
+        "</label>" +
+        (extra && extra.textarea
+          ? '<textarea data-f="' +
+            id +
+            '">' +
+            esc(value) +
+            "</textarea>"
+          : '<input data-f="' +
+            id +
+            '" type="text" value="' +
+            esc(value) +
+            '" spellcheck="false" />') +
+        "</div>"
+      );
+    }
+
+    function abilityBody(a, idx) {
+      const cost = a.cost || {};
+      const sel = (f, opts) =>
+        opts
+          .map(
+            (o) =>
+              '<option value="' +
+              esc(o) +
+              '"' +
+              (String(a[f]) === String(o) ? " selected" : "") +
+              ">" +
+              esc(o || "— none —") +
+              "</option>",
+          )
+          .join("");
+      const choices = Array.isArray(a.choices)
+        ? JSON.stringify(a.choices, null, 2)
+        : "";
+      const lv = sel("level", LEVELS.map(String));
+      return (
+        '<div class="grid ability-grid">' +
+        field("name", "Name", a.name) +
+        '<div class="field"><label>Level</label><select data-f="level">' +
+        lv +
+        "</select></div>" +
+        field("frequency", "Frequency (Every Turn / EoT / Twice…)", a.frequency) +
+        "</div>" +
+        '<div class="grid ability-grid2">' +
+        field("mr", "MR", a.mr) +
+        field("roll", "Roll (e.g. 2d6+3)", a.roll) +
+        '<div class="field"><label>Damage Type</label><select data-f="damageType">' +
+        sel("damageType", DAMAGE_TYPES) +
+        "</select></div>" +
+        '<div class="field"><label>Action Type</label><select data-f="actionType">' +
+        sel("actionType", ACTIONS) +
+        "</select></div>" +
+        "</div>" +
+        '<div class="grid ability-grid2">' +
+        field("targetAmount", "Targets (number or AoE)", a.targetAmount) +
+        field("targetGroup", "Target Group", a.targetGroup) +
+        field("range", "Range", a.range) +
+        field("maxUses", "Max Uses (per battle)", a.maxUses === undefined ? "" : a.maxUses) +
+        "</div>" +
+        field("effect", "Effect (BD Lang)", a.effect, { textarea: true, full: true }) +
+        '<div class="full inline">' +
+        '<label class="inline-label"><input type="checkbox" data-f="hasCost"' +
+        (a.cost ? " checked" : "") +
+        "/> Cost</label>" +
+        (a.cost ?
+          '<span class="inline"><select data-f="cost.type" style="width:110px">' +
+            ["HP", "MP", "Resource"].map(
+              (o) =>
+                '<option value="' + o + '"' + (cost.type === o ? " selected" : "") + ">" + o + "</option>",
+            ).join("") +
+            "</select>" +
+            (cost.type === "Resource"
+              ? '<input data-f="cost.resource" type="text" placeholder="resource name" value="' +
+                esc(cost.resource || "") +
+                '" style="width:110px" />'
+              : "") +
+            '<input data-f="cost.amount" type="text" value="' +
+            esc(cost.amount || "") +
+            '" style="width:60px" />' +
+            '<label class="inline-label"><input type="checkbox" data-f="cost.prompt"' +
+            (cost.prompt ? " checked" : "") +
+            "/> ask amount</label></span>" : "") +
+        "</div>" +
+        field(
+          "choices",
+          "Choices (JSON array of {id,label} — optional)",
+          choices,
+          { textarea: true, full: true },
+        ) +
+        '<div class="card-actions"><button class="mini danger" data-act="del-ability" data-idx="' +
+        idx +
+        '">Delete ability</button></div>'
+      );
+    }
+
+    function renderDetail() {
+      const item = getItem(state.selected);
+      if (!item) return;
+      const custom = isCustomName(item.name);
+      const stats = item.stats || {};
+      const statsHtml =
+        '<div class="grid stats">' +
+        STATS.map(
+          (s) =>
+            '<div class="field"><label>' +
+            s.toUpperCase() +
+            '</label><input data-stat="' +
+            s +
+            '" type="text" value="' +
+            esc(stats[s] ?? "") +
+            '" spellcheck="false" /></div>',
+        ).join("") +
+        "</div>";
+      const abilities = item.abilities || [];
+      const cards = abilities
+        .map(
+          (a, i) =>
+            '<div class="ability-card" data-idx="' +
+            i +
+            '"><div class="card-head"><span class="caret">▶</span><span class="card-name">' +
+            esc(a.name || "(unnamed)") +
+            '</span><span class="card-meta"><span class="lv">Lv ' +
+            esc(a.level) +
+            "</span><span>" +
+            esc(a.actionType || "—") +
+            "</span><span>" +
+            esc(a.frequency || "") +
+            "</span><span>" +
+            esc(a.range || "") +
+            "</span></span></div><div class=\"card-body\">" +
+            abilityBody(a, i) +
+            "</div></div>",
+        )
+        .join("");
+      const detail =
+        '<div class="detail-head"><h2>' +
+        esc(item.name) +
+        "</h2>" +
+        (custom ? '<span class="badge">CUSTOM</span>' : "") +
+        '<span class="sub">' +
+        (state.kind === "weapon" ? "Weapon" : "Class") +
+        "</span><span class=\"spacer\"></span>" +
+        (custom
+          ? '<button class="danger mini" data-act="del-custom">Delete custom</button>'
+          : "") +
+        "</div>" +
+        field("name", "Name", item.name) +
+        (state.kind === "weapon"
+          ? field("branch", "Branch", item.branch || "")
+          : "") +
+        field("description", "Description", item.description, { textarea: true }) +
+        '<div class="section-title">Base Stats</div>' +
+        statsHtml +
+        '<div class="section-title">Abilities <span class="count">(' +
+        abilities.length +
+        ')</span><span class="spacer"></span><button class="mini" data-act="add-ability">＋ Add ability</button></div>' +
+        (cards || '<div class="hint">No abilities yet.</div>');
+      $("#detail").innerHTML = detail;
+      $("#detail").style.display = "";
+      $("#empty-state").style.display = "none";
+    }
+
+    // ---------- editing / saving ----------
+    const abilityTimers = new WeakMap();
+
+    function markDirty() {
+      state.dirty = true;
+      $("#dirty-chip").classList.add("show");
+    }
+
+    function currentItem() {
+      return getItem(state.selected);
+    }
+
+    function collectAbility(card) {
+      const a = {};
+      card.querySelectorAll("[data-f]").forEach((el) => {
+        const f = el.dataset.f;
+        if (f === "hasCost" || f.startsWith("cost.")) return;
+        a[f] = el.type === "checkbox" ? el.checked : el.value;
+      });
+      const hasCost = card.querySelector('[data-f="hasCost"]')?.checked;
+      if (hasCost) {
+        const c = { type: card.querySelector('[data-f="cost.type"]')?.value || "HP" };
+        const res = card.querySelector('[data-f="cost.resource"]');
+        if (c.type === "Resource" && res && res.value.trim()) c.resource = res.value.trim();
+        c.amount = Number(card.querySelector('[data-f="cost.amount"]')?.value || 0);
+        c.prompt = !!card.querySelector('[data-f="cost.prompt"]')?.checked;
+        a.cost = c;
+      } else {
+        delete a.cost;
+      }
+      const ch = card.querySelector('[data-f="choices"]');
+      if (ch && ch.value.trim()) {
+        try {
+          const parsed = JSON.parse(ch.value);
+          if (Array.isArray(parsed)) a.choices = parsed.filter((x) => x && x.id && x.label);
+          else delete a.choices;
+        } catch {
+          // Invalid JSON must not leak a raw string into the ability — drop it
+          // so the serializer never emits `choices: "not json",`.
+          delete a.choices;
+        }
+      } else {
+        delete a.choices;
+      }
+      return a;
+    }
+
+    function onAbilityEdit(card) {
+      markDirty();
+      clearTimeout(abilityTimers.get(card));
+      abilityTimers.set(card, setTimeout(() => flushAbility(card), 500));
+    }
+
+    async function flushAbility(card) {
+      if (!document.body.contains(card)) return;
+      const item = currentItem();
+      if (!item) return;
+      const ability = collectAbility(card);
+      const lookupName = card.dataset.lastname || ability.name;
+      try {
+        await api("/api/ability", {
+          kind: state.kind,
+          owner: item.name,
+          action: "save",
+          name: lookupName,
+          ability,
+        });
+        card.dataset.lastname = ability.name;
+        const i = item.abilities.findIndex((x) => x.name === lookupName);
+        if (i >= 0) item.abilities[i] = ability;
+        // Don't clear the dirty flag here: other cards/fields may still have
+        // pending edits — flushItems/saveToBot own the flag instead.
+        refreshStatus();
+      } catch (e) {
+        toast(e.message, "err");
+      }
+    }
+
+    async function addAbility() {
+      const item = currentItem();
+      if (!item) return;
+      const baseName = "New Ability";
+      let name = baseName;
+      for (let n = 2; (item.abilities || []).some((x) => x.name === name); n++) {
+        name = baseName + " " + n;
+      }
+      const def = {
+        name,
+        level: 1,
+        frequency: "Every Turn",
+        mr: 0,
+        roll: "1d6+0",
+        damageType: "Physical",
+        actionType: "Standard",
+        targetAmount: 1,
+        targetGroup: "Foe",
+        range: "Melee",
+        effect: "",
+      };
+      try {
+        await api("/api/ability", {
+          kind: state.kind,
+          owner: item.name,
+          action: "add",
+          ability: def,
+        });
+        state.openAbility = name;
+        await fetchData();
+        renderDetail();
+      } catch (e) {
+        toast(e.message, "err");
+      }
+    }
+
+    async function deleteAbility(idx) {
+      const item = currentItem();
+      if (!item) return;
+      const ab = item.abilities[idx];
+      if (!ab) return;
+      if (!confirm('Delete ability "' + ab.name + '"?')) return;
+      try {
+        await api("/api/ability", {
+          kind: state.kind,
+          owner: item.name,
+          action: "remove",
+          name: ab.name,
+        });
+        await fetchData();
+        renderDetail();
+      } catch (e) {
+        toast(e.message, "err");
+      }
+    }
+
+    // ---------- item edit queuing (per-item, safe across selection switches) --
+    let itemTimer2 = null;
+    const pendingPatches = new Map();
+
+    onItemEdit = function (patch) {
+      const item = currentItem();
+      if (!item) return;
+      const prev = pendingPatches.get(item) || {};
+      pendingPatches.set(item, Object.assign(prev, patch));
+      markDirty();
+      clearTimeout(itemTimer2);
+      itemTimer2 = setTimeout(flushItems, 500);
+    };
+
+    async function flushItems() {
+      const items = [...pendingPatches.entries()];
+      pendingPatches.clear();
+      for (const [item, patch] of items) {
+        const prevName = item.name;
+        try {
+          await api("/api/update", { kind: state.kind, name: prevName, patch });
+          for (const [k, v] of Object.entries(patch)) {
+            if (k === "stats") Object.assign(item.stats, v);
+            else item[k] = v;
+          }
+          const newName = patch.name ? String(patch.name).trim() : prevName;
+          if (newName !== prevName) {
+            state.selected = newName;
+            renderList();
+          }
+          // Keep custom edits persisted in demo mode (they live in localStorage).
+          const renameList = customListFor(state.kind);
+          if (STATIC && renameList.includes(toId(newName))) persistCustoms();
+        } catch (e) {
+          toast(e.message, "err");
+        }
+      }
+      state.dirty = false;
+      refreshStatus();
+    }
+
+    // ---------- open-card state ----------
+    function afterRender() {
+      const item = currentItem();
+      if (!item) return;
+      document.querySelectorAll("#detail .ability-card").forEach((card) => {
+        const ab = item.abilities[Number(card.dataset.idx)];
+        if (!ab) return;
+        card.dataset.lastname = ab.name;
+        const open = state.openAbility ? ab.name === state.openAbility : Number(card.dataset.idx) === 0;
+        card.classList.toggle("open", open);
+      });
+    }
+    const _renderDetail = renderDetail;
+    renderDetail = function () {
+      _renderDetail();
+      afterRender();
+    };
+
+    // ---------- events ----------
+    $("#item-list").addEventListener("click", (e) => {
+      const row = e.target.closest(".item-row");
+      if (!row) return;
+      state.selected = row.dataset.name;
+      state.openAbility = null;
+      renderList();
+      renderDetail();
+    });
+
+    // Keyboard access to the sidebar (the rows are focusable now).
+    $("#item-list").addEventListener("keydown", (e) => {
+      const row = e.target.closest(".item-row");
+      if (!row) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        state.selected = row.dataset.name;
+        state.openAbility = null;
+        renderList();
+        renderDetail();
+      }
+    });
+
+    document.querySelectorAll("#tabs button").forEach((b) =>
+      b.addEventListener("click", () => {
+        state.kind = b.dataset.kind;
+        if (!getItem(state.selected)) state.selected = null;
+        state.openAbility = null;
+        renderList();
+        if (state.selected) renderDetail();
+        else {
+          $("#empty-state").style.display = "";
+          $("#detail").style.display = "none";
+        }
+        refreshStatus();
+      }),
+    );
+
+    $("#search").addEventListener("input", (e) => {
+      state.filter = e.target.value;
+      renderList();
+    });
+
+    function onEditEvent(e) {
+      const t = e.target;
+      if (!t || !t.dataset) return;
+      const card = t.closest(".ability-card");
+      if (card) {
+        onAbilityEdit(card);
+        if (t.dataset && t.dataset.f === "hasCost") {
+          // Cost sub-fields only render when a.cost exists: reflect the checkbox
+          // into the in-memory ability, re-render, and re-queue the debounced
+          // save on the fresh card so the new fields get collected.
+          const item = currentItem();
+          if (item) {
+            const ab = item.abilities[Number(card.dataset.idx)];
+            if (ab) {
+              if (t.checked && !ab.cost) ab.cost = { type: "HP", amount: 0, prompt: false };
+              else if (!t.checked) delete ab.cost;
+            }
+            state.openAbility = ab ? ab.name : null;
+            renderDetail();
+            const cards = document.querySelectorAll("#detail .ability-card");
+            const fresh = cards[Number(card.dataset.idx)];
+            if (fresh) onAbilityEdit(fresh);
+          }
+        }
+        return;
+      }
+      if (t.dataset.stat) {
+        onItemEdit({ stats: { [t.dataset.stat]: t.value } });
+        return;
+      }
+      const f = t.dataset.f;
+      if (f === "name") onItemEdit({ name: t.value });
+      else if (f === "description" || f === "branch") onItemEdit({ [f]: t.value });
+    }
+    $("#editor").addEventListener("input", onEditEvent);
+    $("#editor").addEventListener("change", onEditEvent);
+
+    $("#editor").addEventListener("click", (e) => {
+      const head = e.target.closest(".card-head");
+      if (head) {
+        const card = head.closest(".ability-card");
+        card.classList.toggle("open");
+        const item = currentItem();
+        const ab = item && item.abilities[Number(card.dataset.idx)];
+        state.openAbility = ab ? ab.name : null;
+        return;
+      }
+      const actEl = e.target.closest("[data-act]");
+      if (!actEl) return;
+      const act = actEl.dataset.act;
+      if (act === "add-ability") addAbility();
+      else if (act === "del-ability") deleteAbility(Number(actEl.dataset.idx));
+      else if (act === "del-custom") deleteCustom();
+    });
+
+    // ---------- global actions ----------
+    async function saveToBot() {
+      if (STATIC) {
+        proposeToBot();
+        return;
+      }
+      try {
+        // Let any debounced edits land before regenerating, so "Save to Bot"
+        // never misses the last 500ms of typing.
+        if (itemTimer2) {
+          clearTimeout(itemTimer2);
+          itemTimer2 = null;
+          await flushItems();
+        }
+        for (const [, t] of abilityTimers) clearTimeout(t);
+        abilityTimers.clear();
+        const cards = [...document.querySelectorAll("#detail .ability-card")];
+        await Promise.all(cards.map((card) => flushAbility(card)));
+        const r = await api("/api/regenerate");
+        if (r.noChanges) {
+          toast("No changes to save — the source file already matches.", "ok");
+        } else {
+          const changed = [...(r.changed || []), ...(r.inserted || [])];
+          toast(
+            "Saved to src/data/index.ts — updated " +
+              changed.length +
+              " entries: " +
+              changed.slice(0, 6).join(", ") +
+              (changed.length > 6 ? ", …" : ""),
+            "ok",
+          );
+        }
+        refreshStatus();
+      } catch (e) {
+        toast("Save failed: " + e.message, "err");
+      }
+    }
+
+    async function revertAll() {
+      if (STATIC) {
+        if (
+          !confirm(
+            "Discard all unsaved edits and reload the bundled data? Custom test classes/weapons are kept.",
+          )
+        )
+          return;
+        seedStatic();
+        await fetchData();
+        renderDetail();
+        refreshStatus();
+        toast("Reverted — data reloaded from the bundled snapshot.", "ok");
+        return;
+      }
+      if (
+        !confirm(
+          "Discard ALL unsaved edits? In-memory data will be reloaded from src/data/index.ts. Custom test classes/weapons are kept.",
+        )
+      )
+        return;
+      try {
+        await api("/api/reset");
+        await fetchData();
+        renderDetail();
+        refreshStatus();
+        toast("Reverted — data reloaded from source.", "ok");
+      } catch (e) {
+        toast("Revert failed: " + e.message, "err");
+      }
+    }
+
+    function newCustom() {
+      promptModal(
+        "New " + (state.kind === "class" ? "Class" : "Weapon"),
+        "Name",
+        "e.g. Test " + (state.kind === "class" ? "Class" : "Weapon"),
+        async (name) => {
+          try {
+            await api("/api/custom", { kind: state.kind, item: { name } });
+            state.selected = name;
+            state.openAbility = null;
+            await fetchData();
+            renderDetail();
+            toast(
+              STATIC
+                ? 'Custom "' +
+                  name +
+                  '" created — saved in this browser. Use Propose to Bot to suggest adding it to the bot.'
+                : 'Custom "' +
+                  name +
+                  '" created — available in the test client, never written to src/data/index.ts.',
+              "ok",
+            );
+          } catch (e) {
+            toast(e.message, "err");
+          }
+        },
+      );
+    }
+
+    async function deleteCustom() {
+      const item = currentItem();
+      if (!item) return;
+      if (
+        !confirm(
+          STATIC
+            ? 'Delete custom "' + item.name + '"? It will be removed from this browser.'
+            : 'Delete custom "' + item.name + '"? It will be removed from memory and the test client.',
+        )
+      )
+        return;
+      try {
+        await api("/api/custom/remove", { kind: state.kind, name: item.name });
+        state.selected = null;
+        await fetchData();
+        $("#empty-state").style.display = "";
+        $("#detail").style.display = "none";
+        toast("Custom removed.", "ok");
+      } catch (e) {
+        toast(e.message, "err");
+      }
+    }
+
+    $("#btn-save").addEventListener("click", saveToBot);
+    $("#btn-revert").addEventListener("click", revertAll);
+    $("#btn-new").addEventListener("click", newCustom);
+
+    // ---------- init ----------
+    (async function init() {
+      if (STATIC) {
+        seedStatic();
+        renderList();
+        $("#btn-save").textContent = "Propose to Bot";
+        $("#btn-save").title =
+          "Draft a GitHub issue proposing these changes to the bot. A maintainer workflow turns approved issues into PRs (custom test entries are included as additions).";
+        $("#btn-revert").title =
+          "Discard all unsaved edits and reload the bundled data. Custom test classes/weapons are kept.";
+        const hint = document.querySelector("#empty-state .hint");
+        if (hint)
+          hint.innerHTML =
+            "Public demo: edits and custom test classes/weapons stay in this browser (localStorage). Propose to Bot opens a GitHub issue that maintainers can turn into a PR.";
+        refreshStatus();
+        return;
+      }
+      try {
+        await fetchData();
+      } catch (e) {
+        toast("Cannot reach the editor server. Start it with: npm run editor", "err");
+      }
+      refreshStatus();
+      setInterval(refreshStatus, 4000);
+    })();
+    </script>
+  </body>
+</html>

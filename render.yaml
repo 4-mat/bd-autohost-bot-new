@@ -8,3 +8,27 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20.14.0
+
+  - type: worker
+    name: bd-discord-issue-bot
+    env: node
+    plan: free
+    buildCommand: cd discord-issue-bot && npm install
+    startCommand: cd discord-issue-bot && npx tsx src/index.ts
+    envVars:
+      - key: NODE_VERSION
+        value: 20.14.0
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        value: 4-mat/bd-autohost-bot-new
+      - key: ROLE_ID
+        sync: false
+      - key: ROLE_NAME
+        value: super turbo

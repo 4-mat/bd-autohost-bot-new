@@ -10,3 +10,11 @@ nul
 *.log
 logs/
 AGENTS.md
+
+# Ability editor local state (never committed; not part of the bot)
+abilityeditor/customs.local.json
+abilityeditor/runtime-data.json
+dist-editor/
+
+# Local agent skills (installed locally, never committed)
+.agents/
