@@ -53,6 +53,12 @@ import {
   type Entity,
   type AbilityData,
 } from "../game/state.js";
+import {
+  MSG_NO_GAME,
+  MSG_GAME_STARTED,
+  MSG_NO_ACTIVE_TURN,
+  MSG_NOT_YOUR_TURN,
+} from "./messages";
 import { rollDice } from "../utils.js";
 import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
 import {
@@ -234,6 +240,21 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   if (!pos)
     return sendPm(user.name, "Invalid position. Use: %move e4[,entity]");
 
+  // Bounds-check the destination before anything else: parsePos happily
+  // yields negative or oversized coordinates ("a0" -> col -1, "z9" -> row
+  // 25). getReachableTiles would report them unreachable anyway, but fail
+  // loudly here so the host knows the tile is off the map rather than
+  // chasing a reachability puzzle.
+  if (
+    pos[0] < 0 ||
+    pos[1] < 0 ||
+    pos[0] >= game.map.length ||
+    pos[1] >= (game.map[0]?.length ?? 0)
+  ) {
+    failAct(game, entity, "tile off the map");
+    return sendPm(user.name, `${posStr} is off the map.`);
+  }
+
   // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
   const dash = cmd === "dash";
   const mp = dash ? Math.floor(getEffectiveMp(entity) * 1.5) : entity.mp;
@@ -323,11 +344,11 @@ function resolveActor(
     entity = getCurrentEntity(game);
   }
   if (!entity) {
-    sendPm(user.name, "No active turn.");
+    sendPm(user.name, MSG_NO_ACTIVE_TURN);
     return null;
   }
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    sendPm(user.name, "It's not your turn.");
+    sendPm(user.name, MSG_NOT_YOUR_TURN);
     return null;
   }
 
