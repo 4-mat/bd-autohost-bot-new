@@ -211,7 +211,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   const isTurn = game.turnOrder[game.turnIndex] === entity.num;
 
   const map = buildMiniMap(game, entity);
-  const stats = buildEntityStats(entity);
+  const stats = buildEntityStats(game, entity);
   const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game, true);
 
@@ -433,6 +433,27 @@ function buildBuffSuffix(entity: Entity): string {
   return ` <span style="color:#888;font-size:10px">(${parts.join(", ")})</span>`;
 }
 
+// -- Delayed Attacks Display --------------------------------------------------
+// Attacks parked on an entity by Delay-N clauses ("Delay moves have their
+// damage and effects delayed for N rounds, landing at the start of the user's
+// turn"). Damage was rolled at use time, so the block shows the stored number
+// plus the countdown so players can plan around incoming damage.
+
+function buildDelayBlock(game: Game, entity: Entity): string {
+  const list = entity.delayedAttacks ?? [];
+  if (list.length === 0) return "";
+  const rows = list
+    .map((da) => {
+      const target = game.entities.find((e) => e.num === da.targetNum);
+      const t = target ? `${target.num} (${target.name})` : da.targetNum;
+      const eta =
+        da.roundsLeft <= 1 ? "next turn" : `in ${da.roundsLeft} turns`;
+      return `<div style="font-size:10px;color:#c9c">⏳ ${esc(da.ability.name)} → ${esc(t)} · <b>${da.damage}</b> dmg · ${eta}</div>`;
+    })
+    .join("");
+  return `<div style="margin:2px 0;padding:2px 4px;border-left:2px solid #a0c;background:rgba(160,0,204,0.10)">${rows}</div>`;
+}
+
 function buildHpCell(entity: Entity): string {
   const shield = entity.statuses.find((s) => s.name.toLowerCase() === "shield");
   if (!shield || shield.damage <= 0) {
@@ -503,7 +524,7 @@ title="${esc(e.className)}, ${esc(e.weaponName)}">
 </th>
 `;
 
-    html += `<th style="padding:0px 8px">${esc(e.name)}${buildBuffSuffix(e)}</th>`;
+    html += `<th style="padding:0px 8px">${esc(e.name)}${buildBuffSuffix(e)}${buildDelayBlock(game, e)}</th>`;
 
     html += `
 <th style="padding:0px 8px">
@@ -643,7 +664,7 @@ function buildControls(game: Game): string {
 
 // -- Entity Stats (Player) ----------------------------------------------------
 
-function buildEntityStats(entity: Entity): string {
+function buildEntityStats(game: Game, entity: Entity): string {
   const hpPct = Math.max(0, (entity.curhp / entity.maxhp) * 100);
   const hpColor = hpPct > 50 ? "#0c0" : hpPct > 25 ? "#cc0" : "#c00";
 
@@ -667,6 +688,11 @@ function buildEntityStats(entity: Entity): string {
       const sign = b.amount > 0 ? "+" : "";
       html += `<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:3px;background:${color};color:#fff;font-size:10px">${sign}${b.amount} ${esc(b.stat)} (${b.rounds}r)</span>`;
     }
+  }
+
+  const delayBlock = buildDelayBlock(game, entity);
+  if (delayBlock) {
+    html += `<div style="margin-top:3px"><b style="color:#a0c;font-size:10px">DELAYED ATTACKS</b>${delayBlock}</div>`;
   }
 
   html += "</div>";

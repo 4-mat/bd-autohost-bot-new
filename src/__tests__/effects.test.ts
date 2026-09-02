@@ -1309,3 +1309,159 @@ describe("applyEffects: regressions for non-apex effects", () => {
     expect(bleed?.rounds).toBe(3);
   });
 });
+
+// =============================================================================
+// Resource changes (Gain / Spend / Lose X Resource)
+// =============================================================================
+
+describe("applyEffects: resource changes", () => {
+  it("gain adds to the user's resource pool (canonical key)", () => {
+    const ability = makeAbility({ name: "Rage Up", range: "Melee", effect: "Gain 2 Rage" });
+    const user = makeEntity({ num: "P1", name: "A", resources: { rage: 1 } });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+    expect(user.resources.rage).toBe(3);
+  });
+
+  it("gain creates the pool when the user had none", () => {
+    const ability = makeAbility({ name: "Focus", range: "Melee", effect: "Gain 5 Focus" });
+    const user = makeEntity({ num: "P1", name: "A", resources: {} });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+    expect(user.resources.focus).toBe(5);
+  });
+
+  it("spend deducts from the pool and never goes below 0", () => {
+    const ability = makeAbility({ name: "Spend", range: "Melee", effect: "Spend 3 Blood" });
+    const user = makeEntity({ num: "P1", name: "A", resources: { blood: 5 } });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+    expect(user.resources.blood).toBe(2);
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+    expect(user.resources.blood).toBe(0); // clamped at 0
+  });
+
+  it("matches an existing key case-insensitively (e.g. 'Qi')", () => {
+    const ability = makeAbility({ name: "Breath", range: "Melee", effect: "Gain 2 Qi" });
+    const user = makeEntity({ num: "P1", name: "A", resources: { Qi: 1 } });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+    expect(user.resources.Qi).toBe(3);
+  });
+});
+
+// =============================================================================
+// Tile placement (interactive %tile prompt)
+// =============================================================================
+
+describe("applyEffectStream: tile prompt", () => {
+  it("yields a tile prompt and places the terrain at the chosen tile", () => {
+    const ability = makeAbility({
+      name: "Earthworks",
+      range: "Range 3",
+      effect: "Place Stop tiles range 2",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    const gen = applyEffectStream(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+    const step1 = gen.next(undefined);
+    expect(step1.done).toBe(false);
+    const prompt = step1.value as any;
+    expect(prompt.kind).toBe("tile");
+    expect(prompt.candidates.length).toBeGreaterThan(0);
+
+    // "f,8" = [5,7], Manhattan 2 from [5,5] -> in range, terrain placed.
+    const step2 = gen.next("f,8");
+    expect(step2.done).toBe(true);
+    expect(game.map[5][7]).toBe(Terrain.Stop);
+  });
+
+  it("rejects an out-of-range tile and leaves the map unchanged", () => {
+    const ability = makeAbility({
+      name: "Earthworks",
+      range: "Range 3",
+      effect: "Place Stop tiles range 2",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    const gen = applyEffectStream(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+    gen.next(undefined); // tile prompt
+    const step2 = gen.next("a,1"); // [0,0] is 10 tiles away
+    expect(step2.done).toBe(true);
+    expect(game.map[0][0]).not.toBe(Terrain.Stop);
+  });
+
+  it("sync applyEffects skips tile placement without a tile but continues", () => {
+    const ability = makeAbility({
+      name: "Earthworks",
+      range: "Range 3",
+      effect: "Place Stop tiles range 2. inflict 3 Bleed/1",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+    // No tile was chosen, so no terrain is placed, but the remaining clause
+    // still applies.
+    expect(game.map[5][6]).not.toBe(Terrain.Stop);
+    expect(target.statuses.find((s) => s.name === "Bleed")).toBeDefined();
+    expect(messages.some((m) => m.toLowerCase().includes("skipped"))).toBe(
+      true,
+    );
+  });
+});
+
+// =============================================================================
+// Delay parse phrasing
+// =============================================================================
+
+describe("parseEffects: delay phrasing", () => {
+  it("recognises 'This move has Delay-N' as a delay clause", () => {
+    const effects = parseEffects(
+      "This move has Delay-1 and a Delay bonus of +10 damage if the user dies before this attack lands.",
+    );
+    const delay = effects.find((e) => e.type === "delay");
+    expect(delay).toBeDefined();
+    if (delay?.type !== "delay") return;
+    expect(delay.rounds).toBe(1);
+  });
+
+  it("recognises 'This ability has Delay-2' as a delay clause", () => {
+    const effects = parseEffects("This ability has Delay-2. Until this ability lands, the user's attacks on the target have -1 MR.");
+    const delay = effects.find((e) => e.type === "delay");
+    expect(delay).toBeDefined();
+    if (delay?.type !== "delay") return;
+    expect(delay.rounds).toBe(2);
+  });
+});

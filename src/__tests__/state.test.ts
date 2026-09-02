@@ -847,6 +847,18 @@ describe("Snapshots", () => {
     expect(p1.pos).toEqual([0, 0]);
   });
 
+  it("pushSnapshot/popSnapshot round-trip entity resources", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    p1.resources = { Qi: 5, blood: 2 };
+    const game = makeGame({ entities: [p1] });
+
+    pushSnapshot(game);
+    // Mutate the live pool, then undo.
+    p1.resources.Qi = 0;
+    popSnapshot(game);
+    expect(p1.resources).toEqual({ Qi: 5, blood: 2 });
+  });
+
   it("popSnapshot removes action log entries added after the snapshot", () => {
     const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
     const game = makeGame({ entities: [p1] });

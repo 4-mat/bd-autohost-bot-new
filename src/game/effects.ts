@@ -11,8 +11,10 @@ import {
   manhattan,
   pushEntity,
   pullEntity,
+  placeTerrain,
+  TERRAIN_NAMES,
 } from "./state.js";
-import { rollDice, toId } from "../utils.js";
+import { rollDice, toId, posToStr } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Effect types
@@ -227,6 +229,20 @@ function canonicalResource(name: string): string | null {
   return null;
 }
 
+/**
+ * Resolve the `entity.resources` key for a resource name: prefer an existing
+ * key that matches case-insensitively (data/tests use both "Qi" and "blood"
+ * styles), falling back to the canonical lowercase name.
+ */
+function resourceKey(user: Entity, name: string): string {
+  const canonical = canonicalResource(name) ?? name.toLowerCase();
+  const resources = user.resources ?? {};
+  const existing = Object.keys(resources).find(
+    (k) => k.toLowerCase() === canonical,
+  );
+  return existing ?? canonical;
+}
+
 export function parseEffects(text: string): Effect[] {
   if (!text || !text.trim()) return [];
 
@@ -435,10 +451,11 @@ function parseClauseStructured(lower: string): Effect[] | null {
     return [{ type: "phase", phase: phaseMatch[1] }];
   }
 
-  // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
+  // Delay: "Delay N rounds", "Delay-N", "This move/ability has Delay-N",
+  // or "Delay-1. May delay up to +2 more turns."
   const delayMatch =
     lower.match(/^delay[\s-]+(\d+)\s+rounds?$/) ??
-    lower.match(/^delay-?(\d+)$/);
+    lower.match(/^(?:this (?:move|ability) has )?delay-?(\d+)$/);
   if (delayMatch) {
     return [{ type: "delay", rounds: parseInt(delayMatch[1]) }];
   }
@@ -1276,6 +1293,13 @@ export interface EffectChoosePrompt {
   options: { id: string; label: string }[];
 }
 
+export interface EffectTilePrompt {
+  kind: "tile";
+  clauseId: string;
+  message: string;
+  candidates: string[];
+}
+
 /**
  * Generator form of `applyEffects`.
  *
@@ -1305,7 +1329,7 @@ type EffectCtx = {
 type EffectHandler = (
   ctx: EffectCtx,
   effect: any,
-) => Generator<EffectChoosePrompt, void, string>;
+) => Generator<EffectChoosePrompt | EffectTilePrompt, void, string>;
 
 function* handleStatus(
   { target, messages }: EffectCtx,
@@ -1462,9 +1486,6 @@ function* handleSimple(
         `  ${user.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
       );
       return;
-    case "resource":
-      messages.push(`  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`);
-      return;
     case "delay":
       messages.push(`  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`);
       return;
@@ -1485,17 +1506,97 @@ function* handleSimple(
       // is dealt. Here we just announce the marker so the log is readable.
       messages.push(`  ${user.num} takes ${effect.percent}% recoil on damage dealt.`);
       return;
-    case "tile":
-      messages.push(
-        `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
-      );
-      return;
     case "unknown":
       messages.push(`  ${effect.text}`);
       return;
     default:
       return;
   }
+}
+
+/** Enumerate candidate tile refs within `range` of `from` (excluding `from`). */
+function buildTileCandidates(
+  game: Game,
+  from: [number, number],
+  range: number,
+): string[] {
+  const tiles: string[] = [];
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (r === from[0] && c === from[1]) continue;
+      if (manhattan(from, [r, c]) <= range) {
+        tiles.push(posToStr(r, c));
+      }
+    }
+  }
+  return tiles;
+}
+
+/** Parse a tile ref ("a,1", "a1", or "0,0") into [row, col], or null. */
+function parseTilePos(ref: string): [number, number] | null {
+  const s = (ref ?? "").trim();
+  if (!s) return null;
+  const letter = s.match(/^([a-zA-Z]),?\s*(\d+)$/);
+  if (letter) {
+    const r = letter[1].toUpperCase().charCodeAt(0) - 65;
+    const c = parseInt(letter[2]) - 1;
+    if (r >= 0 && c >= 0) return [r, c];
+  }
+  const digits = s.match(/^(\d+),\s*(\d+)$/);
+  if (digits) return [parseInt(digits[1]), parseInt(digits[2])];
+  return null;
+}
+
+/** Resource gain/spend: mutate the user's pool with a case-insensitive key. */
+function* handleResource(
+  { user, messages }: EffectCtx,
+  effect: any,
+) {
+  if (typeof effect.amount === "number") {
+    const key = resourceKey(user, effect.resource);
+    const pool = user.resources[key] ?? 0;
+    const delta = effect.action === "gain" ? effect.amount : -effect.amount;
+    user.resources[key] = Math.max(0, pool + delta);
+    messages.push(
+      `  ${user.num} ${effect.action}s ${effect.amount} ${effect.resource} (${user.resources[key]} total).`,
+    );
+  } else {
+    // Variable amounts ("Spend X Blood") can't be auto-applied.
+    messages.push(
+      `  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}. (Manual resolution needed)`,
+    );
+  }
+}
+
+/** Tile placement: yield a tile prompt and place terrain at the chosen tile. */
+function* handleTile(
+  { game, user, messages }: EffectCtx,
+  effect: any,
+) {
+  const clauseId = `tile-${messages.length}`;
+  const terrainName = TERRAIN_NAMES[effect.terrain] ?? "terrain";
+  const tileRef = yield {
+    kind: "tile",
+    clauseId,
+    message: `Pick a tile within ${effect.range} of ${user.num} for ${terrainName}`,
+    candidates: buildTileCandidates(game, user.pos, effect.range),
+  } satisfies EffectTilePrompt;
+  const pos = parseTilePos(tileRef);
+  if (
+    !pos ||
+    manhattan(user.pos, pos) > effect.range ||
+    pos[0] < 0 ||
+    pos[0] >= game.map.length ||
+    pos[1] < 0 ||
+    pos[1] >= game.map[0].length
+  ) {
+    messages.push(`  ${terrainName} placement skipped — no valid tile chosen.`);
+    return;
+  }
+  placeTerrain(game.map, pos, effect.terrain);
+  messages.push(`  ${user.num} places ${terrainName} at ${posToStr(pos[0], pos[1])}.`);
 }
 
 function* handleConditional(
@@ -1588,14 +1689,14 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   choose: handleChoose,
   teleport: handleSimple,
   move: handleSimple,
-  resource: handleSimple,
+  resource: handleResource,
   delay: handleSimple,
   ignore: handleSimple,
   channel: handleSimple,
   phase: handleSimple,
   multiHit: handleSimple,
   recoil: handleSimple,
-  tile: handleSimple,
+  tile: handleTile,
   unknown: handleSimple,
 };
 
@@ -1606,7 +1707,7 @@ export function* applyEffectStream(
   effects: Effect[],
   ability?: AbilityData,
   routeBuffsToUser = false,
-): Generator<EffectChoosePrompt, string[], string> {
+): Generator<EffectChoosePrompt | EffectTilePrompt, string[], string> {
   const messages: string[] = [];
   const ctx: EffectCtx = { game, user, target, ability, messages, routeBuffsToUser };
 
@@ -1631,7 +1732,7 @@ export function* applyEffectStream(
  * output without driving interaction.
  */
 function drainApplyStream(
-  gen: Generator<EffectChoosePrompt, string[], string>,
+  gen: Generator<EffectChoosePrompt | EffectTilePrompt, string[], string>,
 ): string[] {
   const messages: string[] = [];
   while (true) {
@@ -1640,7 +1741,7 @@ function drainApplyStream(
       messages.push(...step.value);
       break;
     }
-    const prompt = step.value as EffectChoosePrompt;
+    const prompt = step.value as EffectChoosePrompt | EffectTilePrompt;
     if (prompt.kind === "choose") {
       messages.push(`  [Choose one] -- player selection NOT YET INTERACTIVE.`);
 
@@ -1652,6 +1753,8 @@ function drainApplyStream(
       }
       break;
     }
+    // Tile prompt without an interactive driver: skip placement, continue.
+    messages.push(`  Tile placement skipped — not interactive.`);
   }
   return messages;
 }

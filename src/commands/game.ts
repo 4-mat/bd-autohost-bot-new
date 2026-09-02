@@ -62,6 +62,7 @@ import {
   respondToDir,
   respondToTile,
   startAttack,
+  landDelayedAttacks,
   isValidTarget,
   type AttackStep,
 } from "../game/resolve.js";
@@ -784,6 +785,27 @@ function handleCancel(game: Game, user: User) {
   broadcastPages(game);
 }
 
+/**
+ * Land any delayed attacks (queued by Delay-N clauses) that are due for the
+ * entity whose turn is starting, broadcasting the landing messages. Returns
+ * true when the game ended as a result so the caller can bail out.
+ */
+function landQueuedDelays(game: Game, entity: Entity | null): boolean {
+  if (!entity) return false;
+  const delayedDeaths: Entity[] = [];
+  const delayMsgs = landDelayedAttacks(game, entity, delayedDeaths);
+  if (delayMsgs.length === 0) return false;
+  for (const msg of delayMsgs) {
+    send(game.room, msg);
+  }
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    announceGameOver(game, winner);
+    return true;
+  }
+  return false;
+}
+
 function handleAdvanceTurn(game: Game, user: User) {
   if (toId(user.name) !== toId(game.host)) {
     return sendPm(user.name, "Only the host can advance turns.");
@@ -794,21 +816,8 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   pushSnapshot(game);
 
-  let acted = "";
-
-  // Stunned entities can't act — skip their action and clear pending
-  if (isStunned(entity)) {
-    if (entity.pendingAction) {
-      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
-      entity.pendingAction = null;
-    } else {
-      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
-    }
-  } else if (entity.pendingAction) {
-    const done = resolvePendingAction(game, user, entity);
-    if (done === null) return; // prompt needs an answer — turn not advanced
-    acted = done;
-  }
+  const acted = actTurnEntity(game, user, entity);
+  if (acted === null) return; // prompt needs an answer — turn not advanced
 
   if (
     acted ||
@@ -830,12 +839,40 @@ function handleAdvanceTurn(game: Game, user: User) {
     send(game.room, msg);
   }
 
+  // Delayed attacks (Delay-N) land at the start of the new turn's entity.
+  if (!result.died && landQueuedDelays(game, result.entity)) return;
+
   if (result.died || !result.entity) {
     if (handleTurnDeath(game, result)) return;
   }
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+/** Resolve the current entity's action on turn advance: stunned entities
+ * skip (and clear any pending action), pending actions resolve via
+ * resolvePendingAction. Returns the acted summary, or null when a prompt
+ * needs an answer (turn must not advance). */
+function actTurnEntity(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  // Stunned entities can't act — skip their action and clear pending
+  if (isStunned(entity)) {
+    if (entity.pendingAction) {
+      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
+      entity.pendingAction = null;
+    } else {
+      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
+    }
+    return "";
+  }
+  if (entity.pendingAction) {
+    return resolvePendingAction(game, user, entity);
+  }
+  return "";
 }
 
 /** Handle a death at turn advance: game over, or skip to the next living
@@ -855,6 +892,8 @@ function handleTurnDeath(
     for (const msg of retry.messages) {
       send(game.room, msg);
     }
+    // Delayed attacks also land for the entity picked up by the retry.
+    if (!retry.died && landQueuedDelays(game, retry.entity)) return true;
     if (!retry.entity) {
       const winner = checkGameOver(game);
       announceGameOver(game, winner);
