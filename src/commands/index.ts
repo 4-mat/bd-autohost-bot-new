@@ -44,7 +44,6 @@ const HOST_COMMANDS = new Set([
   "openbsu",
   "close",
   "endvote",
-  "ffabtn",
   "nudge",
   "join",
   "genpos",
@@ -112,26 +111,17 @@ const HANDLERS: Record<string, Handler> = {
   },
   help(_room, user, _id, _args, _val, _pm) {
     const help = [
-      "**Host Commands**: %host, %setgame, %addp, %addm, %remp, %setmap, %setlevel, %setteam, %setjugg, %gento, %start, %dehost, %listmaps, %close, %endvote, %nudge, %setclass, %setweapon, %setloadout",
+      "**Host Commands**: %host [4.3], %setgame, %addp, %addm, %remp, %setmap, %setlevel, %setteam, %setjugg, %gento, %start, %dehost, %listmaps, %close, %endvote, %nudge, %setclass, %setweapon, %setloadout",
       "**In-Game (Host)**: %info, %map, %pl, %to, %status, %regp, %hp, %cut, %cr, %timer",
       "**In-Game (Player)**: %move, %use, %dash, %target, %choose, %confirm, %cancel, %endturn, %premove, %r, %vote, %votestatus, %unvote, %leave",
       "**Character**: %vs, %vl, %vi, %sc, %sw, %sco",
       "**Reference**: %wt, %rf, %wtm",
-      "**Sheets**: %sheets, %sheets all, %sheets approve",
+      "**Sheets**: %sheets, %sheets all",
     ];
     sendPm(user.name, help.join("\n"));
   },
   calc(_room, user, _id, args, val, _pm) {
     calcCommand(user, (args || val).trim());
-  },
-  wt(_room, user, id, args, val, _pm) {
-    infoCommand(user, id, args || val);
-  },
-  rf(_room, user, id, args, val, _pm) {
-    infoCommand(user, id, args || val);
-  },
-  wtm(_room, user, id, args, val, _pm) {
-    infoCommand(user, id, args || val);
   },
   sheets(_room, user, id, args, val, _pm) {
     sheetsCommand(user, id, args || val);
@@ -151,20 +141,37 @@ export function handleCommand(
 
   const id = toId(cmd);
 
+  // Check HANDLERS first (ping, help, calc, sheets)
   const handler = HANDLERS[id] ?? HANDLERS[toId(id)];
   if (handler) {
     handler(room, user, id, args, val, pm);
     return;
   }
-  if (id === "h") return HANDLERS.help(room, user, id, args, val, pm);
+
+  // Info/reference commands — thread room into infoCommand
+  // so version resolution considers the current room's game version.
+  if (id === "wt" || id === "rf" || id === "wtm") {
+    infoCommand(user, id, args || val, room);
+    return;
+  }
+
+  // Help command
+  if (id === "h" || id === "help")
+    return HANDLERS.help(room, user, id, args, val, pm);
+
+  // Host commands (game setup + management)
   if (HOST_COMMANDS.has(id)) {
     hostCommand(room, user, id, args, val, pm);
     return;
   }
+
+  // Game commands
   if (GAME_COMMANDS.has(id)) {
     gameCommand(room, user, id, args, val, pm);
     return;
   }
+
+  // Player commands
   if (PLAYER_COMMANDS.has(id)) {
     playerCommand(user, id, args || val);
   }

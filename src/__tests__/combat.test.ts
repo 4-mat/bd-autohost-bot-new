@@ -7,7 +7,7 @@ import {
   Terrain,
 } from "../game/state.js";
 import { parseEffects, extractCombatMetadata } from "../game/effects.js";
-import { startAttack, isValidTarget } from "../game/resolve.js";
+import { startAttack, eva43 } from "../game/resolve.js";
 setWs({ send() {} });
 
 // ---------------------------------------------------------------------------
@@ -586,16 +586,16 @@ describe("resolveAttackFlow: splash honours damage modifiers", () => {
   });
 });
 
-describe("FFA targeting (team 0 = no teams)", () => {
-  it("treats every other player as a Foe and no one as an Ally", () => {
-    const p1 = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
-    const p2 = makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 0 });
-    expect(isValidTarget(p1, p2, "Foe")).toBe(true);
-    expect(isValidTarget(p1, p2, "Ally")).toBe(false);
-    expect(isValidTarget(p1, p1, "Foe")).toBe(false);
-    expect(isValidTarget(p1, p2, "Self or Foe")).toBe(true);
-    expect(isValidTarget(p1, p2, "Self and Allies")).toBe(false);
-    expect(isValidTarget(p1, p1, "Self and Allies")).toBe(true);
+describe("eva43", () => {
+  it("computes PE from PD and ME from MD", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 25, md: 30 });
+    expect(eva43(e, "Physical")).toBe(2);
+    expect(eva43(e, "Magical")).toBe(3);
+  });
+
+  it("clamps to [0, 9] and applies poison -2", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 150, md: 0 });
+    expect(eva43(e, "Physical")).toBe(9);
     expect(isValidTarget(p1, p2, "Self and Ally")).toBe(false);
     expect(isValidTarget(p1, p1, "Self and Ally")).toBe(true);
     expect(isValidTarget(p1, p2, "Allies and Self")).toBe(false);
