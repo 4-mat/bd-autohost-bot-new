@@ -332,6 +332,11 @@ export interface Game {
   voteRunoff: string[] | null;
   /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
   timer?: { entity: string | null; endAt: number } | null;
+  /**
+   * Current moon phase (Dark-class mechanic). Set by "Phase: X" effects;
+   * read by "Phase is X" condition clauses ("New Moon:", "Full Moon:", ...).
+   */
+  moonPhase?: string;
 }
 
 export const games = new Map<string, Game>();
