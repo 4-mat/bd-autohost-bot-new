@@ -369,7 +369,9 @@ export function popSnapshot(game: Game): boolean {
     const ent = game.entities.find((x) => x.num === e.num);
     if (ent) {
       // Clear properties added after snapshot to avoid state pollution
-      for (const key of Object.keys(ent)) { if (!(key in e)) delete (ent as any)[key]; }
+      for (const key of Object.keys(ent)) {
+        if (!(key in e)) delete (ent as any)[key];
+      }
       Object.assign(ent, e);
       ent.pendingResolution = undefined;
       return ent;
