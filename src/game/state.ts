@@ -317,7 +317,7 @@ export interface Game {
   chatLog: ChatEntry[];
   toasts: ChatEntry[];
   signupsOpen: boolean;
-  /** Whether players are idle (toggled by %playersidle). */
+  /** Whether players can use %endturn (default false). */
   playersIdle: boolean;
   /** Gamemode votes: entity num -> voted mode id. Active between %close and %endvote. */
   votes: Record<string, string>;
@@ -332,8 +332,6 @@ export interface Game {
   voteRunoff: string[] | null;
   /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
   timer?: { entity: string | null; endAt: number } | null;
-  /** Whether players can use %endturn (default false) */
-  playersIdle: boolean;
 }
 
 export const games = new Map<string, Game>();
