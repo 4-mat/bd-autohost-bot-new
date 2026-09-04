@@ -1,5 +1,6 @@
 import {
   type Game,
+  checkGameOver,
   type Entity,
   type AbilityData,
   type AbilityCost,
@@ -20,6 +21,7 @@ import {
   placeTerrain,
   TERRAIN_NAMES,
   Terrain,
+  isObstruction,
 } from "./state.js";
 import {
   parseEffects,
@@ -27,6 +29,7 @@ import {
   applyEffectStream,
   extractCombatMetadata,
   type CombatMetadata,
+  type Effect,
   type EffectChoosePrompt,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
@@ -205,6 +208,7 @@ function* runEffectStream(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
+/** Run the full attack pipeline: accuracy, damage, on-hit/on-miss/regardless, then after-resolving hooks. */
 function* resolveAttackFlow(
   game: Game,
   user: Entity,
@@ -291,8 +295,20 @@ function* resolveAttackFlow(
   // no tile clause (Bloom, Mantrap, ...) fall through to entity targeting.
   const isTileAbility = /^tiles?$/i.test(active.targetGroup);
   const effects = parseEffects(active.effect);
-  const shouldPromptTile =
-    isTileAbility && effects.some((e) => e.type === "tile");
+  // Tile effects nested inside conditional branches also need the tile prompt
+  // (e.g. "If target is under Range 3: create Totem tile on target"); the
+  // top-level scan alone would miss them and fall through to entity targeting.
+  const hasTileEffect = (list: Effect[]): boolean =>
+    list.some(
+      (e) =>
+        e.type === "tile" ||
+        (e.type === "conditional" &&
+          hasTileEffect([
+            ...e.thenEffects,
+            ...(e.elseEffects ?? []),
+          ])),
+    );
+  const shouldPromptTile = isTileAbility && hasTileEffect(effects);
   let tilePos: [number, number] | null = null;
   let targets: Entity[] = [];
   let hitCount = 0;
@@ -462,14 +478,19 @@ function* resolveAttackFlow(
   // Bug fix carried over: check win condition once after all deaths this
   // action, not once per death (was producing duplicate "Game over!" lines
   // on multi-kill splash/AoE).
-  if (result.deaths.length > 0 && isWinCondition(game)) {
-    result.gameOver = true;
-    const winner = game.entities[0];
-    result.messages.push(
-      winner
-        ? `**Game over! ${winner.num} (${winner.name}) wins!**`
-        : "**Game over! No survivors!**",
-    );
+  if (result.deaths.length > 0) {
+    // checkGameOver() sets game.phase = "ended" and returns null when no
+    // entity survives (a draw), so gate on the phase flag rather than the
+    // returned winner to mark zero-survivor games as game over too.
+    const winner = checkGameOver(game);
+    if (game.phase === "ended") {
+      result.gameOver = true;
+      result.messages.push(
+        winner
+          ? `**Game over! ${winner.num} (${winner.name}) wins!**`
+          : "**Game over! No survivors!**",
+      );
+    }
   }
 
   return result;
@@ -672,6 +693,10 @@ function getTileCandidates(
       const d = Math.abs(r - user.pos[0]) + Math.abs(c - user.pos[1]);
       if (d === 0) continue;
       if (d > range) continue;
+      // Obstruction tiles (Stop/Bone/Ice/Stone/Hearth) cannot be targeted by
+      // tile abilities; offering them lets a player pick a tile the ability
+      // will never be allowed to replace.
+      if (isObstruction(game.map[r][c])) continue;
       tiles.push(posToStr(r, c));
     }
   }
@@ -761,13 +786,23 @@ function findTargets(
   });
 }
 
+/** Check whether an entity is a valid single target for a target group. */
 export function isValidTarget(
   user: Entity,
   target: Entity,
   group: string,
 ): boolean {
   if (target.curhp <= 0) return false;
-  const g = group.toLowerCase();
+  // Normalize plural/legacy spellings ("Foe(s)", "Self, Foes, Allies",
+  // "Allies and Self") so single-target and AoE targeting agree; see the
+  // equivalent normalization in state.ts isValidGroupTarget.
+  const g = group
+    .toLowerCase()
+    .replace(/foes/g, "foe")
+    .replace(/allies/g, "ally")
+    .replace(/foe\(s\)/g, "foe")
+    .replace(/ally and self/g, "self and ally");
+
   // FFA / no-team games put everyone on team 0: "Foe" means anyone but
   // self, "Ally" targets nobody, and ally-groups resolve to self only.
   // Mirrors the GUI candidate filter in pages.ts so the direct-target
@@ -783,14 +818,13 @@ export function isValidTarget(
     ? target.num === user.num
     : target.team === user.team;
 
-  if (g.includes("self and allies") || g.includes("self and ally"))
-    return selfOrAllyCheck;
-  if (g.includes("allies and self")) return selfOrAllyCheck;
-  if (g.includes("self or ally") || g.includes("self or allies"))
-    return selfOrAllyCheck;
-  if (g.includes("self or foe")) return true;
+  if (g.includes("self and ally")) return selfOrAllyCheck;
+  if (g.includes("self or ally")) return selfOrAllyCheck;
+  if (g.includes("self or foe"))
+    return target.num === user.num || foeCheck;
   if (g.includes("foe or ally")) return target.num !== user.num;
-  if (g.includes("self, foes, allies") || g.includes("self, foes, and allies"))
+  if (g.includes("tile or foe")) return foeCheck;
+  if (g.includes("self, foe, ally") || g.includes("self, foe, and ally"))
     return true;
 
   if (g === "self") return target.num === user.num;
@@ -799,7 +833,10 @@ export function isValidTarget(
   if (g === "any") return true;
   if (g === "tile") return false;
 
-  return true;
+  // Unknown group: reject, matching isValidGroupTarget in state.ts, so a
+  // malformed targetGroup cannot select arbitrary living entities here
+  // while selecting nothing in the AoE path.
+  return false;
 }
 
 function* resolveSingleTarget(
@@ -1043,22 +1080,13 @@ function emitDamageModTrail(
   );
 }
 
+/** Set the cooldown on an entity for an ability based on its frequency. */
 function setCooldown(entity: Entity, ability: AbilityData) {
   const { cooldown } = parseFrequency(ability.frequency);
   if (cooldown) entity.cooldowns[ability.name] = cooldown;
 }
 
-function isWinCondition(game: Game): boolean {
-  if (game.mode.includes("ffa") || game.mode.includes("pvp")) {
-    return game.entities.filter((e) => e.curhp > 0).length <= 1;
-  }
-  const teams = new Map<number, boolean>();
-  for (const e of game.entities) {
-    if (!teams.has(e.team)) teams.set(e.team, false);
-    if (e.curhp > 0) teams.set(e.team, true);
-  }
-  return [...teams.values()].filter(Boolean).length <= 1;
-}
+
 
 function parseMultiHit(ability: AbilityData): number {
   const roll = ability.roll.toLowerCase();

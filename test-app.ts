@@ -1390,6 +1390,19 @@ function restoreSigninSelects() {
   if (wpn && signinWeapon && Array.prototype.some.call(wpn.options, o => o.value === signinWeapon)) wpn.value = signinWeapon;
 }
 
+// Reset both the cached picks and the visible selects. The Join handler reads
+// the element values directly, so clearing the vars alone would let a later
+// account submit the previous account's signin selections before a fresh
+// sign-in GUI render replaces the controls.
+function clearSigninSelects() {
+  signinClass = '';
+  signinWeapon = '';
+  const cls = document.getElementById('signin-class');
+  const wpn = document.getElementById('signin-weapon');
+  if (cls) cls.selectedIndex = 0;
+  if (wpn) wpn.selectedIndex = 0;
+}
+
 guiContent.addEventListener('change', (e) => {
   const el = e.target;
   if (!el || !el.id) return;
@@ -1571,8 +1584,7 @@ function connect() {
     }
     } else if (msg.type === 'nick') {
       // Account switch: don't carry the previous account's signin picks.
-      signinClass = '';
-      signinWeapon = '';
+      clearSigninSelects();
       currentNick = msg.user;
       if (userEl) userEl.textContent = msg.user;
       saveNick(msg.user);

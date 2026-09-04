@@ -110,6 +110,84 @@ function makeAbility(
 beforeEach(() => {});
 
 // ===========================================================================
+// isValidTarget — group matching (single-target path)
+// ===========================================================================
+
+describe("isValidTarget", () => {
+  // Team-mode fixtures: the FFA (team 0) behavior is covered by the
+  // dedicated "FFA targeting" describe below.
+  const user = () =>
+    makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 1 });
+  const foe = () =>
+    makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 2 });
+  const ally = () =>
+    makeEntity({ num: "P3", name: "Cara", pos: [5, 4], team: 1 });
+
+  it("'Self or Foe' accepts the user and foes but not allies", () => {
+    expect(isValidTarget(user(), user(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), foe(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), ally(), "Self or Foe")).toBe(false);
+  });
+
+  it("basic groups still behave", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Self")).toBe(true);
+    expect(isValidTarget(u, ally(), "Self")).toBe(false);
+    expect(isValidTarget(u, ally(), "Ally")).toBe(true);
+    expect(isValidTarget(u, foe(), "Ally")).toBe(false);
+    expect(isValidTarget(u, foe(), "Foe")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe")).toBe(false);
+    expect(isValidTarget(u, foe(), "Foe or Ally")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe or Ally")).toBe(true);
+    expect(isValidTarget(u, u, "Any")).toBe(true);
+  });
+
+  it("legacy 'Foe(s)' targets foes, not allies (matches AoE path)", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Foe(s)")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe(s)")).toBe(false);
+  });
+
+  it("'Allies and Self' targets allies and self", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Allies and Self")).toBe(true);
+    expect(isValidTarget(u, ally(), "Allies and Self")).toBe(true);
+    expect(isValidTarget(u, foe(), "Allies and Self")).toBe(false);
+  });
+
+  it("'Tile or Foe' targets foes, not the user or allies", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Tile or Foe")).toBe(true);
+    expect(isValidTarget(u, u, "Tile or Foe")).toBe(false);
+    expect(isValidTarget(u, ally(), "Tile or Foe")).toBe(false);
+  });
+
+  it("'Self, Foes, Allies' accepts the user, foes, and allies", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(u, foe(), "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(u, ally(), "Self, Foes, Allies")).toBe(true);
+  });
+
+  it("rejects dead targets", () => {
+    expect(
+      isValidTarget(
+        user(),
+        makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }),
+        "Foe",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects unrecognized target groups (matches the AoE path)", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Bogus")).toBe(false);
+    expect(isValidTarget(u, foe(), "Self, Allies")).toBe(false);
+    expect(isValidTarget(u, u, "Everyone")).toBe(false);
+  });
+});
+
+// ===========================================================================
 // extractCombatMetadata — direct unit tests
 // ===========================================================================
 
@@ -769,6 +847,60 @@ describe("tile-targeting abilities", () => {
       "chosen tile is invalid",
     );
     expect(game.map[2][3]).toBe(Terrain.Lava);
+  });
+
+  it("prompts for a tile when the tile effect is inside a conditional", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const conditionalTile = makeAbility({
+      name: "Grove",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect:
+        "If target is under Range 3: create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [conditionalTile];
+    const game = makeGame({ entities: [caster] });
+
+    const step = startAttack(game, caster, conditionalTile);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    // Nested tile effect must still produce a tile prompt, not entity targeting.
+    expect(step.prompt.kind).toBe("tile");
+  });
+
+  it("offers no obstruction tiles as tile candidates", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 1",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game3 = makeGame({ entities: [caster] });
+    // Stop tile adjacent to the caster; nothing else in range.
+    game3.map[2][3] = Terrain.Stop;
+
+    const step = startAttack(game3, caster, whittle);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+    if (step.prompt.kind !== "tile") return;
+    expect(step.prompt.candidates).not.toContain("c,4");
   });
 
   it("rejects an in-bounds tile that is outside the ability range", () => {

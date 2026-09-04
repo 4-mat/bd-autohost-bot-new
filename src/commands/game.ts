@@ -844,7 +844,11 @@ function handleAdvanceTurn(game: Game, user: User) {
     );
   }
 
-  const result = nextTurn(game);
+  // If the actor died mid-turn (recoil/confusion), removeEntity already
+  // repositioned turnIndex onto the next entity; tell nextTurn so it does
+  // not advance past it a second time.
+  const actorDied = entity.curhp <= 0 || !game.entities.includes(entity);
+  const result = nextTurn(game, { actorDied });
   for (const msg of result.messages) {
     send(game.room, msg);
   }
@@ -969,15 +973,11 @@ function handleRoll(target: string, args: string) {
   sendPm(target, msg);
 }
 
+/** Toggle the current entity's pre-move ability view. */
 function handlePremove(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
 
-  let entity: Entity | null = null;
-  if (isHost) {
-    entity = getCurrentEntity(game);
-  } else {
-    entity = getCurrentEntity(game);
-  }
+  const entity = getCurrentEntity(game);
 
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
@@ -1017,6 +1017,7 @@ function handleDirChoice(game: Game, user: User, dir: string) {
   }
 }
 
+/** Handle a tile choice for tile-placement abilities. */
 function handleTileChoice(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
@@ -1038,12 +1039,7 @@ function handleTileChoice(game: Game, user: User, args: string) {
 function handlePassMove(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
 
-  let entity: Entity | null = null;
-  if (isHost) {
-    entity = getCurrentEntity(game);
-  } else {
-    entity = getCurrentEntity(game);
-  }
+  const entity = getCurrentEntity(game);
 
   if (!entity) return sendPm(user.name, "No active turn.");
   if (!isHost && toId(entity.name) !== toId(user.name)) {
