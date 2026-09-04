@@ -147,13 +147,16 @@ const userGui = new Map<
 >();
 
 const MAX_LOG = 100;
-const CHAT_LOG: Array<Record<string, string>> = [];
+// Entries carry a monotonic `seq` so clients can reconcile re-sent
+// history after a reconnect (dedupe by identity, not a one-shot flag).
+let chatSeq = 0;
+const CHAT_LOG: Array<Record<string, string | number>> = [];
 
 function broadcast(msg: string) {
   try {
     const m = JSON.parse(msg);
     if (["chat", "action", "quote", "react"].includes(m.type)) {
-      CHAT_LOG.push(m);
+      CHAT_LOG.push({ ...m, seq: ++chatSeq });
       if (CHAT_LOG.length > MAX_LOG) CHAT_LOG.shift();
     }
   } catch {}
@@ -1551,6 +1554,11 @@ function createTabs(tabs) {
 let ws;
 const nickKey = 'bdUser';
 let nick = '';
+// Highest chat 'seq' already rendered. The server re-sends the full
+// CHAT_LOG on every (re)connect; entries carry a monotonic seq so we can
+// render only the ones we haven't seen — no duplicates on reconnect, and
+// messages sent during a disconnect still come through.
+let lastChatSeq = 0;
 
 function loadNick() {
   try { return localStorage.getItem(nickKey) || ''; } catch (e) { return ''; }
@@ -1606,8 +1614,12 @@ function connect() {
   const msg = JSON.parse(e.data);
 
   if (msg.type === 'history') {
-    if (msg.lines.length > 0) {
-      msg.lines.forEach((line) => {
+    // Render only entries we haven't seen: seq is monotonic on the server,
+    // so filtering by the last rendered seq prevents reconnect duplicates
+    // while still surfacing messages that arrived while disconnected.
+    const fresh = (msg.lines || []).filter((line) => (line.seq || 0) > lastChatSeq);
+    if (fresh.length > 0) {
+      fresh.forEach((line) => {
         if (line.type === 'chat' || line.type === 'quote') addLine(line.type, withSignupLink(line.text));
         else if (line.type === 'action') addLine('action', line.text, line.name);
         else if (line.type === 'react') addLine('react', line.user + ' ' + line.emote);
@@ -1615,6 +1627,7 @@ function connect() {
         else if (line.type === 'leave') addLine('system', line.user + ' left.');
       });
       addLine('divider', '');
+      lastChatSeq = fresh.reduce((m, l) => Math.max(m, l.seq || 0), lastChatSeq);
     }
     return;
   }

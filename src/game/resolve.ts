@@ -466,6 +466,12 @@ function* resolveTargetAction(
         return true;
       }
 
+      // The target died on this hit: stop swinging at the corpse. Later
+      // hits only re-roll against a dead entity and re-announce the defeat.
+      if (target.curhp <= 0 || !game.entities.includes(target)) {
+        break;
+      }
+
       if (!confusionApplied && singleResult.confusionTriggered) {
         confusionApplied = true;
       }
