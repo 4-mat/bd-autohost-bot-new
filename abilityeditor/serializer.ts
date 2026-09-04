@@ -328,6 +328,46 @@ export function writeSourceText(srcPath: string, out: string): void {
 // Sanitizers (shared by the local server and the proposal workflow)
 // ---------------------------------------------------------------------------
 
+/**
+ * Move an ability within its owner's list. `dir` is -1 (up) or 1 (down);
+ * returns the ability's new index, or -1 when the name is unknown or it is
+ * already at the edge it was asked to move toward.
+ */
+export function moveAbility<T extends { name?: unknown }>(
+  arr: T[],
+  name: string,
+  dir: -1 | 1,
+): number {
+  const idx = arr.findIndex((x) => toId(String(x.name)) === toId(name));
+  if (idx === -1) return -1;
+  const to = idx + dir;
+  if (to < 0 || to >= arr.length) return -1;
+  const [it] = arr.splice(idx, 1);
+  arr.splice(to, 0, it);
+  return to;
+}
+
+/**
+ * Duplicate an ability, inserting the copy right after the original and
+ * naming it "<original> Copy" (then "Copy 2", "Copy 3", ... to stay unique).
+ * Returns the copy, or null when the source name is unknown.
+ */
+export function duplicateAbility<T extends { name?: unknown }>(
+  arr: T[],
+  name: string,
+): T | null {
+  const idx = arr.findIndex((x) => toId(String(x.name)) === toId(name));
+  if (idx === -1) return null;
+  const src = arr[idx];
+  const copy = JSON.parse(JSON.stringify(src)) as T;
+  const base = String((src as { name?: unknown }).name ?? "") + " Copy";
+  let nm = base;
+  for (let n = 2; arr.some((x) => toId(String(x.name)) === toId(nm)); n++) nm = base + " " + n;
+  (copy as { name?: unknown }).name = nm;
+  arr.splice(idx + 1, 0, copy);
+  return copy;
+}
+
 export function normalizeLevel(v: unknown): number | "EX1" | "EX2" {
   const s = String(v ?? "1").trim().toUpperCase();
   if (s === "EX1" || s === "EX2") return s as "EX1" | "EX2";

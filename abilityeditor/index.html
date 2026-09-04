@@ -358,6 +358,42 @@
         justify-content: flex-end;
         gap: 6px;
       }
+      .card-actions .sep {
+        color: var(--border-soft);
+      }
+      .choice-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 4px 0;
+      }
+      .choice-row input {
+        flex: 1;
+      }
+      .choices-editor {
+        grid-column: 1 / -1;
+      }
+      .choices-editor .mini-link,
+      .effect-validate .mini-link {
+        color: var(--accent-2);
+        font-size: 11px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .effect-validate {
+        grid-column: 1 / -1;
+        font-size: 11px;
+        margin-top: 2px;
+      }
+      .effect-validate.ok {
+        color: var(--ok);
+      }
+      .effect-validate.warn {
+        color: var(--warn);
+      }
+      .effect-validate.err {
+        color: var(--err);
+      }
       .hint {
         color: var(--text-dim);
         font-size: 11px;
@@ -641,13 +677,41 @@
       const abilities = item.abilities || (item.abilities = []);
       if (body.action === "save") {
         const i = abilities.findIndex((x) => x.name === body.name);
-        if (i >= 0) abilities[i] = body.ability;
-        else abilities.push(body.ability);
+        if (i < 0) return Promise.reject(new Error("Ability not found: " + body.name));
+        // Mirror the server's rename-collision check: renaming into an id
+        // another ability already uses must be rejected in the demo too.
+        const newName = String(body.ability && body.ability.name || "").trim();
+        if (
+          newName &&
+          toId(newName) !== toId(body.name) &&
+          abilities.some((x, j) => j !== i && toId(String(x.name)) === toId(newName))
+        ) {
+          return Promise.reject(new Error('An ability named "' + newName + '" already exists on ' + item.name));
+        }
+        abilities[i] = body.ability;
       } else if (body.action === "add") {
         abilities.push(body.ability);
       } else if (body.action === "remove") {
         const i = abilities.findIndex((x) => x.name === body.name);
         if (i >= 0) abilities.splice(i, 1);
+      } else if (body.action === "move") {
+        const i = abilities.findIndex((x) => x.name === body.name);
+        const to = i + (body.dir === -1 ? -1 : 1);
+        if (i >= 0 && to >= 0 && to < abilities.length) {
+          const [it] = abilities.splice(i, 1);
+          abilities.splice(to, 0, it);
+        }
+      } else if (body.action === "duplicate") {
+        const i = abilities.findIndex((x) => x.name === body.name);
+        if (i >= 0) {
+          const copy = JSON.parse(JSON.stringify(abilities[i]));
+          const base = (copy.name || "") + " Copy";
+          let nm = base;
+          for (let n = 2; abilities.some((x) => x.name === nm); n++) nm = base + " " + n;
+          copy.name = nm;
+          abilities.splice(i + 1, 0, copy);
+          return Promise.resolve({ ok: true, name: nm });
+        }
       }
       // Persist custom entries so their edits survive a reload in demo mode.
       const kindList = customListFor(body.kind);
@@ -697,8 +761,13 @@
       for (const kind of ["class", "weapon"]) {
         const cur = state.data[kind === "class" ? "classes" : "weapons"];
         const baseList = base[kind === "class" ? "classes" : "weapons"];
+        // Per-kind custom ids: an item is an "add" only when its id is in the
+        // custom list for ITS OWN kind — not the currently selected tab's
+        // list (isCustomName is tab-scoped, so it can't classify the other
+        // kind's customs).
+        const customList = kind === "class" ? state.data.customClasses : state.data.customWeapons;
         for (const item of cur) {
-          if (isCustomName(item.name)) {
+          if (customList.includes(toId(item.name))) {
             adds.push({ kind, entry: item });
           } else {
             const b = baseList.find((x) => x.name === item.name);
@@ -906,6 +975,42 @@
       );
     }
 
+    // Name of the ability currently showing its choices as raw JSON (see
+    // choicesEditor / choicesJsonEditor). Reset whenever the selection changes.
+    let choicesJsonFor = null;
+
+    function choicesEditor(a) {
+      const rows = (Array.isArray(a.choices) ? a.choices : [])
+        .map(
+          (c, i) =>
+            '<div class="choice-row" data-idx="' +
+            i +
+            '"><input data-choice="id" type="text" placeholder="id" value="' +
+            esc(c.id || "") +
+            '" spellcheck="false" /><input data-choice="label" type="text" placeholder="label" value="' +
+            esc(c.label || "") +
+            '" spellcheck="false" /><button class="mini danger" data-act="del-choice" data-idx="' +
+            i +
+            '" title="Remove choice">✕</button></div>',
+        )
+        .join("");
+      return (
+        '<div class="choices-editor"><label class="inline-label">Choices (optional — selectable options)</label>' +
+        (rows || '<div class="hint">No choices yet.</div>') +
+        '<div class="inline" style="margin-top:4px"><button class="mini" data-act="add-choice">＋ Add choice</button>' +
+        ' <a href="#" class="mini-link" data-act="choices-json">edit as JSON</a></div></div>'
+      );
+    }
+
+    function choicesJsonEditor(a) {
+      return (
+        '<div class="choices-editor"><label class="inline-label">Choices (JSON)</label>' +
+        '<textarea data-f="choices-json" spellcheck="false" placeholder=\'[{"id":"a","label":"Attack"}]\'>' +
+        esc(Array.isArray(a.choices) ? JSON.stringify(a.choices, null, 2) : "") +
+        '</textarea><div class="inline" style="margin-top:4px"><a href="#" class="mini-link" data-act="choices-rows">back to rows</a></div></div>'
+      );
+    }
+
     function abilityBody(a, idx) {
       const cost = a.cost || {};
       const sel = (f, opts) =>
@@ -921,9 +1026,6 @@
               "</option>",
           )
           .join("");
-      const choices = Array.isArray(a.choices)
-        ? JSON.stringify(a.choices, null, 2)
-        : "";
       const lv = sel("level", LEVELS.map(String));
       return (
         '<div class="grid ability-grid">' +
@@ -950,6 +1052,9 @@
         field("maxUses", "Max Uses (per battle)", a.maxUses === undefined ? "" : a.maxUses) +
         "</div>" +
         field("effect", "Effect (BD Lang)", a.effect, { textarea: true, full: true }) +
+        '<div class="effect-validate" data-idx="' +
+        idx +
+        '"></div>' +
         '<div class="full inline">' +
         '<label class="inline-label"><input type="checkbox" data-f="hasCost"' +
         (a.cost ? " checked" : "") +
@@ -973,13 +1078,19 @@
             (cost.prompt ? " checked" : "") +
             "/> ask amount</label></span>" : "") +
         "</div>" +
-        field(
-          "choices",
-          "Choices (JSON array of {id,label} — optional)",
-          choices,
-          { textarea: true, full: true },
-        ) +
-        '<div class="card-actions"><button class="mini danger" data-act="del-ability" data-idx="' +
+        (choicesJsonFor === a.name ? choicesJsonEditor(a) : choicesEditor(a)) +
+        '<div class="card-actions">' +
+        '<button class="mini" data-act="move-ability" data-idx="' +
+        idx +
+        '" data-dir="-1" title="Move up">▲</button>' +
+        '<button class="mini" data-act="move-ability" data-idx="' +
+        idx +
+        '" data-dir="1" title="Move down">▼</button>' +
+        '<span class="sep">|</span>' +
+        '<button class="mini" data-act="dup-ability" data-idx="' +
+        idx +
+        '">Duplicate</button>' +
+        '<button class="mini danger" data-act="del-ability" data-idx="' +
         idx +
         '">Delete ability</button></div>'
       );
@@ -1054,10 +1165,54 @@
 
     // ---------- editing / saving ----------
     const abilityTimers = new WeakMap();
+    const validateTimers = new WeakMap();
 
     function markDirty() {
       state.dirty = true;
       $("#dirty-chip").classList.add("show");
+    }
+
+    // Live BD Lang check: clauses the game's parser can't interpret are shown
+    // under the Effect textarea. Local mode calls /api/validate (which runs the
+    // real parseEffects); the static demo has no backend, so it shows a hint
+    // that the preview only runs in the local editor.
+    async function validateEffect(card) {
+      const box = card && card.querySelector(".effect-validate");
+      if (!box) return;
+      const ta = card.querySelector('[data-f="effect"]');
+      const text = (ta && ta.value) || "";
+      if (!text.trim()) {
+        box.className = "effect-validate";
+        box.innerHTML = "";
+        return;
+      }
+      if (STATIC) {
+        box.className = "effect-validate";
+        box.innerHTML = `<span class="hint">Effect parsing preview is available in the local editor (npm run editor).</span>`;
+        return;
+      }
+      clearTimeout(validateTimers.get(card));
+      validateTimers.set(
+        card,
+        setTimeout(async () => {
+          try {
+            const r = await api("/api/validate", { effect: text });
+            const unknown = (r && r.unknown) || [];
+            if (unknown.length) {
+              box.className = "effect-validate warn";
+              box.innerHTML =
+                "⚠ Unparsed: " +
+                unknown.map((u) => "<code>" + esc(u) + "</code>").join(", ");
+            } else {
+              box.className = "effect-validate ok";
+              box.innerHTML = "✓ effect parses";
+            }
+          } catch {
+            box.className = "effect-validate err";
+            box.innerHTML = "validation unavailable";
+          }
+        }, 400),
+      );
     }
 
     function currentItem() {
@@ -1069,6 +1224,7 @@
       card.querySelectorAll("[data-f]").forEach((el) => {
         const f = el.dataset.f;
         if (f === "hasCost" || f.startsWith("cost.")) return;
+        if (f === "choices-json") return;
         a[f] = el.type === "checkbox" ? el.checked : el.value;
       });
       const hasCost = card.querySelector('[data-f="hasCost"]')?.checked;
@@ -1082,25 +1238,39 @@
       } else {
         delete a.cost;
       }
-      const ch = card.querySelector('[data-f="choices"]');
-      if (ch && ch.value.trim()) {
+      // Choices come from the structured rows, or the JSON textarea when the
+      // card is in JSON mode. Rows with an empty id or label are dropped so
+      // incomplete rows never persist.
+      const json = card.querySelector('[data-f="choices-json"]');
+      if (json && json.value.trim()) {
         try {
-          const parsed = JSON.parse(ch.value);
+          const parsed = JSON.parse(json.value);
           if (Array.isArray(parsed)) a.choices = parsed.filter((x) => x && x.id && x.label);
           else delete a.choices;
         } catch {
-          // Invalid JSON must not leak a raw string into the ability — drop it
-          // so the serializer never emits `choices: "not json",`.
           delete a.choices;
         }
       } else {
-        delete a.choices;
+        const rows = [...card.querySelectorAll(".choice-row")];
+        const ch = rows
+          .map((r) => ({
+            id: r.querySelector('[data-choice="id"]')?.value.trim() || "",
+            label: r.querySelector('[data-choice="label"]')?.value.trim() || "",
+          }))
+          .filter((x) => x.id && x.label);
+        if (ch.length) a.choices = ch;
+        else delete a.choices;
       }
+      // An empty maxUses field means "no cap" — remove the key instead of
+      // round-tripping it as 1 (sanitizeAbility would coerce "" -> 1).
+      if (a.maxUses === "" || a.maxUses === undefined || a.maxUses === null) delete a.maxUses;
+      else a.maxUses = Number(a.maxUses) || 1;
       return a;
     }
 
     function onAbilityEdit(card) {
       markDirty();
+      validateEffect(card);
       clearTimeout(abilityTimers.get(card));
       abilityTimers.set(card, setTimeout(() => flushAbility(card), 500));
     }
@@ -1186,6 +1356,85 @@
       }
     }
 
+    async function moveAbility(idx, dir) {
+      const item = currentItem();
+      if (!item) return;
+      const ab = item.abilities[idx];
+      if (!ab) return;
+      try {
+        await api("/api/ability", {
+          kind: state.kind,
+          owner: item.name,
+          action: "move",
+          name: ab.name,
+          dir,
+        });
+        state.openAbility = ab.name;
+        await fetchData();
+        renderDetail();
+      } catch (e) {
+        toast(e.message, "err");
+      }
+    }
+
+    async function duplicateAbility(idx) {
+      const item = currentItem();
+      if (!item) return;
+      const ab = item.abilities[idx];
+      if (!ab) return;
+      try {
+        const r = await api("/api/ability", {
+          kind: state.kind,
+          owner: item.name,
+          action: "duplicate",
+          name: ab.name,
+        });
+        // Open the actual copy — the server returns its real name ("X Copy",
+        // or "X Copy N" when taken), not a guessed one.
+        state.openAbility = (r && r.name) || ab.name + " Copy";
+        await fetchData();
+        renderDetail();
+      } catch (e) {
+        toast(e.message, "err");
+      }
+    }
+
+    function activeAbility() {
+      const item = currentItem();
+      if (!item) return null;
+      const open = [...document.querySelectorAll("#detail .ability-card")].find((c) =>
+        c.classList.contains("open"),
+      );
+      return open ? item.abilities[Number(open.dataset.idx)] : null;
+    }
+
+    function addChoice() {
+      const ab = activeAbility();
+      if (!ab) return;
+      // Scaffold an empty row: it only persists once the user types an id and
+      // label (collectAbility drops incomplete rows).
+      if (!Array.isArray(ab.choices)) ab.choices = [];
+      ab.choices.push({ id: "", label: "" });
+      state.openAbility = ab.name;
+      renderDetail();
+      const fresh = [...document.querySelectorAll("#detail .ability-card")].find((c) =>
+        c.classList.contains("open"),
+      );
+      if (fresh) onAbilityEdit(fresh);
+    }
+
+    function removeChoice(idx) {
+      const ab = activeAbility();
+      if (!ab || !Array.isArray(ab.choices)) return;
+      ab.choices.splice(idx, 1);
+      state.openAbility = ab.name;
+      renderDetail();
+      const fresh = [...document.querySelectorAll("#detail .ability-card")].find((c) =>
+        c.classList.contains("open"),
+      );
+      if (fresh) onAbilityEdit(fresh);
+    }
+
     // ---------- item edit queuing (per-item, safe across selection switches) --
     let itemTimer2 = null;
     const pendingPatches = new Map();
@@ -1213,6 +1462,13 @@
           }
           const newName = patch.name ? String(patch.name).trim() : prevName;
           if (newName !== prevName) {
+            // Keep the per-kind custom id list in sync when a custom is
+            // renamed (the server does this for local mode; the demo must do
+            // it here, or the entry loses its CUSTOM badge and stops being
+            // persisted under its new id).
+            const renameList = customListFor(state.kind);
+            const oldIdx = renameList.indexOf(toId(prevName));
+            if (oldIdx !== -1) renameList[oldIdx] = toId(newName);
             state.selected = newName;
             renderList();
           }
@@ -1237,6 +1493,7 @@
         card.dataset.lastname = ab.name;
         const open = state.openAbility ? ab.name === state.openAbility : Number(card.dataset.idx) === 0;
         card.classList.toggle("open", open);
+        if (open) validateEffect(card);
       });
     }
     const _renderDetail = renderDetail;
@@ -1251,6 +1508,7 @@
       if (!row) return;
       state.selected = row.dataset.name;
       state.openAbility = null;
+      choicesJsonFor = null;
       renderList();
       renderDetail();
     });
@@ -1263,6 +1521,7 @@
         e.preventDefault();
         state.selected = row.dataset.name;
         state.openAbility = null;
+        choicesJsonFor = null;
         renderList();
         renderDetail();
       }
@@ -1340,7 +1599,25 @@
       const act = actEl.dataset.act;
       if (act === "add-ability") addAbility();
       else if (act === "del-ability") deleteAbility(Number(actEl.dataset.idx));
-      else if (act === "del-custom") deleteCustom();
+      else if (act === "move-ability")
+        moveAbility(Number(actEl.dataset.idx), Number(actEl.dataset.dir));
+      else if (act === "dup-ability") duplicateAbility(Number(actEl.dataset.idx));
+      else if (act === "add-choice") addChoice();
+      else if (act === "del-choice") removeChoice(Number(actEl.dataset.idx));
+      else if (act === "choices-json") {
+        e.preventDefault();
+        const card = actEl.closest(".ability-card");
+        const item = currentItem();
+        const ab = card && item ? item.abilities[Number(card.dataset.idx)] : null;
+        if (ab) {
+          choicesJsonFor = ab.name;
+          renderDetail();
+        }
+      } else if (act === "choices-rows") {
+        e.preventDefault();
+        choicesJsonFor = null;
+        renderDetail();
+      } else if (act === "del-custom") deleteCustom();
     });
 
     // ---------- global actions ----------
