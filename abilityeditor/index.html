@@ -1620,7 +1620,10 @@
     // re-renders so the chips update. Saves each ability through the same
     // /api/ability path the per-card editor uses, so it works in both server
     // and static-demo mode (and respects the server's rename/validation rules).
+    let bulkLevelSaveInProgress = false;
+
     async function setAllAbilityLevels() {
+      if (bulkLevelSaveInProgress) return;
       const item = currentItem();
       if (!item || !item.abilities || !item.abilities.length) return;
       const sel = document.querySelector("[data-bulk-level]");
@@ -1632,6 +1635,8 @@
         )
       )
         return;
+      bulkLevelSaveInProgress = true;
+      if (sel) sel.disabled = true;
       try {
         for (const ab of item.abilities) {
           const patch = JSON.parse(JSON.stringify(ab));
@@ -1648,7 +1653,11 @@
         toast("All " + item.abilities.length + " abilities set to Lv " + level + ".", "ok");
         renderDetail();
       } catch (e) {
+        renderDetail();
         toast(e.message, "err");
+      } finally {
+        bulkLevelSaveInProgress = false;
+        if (sel) sel.disabled = false;
       }
     }
 
