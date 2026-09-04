@@ -181,15 +181,24 @@ export function natList(arr: string[]): string {
 }
 
 /** Roll an XdY+Z dice formula and return the total plus the per-die breakdown. */
-export function rollDice(formula: string): {
+export function rollDice(formula: string, diceMod = 0, facesMod = 0): {
   total: number;
   rolls: number[];
   base: number;
 } {
   const match = formula.match(/^(\d+)d(\d+)([+-]\d+)?$/);
   if (!match) return { total: 0, rolls: [], base: 0 };
-  const count = parseInt(match[1]);
-  const sides = parseInt(match[2]);
+  // "dice" buffs/debuffs add/remove dice ("+1 dice" -> 2d6 becomes 3d6);
+  // "dice faces" buffs/debuffs shift the die size (d4 + 4 faces -> d8),
+  // faces round up per the data ("dice faces round up"), min d2.
+  const count = Math.max(1, parseInt(match[1]) + Math.round(diceMod));
+  const baseSides = parseInt(match[2]);
+  // Only clamp to d2 when a faces mod was actually applied: an unmodified
+  // "1d1+0" must stay one-sided, otherwise it rolls 1 or 2.
+  const sides =
+    facesMod === 0
+      ? baseSides
+      : Math.max(2, baseSides + Math.ceil(facesMod));
   const mod = match[3] ? parseInt(match[3]) : 0;
   const rolls: number[] = [];
   for (let i = 0; i < count; i++) {
