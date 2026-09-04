@@ -66,8 +66,9 @@ abilityeditor/
 | `/api/status` | GET | pending-regen flag, custom count |
 | `/api/update` | POST | patch a class/weapon (name, stats, description, branch) |
 | `/api/ability` | POST | add / save / remove / **move** / **duplicate** an ability |
-| `/api/validate` | POST | run the game's BD Lang parser over an effect; return unparsed clauses |
+| `/api/validate` | POST | run the game's BD Lang parser over an effect; return unparsed clauses, a **parse summary**, and a **frequency** vocabulary check |
 | `/api/custom` | POST | add a custom class/weapon |
+| `/api/custom/duplicate` | POST | fork any class/weapon into a custom copy ("X Copy") |
 | `/api/custom/remove` | POST | remove a custom class/weapon |
 | `/api/regenerate` | POST | rewrite `src/data/index.ts` (minimal diff) |
 | `/api/reset` | POST | reload data from `src/data/index.ts` (keeps customs) |
@@ -80,6 +81,18 @@ Mutations are only accepted from a `localhost` origin matching the server port.
   frequency, MR, roll, damage type, action type, target amount (number or
   `AoE`), target group, range, effect (BD Lang), optional max uses, cost and
   choices.
+- The sidebar search matches **item names and ability names** — type "heal"
+  to find every class/weapon with a Heal-style ability.
+- Weapon **Branch** is a datalist of the existing branches (typos can no
+  longer create phantom branch groups in the sign-in dropdown).
+- **Stats** are validated inline: non-numeric values get a red border.
+- **Duplicate as custom** (top-right of any entry) forks the class/weapon into
+  a custom copy named "X Copy" so you can iterate without touching the
+  original.
+- The live check under the Effect box shows a **summary of what the parser
+  understood** (e.g. `+6 DMG`), flags unparsed clauses, and warns when the
+  **Frequency** uses vocabulary `parseFrequency` doesn't know (while still
+  accepting "Every Turn" / "Passive", which legitimately have no limit).
 - Ability cards have **▲/▼ reorder** buttons (order is what the game uses),
   a **Duplicate** button (names the copy "… Copy" / "… Copy 2"), and live
   **effect parsing**: unparsed BD Lang clauses are shown under the Effect box.

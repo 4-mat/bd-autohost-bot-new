@@ -394,6 +394,15 @@
       .effect-validate.err {
         color: var(--err);
       }
+      .effect-validate code {
+        background: var(--panel-2);
+        border-radius: 3px;
+        padding: 0 4px;
+      }
+      .field.stat-invalid input {
+        border-color: var(--err);
+        background: #fff5f5;
+      }
       .hint {
         color: var(--text-dim);
         font-size: 11px;
@@ -555,6 +564,70 @@
     const DAMAGE_TYPES = ["Physical", "Magical", ""];
     const STATS = ["hp", "atk", "mag", "pd", "md", "eva", "mp"];
 
+    // BD Lang clause templates, grouped by category. Every template is
+    // verified to parse with the game's real parser (src/game/effects.ts),
+    // so inserting one is always a valid starting point — tweak the numbers.
+    const EFFECT_TEMPLATES = [
+      {
+        group: "Stats",
+        items: [
+          ["Buff stat", "+3 ATK/1"],
+          ["Debuff stat", "-2 DEF/1"],
+          ["Percent damage buff", "+20% damage"],
+          ["Gain MP", "Gain +3 MP"],
+          ["Gain resource", "Gain 2 Rage"],
+          ["Spend resource", "Spend 2 Rage"],
+        ],
+      },
+      {
+        group: "Status",
+        items: [
+          ["Inflict status with damage", "inflict 2 Poison/3"],
+          ["Inflict status", "inflict Slow/1"],
+        ],
+      },
+      {
+        group: "Flow",
+        items: [
+          ["Conditional", "If target HP < 50%: +5 DMG Otherwise: +2 DMG"],
+          ["Choose one", "Choose: +2 ATK or +2 DEF"],
+          ["Thirst", "Thirst 3: +3 DMG"],
+          ["Apex", "Apex: +4 DMG"],
+          ["Channel stat", "Channel ATK for 2 rounds"],
+        ],
+      },
+      {
+        group: "Combat",
+        items: [
+          ["Multi-hit", "Multi-Hit: 2"],
+          ["Delay", "Delay 1 round"],
+          ["Recoil", "Recoil 10%"],
+          ["Ignores", "Ignores Shield"],
+          ["Heal", "Heal 10 HP"],
+        ],
+      },
+    ];
+
+    function effectTemplateOptions() {
+      return EFFECT_TEMPLATES.map(
+        (g) =>
+          '<optgroup label="' +
+          esc(g.group) +
+          '">' +
+          g.items
+            .map(
+              (it) =>
+                '<option value="' +
+                esc(it[1]) +
+                '">' +
+                esc(it[0]) +
+                "</option>",
+            )
+            .join("") +
+          "</optgroup>",
+      ).join("");
+    }
+
     function list() {
       return state.data[state.kind === "class" ? "classes" : "weapons"];
     }
@@ -567,6 +640,57 @@
     }
     function getItem(name) {
       return list().find((x) => x.name === name) || null;
+    }
+
+    function uniqueCopyName(base, taken) {
+      if (!taken(base)) return base;
+      for (let n = 2; ; n++) if (!taken(base + " " + n)) return base + " " + n;
+    }
+
+    // Weapon Branch suggestions (the game groups weapons by branch for the
+    // sign-in dropdown; a datalist keeps typos from creating phantom groups).
+    function branchOptions() {
+      const seen = [];
+      const out = [];
+      for (const w of state.data.weapons || []) {
+        const b = w.branch;
+        if (b && !seen.includes(b)) {
+          seen.push(b);
+          out.push('<option value="' + esc(b) + '">');
+        }
+      }
+      return out.join("");
+    }
+
+    // Client-side mirror of serializer.validateFrequency for the static demo
+    // (which has no backend to call). Returns a warning string or null.
+    function clientFreqNote(freq) {
+      const f = (freq || "").trim();
+      if (!f) return null;
+      const norm = f
+        .toLowerCase()
+        .replace(/\([^)]*\)/g, "")
+        .replace(/\s*,\s*/g, "/")
+        .trim();
+      const parts = norm
+        .split("/")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!parts.length) return null;
+      const known = (p) =>
+        p === "once" ||
+        p === "twice" ||
+        p === "thrice" ||
+        p === "eot" ||
+        p === "e3t" ||
+        p === "every turn" ||
+        p === "every other turn" ||
+        p === "every third turn" ||
+        p === "passive" ||
+        p === "permanent" ||
+        /^\d+ per game(?:: \d+)?$/.test(p);
+      const bad = parts.filter((p) => !known(p));
+      return bad.length ? "unrecognized frequency: " + bad.join(", ") : null;
     }
 
     // ---------- toast ----------
@@ -662,6 +786,8 @@
           return staticAddCustom(body);
         case "/api/custom/remove":
           return staticRemoveCustom(body);
+        case "/api/custom/duplicate":
+          return staticDuplicateCustom(body);
         case "/api/reset":
           seedStatic();
           return Promise.resolve({ ok: true });
@@ -705,9 +831,9 @@
         const i = abilities.findIndex((x) => x.name === body.name);
         if (i >= 0) {
           const copy = JSON.parse(JSON.stringify(abilities[i]));
-          const base = (copy.name || "") + " Copy";
-          let nm = base;
-          for (let n = 2; abilities.some((x) => x.name === nm); n++) nm = base + " " + n;
+          const nm = uniqueCopyName(String(copy.name || "") + " Copy", (n) =>
+            abilities.some((x) => toId(x.name) === toId(n)),
+          );
           copy.name = nm;
           abilities.splice(i + 1, 0, copy);
           return Promise.resolve({ ok: true, name: nm });
@@ -739,6 +865,22 @@
       if (!kindList.includes(id)) kindList.push(id);
       persistCustoms();
       return Promise.resolve({ ok: true });
+    }
+
+    function staticDuplicateCustom(body) {
+      const kind = body.kind === "weapon" ? "weapon" : "class";
+      const arr = state.data[kind === "class" ? "classes" : "weapons"];
+      const src = arr.find((x) => x.name === body.name);
+      if (!src) return Promise.reject(new Error("Item not found: " + body.name));
+      const copy = JSON.parse(JSON.stringify(src));
+      copy.name = uniqueCopyName(String(src.name || "") + " Copy", (n) =>
+        arr.some((x) => toId(x.name) === toId(n)),
+      );
+      arr.push(copy);
+      const kindList = customListFor(kind);
+      if (!kindList.includes(toId(copy.name))) kindList.push(toId(copy.name));
+      persistCustoms();
+      return Promise.resolve({ ok: true, name: copy.name });
     }
 
     function staticRemoveCustom(body) {
@@ -858,8 +1000,15 @@
 
     // ---------- sidebar ----------
     function renderList() {
-      const items = list().filter((x) =>
-        x.name.toLowerCase().includes(state.filter.toLowerCase()),
+      const f = state.filter.toLowerCase();
+      // Search matches item names and ability names, so "heal" finds every
+      // class/weapon that has a Heal-style ability.
+      const items = list().filter(
+        (x) =>
+          x.name.toLowerCase().includes(f) ||
+          (x.abilities || []).some((a) =>
+            String(a.name || "").toLowerCase().includes(f),
+          ),
       );
       const rows = items
         .map((x) => {
@@ -1052,6 +1201,11 @@
         field("maxUses", "Max Uses (per battle)", a.maxUses === undefined ? "" : a.maxUses) +
         "</div>" +
         field("effect", "Effect (BD Lang)", a.effect, { textarea: true, full: true }) +
+        '<div class="full inline" style="margin-top:2px">' +
+        '<label class="inline-label">Insert template</label>' +
+        '<select data-tpl-select title="Start from a known-good BD Lang clause, then tweak the numbers">' +
+        effectTemplateOptions() +
+        '</select><button class="mini" data-act="tpl-insert" title="Insert the selected clause into the Effect box">Insert</button></div>' +
         '<div class="effect-validate" data-idx="' +
         idx +
         '"></div>' +
@@ -1101,17 +1255,24 @@
       if (!item) return;
       const custom = isCustomName(item.name);
       const stats = item.stats || {};
+      // Stats must be numeric strings (the game parses them with Number() at
+      // combat time); flag anything else so a typo can't silently break a class.
+      const statInvalid = (v) => String(v ?? "").trim() !== "" && isNaN(Number(v));
       const statsHtml =
         '<div class="grid stats">' +
         STATS.map(
           (s) =>
-            '<div class="field"><label>' +
+            '<div class="field' +
+            (statInvalid(stats[s]) ? " stat-invalid" : "") +
+            '"><label>' +
             s.toUpperCase() +
             '</label><input data-stat="' +
             s +
             '" type="text" value="' +
             esc(stats[s] ?? "") +
-            '" spellcheck="false" /></div>',
+            '" spellcheck="false"' +
+            (statInvalid(stats[s]) ? ' title="Not a number — the game expects numeric stats"' : "") +
+            " /></div>",
         ).join("") +
         "</div>";
       const abilities = item.abilities || [];
@@ -1146,17 +1307,30 @@
         (custom
           ? '<button class="danger mini" data-act="del-custom">Delete custom</button>'
           : "") +
+        '<button class="mini" data-act="dup-item" title="Fork this entry into a custom copy (named \'X Copy\') so you can iterate without touching the original">Duplicate as custom</button>' +
         "</div>" +
         field("name", "Name", item.name) +
         (state.kind === "weapon"
-          ? field("branch", "Branch", item.branch || "")
+          ? '<div class="field"><label>Branch</label><input data-f="branch" list="branch-list" type="text" value="' +
+            esc(item.branch || "") +
+            '" spellcheck="false" /><datalist id="branch-list">' +
+            branchOptions() +
+            "</datalist></div>"
           : "") +
         field("description", "Description", item.description, { textarea: true }) +
         '<div class="section-title">Base Stats</div>' +
         statsHtml +
         '<div class="section-title">Abilities <span class="count">(' +
         abilities.length +
-        ')</span><span class="spacer"></span><button class="mini" data-act="add-ability">＋ Add ability</button></div>' +
+        ')</span><span class="spacer"></span>' +
+        (abilities.length
+          ? '<select data-bulk-level title="Set every ability on this entry to one level">' +
+            LEVELS.map(
+              (l) => '<option value="' + esc(l) + '">Lv ' + esc(l) + "</option>",
+            ).join("") +
+            '</select><button class="mini" data-act="bulk-level" title="Apply the chosen level to all abilities">Set all</button>'
+          : "") +
+        '<button class="mini" data-act="add-ability">＋ Add ability</button></div>' +
         (cards || '<div class="hint">No abilities yet.</div>');
       $("#detail").innerHTML = detail;
       $("#detail").style.display = "";
@@ -1172,23 +1346,29 @@
       $("#dirty-chip").classList.add("show");
     }
 
-    // Live BD Lang check: clauses the game's parser can't interpret are shown
-    // under the Effect textarea. Local mode calls /api/validate (which runs the
-    // real parseEffects); the static demo has no backend, so it shows a hint
-    // that the preview only runs in the local editor.
+    // Live BD Lang check: the game's real parser (via /api/validate) reports
+    // unparsed clauses, shows a summary of what it DID understand, and checks
+    // the Frequency vocabulary. The static demo has no backend, so it runs a
+    // client-side frequency check and hints that the full parse preview only
+    // runs in the local editor.
     async function validateEffect(card) {
       const box = card && card.querySelector(".effect-validate");
       if (!box) return;
       const ta = card.querySelector('[data-f="effect"]');
       const text = (ta && ta.value) || "";
-      if (!text.trim()) {
+      const freqEl = card.querySelector('[data-f="frequency"]');
+      const freq = (freqEl && freqEl.value) || "";
+      if (!text.trim() && !freq.trim()) {
         box.className = "effect-validate";
         box.innerHTML = "";
         return;
       }
       if (STATIC) {
-        box.className = "effect-validate";
-        box.innerHTML = `<span class="hint">Effect parsing preview is available in the local editor (npm run editor).</span>`;
+        const note = clientFreqNote(freq);
+        box.className = "effect-validate" + (note ? " warn" : "");
+        box.innerHTML = note
+          ? "⚠ " + esc(note)
+          : '<span class="hint">Effect parsing preview is available in the local editor (npm run editor).</span>';
         return;
       }
       clearTimeout(validateTimers.get(card));
@@ -1196,17 +1376,27 @@
         card,
         setTimeout(async () => {
           try {
-            const r = await api("/api/validate", { effect: text });
+            const r = await api("/api/validate", { effect: text, frequency: freq });
             const unknown = (r && r.unknown) || [];
+            const summary = (r && r.summary) || [];
+            const freqNote = (r && r.frequencyNote) || null;
+            const lines = [];
             if (unknown.length) {
-              box.className = "effect-validate warn";
-              box.innerHTML =
+              lines.push(
                 "⚠ Unparsed: " +
-                unknown.map((u) => "<code>" + esc(u) + "</code>").join(", ");
+                  unknown.map((u) => "<code>" + esc(u) + "</code>").join(", "),
+              );
+            } else if (summary.length) {
+              lines.push(
+                "✓ " +
+                  summary.map((s) => "<code>" + esc(s) + "</code>").join(" · "),
+              );
             } else {
-              box.className = "effect-validate ok";
-              box.innerHTML = "✓ effect parses";
+              lines.push("✓ effect parses (no clauses)");
             }
+            if (freqNote) lines.push("⚠ " + esc(freqNote));
+            box.className = "effect-validate" + (freqNote || unknown.length ? " warn" : " ok");
+            box.innerHTML = lines.join("<br>");
           } catch {
             box.className = "effect-validate err";
             box.innerHTML = "validation unavailable";
@@ -1408,6 +1598,69 @@
       return open ? item.abilities[Number(open.dataset.idx)] : null;
     }
 
+    // Insert the selected BD Lang template into the card's Effect box, then
+    // re-validate (the parse preview updates live). Appends with "; " when the
+    // box already has content so clauses stay combinable.
+    async function insertEffectTemplate(btn) {
+      const card = btn.closest(".ability-card");
+      if (!card) return;
+      const sel = card.querySelector("[data-tpl-select]");
+      if (!sel || !sel.value) return;
+      const ta = card.querySelector('[data-f="effect"]');
+      if (!ta) return;
+      const existing = (ta.value || "").trim();
+      ta.value = existing ? existing + "; " + sel.value : sel.value;
+      onAbilityEdit(card);
+      await validateEffect(card);
+      ta.focus();
+    }
+
+    // "Set all abilities to Lv N": applies the chosen level to every ability
+    // on the current item at once (handy for bulk-tuning a class), then
+    // re-renders so the chips update. Saves each ability through the same
+    // /api/ability path the per-card editor uses, so it works in both server
+    // and static-demo mode (and respects the server's rename/validation rules).
+    let bulkLevelSaveInProgress = false;
+
+    async function setAllAbilityLevels() {
+      if (bulkLevelSaveInProgress) return;
+      const item = currentItem();
+      if (!item || !item.abilities || !item.abilities.length) return;
+      const sel = document.querySelector("[data-bulk-level]");
+      const level = sel && sel.value;
+      if (!level) return;
+      if (
+        !confirm(
+          "Set all " + item.abilities.length + " abilities to Lv " + level + "?",
+        )
+      )
+        return;
+      bulkLevelSaveInProgress = true;
+      if (sel) sel.disabled = true;
+      try {
+        for (const ab of item.abilities) {
+          const patch = JSON.parse(JSON.stringify(ab));
+          patch.level = level;
+          await api("/api/ability", {
+            kind: state.kind,
+            owner: item.name,
+            action: "save",
+            name: ab.name,
+            ability: patch,
+          });
+          ab.level = level;
+        }
+        toast("All " + item.abilities.length + " abilities set to Lv " + level + ".", "ok");
+        renderDetail();
+      } catch (e) {
+        renderDetail();
+        toast(e.message, "err");
+      } finally {
+        bulkLevelSaveInProgress = false;
+        if (sel) sel.disabled = false;
+      }
+    }
+
     function addChoice() {
       const ab = activeAbility();
       if (!ab) return;
@@ -1574,6 +1827,10 @@
         return;
       }
       if (t.dataset.stat) {
+        // Live non-numeric flag while typing (mirrors renderDetail's check).
+        const bad = t.value.trim() !== "" && isNaN(Number(t.value));
+        t.closest(".field")?.classList.toggle("stat-invalid", bad);
+        t.title = bad ? "Not a number — the game expects numeric stats" : "";
         onItemEdit({ stats: { [t.dataset.stat]: t.value } });
         return;
       }
@@ -1602,6 +1859,8 @@
       else if (act === "move-ability")
         moveAbility(Number(actEl.dataset.idx), Number(actEl.dataset.dir));
       else if (act === "dup-ability") duplicateAbility(Number(actEl.dataset.idx));
+      else if (act === "tpl-insert") insertEffectTemplate(actEl);
+      else if (act === "bulk-level") setAllAbilityLevels();
       else if (act === "add-choice") addChoice();
       else if (act === "del-choice") removeChoice(Number(actEl.dataset.idx));
       else if (act === "choices-json") {
@@ -1618,6 +1877,7 @@
         choicesJsonFor = null;
         renderDetail();
       } else if (act === "del-custom") deleteCustom();
+      else if (act === "dup-item") duplicateItem();
     });
 
     // ---------- global actions ----------
@@ -1717,6 +1977,34 @@
           }
         },
       );
+    }
+
+    async function duplicateItem() {
+      const item = currentItem();
+      if (!item) return;
+      try {
+        const r = await api("/api/custom/duplicate", {
+          kind: state.kind,
+          name: item.name,
+        });
+        state.selected = r.name;
+        state.openAbility = null;
+        choicesJsonFor = null;
+        await fetchData();
+        renderDetail();
+        toast(
+          STATIC
+            ? 'Custom copy "' +
+              r.name +
+              '" created — saved in this browser. Use Propose to Bot to suggest adding it.'
+            : 'Custom copy "' +
+              r.name +
+              '" created — it will never be written to the bot\'s data.',
+          "ok",
+        );
+      } catch (e) {
+        toast(e.message, "err");
+      }
     }
 
     async function deleteCustom() {

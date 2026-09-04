@@ -44,6 +44,9 @@ import {
   isPlainObject,
   moveAbility,
   duplicateAbility,
+  uniqueCopyName,
+  summarizeEffects,
+  validateFrequency,
   type EntryLike,
 } from "./serializer.js";
 
@@ -412,13 +415,21 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (p === "/api/validate" && req.method === "POST") {
       // Live BD Lang check: clauses the game's parser can't interpret come
       // back as {type:"unknown"} — surface them so a typo is caught in the
-      // editor instead of silently no-opping in battle.
+      // editor instead of silently no-opping in battle. Also returns a
+      // human-readable summary of what the parser understood, plus a
+      // frequency vocabulary check.
       const effect = String(body.effect ?? "");
       const parsed = parseEffects(effect);
       const unknown = parsed
         .filter((e) => e.type === "unknown")
         .map((e) => (e as { text: string }).text);
-      send(res, 200, { ok: true, unknown });
+      const frequency = String(body.frequency ?? "");
+      send(res, 200, {
+        ok: true,
+        unknown,
+        summary: summarizeEffects(parsed),
+        frequencyNote: validateFrequency(frequency),
+      });
       return;
     }
 
@@ -440,6 +451,32 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       saveCustoms();
       touch();
       send(res, 200, { ok: true, name: nm });
+      return;
+    }
+
+    if (p === "/api/custom/duplicate") {
+      // Fork any existing class/weapon (built-in or custom) into a custom
+      // copy named "<name> Copy" so it can be iterated on without touching
+      // the original. The copy is a deep clone, registered as a custom.
+      const { kind, name } = body;
+      const map = entryMap(kind);
+      const key = toId(name);
+      const src = map?.get(key);
+      if (!map || !src) {
+        send(res, 404, { error: `${kind ?? "?"} '${name ?? "?"}' not found` });
+        return;
+      }
+      const copy = JSON.parse(JSON.stringify(src)) as Record<string, unknown>;
+      const taken = (n: string) => map.has(toId(n));
+      copy.name = uniqueCopyName(String(src.name ?? "") + " Copy", taken);
+      map.set(
+        toId(String(copy.name)),
+        copy as unknown as ClassData & WeaponData,
+      );
+      customSetFor(kind)!.add(toId(String(copy.name)));
+      saveCustoms();
+      touch();
+      send(res, 200, { ok: true, name: copy.name });
       return;
     }
 
