@@ -108,6 +108,39 @@ function makeAbility(
 beforeEach(() => {});
 
 // ===========================================================================
+// ===========================================================================
+// resolveAttackFlow: multi-hit stops once the target is defeated (#180)
+// ===========================================================================
+
+describe("resolveAttackFlow: multi-hit vs defeated target", () => {
+  it("does not roll later hits against a corpse and re-announce the defeat", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      curhp: 5, // dies on hit 1 (min roll 2 + ATK 10 - PD 5 = 7)
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Rapid Jab",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      effect: "Multi-Hit: 3.",
+    });
+    const log = driveResolveAgainst(user, ability, target);
+    // The defeat must be announced exactly once, and only Hit 1/3 may
+    // appear: hits 2 and 3 must not roll against the corpse.
+    const defeated = log.split("\n").filter((l) => l.includes("defeated"));
+    expect(defeated.length).toBe(1);
+    expect(log).not.toContain("(Hit 2/3");
+    expect(log).not.toContain("(Hit 3/3");
+  });
+});
+
+// ===========================================================================
 // isValidTarget — group matching (single-target path)
 // ===========================================================================
 

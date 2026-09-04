@@ -149,20 +149,29 @@ const userGui = new Map<
 const MAX_LOG = 100;
 // Entries carry a monotonic `seq` so clients can reconcile re-sent
 // history after a reconnect (dedupe by identity, not a one-shot flag).
+// The counter restarts at 0 on every server boot, so history payloads also
+// carry a per-run epoch; clients reset their seq watermark when it changes.
+const serverEpoch = Date.now();
 let chatSeq = 0;
 const CHAT_LOG: Array<Record<string, string | number>> = [];
 
 function broadcast(msg: string) {
+  let outbound = msg;
   try {
     const m = JSON.parse(msg);
     if (["chat", "action", "quote", "react"].includes(m.type)) {
-      CHAT_LOG.push({ ...m, seq: ++chatSeq });
+      const stamped = { ...m, seq: ++chatSeq };
+      CHAT_LOG.push(stamped);
       if (CHAT_LOG.length > MAX_LOG) CHAT_LOG.shift();
+      // Send the stamped payload so live frames also carry seq and the
+      // client advances lastChatSeq; otherwise reconnect history re-renders
+      // messages that were already shown live.
+      outbound = JSON.stringify(stamped);
     }
   } catch {}
   for (const client of browserClients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(msg);
+      client.send(outbound);
     }
   }
 }
@@ -663,7 +672,9 @@ wss.on("connection", (ws) => {
     });
   }
 
-  ws.send(JSON.stringify({ type: "history", lines: CHAT_LOG.slice() }));
+  ws.send(
+    JSON.stringify({ type: "history", epoch: serverEpoch, lines: CHAT_LOG.slice() }),
+  );
   broadcast(
     JSON.stringify({
       type: "system",
@@ -1559,6 +1570,9 @@ let nick = '';
 // render only the ones we haven't seen — no duplicates on reconnect, and
 // messages sent during a disconnect still come through.
 let lastChatSeq = 0;
+// Server-run identifier from the history payload; when it changes the
+// chatSeq counter restarted, so the stale seq watermark must be dropped.
+let lastServerEpoch: number | null = null;
 
 function loadNick() {
   try { return localStorage.getItem(nickKey) || ''; } catch (e) { return ''; }
@@ -1614,6 +1628,13 @@ function connect() {
   const msg = JSON.parse(e.data);
 
   if (msg.type === 'history') {
+    // A new server run restarts chatSeq at 0 while the browser keeps its
+    // own lastChatSeq, which would filter out the fresh log. Drop the old
+    // watermark when the server's epoch changes.
+    if (typeof msg.epoch === 'number' && msg.epoch !== lastServerEpoch) {
+      lastServerEpoch = msg.epoch;
+      lastChatSeq = 0;
+    }
     // Render only entries we haven't seen: seq is monotonic on the server,
     // so filtering by the last rendered seq prevents reconnect duplicates
     // while still surfacing messages that arrived while disconnected.
@@ -1657,6 +1678,7 @@ function connect() {
     } else if (msg.type === 'chat' || msg.type === 'quote') {
       const text = withSignupLink(msg.text);
       addLine(msg.type, text);
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
       if (isMobile() && mobileView === 'game') {
         showToast(text);
         unread++;
@@ -1670,6 +1692,7 @@ function connect() {
       handleTurn(msg);
     } else if (msg.type === 'action') {
       addLine('action', msg.text, msg.name);
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
     } else if (msg.type === 'pm') {
       addLine('pm', msg.text);
     } else if (msg.type === 'playerlist') {
@@ -1681,6 +1704,7 @@ function connect() {
       addLine('system', '[TEAM] ' + msg.text);
       renderTeamChat();
     } else if (msg.type === 'react') {
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
       addLine('react', msg.user + ' ' + msg.emote);
     } else {
       addLine('system', msg.text);
