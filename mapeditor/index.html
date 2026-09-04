@@ -1390,7 +1390,19 @@
       /* ------------------------------------------------------------------ */
       /* grid rendering                                                       */
       /* ------------------------------------------------------------------ */
+      // render() rebuilds the full grid (up to 60x60 cells). Painting drags
+      // can fire dozens of mousemove events per frame, so coalesce them with
+      // requestAnimationFrame — the last renderRequested wins within a frame.
+      let renderPending = false;
       function render() {
+        if (renderPending) return; // already queued for this frame
+        renderPending = true;
+        requestAnimationFrame(() => {
+          renderPending = false;
+          renderNow();
+        });
+      }
+      function renderNow() {
         const grid = $("grid");
         grid.innerHTML = "";
 
@@ -1863,6 +1875,12 @@
           if (!res.ok) throw new Error("HTTP " + res.status);
           const data = await res.json();
           modesCache = { modes: data.modes || {}, labels: data.labels || {} };
+          // Keep mapcore's mode rules in lockstep with the bot's generated
+          // data (aliases + per-mode min sizes).
+          MC.setModeData({
+            aliases: data.aliases || {},
+            minSizes: data.minSizes || {},
+          });
           return modesCache;
         } catch (e) {
           return { modes: {}, labels: {} };

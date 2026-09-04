@@ -58,5 +58,31 @@
     "jugg": "JUGG",
     "pvp": "PvP",
     "1v1": "1v1"
+  },
+  "minSizes": {
+    "ffa": 7,
+    "ntr": 5,
+    "jugg": 7,
+    "pvp": 7,
+    "1v1": 7
+  },
+  "aliases": {
+    "ffa": "ffa",
+    "ntr": "ntr",
+    "jugg": "jugg",
+    "juggernaut": "jugg",
+    "pvp": "pvp",
+    "duel": "1v1",
+    "1v1": "1v1",
+    "2vj": "jugg",
+    "3vj": "jugg",
+    "4vj": "jugg",
+    "pvpj": "pvp",
+    "pvp juggernaut": "pvp",
+    "pvpntr": "ntr",
+    "pvp ntr": "ntr",
+    "2v2v2": "pvp",
+    "4v4": "pvp",
+    "2v2v2v2": "pvp"
   }
 }
