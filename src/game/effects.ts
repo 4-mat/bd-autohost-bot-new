@@ -8,6 +8,7 @@ import {
   dealDamage,
   hasLineOfSight,
   inRange,
+  hasStatus,
   manhattan,
   pushEntity,
   pullEntity,
@@ -25,12 +26,25 @@ export interface StatusInflict {
   rounds: number;
 }
 
+export interface MpCapEffect {
+  type: "mpCap";
+  /** The maximum MP the target has while the cap lasts. */
+  amount: number;
+  rounds: number;
+}
+
 export interface StatMod {
   type: "buff" | "debuff";
   stat: string;
   amount: number;
   rounds?: number;
   percent?: number;
+  /**
+   * Who receives the stat mod: "self" (the ability user) or "target".
+   * Absent (legacy hand-built effects) means target, matching the old
+   * behaviour.
+   */
+  subject?: "self" | "target";
 }
 
 export interface Displacement {
@@ -111,6 +125,11 @@ export interface ChannelEffect {
   rounds: number;
 }
 
+export interface PhaseEffect {
+  type: "phase";
+  phase: string;
+}
+
 export interface DelayLandEffect {
   type: "delayLand";
 }
@@ -148,25 +167,17 @@ export interface TriggerEffect {
   effects: Effect[];
 }
 
-export type PhaseTiming =
-  | "before-acc"
-  | "before-damage"
-  | "on-miss"
-  | "regardless";
+export type PhaseTiming = "before-acc" | "before-damage" | "on-miss" | "regardless";
 
-export interface PhaseTimingEffect {
+export interface PhaseGateEffect {
   type: "phaseEffect";
   phase: PhaseTiming;
   effects: Effect[];
 }
 
-export interface PhaseEffect {
-  type: "phase";
-  phase: string;
-}
-
 export type Effect =
   | StatusInflict
+  | MpCapEffect
   | StatMod
   | Displacement
   | ResourceChange
@@ -181,14 +192,14 @@ export type Effect =
   | ApexEffect
   | ChooseEffect
   | ChannelEffect
+  | PhaseEffect
   | DelayLandEffect
   | MultiHitMod
   | TileEffect
   | OnMissEffect
   | PerEffect
   | TriggerEffect
-  | PhaseTimingEffect
-  | PhaseEffect
+  | PhaseGateEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -254,8 +265,40 @@ function canonicalResource(name: string): string | null {
   return null;
 }
 
+/**
+ * Memoization for parseEffects. Ability effect strings are static game
+ * data, so the same normalized text always parses to the same Effect[].
+ * Targeting/UI hot paths (getPassiveRangeBonus / getDefenderDiceMods via
+ * inRange, plus every resolveAttackFlow attack) re-parse the same passive
+ * and ability strings repeatedly -- caching avoids that work. Effect trees
+ * are treated as immutable by every caller (they only read / fold / apply
+ * them), so sharing the cached array is safe.
+ */
+// Assumes ability effect text is static game data (abilities.json / glossary
+// CSVs), so a bounded process-lifetime cache is safe and never needs clearing.
+const PARSE_EFFECTS_CACHE = new Map<string, Effect[]>();
+const PARSE_EFFECTS_CACHE_MAX = 2048;
+
+function cachedParseEffects(normalized: string): Effect[] {
+  const hit = PARSE_EFFECTS_CACHE.get(normalized);
+  if (hit) return hit;
+  const parsed = parseEffectsUncached(normalized);
+  if (PARSE_EFFECTS_CACHE.size >= PARSE_EFFECTS_CACHE_MAX) {
+    // Bounded cache: drop the oldest entry (Map preserves insertion order).
+    const oldest = PARSE_EFFECTS_CACHE.keys().next().value;
+    if (oldest !== undefined) PARSE_EFFECTS_CACHE.delete(oldest);
+  }
+  PARSE_EFFECTS_CACHE.set(normalized, parsed);
+  return parsed;
+}
+
+// Referentially stable empty result: parseEffects is memoized, and callers
+// may rely on identical inputs yielding the identical array rather than a
+// fresh allocation per call (PR-Agent on #184).
+const EMPTY_EFFECTS: Effect[] = [];
+
 export function parseEffects(text: string): Effect[] {
-  if (!text || !text.trim()) return [];
+  if (!text || !text.trim()) return EMPTY_EFFECTS;
 
   const normalized = text
     .replace(/\n/g, " ")
@@ -264,10 +307,15 @@ export function parseEffects(text: string): Effect[] {
     .replace(/\s+/g, " ")
     .trim();
 
+  return cachedParseEffects(normalized);
+}
+
+function parseEffectsUncached(normalized: string): Effect[] {
+  const lowerFull = normalized.toLowerCase();
+
   // "On Miss: <effects>" wraps subsequent effects so they only fire
   // when the attack misses.  The prefix is case-insensitive and may
   // appear at the start of the entire ability text.
-  const lowerFull = normalized.toLowerCase();
   const onMissMatch = lowerFull.match(/^on\s+miss:\s*(.+)$/i);
   if (onMissMatch) {
     const inner = parseEffects(onMissMatch[1].trim());
@@ -279,11 +327,19 @@ export function parseEffects(text: string): Effect[] {
   // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return
   // one effect rather than splitting on the inner period and losing context.
   // The regex tolerates either ", " or ". " before "Otherwise", and an
-  // optional trailing period at the end of the else-branch.
+  // optional trailing period at the end of the else-branch. Both comma and
+  // colon separators are accepted ("If X, Y" and "If X: Y").
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)\s*[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
-  if (fullIfMatch) {
+  // A ". " sentence boundary not followed by "otherwise" means the input
+  // is several independent effects, not one conditional: "If target is at
+  // Range 7+: crit on 14+. If target is under Range 3: gain +1 MP/2." must
+  // parse as TWO conditionals, and the second must not be nested inside
+  // the first (its condition is mutually exclusive). Skip the whole-input
+  // match in that case so each sentence is parsed as its own conditional.
+  const hasLaterSentence = /\.\s+(?!otherwise\b)/i.test(normalized);
+  if (fullIfMatch && !hasLaterSentence) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
     const elseEffects = fullIfMatch[3]
       ? parseEffects(fullIfMatch[3].trim())
@@ -297,15 +353,82 @@ export function parseEffects(text: string): Effect[] {
     return [conditional];
   }
 
-  const clauses = splitClauses(normalized);
+  // Multi-sentence input: split into sentences (period boundaries, keeping
+  // "otherwise" attached to its conditional) and parse each sentence as a
+  // whole conditional BEFORE generic comma-level clause splitting. This
+  // preserves colon-form conditionals ("If X: Y") whose separator is not a
+  // splitClauses boundary, and keeps comma-form conditionals ("If X, Y")
+  // from being torn apart by the comma splitter.
+  const sentences = splitSentences(normalized);
   const effects: Effect[] = [];
 
-  for (const clause of clauses) {
-    const parsed = parseClause(clause.trim());
-    if (parsed) effects.push(...parsed);
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim();
+    const sentenceCond = matchWholeConditional(trimmed);
+    if (sentenceCond) {
+      const thenEffects = parseEffects(sentenceCond[2].trim());
+      const elseEffects = sentenceCond[3]
+        ? parseEffects(sentenceCond[3].trim())
+        : undefined;
+      effects.push({
+        type: "conditional",
+        condition: sentenceCond[1].trim(),
+        thenEffects,
+        elseEffects,
+      } as ConditionalEffect);
+      continue;
+    }
+    for (const clause of splitClauses(trimmed)) {
+      const parsed = parseClause(clause.trim());
+      if (parsed) effects.push(...parsed);
+    }
   }
 
   return effects;
+}
+
+/** Match a single sentence as `If CONDITION[,:] EFFECT [Otherwise EFFECT]`.
+ * Returns null when the sentence is not a whole-sentence conditional. */
+function matchWholeConditional(
+  sentence: string,
+): RegExpMatchArray | null {
+  const lower = sentence.toLowerCase();
+  return lower.match(
+    /^if\s+(.+?)\s*[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+  );
+}
+
+/** Split text into sentences on period boundaries at depth 0, treating a
+ * period before "otherwise" as part of the same conditional (so
+ * "If X: Y. Otherwise: Z." stays one sentence). Periods inside dice
+ * notation are ignored. */
+function splitSentences(text: string): string[] {
+  const sentences: string[] = [];
+  let depth = 0;
+  let current = "";
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") depth--;
+
+    const isOtherwisePeriod =
+      ch === "." && /^\.\s+otherwise\b/i.test(text.slice(i));
+    if (
+      depth === 0 &&
+      ch === "." &&
+      !isInsideDice(text, i) &&
+      !isOtherwisePeriod
+    ) {
+      if (current.trim()) sentences.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) sentences.push(current.trim());
+
+  return sentences;
 }
 
 /** Whether position `i` ends a clause: a period/comma/" and " at depth 0,
@@ -363,9 +486,15 @@ function parseClause(clause: string): Effect[] {
 
   const clauseMatch = parseClauseStructured(lower);
   if (clauseMatch) return clauseMatch;
+
   // Inflict: "inflict N Status/M" or "inflict Status/M" or "N Status/M" or "Status/M"
   const statusEffects = parseStatusInflict(lower);
   if (statusEffects.length > 0) return statusEffects;
+
+  // MP cap: "Target: 3 MP/1" (unsigned, target-directed) = the target
+  // only has 3 MP for one round. This must NOT become a positive buff.
+  const mpCap = parseMpCap(lower);
+  if (mpCap) return [mpCap];
 
   // Stat modifiers: "+N STAT/M" or "-N STAT/M" or "+N% STAT/M"
   const statMods = parseStatMods(lower);
@@ -400,177 +529,154 @@ function parseClause(clause: string): Effect[] {
 }
 
 /** Structured clauses with a fixed keyword prefix (If/Thirst/Apex/...). */
-type StructuredClause = {
-  re: RegExp;
-  build: (m: RegExpMatchArray) => Effect[] | null;
-};
-
-// Clause-prefix matchers, tried in order. Each entry matches a structured
-// clause shape ("If ...", "Thirst N: ...", "Apex: ...", ...) and builds the
-// corresponding effect; `build` returns null to fall through to the next
-// matcher (only "Choose" does that, when no option survived parsing).
-const STRUCTURED_CLAUSES: StructuredClause[] = [
-  {
-    // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]" or "If CONDITION: EFFECT"
-    // The colon form lets glossary authors write "If you control moon: gain +1"
-    // without the comma before the effect, which is easier to read inside
-    // longer abilities. Master only accepted the comma form, so we add `:`.
-    re: /^if\s+(.+?)[,:]\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
-    build: (m) => [
-      {
-        type: "conditional",
-        condition: m[1].trim(),
-        thenEffects: parseEffects(m[2]),
-        elseEffects: m[3] ? parseEffects(m[3]) : undefined,
-      },
-    ],
-  },
-  {
-    // Thirst: "Thirst N: EFFECT"
-    re: /^thirst\s+(\d+):\s*(.+)$/,
-    build: (m) => [
-      {
-        type: "thirst",
-        threshold: parseInt(m[1]),
-        effects: parseEffects(m[2]),
-      },
-    ],
-  },
-  {
-    // Apex: "Apex: EFFECT"
-    re: /^apex:\s*(.+)$/,
-    build: (m) => [{ type: "apex", effects: parseEffects(m[1]) }],
-  },
-  {
-    // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
-    // Optional colon + "one" prefix to match real glossary variants.
-    re: /^choose\s*:?\s+(?:one:\s*)?(.+)$/,
-    build: (m) => {
-      const options = m[1]
-        .split(/\s+or\s+/)
-        .map((o) => parseEffects(o.trim()))
-        .filter((o) => o.length > 0);
-      return options.length > 0 ? [{ type: "choose", options }] : null;
-    },
-  },
-  {
-    // Channel: "Channel STAT for N rounds"
-    re: /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
-    build: (m) => [
-      {
-        type: "channel",
-        stat: m[1],
-        rounds: m[2] ? parseInt(m[2]) : 1,
-      },
-    ],
-  },
-  {
-    // Phase-prefixed: "Before accuracy: EFFECT" / "On Miss: EFFECT" / "Regard: EFFECT".
-    // The resolver pulls these out of the per-hit stream and fires them at
-    // the matching timing point (resolve.ts filterByPhase).
-    re: /^(before accuracy|before acc|before damage|on miss|regard(?:less)?):\s*(.+)$/,
-    build: (m) => {
-      const phaseMap: Record<string, PhaseTiming> = {
-        "before accuracy": "before-acc",
-        "before acc": "before-acc",
-        "before damage": "before-damage",
-        "on miss": "on-miss",
-        "regardless": "regardless",
-        "regard": "regardless",
-      };
-      return [
-        {
-          type: "phaseEffect",
-          phase: phaseMap[m[1]],
-          effects: parseEffects(m[2]),
-        },
-      ];
-    },
-  },
-  {
-    // Phase: "Phase: PHASE_NAME" (moon-phase state, not a timing hook)
-    re: /^phase:\s*(new moon|waxing|full moon|waning)$/,
-    build: (m) => [{ type: "phase", phase: m[1] }],
-  },
-  {
-    // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
-    // Used when a single ability clause triggers a different effect on each
-    // moon phase. Master has no support for this; without it glossary lines
-    // like "New Moon: gain +1 initiative" fall through to the default parser
-    // and are misread as an Apex on an empty name.
-    re: /^(new moon|waxing|full moon|waning):\s*(.+)$/,
-    build: (m) => [
-      {
-        type: "conditional",
-        condition: `phase is ${m[1]}`,
-        thenEffects: parseEffects(m[2]),
-      },
-    ],
-  },
-  {
-    // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
-    re: /^delay[\s-]+(\d+)(?:\s+rounds?)?$|^delay-?(\d+)$/,
-    build: (m) => [
-      { type: "delay", rounds: parseInt(m[1] ?? m[2]) },
-    ],
-  },
-  {
-    // Recoil: "Recoil N%"
-    re: /^recoil\s+(\d+)%$/,
-    build: (m) => [{ type: "recoil", percent: parseInt(m[1]) }],
-  },
-  {
-    // Ignore: "Ignore(s) X"
-    re: /^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/,
-    build: (m) => [{ type: "ignore", what: m[1].trim() }],
-  },
-  {
-    // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
-    re: /multi[\s-]hit[:\s]+(\d+)/,
-    build: (m) => [{ type: "multiHit", hits: parseInt(m[1]) }],
-  },
-  {
-    // Per: "Per hit: EFFECT" / "Per 5 CP: EFFECT" / "Per X: EFFECT"
-    // Used by triggers that scale with a quantity (hits, CP spent, AP spent).
-    re: /^per\s+(.+?):\s*(.+)$/,
-    build: (m) => [
-      {
-        type: "per",
-        trigger: m[1].trim(),
-        effects: parseEffects(m[2]),
-      },
-    ],
-  },
-  {
-    // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
-    // Generic reactive trigger; the resolver dispatches on the event string.
-    re: /^when\s+(.+?):\s*(.+)$/,
-    build: (m) => [
-      {
-        type: "trigger",
-        event: m[1].trim(),
-        effects: parseEffects(m[2]),
-      },
-    ],
-  },
-];
-
 function parseClauseStructured(lower: string): Effect[] | null {
-  for (const { re, build } of STRUCTURED_CLAUSES) {
-    const m = lower.match(re);
-    if (!m) continue;
-    const out = build(m);
-    if (out) return out;
+  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
+  const ifMatch = lower.match(
+    /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
+  );
+  if (ifMatch) {
+    return [{
+      type: "conditional",
+      condition: ifMatch[1].trim(),
+      thenEffects: parseEffects(ifMatch[2]),
+      elseEffects: ifMatch[3] ? parseEffects(ifMatch[3]) : undefined,
+    }];
   }
+
+  // Thirst: "Thirst N: EFFECT"
+  const thirstMatch = lower.match(/^thirst\s+(\d+):\s*(.+)$/);
+  if (thirstMatch) {
+    return [{
+      type: "thirst",
+      threshold: parseInt(thirstMatch[1]),
+      effects: parseEffects(thirstMatch[2]),
+    }];
+  }
+
+  // Apex: "Apex: EFFECT"
+  const apexMatch = lower.match(/^apex:\s*(.+)$/);
+  if (apexMatch) {
+    return [{ type: "apex", effects: parseEffects(apexMatch[1]) }];
+  }
+
+  // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
+  // Optional colon + "one" prefix to match real glossary variants.
+  const chooseMatch = lower.match(/^choose\s*:?\s+(?:one:\s*)?(.+)$/);
+  if (chooseMatch) {
+    const options = chooseMatch[1]
+      .split(/\s+or\s+/)
+      .map((o) => parseEffects(o.trim()))
+      .filter((o) => o.length > 0);
+    if (options.length > 0) return [{ type: "choose", options }];
+  }
+
+  // Channel: "Channel STAT for N rounds"
+  const channelMatch = lower.match(
+    /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
+  );
+  if (channelMatch) {
+    return [{
+      type: "channel",
+      stat: channelMatch[1],
+      rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
+    }];
+  }
+
+  // Phase: "Phase: PHASE_NAME"
+  const phaseMatch = lower.match(
+    /^phase:\s*(new moon|waxing|full moon|waning)$/,
+  );
+  if (phaseMatch) {
+    return [{ type: "phase", phase: phaseMatch[1] }];
+  }
+
+  // Moon-phase prefix + Per/When triggers: "New Moon: E" / "Per 5 CP: E" /
+  // "When user kills a foe: E" -- gate their sub-effects. Extracted to keep
+  // parseClauseStructured under the cyclomatic-complexity limit.
+  const prefixGate = parseTriggerPrefix(lower);
+  if (prefixGate) return prefixGate;
+
+  const tail = parseTailSimple(lower);
+  if (tail) return tail;
+
+  return null;
+}
+
+/** Single-keyword clauses parsed at the end: Delay / Recoil / Ignore / Multi-Hit.
+ * Extracted to keep parseClauseStructured under the cyclomatic-complexity limit. */
+function parseTailSimple(lower: string): Effect[] | null {
+  // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
+  const delayMatch =
+    lower.match(/^delay[\s-]+(\d+)\s+rounds?$/) ??
+    lower.match(/^delay-?(\d+)$/);
+  if (delayMatch) {
+    return [{ type: "delay", rounds: parseInt(delayMatch[1]) }];
+  }
+
+  // Recoil: "Recoil N%"
+  const recoilMatch = lower.match(/^recoil\s+(\d+)%$/);
+  if (recoilMatch) {
+    return [{ type: "recoil", percent: parseInt(recoilMatch[1]) }];
+  }
+
+  // Ignore: "Ignore(s) X"
+  const ignoreMatch = lower.match(/^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/);
+  if (ignoreMatch) {
+    return [{ type: "ignore", what: ignoreMatch[1].trim() }];
+  }
+
+  // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
+  const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
+  if (multiHitMatch) {
+    return [{ type: "multiHit", hits: parseInt(multiHitMatch[1]) }];
+  }
+
+  return null;
+}
+
+/**
+ * Clauses that gate their sub-effects behind a prefix word + colon:
+ *   - "New Moon: EFFECT" / "Full Moon: ..." -> a phase-conditional effect.
+ *   - "Per hit: EFFECT" / "Per 5 CP: EFFECT" -> a PerEffect trigger.
+ *   - "When user kills a foe: EFFECT" -> a TriggerEffect.
+ * Returns null when the clause is not one of these prefix-gated forms.
+ */
+function parseTriggerPrefix(lower: string): Effect[] | null {
+  const moonMatch = lower.match(
+    /^(new moon|full moon|waxing|waning):\s*(.+)$/,
+  );
+  if (moonMatch) {
+    return [{
+      type: "conditional",
+      condition: `phase is ${moonMatch[1]}`,
+      thenEffects: parseEffects(moonMatch[2]),
+    }];
+  }
+
+  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
+  if (perMatch) {
+    return [{
+      type: "per",
+      trigger: perMatch[1].trim(),
+      effects: parseEffects(perMatch[2]),
+    }];
+  }
+  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
+  if (whenMatch) {
+    return [{
+      type: "trigger",
+      event: whenMatch[1].trim(),
+      effects: parseEffects(whenMatch[2]),
+    }];
+  }
+
   return null;
 }
 
 interface StatusPattern {
   re: RegExp;
   /** Extract name/damage/rounds from a match; null when the pattern has no status. */
-  extract: (
-    m: RegExpMatchArray,
-  ) => { name: string; damage: number; rounds: number } | null;
+  extract: (m: RegExpMatchArray) => { name: string; damage: number; rounds: number } | null;
 }
 
 // Patterns tried in order: "inflict N Status for M rounds", "inflict N
@@ -633,49 +739,102 @@ function parseStatusInflict(lower: string): Effect[] {
   return [];
 }
 
+/**
+ * "Target: 3 MP/1" / "Targets: 2 MP/2" -- an unsigned, target-directed
+ * clause that SETS the target's MP budget for the round (Razor Rust: "the
+ * target only has 3 MP"). Only matches when the value is unsigned; signed
+ * forms ("target -3 MP/1", "+3 MP") are ordinary buffs/debuffs handled by
+ * parseStatMods.
+ */
+function parseMpCap(lower: string): MpCapEffect | null {
+  const m = lower.match(
+    /^targets?\s*:?\s*(\d+)\s*mp\s*(?:\/\s*(\d+))?$/,
+  );
+  if (!m) return null;
+  return {
+    type: "mpCap",
+    amount: parseInt(m[1], 10),
+    rounds: m[2] ? parseInt(m[2], 10) : 1,
+  };
+}
+
 function parseStatMods(lower: string): Effect[] {
   const effects: Effect[] = [];
-
-  // Pattern: "+N STAT/M" or "-N STAT/M" with optional "for" or "until"
-  // Also: "+N% STAT" or "-N% STAT"
-  // Also: "+N STAT" without duration
-  // Also: "gain +N STAT/M"
+  const subject = statModSubject(lower);
 
   const statRegex =
-    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range)\s*(?:\/\s*(\d+))?/g;
+    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range|dice faces|dice)\s*(?:\/\s*(\d+))?/g;
   let match;
   while ((match = statRegex.exec(lower)) !== null) {
     const sign = match[1] === "-" ? -1 : 1;
     const isPercent = match[2].includes("%");
     const value = parseFloat(match[2].replace("%", ""));
-    let stat = match[3].toLowerCase();
+    const stat = normalizeStatName(match[3]);
 
-    // Normalize stat names
-    if (stat === "damage") stat = "dmg";
-    if (stat === "mdef") stat = "md";
-    if (stat === "pdef") stat = "pd";
+    // "remove 1 dice" / "lose 2 MP" -- an unsigned value preceded by a
+    // removal verb is a negative modifier, not a gain.
+    const before = lower.slice(0, match.index);
+    const removed = sign > 0 && /(remove|lose|spend|cost)\s*$/.test(before);
 
     const rounds = match[4] ? parseInt(match[4]) : undefined;
 
     if (isPercent) {
       effects.push({
-        type: sign > 0 ? "buff" : "debuff",
+        type: sign > 0 && !removed ? "buff" : "debuff",
         stat,
         amount: 0,
-        percent: sign * value,
+        percent: (removed ? -1 : sign) * value,
         rounds,
+        subject,
       });
     } else {
       effects.push({
-        type: sign > 0 ? "buff" : "debuff",
+        type: sign > 0 && !removed ? "buff" : "debuff",
         stat,
-        amount: sign * value,
+        amount: (removed ? -1 : sign) * value,
         rounds,
+        subject,
       });
     }
   }
 
   return effects;
+}
+
+// Clause-level subject: a stat-mod clause is a self-buff ("gain +3 ATK/1"
+// and the common bare "+3 ATK/1", e.g. Fantasia's Choose or "This turn:
+// +2 MP") unless the clause opens with a target recipient marker
+// ("inflict -3 DEF/1", "target -3 MP/1", "Targets: -25% damage", "Foes
+// in Star 3: ..."). "target" inside a condition ("targets at full HP:
+// +5 damage") stays a self-buff.
+function statModSubject(lower: string): "self" | "target" {
+  if (/\binflict/.test(lower)) return "target";
+  // "Target: N STAT" clauses may be unsigned (e.g. Razor Rust's
+  // "Target: 3 MP/1" = the target only has 3 MP). Accept an optional
+  // +/- sign so those route to the target, not the user.
+  if (/^targets?\s*:?\s*[-+]?\s*\d/.test(lower)) return "target";
+  if (/^targets?\s+[-+]?\s*\d/.test(lower)) return "target";
+  if (/^foes?\s+in\b/.test(lower)) return "target";
+  // "Each target's ..." clauses are also target-directed.
+  if (/^each\s+target/.test(lower)) return "target";
+  // "Target gains +4 DMG/1" / "Healed targets gain +1 EVA/1" -- the
+  // target is the recipient. "Targets at full HP: +5 damage" (a
+  // condition) stays a self-buff because it uses "at", not "gain".
+  if (/targets?\s+gains?\b/.test(lower)) return "target";
+  // "Next Standard/Full on each target: +2 ACC" -- recipient is target.
+  if (/on each target/.test(lower)) return "target";
+  return "self";
+}
+
+const STAT_ALIASES: Record<string, string> = {
+  damage: "dmg",
+  mdef: "md",
+  pdef: "pd",
+};
+
+function normalizeStatName(raw: string): string {
+  const stat = raw.toLowerCase();
+  return STAT_ALIASES[stat] ?? stat;
 }
 
 function parseDamageMod(lower: string): Effect[] {
@@ -764,12 +923,14 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+(\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+([+-]?\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
     const amountStr = match[2];
-    const amount = /^\d+$/.test(amountStr) ? parseInt(amountStr) : amountStr;
+    const amount = /^[+-]?\d+$/.test(amountStr)
+      ? parseInt(amountStr, 10)
+      : amountStr;
     const resource = match[3].toLowerCase();
 
     if (RESOURCE_NAMES.includes(resource) || lower.includes(resource)) {
@@ -1161,7 +1322,7 @@ export function evaluateCondition(
   const resourceEq = evalResourceEquality(lower, user);
   if (resourceEq !== null) return resourceEq;
 
-  const negate = evalNegation(lower, user, target, moonPhase);
+  const negate = evalNegation(lower, user, target);
   if (negate !== null) return negate;
 
   const alive = evalAlive(lower, target);
@@ -1185,6 +1346,12 @@ export function evaluateCondition(
   const phase = evalMoonPhase(lower, moonPhase);
   if (phase !== null) return phase;
 
+  const debuffed = evalDebuffed(lower, user, target);
+  if (debuffed !== null) return debuffed;
+
+  const active = evalActive(lower, user, target);
+  if (active !== null) return active;
+
   return "unknown";
 }
 
@@ -1198,6 +1365,54 @@ function evalMoonPhase(
   if (!m) return null;
   const active = (moonPhase ?? "new moon").toLowerCase();
   return m[1].trim().toLowerCase() === active ? "then" : "else";
+}
+
+/** "<user|target> debuffed (by foe)" -- any negative buff active. */
+function evalDebuffed(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(
+    /^(user|target)\s+debuffed(?:\s+by\s+[a-z]+)?$/,
+  );
+  if (!m) return null;
+  const entity = m[1] === "user" ? user : target;
+  return entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
+}
+
+/**
+ * "<name> (not) active" / "<user|target> <name> (not) active"
+ * e.g. "Moonblast active", "Moonblast or Celestial Blessing active",
+ * "debuff not active". Bare names default to the target (for self-targeted
+ * abilities the target *is* the user, so both readings line up).
+ */
+function evalActive(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(/^(?:(user|target)\s+)?(.+?)\s+(not\s+)?active$/);
+  if (!m) return null;
+  const which = m[1] ?? "target";
+  const name = m[2].trim();
+  const negated = Boolean(m[3]);
+  const entity = which === "user" ? user : target;
+  let outcome: ConditionOutcome;
+  if (name === "debuff") {
+    outcome = entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
+  } else if (name === "buff") {
+    outcome = entity.buffs.some((b) => b.amount > 0) ? "then" : "else";
+  } else {
+    const candidates = name
+      .split(/\s+or\s+|\s*,\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    outcome = candidates.some((c) => hasStatus(entity, c))
+      ? "then"
+      : "else";
+  }
+  return negated ? (outcome === "then" ? "else" : "then") : outcome;
 }
 
 /** "5 Blood" / "0 Campaigns" / "no Campaigns" — resource threshold. */
@@ -1224,11 +1439,10 @@ function evalNegation(
   lower: string,
   user: Entity,
   target: Entity,
-  moonPhase?: string,
 ): ConditionOutcome | null {
   const m = lower.match(/^(?:not|no)\s+(.+)$/);
   if (!m) return null;
-  const inner = evaluateCondition(m[1], user, target, moonPhase);
+  const inner = evaluateCondition(m[1], user, target);
   if (inner === "then") return "else";
   if (inner === "else") return "then";
   return "unknown";
@@ -1241,10 +1455,7 @@ function evalAlive(lower: string, target: Entity): ConditionOutcome | null {
     const wantAlive = m[1] === "alive";
     return target.curhp > 0 === wantAlive ? "then" : "else";
   }
-  if (
-    lower === "target dies" ||
-    /target has been (killed|defeated)/.test(lower)
-  ) {
+  if (lower === "target dies" || /target has been (killed|defeated)/.test(lower)) {
     return target.curhp <= 0 ? "then" : "else";
   }
   return null;
@@ -1431,7 +1642,10 @@ type EffectHandler = (
   effect: any,
 ) => Generator<EffectChoosePrompt, void, string>;
 
-function* handleStatus({ target, messages }: EffectCtx, effect: StatusInflict) {
+function* handleStatus(
+  { target, messages }: EffectCtx,
+  effect: StatusInflict,
+) {
   const hasShield = target.statuses.some((s) => toId(s.name) === "shield");
   if (hasShield && effect.damage === 0) {
     messages.push(`  ${target.num}'s Shield blocks ${effect.name}!`);
@@ -1458,12 +1672,44 @@ function* handleStatus({ target, messages }: EffectCtx, effect: StatusInflict) {
   }
 }
 
-function* handleStatMod({ target, messages }: EffectCtx, effect: StatMod) {
+/**
+ * Apply an MP cap: clamp the target's MP budget to `amount` for `rounds`
+ * rounds. The original budget is stored on the entity as an "mpCap" marker
+ * buff so state.ts can restore it when the cap expires.
+ */
+function* handleMpCap(
+  { target, messages }: EffectCtx,
+  effect: MpCapEffect,
+) {
+  const original = target.mp;
+  const capped = Math.min(original, effect.amount);
+  if (capped < original) {
+    target.mp = capped;
+    // Marker buff: amount = the delta removed, restored on expiry by
+    // tickEndingBuffs in state.ts.
+    target.buffs.push({
+      stat: "mpCap",
+      amount: original - capped,
+      rounds: effect.rounds,
+    });
+    messages.push(
+      `  ${target.num}'s MP is capped at ${effect.amount} for ${effect.rounds} round${effect.rounds > 1 ? "s" : ""}.`,
+    );
+  } else {
+    messages.push(
+      `  ${target.num}'s MP (${original}) is already at or below the cap of ${effect.amount}.`,
+    );
+  }
+}
+
+function* handleStatMod(
+  { target, messages }: EffectCtx,
+  effect: StatMod,
+) {
   const mult = effect.type === "buff" ? 1 : -1;
   if (effect.percent) {
     const baseStat = getBaseStat(target, effect.stat);
-    const amount =
-      mult * Math.floor(baseStat * (Math.abs(effect.percent) / 100));
+    const amount = mult * Math.floor(baseStat * (Math.abs(effect.percent) / 100));
     target.buffs.push({
       stat: effect.stat,
       amount,
@@ -1484,13 +1730,14 @@ function* handleStatMod({ target, messages }: EffectCtx, effect: StatMod) {
   }
 }
 
-function* handleDamageMod({ target, messages }: EffectCtx, effect: DamageMod) {
+function* handleDamageMod(
+  { target, messages }: EffectCtx,
+  effect: DamageMod,
+) {
   const label = effect.percent
     ? `${effect.percent > 0 ? "+" : ""}${effect.percent}% damage`
     : `${effect.flat! > 0 ? "+" : ""}${effect.flat} DMG`;
-  messages.push(
-    `  ${target.num} ${label}${effect.rounds ? `/${effect.rounds}` : ""}.`,
-  );
+  messages.push(`  ${target.num} ${label}${effect.rounds ? `/${effect.rounds}` : ""}.`);
 }
 
 function* handleHeal(
@@ -1505,13 +1752,14 @@ function* handleHeal(
       `  ${target.num} healed for ${healed} HP (${target.curhp}/${target.maxhp}).`,
     );
   } else {
-    messages.push(
-      `  ${user.num} heals ${target.num}. (Manual resolution needed)`,
-    );
+    messages.push(`  ${user.num} heals ${target.num}. (Manual resolution needed)`);
   }
 }
 
-function* handleShield({ target, messages }: EffectCtx, effect: ShieldEffect) {
+function* handleShield(
+  { target, messages }: EffectCtx,
+  effect: ShieldEffect,
+) {
   const existingShield = target.statuses.find((s) => s.name === "Shield");
   if (existingShield) {
     existingShield.damage = Math.max(existingShield.damage, effect.amount);
@@ -1534,25 +1782,21 @@ function* handleDisplacement(
   { game, user, target, messages }: EffectCtx,
   effect: Displacement,
 ) {
-  const source =
-    effect.type === "push"
-      ? effect.toward === "user"
-        ? user.pos
-        : target.pos
-      : user.pos;
-  const { moved, path } =
-    effect.type === "push"
-      ? pushEntity(game, target, source, effect.amount ?? 1)
-      : pullEntity(game, target, source, effect.amount ?? 1);
+  const source = effect.type === "push"
+    ? effect.toward === "user"
+      ? user.pos
+      : target.pos
+    : user.pos;
+  const { moved, path } = effect.type === "push"
+    ? pushEntity(game, target, source, effect.amount ?? 1)
+    : pullEntity(game, target, source, effect.amount ?? 1);
   if (moved > 0) {
     const pathStr = path.map((p) => `${p[0]},${p[1]}`).join(" -> ");
     messages.push(
       `  ${target.num} ${effect.type === "push" ? "pushed" : "pulled"} ${moved} tile${moved > 1 ? "s" : ""} to ${pathStr}.`,
     );
   } else {
-    messages.push(
-      `  ${target.num} could not be ${effect.type === "push" ? "pushed" : "pulled"}.`,
-    );
+    messages.push(`  ${target.num} could not be ${effect.type === "push" ? "pushed" : "pulled"}.`);
   }
 }
 
@@ -1568,7 +1812,10 @@ function* handleSwap(
   );
 }
 
-function* handleSimple({ game, user, messages }: EffectCtx, effect: any) {
+function* handleSimple(
+  { game, user, messages }: EffectCtx,
+  effect: any,
+) {
   switch (effect.type) {
     case "teleport":
       messages.push(
@@ -1581,28 +1828,20 @@ function* handleSimple({ game, user, messages }: EffectCtx, effect: any) {
       );
       return;
     case "resource":
-      messages.push(
-        `  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`,
-      );
+      messages.push(`  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`);
       return;
     case "delay":
-      messages.push(
-        `  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`,
-      );
+      messages.push(`  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`);
       return;
     case "ignore":
       messages.push(`  Ignores ${effect.what}.`);
       return;
     case "channel":
-      messages.push(
-        `  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`,
-      );
+      messages.push(`  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`);
       return;
     case "phase":
-      // "Phase: X" SETS the game's moon phase (moon-phase mechanic). Store
-      // it on game state so "Phase is X" / "New Moon:" conditions later
-      // evaluate against the current phase instead of the default.
-      if (game) game.moonPhase = effect.phase.toLowerCase();
+      // Only shift the game's moon phase to the named phase.
+      if (game) game.moonPhase = effect.phase;
       messages.push(`  Phase shifts to ${effect.phase}.`);
       return;
     case "multiHit":
@@ -1611,9 +1850,7 @@ function* handleSimple({ game, user, messages }: EffectCtx, effect: any) {
     case "recoil":
       // Recoil damage itself is applied in resolve.ts after on-hit damage
       // is dealt. Here we just announce the marker so the log is readable.
-      messages.push(
-        `  ${user.num} takes ${effect.percent}% recoil on damage dealt.`,
-      );
+      messages.push(`  ${user.num} takes ${effect.percent}% recoil on damage dealt.`);
       return;
     case "tile":
       messages.push(
@@ -1636,31 +1873,17 @@ function* handleConditional(
     user,
     target,
     effect,
-    game?.moonPhase,
+    game ? game.moonPhase : undefined,
   );
   messages.push(...condMsgs);
   // "unknown" defaults to then-branch (legacy fallback). "else" without
   // an else-branch drops the sub-effects entirely.
   if (outcome === "then" || outcome === "unknown") {
-    const thenMsgs = yield* applyEffectStream(
-      game,
-      user,
-      target,
-      effect.thenEffects,
-      ability,
-      routeBuffsToUser,
-    );
+    const thenMsgs = yield* applyEffectStream(game, user, target, effect.thenEffects, ability, routeBuffsToUser);
     messages.push(...thenMsgs.map((m) => `    ${m}`));
   }
   if (outcome === "else" && effect.elseEffects) {
-    const elseMsgs = yield* applyEffectStream(
-      game,
-      user,
-      target,
-      effect.elseEffects,
-      ability,
-      routeBuffsToUser,
-    );
+    const elseMsgs = yield* applyEffectStream(game, user, target, effect.elseEffects, ability, routeBuffsToUser);
     messages.push(...elseMsgs.map((m) => `    ${m}`));
   }
 }
@@ -1675,17 +1898,34 @@ function* handleThirst(
     );
     return;
   }
-  const thirstMsgs = yield* applyEffectStream(
-    game,
-    user,
-    target,
-    effect.effects,
-    ability,
-    routeBuffsToUser,
-  );
-  messages.push(
-    ...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`),
-  );
+  const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
+  messages.push(...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`));
+}
+
+function* handlePer(
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
+  effect: PerEffect,
+) {
+  if (!perTriggerApplies(effect.trigger, user)) {
+    // Pool below the count (or an unsupported trigger): stays summarized.
+    messages.push(`  [Per ${effect.trigger}]`);
+    return;
+  }
+  const subMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
+  messages.push(...subMsgs.map((m) => `    [Per ${effect.trigger}] ${m}`));
+}
+
+function* handleTrigger(
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
+  effect: TriggerEffect,
+) {
+  if (!triggerApplies(effect.event, user, target)) {
+    // Event not met in this context: stays summarized.
+    messages.push(`  [When ${effect.event}]`);
+    return;
+  }
+  const subMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
+  messages.push(...subMsgs.map((m) => `    [When ${effect.event}] ${m}`));
 }
 
 function* handleApex(
@@ -1697,18 +1937,10 @@ function* handleApex(
     return;
   }
   if (!isApexActive(game, user, target, ability)) {
-    messages.push(
-      `  [Apex] inactive (target not at max listed range of ${ability.range}).`,
-    );
+    messages.push(`  [Apex] inactive (target not at max listed range of ${ability.range}).`);
     return;
   }
-  const apexMsgs = yield* applyEffectStream(
-    game,
-    user,
-    target,
-    effect.effects,
-    ability,
-  );
+  const apexMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability);
   messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
 }
 
@@ -1733,89 +1965,14 @@ function* handleChoose(
   } satisfies EffectChoosePrompt;
   const idx = parseChosenIdx(chosenId, effect.options.length);
   messages.push(`  [Choose] user picked option ${idx + 1}.`);
-  const chosenMsgs = yield* applyEffectStream(
-    game,
-    user,
-    target,
-    effect.options[idx],
-    ability,
-  );
+  const chosenMsgs = yield* applyEffectStream(game, user, target, effect.options[idx], ability);
   messages.push(...chosenMsgs.map((m) => `    ${m}`));
-}
-
-function* handlePer(
-  { messages, game, user, target, ability }: EffectCtx,
-  effect: PerEffect,
-) {
-  // Per-X triggers fire at their applicable resolution event. These
-  // effects reach the stream on a successful hit (resolve.ts applies
-  // non-phase effects after damage), so "Per hit:" dispatches its
-  // sub-effects now. Resource-count triggers ("Per 5 CP:") dispatch
-  // when the user's pool meets the count. Triggers that can't be
-  // confirmed from the current stream context keep a summary log.
-  if (perTriggerApplies(effect.trigger, user)) {
-    messages.push(`  [Per ${effect.trigger}]:`);
-    const perMsgs = yield* applyEffectStream(
-      game,
-      user,
-      target,
-      effect.effects,
-      ability,
-    );
-    messages.push(...perMsgs.map((m) => `    ${m}`));
-  } else {
-    messages.push(
-      `  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`,
-    );
-  }
-}
-
-function* handleTrigger(
-  { messages, game, user, target, ability }: EffectCtx,
-  effect: TriggerEffect,
-) {
-  // When-X triggers fire when their event condition is met. These
-  // effects reach the stream on a successful hit, so hit-context
-  // events ("When user damages a foe", "When user kills foe") dispatch
-  // their sub-effects now; other events keep a summary log.
-  if (triggerApplies(effect.event, user, target)) {
-    messages.push(`  [When ${effect.event}]:`);
-    const trigMsgs = yield* applyEffectStream(
-      game,
-      user,
-      target,
-      effect.effects,
-      ability,
-    );
-    messages.push(...trigMsgs.map((m) => `    ${m}`));
-  } else {
-    messages.push(
-      `  [When ${effect.event}]: ${summariseEffects(effect.effects)}`,
-    );
-  }
-}
-
-function* handlePhaseEffect(
-  { messages, game, user, target, ability }: EffectCtx,
-  effect: PhaseTimingEffect,
-) {
-  // Phase effects are applied at specific timing points in the pipeline.
-  // When reached at the right phase, expand sub-effects.
-  for (const sub of effect.effects) {
-    const subMsgs = yield* applyEffectStream(
-      game,
-      user,
-      target,
-      [sub],
-      ability,
-    );
-    messages.push(...subMsgs);
-  }
 }
 
 /** Dispatch an effect of any type to its handler. */
 const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   status: handleStatus,
+  mpCap: handleMpCap,
   buff: handleStatMod,
   debuff: handleStatMod,
   damageMod: handleDamageMod,
@@ -1828,6 +1985,8 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   thirst: handleThirst,
   apex: handleApex,
   choose: handleChoose,
+  per: handlePer,
+  trigger: handleTrigger,
   teleport: handleSimple,
   move: handleSimple,
   resource: handleSimple,
@@ -1835,12 +1994,9 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   ignore: handleSimple,
   channel: handleSimple,
   phase: handleSimple,
-  phaseEffect: handlePhaseEffect,
   multiHit: handleSimple,
   recoil: handleSimple,
   tile: handleSimple,
-  per: handlePer,
-  trigger: handleTrigger,
   unknown: handleSimple,
 };
 
@@ -1853,14 +2009,7 @@ export function* applyEffectStream(
   routeBuffsToUser = false,
 ): Generator<EffectChoosePrompt, string[], string> {
   const messages: string[] = [];
-  const ctx: EffectCtx = {
-    game,
-    user,
-    target,
-    ability,
-    messages,
-    routeBuffsToUser,
-  };
+  const ctx: EffectCtx = { game, user, target, ability, messages, routeBuffsToUser };
 
   for (const effect of effects) {
     const handler = EFFECT_HANDLERS[effect.type];
@@ -1919,16 +2068,10 @@ function perTriggerApplies(trigger: string, user: Entity): boolean {
  */
 function triggerApplies(event: string, user: Entity, target: Entity): boolean {
   const t = event.toLowerCase().trim();
-  // FFA mode (team 0): any non-self target is a foe; team mode: different team.
-  const isFoe =
-    user.team === 0
-      ? target.num !== user.num
-      : target.team !== user.team;
-
   if (t === "hit") return true;
-  if (t === "user damages a foe" || t === "user damages foe") return isFoe;
+  if (t === "user damages a foe" || t === "user damages foe") return true;
   if (t === "user kills a foe" || t === "user kills foe")
-    return isFoe && target.curhp <= 0;
+    return target.curhp <= 0;
   return false;
 }
 
@@ -1966,19 +2109,18 @@ function summariseEffect(eff: Effect): string {
 /** Per-effect-type one-line summary, used in choose-prompt option labels. */
 const SUMMARISE: Record<string, (eff: any) => string> = {
   status: (e) => `inflict ${e.damage || 0} ${e.name}/${e.rounds}`,
+  mpCap: (e) => `cap MP at ${e.amount}/${e.rounds}`,
   buff: (e) => `+${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
   debuff: (e) => `${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
   heal: (e) => `heal ${e.amount ?? "?"} HP`,
   shield: (e) => `Shield ${e.amount}/${e.rounds}`,
   push: (e) => `push ${e.amount ?? 1}`,
-  pull: (e) =>
-    `pull ${e.amount ?? 1}${e.toward === "user" ? " toward user" : ""}`,
+  pull: (e) => `pull ${e.amount ?? 1}${e.toward === "user" ? " toward user" : ""}`,
   swap: () => "swap positions",
   teleport: (e) => `teleport${e.range ? ` to ${e.range}` : ""}`,
   move: (e) => `move up to ${e.amount}`,
   resource: (e) => `${e.action} ${e.amount} ${e.resource}`,
-  damageMod: (e) =>
-    `${e.percent ?? ""}${e.flat != null ? e.flat + " DMG" : ""}`,
+  damageMod: (e) => `${e.percent ?? ""}${e.flat != null ? e.flat + " DMG" : ""}`,
   delay: (e) => `delay ${e.rounds}r`,
   recoil: (e) => `recoil ${e.percent}%`,
   ignore: (e) => `ignore ${e.what}`,
@@ -1990,10 +2132,9 @@ const SUMMARISE: Record<string, (eff: any) => string> = {
   choose: () => "choose (...)",
   conditional: (e) => `if [${e.condition}]`,
   delayLand: () => "delay attacks always land",
-  per: (e) => `per ${e.trigger} (...)`,
-  trigger: (e) => `when ${e.event} (...)`,
   unknown: (e) => e.text.slice(0, 40),
 };
+
 function parseChosenIdx(chosenId: string, total: number): number {
   const m = chosenId.match(/:(\d+)$/);
   if (!m) return 0;
@@ -2104,9 +2245,17 @@ export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
       // because the regex matches "damage" / "dmg" as a stat name and
       // folds them onto the dmg alias. Those are damage modifiers, not
       // self-buffs, so the resolve layer reads them here. The
-      // buff/debuff still lands on `target.buffs` so legacy code that
-      // scans entity.buffs for damage modifiers keeps working too.
-      if (e.stat === "dmg") {
+      // buff/debuff still lands on entity.buffs (self-buffs on the
+      // user, target debuffs on the target via `subject`) so legacy
+      // code that scans entity.buffs for damage modifiers keeps
+      // working too. Target-directed modifiers ("Targets: -25% damage")
+      // are the target's own outgoing-damage modifiers, not the user's,
+      // so they must NOT be folded into the user's metadata here.
+      // Only EXPLICIT self-directed modifiers fold into the user's outgoing
+      // damage metadata. Omitted (legacy) and explicit "target" subjects
+      // are the target's own modifiers, so they must not inflate the
+      // user's damage (CodeRabbit L1935).
+      if (e.stat === "dmg" && e.subject === "self") {
         // parseStatMods bakes the sign into percent / amount, so a
         // debuff for "-10% damage" arrives here with percent = -10.
         if (typeof e.percent === "number") {
