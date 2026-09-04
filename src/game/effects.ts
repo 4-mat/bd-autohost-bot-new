@@ -26,6 +26,13 @@ export interface StatusInflict {
   rounds: number;
 }
 
+export interface MpCapEffect {
+  type: "mpCap";
+  /** The maximum MP the target has while the cap lasts. */
+  amount: number;
+  rounds: number;
+}
+
 export interface StatMod {
   type: "buff" | "debuff";
   stat: string;
@@ -150,6 +157,7 @@ export interface OnMissEffect {
 
 export type Effect =
   | StatusInflict
+  | MpCapEffect
   | StatMod
   | Displacement
   | ResourceChange
@@ -259,17 +267,17 @@ export function parseEffects(text: string): Effect[] {
   // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return
   // one effect rather than splitting on the inner period and losing context.
   // The regex tolerates either ", " or ". " before "Otherwise", and an
-  // optional trailing period at the end of the else-branch.
+  // optional trailing period at the end of the else-branch. Both comma and
+  // colon separators are accepted ("If X, Y" and "If X: Y").
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)\s*[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
   // A ". " sentence boundary not followed by "otherwise" means the input
   // is several independent effects, not one conditional: "If target is at
   // Range 7+: crit on 14+. If target is under Range 3: gain +1 MP/2." must
   // parse as TWO conditionals, and the second must not be nested inside
   // the first (its condition is mutually exclusive). Skip the whole-input
-  // match in that case so splitClauses + the clause-level ifMatch handle
-  // each sentence on its own.
+  // match in that case so each sentence is parsed as its own conditional.
   const hasLaterSentence = /\.\s+(?!otherwise\b)/i.test(normalized);
   if (fullIfMatch && !hasLaterSentence) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
@@ -285,15 +293,82 @@ export function parseEffects(text: string): Effect[] {
     return [conditional];
   }
 
-  const clauses = splitClauses(normalized);
+  // Multi-sentence input: split into sentences (period boundaries, keeping
+  // "otherwise" attached to its conditional) and parse each sentence as a
+  // whole conditional BEFORE generic comma-level clause splitting. This
+  // preserves colon-form conditionals ("If X: Y") whose separator is not a
+  // splitClauses boundary, and keeps comma-form conditionals ("If X, Y")
+  // from being torn apart by the comma splitter.
+  const sentences = splitSentences(normalized);
   const effects: Effect[] = [];
 
-  for (const clause of clauses) {
-    const parsed = parseClause(clause.trim());
-    if (parsed) effects.push(...parsed);
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim();
+    const sentenceCond = matchWholeConditional(trimmed);
+    if (sentenceCond) {
+      const thenEffects = parseEffects(sentenceCond[2].trim());
+      const elseEffects = sentenceCond[3]
+        ? parseEffects(sentenceCond[3].trim())
+        : undefined;
+      effects.push({
+        type: "conditional",
+        condition: sentenceCond[1].trim(),
+        thenEffects,
+        elseEffects,
+      } as ConditionalEffect);
+      continue;
+    }
+    for (const clause of splitClauses(trimmed)) {
+      const parsed = parseClause(clause.trim());
+      if (parsed) effects.push(...parsed);
+    }
   }
 
   return effects;
+}
+
+/** Match a single sentence as `If CONDITION[,:] EFFECT [Otherwise EFFECT]`.
+ * Returns null when the sentence is not a whole-sentence conditional. */
+function matchWholeConditional(
+  sentence: string,
+): RegExpMatchArray | null {
+  const lower = sentence.toLowerCase();
+  return lower.match(
+    /^if\s+(.+?)\s*[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+  );
+}
+
+/** Split text into sentences on period boundaries at depth 0, treating a
+ * period before "otherwise" as part of the same conditional (so
+ * "If X: Y. Otherwise: Z." stays one sentence). Periods inside dice
+ * notation are ignored. */
+function splitSentences(text: string): string[] {
+  const sentences: string[] = [];
+  let depth = 0;
+  let current = "";
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") depth--;
+
+    const isOtherwisePeriod =
+      ch === "." && /^\.\s+otherwise\b/i.test(text.slice(i));
+    if (
+      depth === 0 &&
+      ch === "." &&
+      !isInsideDice(text, i) &&
+      !isOtherwisePeriod
+    ) {
+      if (current.trim()) sentences.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) sentences.push(current.trim());
+
+  return sentences;
 }
 
 /** Whether position `i` ends a clause: a period/comma/" and " at depth 0,
@@ -355,6 +430,11 @@ function parseClause(clause: string): Effect[] {
   // Inflict: "inflict N Status/M" or "inflict Status/M" or "N Status/M" or "Status/M"
   const statusEffects = parseStatusInflict(lower);
   if (statusEffects.length > 0) return statusEffects;
+
+  // MP cap: "Target: 3 MP/1" (unsigned, target-directed) = the target
+  // only has 3 MP for one round. This must NOT become a positive buff.
+  const mpCap = parseMpCap(lower);
+  if (mpCap) return [mpCap];
 
   // Stat modifiers: "+N STAT/M" or "-N STAT/M" or "+N% STAT/M"
   const statMods = parseStatMods(lower);
@@ -543,6 +623,25 @@ function parseStatusInflict(lower: string): Effect[] {
     ];
   }
   return [];
+}
+
+/**
+ * "Target: 3 MP/1" / "Targets: 2 MP/2" -- an unsigned, target-directed
+ * clause that SETS the target's MP budget for the round (Razor Rust: "the
+ * target only has 3 MP"). Only matches when the value is unsigned; signed
+ * forms ("target -3 MP/1", "+3 MP") are ordinary buffs/debuffs handled by
+ * parseStatMods.
+ */
+function parseMpCap(lower: string): MpCapEffect | null {
+  const m = lower.match(
+    /^targets?\s*:?\s*(\d+)\s*mp\s*(?:\/\s*(\d+))?$/,
+  );
+  if (!m) return null;
+  return {
+    type: "mpCap",
+    amount: parseInt(m[1], 10),
+    rounds: m[2] ? parseInt(m[2], 10) : 1,
+  };
 }
 
 function parseStatMods(lower: string): Effect[] {
@@ -1442,6 +1541,36 @@ function* handleStatus(
   }
 }
 
+/**
+ * Apply an MP cap: clamp the target's MP budget to `amount` for `rounds`
+ * rounds. The original budget is stored on the entity as an "mpCap" marker
+ * buff so state.ts can restore it when the cap expires.
+ */
+function* handleMpCap(
+  { target, messages }: EffectCtx,
+  effect: MpCapEffect,
+) {
+  const original = target.mp;
+  const capped = Math.min(original, effect.amount);
+  if (capped < original) {
+    target.mp = capped;
+    // Marker buff: amount = the delta removed, restored on expiry by
+    // tickEndingBuffs in state.ts.
+    target.buffs.push({
+      stat: "mpCap",
+      amount: original - capped,
+      rounds: effect.rounds,
+    });
+    messages.push(
+      `  ${target.num}'s MP is capped at ${effect.amount} for ${effect.rounds} round${effect.rounds > 1 ? "s" : ""}.`,
+    );
+  } else {
+    messages.push(
+      `  ${target.num}'s MP (${original}) is already at or below the cap of ${effect.amount}.`,
+    );
+  }
+}
+
 function* handleStatMod(
   { target, messages }: EffectCtx,
   effect: StatMod,
@@ -1679,6 +1808,7 @@ function* handleChoose(
 /** Dispatch an effect of any type to its handler. */
 const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   status: handleStatus,
+  mpCap: handleMpCap,
   buff: handleStatMod,
   debuff: handleStatMod,
   damageMod: handleDamageMod,
@@ -1769,6 +1899,7 @@ function summariseEffect(eff: Effect): string {
 /** Per-effect-type one-line summary, used in choose-prompt option labels. */
 const SUMMARISE: Record<string, (eff: any) => string> = {
   status: (e) => `inflict ${e.damage || 0} ${e.name}/${e.rounds}`,
+  mpCap: (e) => `cap MP at ${e.amount}/${e.rounds}`,
   buff: (e) => `+${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
   debuff: (e) => `${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
   heal: (e) => `heal ${e.amount ?? "?"} HP`,

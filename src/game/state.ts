@@ -1262,6 +1262,13 @@ function tickEndingBuffs(prev: Entity, messages: string[]) {
   prev.buffs = prev.buffs.filter((b) => {
     b.rounds--;
     if (b.rounds <= 0) {
+      // An mpCap marker stores the MP delta removed by handleMpCap;
+      // restore it so the cap only lasts its declared rounds.
+      if (b.stat === "mpCap") {
+        prev.mp += b.amount;
+        messages.push(`  ${prev.num}'s MP cap expired (MP restored to ${prev.mp}).`);
+        return false;
+      }
       messages.push(
         `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
       );

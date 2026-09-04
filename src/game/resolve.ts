@@ -300,14 +300,15 @@ function* resolveDirection(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
-/** Roll a damage/heal formula applying the attacker's dice-faces and
- * dice-count buffs (e.g. Final Hour's "+4 dice faces", Kinetic Impact's
- * "+1 dice"). */
+/** Roll a damage/heal formula applying the attacker's dice-count and
+ * dice-faces buffs (e.g. Kinetic Impact's "+1 dice", Final Hour's "+4 dice
+ * faces"). rollDice takes the dice-count modifier before the die-face
+ * modifier, so the count bonus must be passed first. */
 function rollWithUserBuffs(user: Entity, formula: string) {
   return rollDice(
     formula,
-    getStatBonus(user, "dice faces"),
     getStatBonus(user, "dice"),
+    getStatBonus(user, "dice faces"),
   );
 }
 
