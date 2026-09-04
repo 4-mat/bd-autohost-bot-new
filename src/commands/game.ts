@@ -713,6 +713,15 @@ function handleVoteStatus(game: Game, user: User) {
   sendPm(user.name, buildVoteStatus(game));
 }
 
+function creditKills(game: Game, entity: Entity, step: AttackStep) {
+  if (step.done === false) return;
+  for (const death of step.result.deaths) {
+    if (death.num !== entity.num) {
+      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+    }
+  }
+}
+
 function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
@@ -744,6 +753,8 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
   for (const msg of step.result.messages) {
     send(game.room, msg);
   }
+
+  creditKills(game, entity, step);
 
   logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
 
@@ -890,7 +901,10 @@ function resolvePendingAction(
 
   const acted = summarizeResult(game, entity, step.result.messages);
 
-  for (const _ of step.result.deaths) {
+  // Credit kills on the confirm path, excluding self-deaths (recoil /
+  // confusion kills are not kills the entity scored).
+  for (const death of step.result.deaths) {
+    if (death.num === entity.num) continue;
     game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
   }
 
@@ -899,6 +913,10 @@ function resolvePendingAction(
     announceGameOver(game, winner);
     return null;
   }
+
+  // The action resolved and the turn advanced — clear the pending action
+  // so it isn't re-run on a later turn.
+  entity.pendingAction = null;
 
   return acted;
 }
