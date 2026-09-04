@@ -71,6 +71,7 @@ const GAME_COMMANDS = new Set([
   "endturn",
   "next",
   "back",
+  "undo",
   "r",
   "roll",
   "dice",

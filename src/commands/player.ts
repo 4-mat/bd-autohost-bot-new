@@ -1,4 +1,5 @@
 import { send, sendPm, toId, posToStr } from "../utils.js";
+import { eva43 } from "../game/resolve.js";
 import type { User } from "../users.js";
 import {
   games,
@@ -27,13 +28,13 @@ function findEntityInGames(
 }
 
 /** Build the %vs character sheet. */
-function buildStats(e: Entity): string {
+function buildStats(e: Entity, version?: string): string {
   const hpPct = Math.max(0, (e.curhp / e.maxhp) * 100);
   const hpBar = hpPct > 50 ? "[+]" : hpPct > 25 ? "[~]" : "[-]";
   const lines = [
     `**${e.num} ${e.name}** -- ${e.className}/${e.weaponName} (Lv.${e.classLevel}/${e.weaponLevel})`,
     `${hpBar} **HP**: ${e.curhp}/${e.maxhp}`,
-    `**ATK**: ${e.atk} | **MAG**: ${e.mag} | **PD**: ${e.pd} | **MD**: ${e.md} | **EVA**: ${e.eva} | **MP**: ${e.mp}`,
+    `**ATK**: ${e.atk} | **MAG**: ${e.mag} | **PD**: ${e.pd} | **MD**: ${e.md} | ${evaLine(e, version)} | **MP**: ${e.mp}`,
     `**Position**: ${posToStr(e.pos[0], e.pos[1])} | **Team**: ${e.team}`,
   ];
   if (e.statuses.length > 0) {
@@ -55,6 +56,13 @@ function buildStats(e: Entity): string {
     lines.push(`**Cooldowns**: ${cds}`);
   }
   return lines.join("\n");
+}
+
+/** EVA/PE/ME display — 4.3 games show PE/ME (with buffs) instead of EVA. */
+function evaLine(e: Entity, version?: string): string {
+  return version === "4.3"
+    ? `**PE**: ${eva43(e, "Physical")} | **ME**: ${eva43(e, "Magical")}`
+    : `**EVA**: ${e.eva}`;
 }
 
 /** Build the %vl level + ability list. */
@@ -101,13 +109,13 @@ const PLAYER_CMDS: Record<
     const name = args.trim() || u.name;
     const result = findEntityInGames(name);
     if (!result) return out(`No character found for ${name}.`);
-    out(buildStats(result.entity));
+    out(buildStats(result.entity, result.game.version));
   },
   viewstats: (u, args, out) => {
     const name = args.trim() || u.name;
     const result = findEntityInGames(name);
     if (!result) return out(`No character found for ${name}.`);
-    out(buildStats(result.entity));
+    out(buildStats(result.entity, result.game.version));
   },
   vl: (u, args, out) => {
     const name = args.trim() || u.name;

@@ -119,6 +119,7 @@ function makeGame(
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
@@ -864,6 +865,50 @@ describe("Snapshots", () => {
     expect(game.log.length).toBe(0);
   });
 
+  it("resurrects entities removed after the snapshot", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 40, pos: [1, 1] });
+    const game = makeGame({ entities: [p1, p2] });
+    expect(game.turnOrder).toEqual(["P1", "P2"]);
+
+    pushSnapshot(game);
+    removeEntity(game, p2);
+    expect(game.entities.some((e) => e.num === "P2")).toBe(false);
+    expect(game.turnOrder).toEqual(["P1"]);
+
+    popSnapshot(game);
+    const revived = game.entities.find((e) => e.num === "P2");
+    expect(revived).toBeDefined();
+    expect(revived!.curhp).toBe(40);
+    expect(revived!.pos).toEqual([1, 1]);
+    expect(game.turnOrder).toEqual(["P1", "P2"]);
+  });
+
+  it("restores kill counts from the snapshot", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const game = makeGame({ entities: [p1] });
+    game.kills = { P1: 2, P2: 0 };
+
+    pushSnapshot(game);
+    game.kills = { P1: 5, P2: 4 };
+
+    popSnapshot(game);
+    expect(game.kills).toEqual({ P1: 2, P2: 0 });
+  });
+
+  it("restores entities in snapshot order after reordering", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 40, pos: [1, 1] });
+    const game = makeGame({ entities: [p1, p2] });
+
+    pushSnapshot(game);
+    // Simulate an undo-visible reordering (e.g. death -> new join order).
+    game.entities = [p2, p1];
+
+    popSnapshot(game);
+    expect(game.entities.map((e) => e.num)).toEqual(["P1", "P2"]);
+  });
+
   it("returns false when no snapshots", () => {
     const game = makeGame();
     expect(popSnapshot(game)).toBe(false);
@@ -1004,6 +1049,25 @@ describe("processStartOfTurn", () => {
     expect(e.buffs.length).toBe(1);
     expect(e.buffs[0].stat).toBe("atk");
     expect(e.buffs[0].rounds).toBe(1);
+    expect(result.entity?.num).toBe("P2");
+  });
+
+  it("restores MP when an mpCap marker expires", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      mp: 3, // capped from 5 -> marker stores the removed delta
+      buffs: [{ stat: "mpCap", amount: 2, rounds: 1 }],
+    });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [e, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    const result = nextTurn(game);
+    expect(e.mp).toBe(5);
+    expect(e.buffs.find((b) => b.stat === "mpCap")).toBeUndefined();
     expect(result.entity?.num).toBe("P2");
   });
 
