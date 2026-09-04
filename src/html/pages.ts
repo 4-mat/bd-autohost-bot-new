@@ -17,6 +17,7 @@ import {
 import { posToStr } from "../utils.js";
 import { eva43 } from "../game/resolve.js";
 import { getVersionData } from "../data/version43.js";
+import type { GameVersion } from "../data/index.js";
 import {
   runoffOptions,
   tallyVotes,
@@ -126,8 +127,8 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
     const tallySummary =
       tally.size > 0
         ? [...tally.entries()]
-            .map(([m, c]) => `${esc(m)}: ${c}`)
-            .join(" &nbsp;|")
+          .map(([m, c]) => `${esc(m)}: ${c}`)
+          .join(" &nbsp;|")
         : "no votes yet";
     html += `<div style="margin:4px 0"><b>Tally:</b> ${tallySummary}</div>`;
 
@@ -211,7 +212,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   const isTurn = game.turnOrder[game.turnIndex] === entity.num;
 
   const map = buildMiniMap(game, entity);
-  const stats = buildEntityStats(entity);
+  const stats = buildEntityStats(entity, game.version);
   const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game, true);
 
@@ -263,7 +264,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 
     // Tile prompt buttons
     if (entity.pendingPromptKind === "tile") {
-      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #80f;background:rgba(136,0,255,0.10)"><b style="color:#80f">CHOOSE TILE</b><br><span style="color:#888;font-size:10px">Use %tile &lt;ref&gt; to pick a tile</span></div>`;
+      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #80f;background:rgba(136,0,255,0.10)"><b style="color:#80f">CHOOSE TILE</b><br><span style="color:#888;font-size:10px">Use %picktile &lt;ref&gt; to pick a tile</span></div>`;
     }
 
     if (entity.pendingAction) {
@@ -279,10 +280,31 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
 
-  // Until the game starts, players can change their own class/weapon
-  // (e.g. after the gamemode vote decides the mode, before the map is set).
-  let loadout = "";
-  if (!game.started) {
+  // Until the game STARTS, players can change their own class/weapon — but only
+  // while the game is NOT yet set. %setgame (and the %endvote winner / %genpos)
+  // lock the setup by setting game.modeChosen, so the loadout control must go
+  // away as soon as the mode is chosen.
+  const loadout = buildLoadoutControl(game, entity);
+
+  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
+  ${map}${pl}
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
+  ${buildVotePanel(game, entity)}
+  ${loadout}
+  <hr>${phase}${prompt}${actions}
+  ${log}
+  ${buildToasts(game)}
+</div>`;
+}
+
+// Build the class/weapon loadout control, or a "locked" notice once the mode
+// is chosen (%setgame / %endvote winner / %genpos). Extracted from
+// buildPlayerPage to keep its cyclomatic complexity under the limit.
+function buildLoadoutControl(game: Game, entity: Entity): string {
+  if (game.started) return "";
+
+  // The game is NOT set yet — players may change their own class/weapon.
+  if (!game.modeChosen) {
     const data = getVersionData(game.version);
     const classOpts = [...data.classes.values()]
       .map(
@@ -296,22 +318,15 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
           `<option value="${esc(w.name)}"${w.name === entity.weaponName ? " selected" : ""}>${esc(w.name)}</option>`,
       )
       .join("");
-    loadout = `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #57a;border-radius:4px"><b style="color:#8af">Change Loadout</b> <span style="color:#888">(until the game starts)</span><br>
+    return `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #57a;border-radius:4px"><b style="color:#8af">Change Loadout</b> <span style="color:#888">(until the game is set)</span><br>
 <select id="loadout-class" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${classOpts}</select>
 <select id="loadout-weapon" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${weaponOpts}</select>
 <button name="loadout" style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif">Apply</button>
 </div>`;
   }
 
-  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
-  ${map}${pl}
-  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
-  ${buildVotePanel(game, entity)}
-  ${loadout}
-  <hr>${phase}${prompt}${actions}
-  ${log}
-  ${buildToasts(game)}
-</div>`;
+  // The game is set but not started: show why the control is gone.
+  return `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #555;border-radius:4px"><b style="color:#888">Loadout locked</b> <span style="color:#888">(the game is set)</span></div>`;
 }
 
 // -- Map (Host + Player shared logic) -----------------------------------------
@@ -371,7 +386,8 @@ function renderMapCell(
   c: number,
 ): string {
   const terrain = game.map[r][c];
-  const color = TERRAIN_COLORS[terrain] ?? "#99E599";
+  // Unknown terrain falls back to Normal's color from the shared palette.
+  const color = TERRAIN_COLORS[terrain] ?? TERRAIN_COLORS[0];
   const entity = game.entities.find((e) => e.pos[0] === r && e.pos[1] === c);
 
   let label = "";
@@ -489,8 +505,8 @@ function buildPlayerDataTable(game: Game): string {
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
-          .map((n) => game.entities.find((e) => e.num === n))
-          .filter((e): e is Entity => !!e)
+        .map((n) => game.entities.find((e) => e.num === n))
+        .filter((e): e is Entity => !!e)
       : game.entities;
   for (const e of ordered) {
     html += `<tr style="height:22px">`;
@@ -562,14 +578,14 @@ function buildActionLog(game: Game, collapsed = false): string {
     game.log.length === 0
       ? `<div style="color:#888"><i>(empty)</i></div>`
       : `<table class="log" align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">` +
-        game.log
-          .slice(-15)
-          .map(
-            (entry) =>
-              `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
-          )
-          .join("") +
-        `</table>`;
+      game.log
+        .slice(-15)
+        .map(
+          (entry) =>
+            `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
+        )
+        .join("") +
+      `</table>`;
 
   if (collapsed) {
     return `<details style="margin:4px 0"><summary style="cursor:pointer"><b>Action Log</b></summary>${body}</details>`;
@@ -622,10 +638,13 @@ function buildSetupPanel(game: Game): string {
   return `<div style="margin-top:4px"><b>Setup</b><div style="margin-top:4px">
   ${setBtn}
   ${btn("%setlevel all, 10", "Level All \u2192 10")}
+  ${btn("%toggleidle", "Toggle Player's Idle")}
   ${startBtn}
   ${ffaShortcut}
   <span style="color:#888;font-size:10px">${ffaToggle}</span>
 </div></div>`;
+
+
 }
 // -- Controls (Host) ----------------------------------------------------------
 
@@ -642,7 +661,7 @@ function buildControls(game: Game): string {
 
 // -- Entity Stats (Player) ----------------------------------------------------
 
-function buildEntityStats(entity: Entity): string {
+function buildEntityStats(entity: Entity, version: GameVersion): string {
   const hpPct = Math.max(0, (entity.curhp / entity.maxhp) * 100);
   const hpColor = hpPct > 50 ? "#0c0" : hpPct > 25 ? "#cc0" : "#c00";
 
@@ -652,7 +671,12 @@ function buildEntityStats(entity: Entity): string {
   html += ` <b>MAG:</b> ${entity.mag}`;
   html += ` <b>PD:</b> ${entity.pd}`;
   html += ` <b>MD:</b> ${entity.md}`;
-  html += ` <b>EVA:</b> ${entity.eva}`;
+  if (version === "4.3") {
+    html += ` <b>PE:</b> ${eva43(entity, "Physical")}`;
+    html += ` <b>ME:</b> ${eva43(entity, "Magical")}`;
+  } else {
+    html += ` <b>EVA:</b> ${entity.eva}`;
+  }
   html += ` <b>MP:</b> <b style="color:#08c">${entity.mp}</b>`;
 
   if (entity.statuses.length > 0 || entity.buffs.length > 0) {

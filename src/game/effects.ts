@@ -8,6 +8,7 @@ import {
   dealDamage,
   hasLineOfSight,
   inRange,
+  hasStatus,
   manhattan,
   pushEntity,
   pullEntity,
@@ -25,12 +26,25 @@ export interface StatusInflict {
   rounds: number;
 }
 
+export interface MpCapEffect {
+  type: "mpCap";
+  /** The maximum MP the target has while the cap lasts. */
+  amount: number;
+  rounds: number;
+}
+
 export interface StatMod {
   type: "buff" | "debuff";
   stat: string;
   amount: number;
   rounds?: number;
   percent?: number;
+  /**
+   * Who receives the stat mod: "self" (the ability user) or "target".
+   * Absent (legacy hand-built effects) means target, matching the old
+   * behaviour.
+   */
+  subject?: "self" | "target";
 }
 
 export interface Displacement {
@@ -163,6 +177,7 @@ export interface PhaseGateEffect {
 
 export type Effect =
   | StatusInflict
+  | MpCapEffect
   | StatMod
   | Displacement
   | ResourceChange
@@ -250,8 +265,40 @@ function canonicalResource(name: string): string | null {
   return null;
 }
 
+/**
+ * Memoization for parseEffects. Ability effect strings are static game
+ * data, so the same normalized text always parses to the same Effect[].
+ * Targeting/UI hot paths (getPassiveRangeBonus / getDefenderDiceMods via
+ * inRange, plus every resolveAttackFlow attack) re-parse the same passive
+ * and ability strings repeatedly -- caching avoids that work. Effect trees
+ * are treated as immutable by every caller (they only read / fold / apply
+ * them), so sharing the cached array is safe.
+ */
+// Assumes ability effect text is static game data (abilities.json / glossary
+// CSVs), so a bounded process-lifetime cache is safe and never needs clearing.
+const PARSE_EFFECTS_CACHE = new Map<string, Effect[]>();
+const PARSE_EFFECTS_CACHE_MAX = 2048;
+
+function cachedParseEffects(normalized: string): Effect[] {
+  const hit = PARSE_EFFECTS_CACHE.get(normalized);
+  if (hit) return hit;
+  const parsed = parseEffectsUncached(normalized);
+  if (PARSE_EFFECTS_CACHE.size >= PARSE_EFFECTS_CACHE_MAX) {
+    // Bounded cache: drop the oldest entry (Map preserves insertion order).
+    const oldest = PARSE_EFFECTS_CACHE.keys().next().value;
+    if (oldest !== undefined) PARSE_EFFECTS_CACHE.delete(oldest);
+  }
+  PARSE_EFFECTS_CACHE.set(normalized, parsed);
+  return parsed;
+}
+
+// Referentially stable empty result: parseEffects is memoized, and callers
+// may rely on identical inputs yielding the identical array rather than a
+// fresh allocation per call (PR-Agent on #184).
+const EMPTY_EFFECTS: Effect[] = [];
+
 export function parseEffects(text: string): Effect[] {
-  if (!text || !text.trim()) return [];
+  if (!text || !text.trim()) return EMPTY_EFFECTS;
 
   const normalized = text
     .replace(/\n/g, " ")
@@ -260,10 +307,15 @@ export function parseEffects(text: string): Effect[] {
     .replace(/\s+/g, " ")
     .trim();
 
+  return cachedParseEffects(normalized);
+}
+
+function parseEffectsUncached(normalized: string): Effect[] {
+  const lowerFull = normalized.toLowerCase();
+
   // "On Miss: <effects>" wraps subsequent effects so they only fire
   // when the attack misses.  The prefix is case-insensitive and may
   // appear at the start of the entire ability text.
-  const lowerFull = normalized.toLowerCase();
   const onMissMatch = lowerFull.match(/^on\s+miss:\s*(.+)$/i);
   if (onMissMatch) {
     const inner = parseEffects(onMissMatch[1].trim());
@@ -275,11 +327,19 @@ export function parseEffects(text: string): Effect[] {
   // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return
   // one effect rather than splitting on the inner period and losing context.
   // The regex tolerates either ", " or ". " before "Otherwise", and an
-  // optional trailing period at the end of the else-branch.
+  // optional trailing period at the end of the else-branch. Both comma and
+  // colon separators are accepted ("If X, Y" and "If X: Y").
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)\s*[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
-  if (fullIfMatch) {
+  // A ". " sentence boundary not followed by "otherwise" means the input
+  // is several independent effects, not one conditional: "If target is at
+  // Range 7+: crit on 14+. If target is under Range 3: gain +1 MP/2." must
+  // parse as TWO conditionals, and the second must not be nested inside
+  // the first (its condition is mutually exclusive). Skip the whole-input
+  // match in that case so each sentence is parsed as its own conditional.
+  const hasLaterSentence = /\.\s+(?!otherwise\b)/i.test(normalized);
+  if (fullIfMatch && !hasLaterSentence) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
     const elseEffects = fullIfMatch[3]
       ? parseEffects(fullIfMatch[3].trim())
@@ -293,16 +353,82 @@ export function parseEffects(text: string): Effect[] {
     return [conditional];
   }
 
-
-  const clauses = splitClauses(normalized);
+  // Multi-sentence input: split into sentences (period boundaries, keeping
+  // "otherwise" attached to its conditional) and parse each sentence as a
+  // whole conditional BEFORE generic comma-level clause splitting. This
+  // preserves colon-form conditionals ("If X: Y") whose separator is not a
+  // splitClauses boundary, and keeps comma-form conditionals ("If X, Y")
+  // from being torn apart by the comma splitter.
+  const sentences = splitSentences(normalized);
   const effects: Effect[] = [];
 
-  for (const clause of clauses) {
-    const parsed = parseClause(clause.trim());
-    if (parsed) effects.push(...parsed);
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim();
+    const sentenceCond = matchWholeConditional(trimmed);
+    if (sentenceCond) {
+      const thenEffects = parseEffects(sentenceCond[2].trim());
+      const elseEffects = sentenceCond[3]
+        ? parseEffects(sentenceCond[3].trim())
+        : undefined;
+      effects.push({
+        type: "conditional",
+        condition: sentenceCond[1].trim(),
+        thenEffects,
+        elseEffects,
+      } as ConditionalEffect);
+      continue;
+    }
+    for (const clause of splitClauses(trimmed)) {
+      const parsed = parseClause(clause.trim());
+      if (parsed) effects.push(...parsed);
+    }
   }
 
   return effects;
+}
+
+/** Match a single sentence as `If CONDITION[,:] EFFECT [Otherwise EFFECT]`.
+ * Returns null when the sentence is not a whole-sentence conditional. */
+function matchWholeConditional(
+  sentence: string,
+): RegExpMatchArray | null {
+  const lower = sentence.toLowerCase();
+  return lower.match(
+    /^if\s+(.+?)\s*[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+  );
+}
+
+/** Split text into sentences on period boundaries at depth 0, treating a
+ * period before "otherwise" as part of the same conditional (so
+ * "If X: Y. Otherwise: Z." stays one sentence). Periods inside dice
+ * notation are ignored. */
+function splitSentences(text: string): string[] {
+  const sentences: string[] = [];
+  let depth = 0;
+  let current = "";
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") depth--;
+
+    const isOtherwisePeriod =
+      ch === "." && /^\.\s+otherwise\b/i.test(text.slice(i));
+    if (
+      depth === 0 &&
+      ch === "." &&
+      !isInsideDice(text, i) &&
+      !isOtherwisePeriod
+    ) {
+      if (current.trim()) sentences.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) sentences.push(current.trim());
+
+  return sentences;
 }
 
 /** Whether position `i` ends a clause: a period/comma/" and " at depth 0,
@@ -364,6 +490,11 @@ function parseClause(clause: string): Effect[] {
   // Inflict: "inflict N Status/M" or "inflict Status/M" or "N Status/M" or "Status/M"
   const statusEffects = parseStatusInflict(lower);
   if (statusEffects.length > 0) return statusEffects;
+
+  // MP cap: "Target: 3 MP/1" (unsigned, target-directed) = the target
+  // only has 3 MP for one round. This must NOT become a positive buff.
+  const mpCap = parseMpCap(lower);
+  if (mpCap) return [mpCap];
 
   // Stat modifiers: "+N STAT/M" or "-N STAT/M" or "+N% STAT/M"
   const statMods = parseStatMods(lower);
@@ -608,49 +739,102 @@ function parseStatusInflict(lower: string): Effect[] {
   return [];
 }
 
+/**
+ * "Target: 3 MP/1" / "Targets: 2 MP/2" -- an unsigned, target-directed
+ * clause that SETS the target's MP budget for the round (Razor Rust: "the
+ * target only has 3 MP"). Only matches when the value is unsigned; signed
+ * forms ("target -3 MP/1", "+3 MP") are ordinary buffs/debuffs handled by
+ * parseStatMods.
+ */
+function parseMpCap(lower: string): MpCapEffect | null {
+  const m = lower.match(
+    /^targets?\s*:?\s*(\d+)\s*mp\s*(?:\/\s*(\d+))?$/,
+  );
+  if (!m) return null;
+  return {
+    type: "mpCap",
+    amount: parseInt(m[1], 10),
+    rounds: m[2] ? parseInt(m[2], 10) : 1,
+  };
+}
+
 function parseStatMods(lower: string): Effect[] {
   const effects: Effect[] = [];
-
-  // Pattern: "+N STAT/M" or "-N STAT/M" with optional "for" or "until"
-  // Also: "+N% STAT" or "-N% STAT"
-  // Also: "+N STAT" without duration
-  // Also: "gain +N STAT/M"
+  const subject = statModSubject(lower);
 
   const statRegex =
-    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range)\s*(?:\/\s*(\d+))?/g;
+    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range|dice faces|dice)\s*(?:\/\s*(\d+))?/g;
   let match;
   while ((match = statRegex.exec(lower)) !== null) {
     const sign = match[1] === "-" ? -1 : 1;
     const isPercent = match[2].includes("%");
     const value = parseFloat(match[2].replace("%", ""));
-    let stat = match[3].toLowerCase();
+    const stat = normalizeStatName(match[3]);
 
-    // Normalize stat names
-    if (stat === "damage") stat = "dmg";
-    if (stat === "mdef") stat = "md";
-    if (stat === "pdef") stat = "pd";
+    // "remove 1 dice" / "lose 2 MP" -- an unsigned value preceded by a
+    // removal verb is a negative modifier, not a gain.
+    const before = lower.slice(0, match.index);
+    const removed = sign > 0 && /(remove|lose|spend|cost)\s*$/.test(before);
 
     const rounds = match[4] ? parseInt(match[4]) : undefined;
 
     if (isPercent) {
       effects.push({
-        type: sign > 0 ? "buff" : "debuff",
+        type: sign > 0 && !removed ? "buff" : "debuff",
         stat,
         amount: 0,
-        percent: sign * value,
+        percent: (removed ? -1 : sign) * value,
         rounds,
+        subject,
       });
     } else {
       effects.push({
-        type: sign > 0 ? "buff" : "debuff",
+        type: sign > 0 && !removed ? "buff" : "debuff",
         stat,
-        amount: sign * value,
+        amount: (removed ? -1 : sign) * value,
         rounds,
+        subject,
       });
     }
   }
 
   return effects;
+}
+
+// Clause-level subject: a stat-mod clause is a self-buff ("gain +3 ATK/1"
+// and the common bare "+3 ATK/1", e.g. Fantasia's Choose or "This turn:
+// +2 MP") unless the clause opens with a target recipient marker
+// ("inflict -3 DEF/1", "target -3 MP/1", "Targets: -25% damage", "Foes
+// in Star 3: ..."). "target" inside a condition ("targets at full HP:
+// +5 damage") stays a self-buff.
+function statModSubject(lower: string): "self" | "target" {
+  if (/\binflict/.test(lower)) return "target";
+  // "Target: N STAT" clauses may be unsigned (e.g. Razor Rust's
+  // "Target: 3 MP/1" = the target only has 3 MP). Accept an optional
+  // +/- sign so those route to the target, not the user.
+  if (/^targets?\s*:?\s*[-+]?\s*\d/.test(lower)) return "target";
+  if (/^targets?\s+[-+]?\s*\d/.test(lower)) return "target";
+  if (/^foes?\s+in\b/.test(lower)) return "target";
+  // "Each target's ..." clauses are also target-directed.
+  if (/^each\s+target/.test(lower)) return "target";
+  // "Target gains +4 DMG/1" / "Healed targets gain +1 EVA/1" -- the
+  // target is the recipient. "Targets at full HP: +5 damage" (a
+  // condition) stays a self-buff because it uses "at", not "gain".
+  if (/targets?\s+gains?\b/.test(lower)) return "target";
+  // "Next Standard/Full on each target: +2 ACC" -- recipient is target.
+  if (/on each target/.test(lower)) return "target";
+  return "self";
+}
+
+const STAT_ALIASES: Record<string, string> = {
+  damage: "dmg",
+  mdef: "md",
+  pdef: "pd",
+};
+
+function normalizeStatName(raw: string): string {
+  const stat = raw.toLowerCase();
+  return STAT_ALIASES[stat] ?? stat;
 }
 
 function parseDamageMod(lower: string): Effect[] {
@@ -739,12 +923,14 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+(\d+[+-]?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+([+-]?\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
     const amountStr = match[2];
-    const amount = /^\d+$/.test(amountStr) ? parseInt(amountStr) : amountStr;
+    const amount = /^[+-]?\d+$/.test(amountStr)
+      ? parseInt(amountStr, 10)
+      : amountStr;
     const resource = match[3].toLowerCase();
 
     if (RESOURCE_NAMES.includes(resource) || lower.includes(resource)) {
@@ -1160,6 +1346,12 @@ export function evaluateCondition(
   const phase = evalMoonPhase(lower, moonPhase);
   if (phase !== null) return phase;
 
+  const debuffed = evalDebuffed(lower, user, target);
+  if (debuffed !== null) return debuffed;
+
+  const active = evalActive(lower, user, target);
+  if (active !== null) return active;
+
   return "unknown";
 }
 
@@ -1173,6 +1365,54 @@ function evalMoonPhase(
   if (!m) return null;
   const active = (moonPhase ?? "new moon").toLowerCase();
   return m[1].trim().toLowerCase() === active ? "then" : "else";
+}
+
+/** "<user|target> debuffed (by foe)" -- any negative buff active. */
+function evalDebuffed(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(
+    /^(user|target)\s+debuffed(?:\s+by\s+[a-z]+)?$/,
+  );
+  if (!m) return null;
+  const entity = m[1] === "user" ? user : target;
+  return entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
+}
+
+/**
+ * "<name> (not) active" / "<user|target> <name> (not) active"
+ * e.g. "Moonblast active", "Moonblast or Celestial Blessing active",
+ * "debuff not active". Bare names default to the target (for self-targeted
+ * abilities the target *is* the user, so both readings line up).
+ */
+function evalActive(
+  lower: string,
+  user: Entity,
+  target: Entity,
+): ConditionOutcome | null {
+  const m = lower.match(/^(?:(user|target)\s+)?(.+?)\s+(not\s+)?active$/);
+  if (!m) return null;
+  const which = m[1] ?? "target";
+  const name = m[2].trim();
+  const negated = Boolean(m[3]);
+  const entity = which === "user" ? user : target;
+  let outcome: ConditionOutcome;
+  if (name === "debuff") {
+    outcome = entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
+  } else if (name === "buff") {
+    outcome = entity.buffs.some((b) => b.amount > 0) ? "then" : "else";
+  } else {
+    const candidates = name
+      .split(/\s+or\s+|\s*,\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    outcome = candidates.some((c) => hasStatus(entity, c))
+      ? "then"
+      : "else";
+  }
+  return negated ? (outcome === "then" ? "else" : "then") : outcome;
 }
 
 /** "5 Blood" / "0 Campaigns" / "no Campaigns" — resource threshold. */
@@ -1428,6 +1668,36 @@ function* handleStatus(
     });
     messages.push(
       `  ${target.num} afflicted with ${effect.name}${effect.damage > 0 ? ` (${effect.damage}/${effect.rounds})` : ` (${effect.rounds} rounds)`}.`,
+    );
+  }
+}
+
+/**
+ * Apply an MP cap: clamp the target's MP budget to `amount` for `rounds`
+ * rounds. The original budget is stored on the entity as an "mpCap" marker
+ * buff so state.ts can restore it when the cap expires.
+ */
+function* handleMpCap(
+  { target, messages }: EffectCtx,
+  effect: MpCapEffect,
+) {
+  const original = target.mp;
+  const capped = Math.min(original, effect.amount);
+  if (capped < original) {
+    target.mp = capped;
+    // Marker buff: amount = the delta removed, restored on expiry by
+    // tickEndingBuffs in state.ts.
+    target.buffs.push({
+      stat: "mpCap",
+      amount: original - capped,
+      rounds: effect.rounds,
+    });
+    messages.push(
+      `  ${target.num}'s MP is capped at ${effect.amount} for ${effect.rounds} round${effect.rounds > 1 ? "s" : ""}.`,
+    );
+  } else {
+    messages.push(
+      `  ${target.num}'s MP (${original}) is already at or below the cap of ${effect.amount}.`,
     );
   }
 }
@@ -1702,6 +1972,7 @@ function* handleChoose(
 /** Dispatch an effect of any type to its handler. */
 const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   status: handleStatus,
+  mpCap: handleMpCap,
   buff: handleStatMod,
   debuff: handleStatMod,
   damageMod: handleDamageMod,
@@ -1838,6 +2109,7 @@ function summariseEffect(eff: Effect): string {
 /** Per-effect-type one-line summary, used in choose-prompt option labels. */
 const SUMMARISE: Record<string, (eff: any) => string> = {
   status: (e) => `inflict ${e.damage || 0} ${e.name}/${e.rounds}`,
+  mpCap: (e) => `cap MP at ${e.amount}/${e.rounds}`,
   buff: (e) => `+${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
   debuff: (e) => `${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
   heal: (e) => `heal ${e.amount ?? "?"} HP`,
@@ -1973,9 +2245,17 @@ export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
       // because the regex matches "damage" / "dmg" as a stat name and
       // folds them onto the dmg alias. Those are damage modifiers, not
       // self-buffs, so the resolve layer reads them here. The
-      // buff/debuff still lands on `target.buffs` so legacy code that
-      // scans entity.buffs for damage modifiers keeps working too.
-      if (e.stat === "dmg") {
+      // buff/debuff still lands on entity.buffs (self-buffs on the
+      // user, target debuffs on the target via `subject`) so legacy
+      // code that scans entity.buffs for damage modifiers keeps
+      // working too. Target-directed modifiers ("Targets: -25% damage")
+      // are the target's own outgoing-damage modifiers, not the user's,
+      // so they must NOT be folded into the user's metadata here.
+      // Only EXPLICIT self-directed modifiers fold into the user's outgoing
+      // damage metadata. Omitted (legacy) and explicit "target" subjects
+      // are the target's own modifiers, so they must not inflate the
+      // user's damage (CodeRabbit L1935).
+      if (e.stat === "dmg" && e.subject === "self") {
         // parseStatMods bakes the sign into percent / amount, so a
         // debuff for "-10% damage" arrives here with percent = -10.
         if (typeof e.percent === "number") {

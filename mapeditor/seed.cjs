@@ -118,6 +118,8 @@ if (fs.existsSync(MAPS_TS)) {
 
 // Game-mode map pools from src/data/gamemodes.ts (used by the map browser).
 const modes = {};
+// Extracted minSizes + aliases land here and are written into modes.json.
+const modeData = {};
 const MODE_LABELS = { ffa: 'FFA', ntr: 'NTR', jugg: 'JUGG', pvp: 'PvP', '1v1': '1v1' };
 const GAMEMODES_TS = path.join(ROOT, 'src', 'data', 'gamemodes.ts');
 if (!fs.existsSync(GAMEMODES_TS)) {
@@ -134,6 +136,29 @@ if (!fs.existsSync(GAMEMODES_TS)) {
 			if (names.length) modes[key] = names;
 		}
 		if (!Object.keys(modes).length) errors.push('no mode pools extracted from ' + GAMEMODES_TS);
+	}
+
+	// Per-mode minimum map sizes + alias table, extracted from the same
+	// source so the editor's mode rules stay in lockstep with the bot.
+	// (Map pools only cover the canonical ids; aliases are the full table.)
+	const gmSize = modesSrc.match(/GAMEMODE_MIN_SIZE[\s\S]*?=\s*\{([\s\S]*?)\n\};/);
+	const gmAliases = modesSrc.match(/const ALIASES[\s\S]*?=\s*\{([\s\S]*?)\n\};/);
+	if (!gmSize || !gmAliases) {
+		errors.push('GAMEMODE_MIN_SIZE or ALIASES block not found in ' + GAMEMODES_TS);
+	} else {
+		const minSizes = {};
+		const aliasEntries = {};
+		for (const m of gmSize[1].matchAll(/([A-Za-z0-9_"']+)\s*:\s*(\d+)/g)) {
+			minSizes[m[1].replace(/["']/g, '')] = Number(m[2]);
+		}
+		for (const m of gmAliases[1].matchAll(/([A-Za-z0-9_"' ]+)\s*:\s*"([^"]+)"/g)) {
+			aliasEntries[m[1].replace(/["']/g, '').trim()] = m[2];
+		}
+		// Write later alongside modes.json; stash on a shared object.
+		modeData.minSizes = minSizes;
+		modeData.aliases = aliasEntries;
+		if (!Object.keys(minSizes).length) errors.push('no min-size entries extracted from ' + GAMEMODES_TS);
+		if (!Object.keys(aliasEntries).length) errors.push('no alias entries extracted from ' + GAMEMODES_TS);
 	}
 }
 
@@ -157,8 +182,12 @@ if (!fs.existsSync(MAPS_DIR)) fs.mkdirSync(MAPS_DIR, { recursive: true });
 
 const modeLabels = {};
 for (const k of Object.keys(modes)) modeLabels[k] = MODE_LABELS[k] || k;
-fs.writeFileSync(path.join(MAPS_DIR, 'modes.json'), JSON.stringify({ modes, labels: modeLabels }, null, 2), 'utf8');
-console.log('  + modes.json  (' + Object.keys(modes).length + ' mode pools)');
+fs.writeFileSync(
+	path.join(MAPS_DIR, 'modes.json'),
+	JSON.stringify({ modes, labels: modeLabels, minSizes: modeData.minSizes || {}, aliases: modeData.aliases || {} }, null, 2),
+	'utf8'
+);
+console.log('  + modes.json  (' + Object.keys(modes).length + ' mode pools, aliases + min sizes)');
 
 fs.writeFileSync(
 	path.join(MAPS_DIR, 'curated.json'),

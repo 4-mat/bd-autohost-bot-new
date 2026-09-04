@@ -1,0 +1,5 @@
+# Generated artifacts — render-gallery.cjs always emits LF (\n), so pin
+# these to LF to keep regeneration byte-identical on every platform
+# (no CRLF churn from core.autocrlf).
+mapeditor/gallery/*.svg text eol=lf
+mapeditor/gallery/MAPS.md text eol=lf

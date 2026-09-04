@@ -39,37 +39,36 @@ export enum Terrain {
   Boost = 12,
 }
 
-export const TERRAIN_COLORS: Record<number, string> = {
-  [Terrain.Normal]: "#A9F5A9",
-  [Terrain.Stop]: "#A9A9A9",
-  [Terrain.Water]: "#454FDF",
-  [Terrain.Forest]: "#226622",
-  [Terrain.Ice]: "#33E9E9",
-  [Terrain.Air]: "#B8D3DE",
-  [Terrain.Sticky]: "#CCCC00",
-  [Terrain.Lava]: "#8B0000",
-  [Terrain.Broken]: "#000000",
-  [Terrain.Bone]: "#CCCCAA",
-  [Terrain.Stone]: "#888888",
-  [Terrain.Hearth]: "#FF6633",
-  [Terrain.Boost]: "#A855F7",
+// Colors + display names come from the single source of truth,
+// src/game/terrain-colors.cjs (also drives the map editor, CI parser, and
+// gallery). Entry order there matches the enum order above.
+import terrainColors from "./terrain-colors.cjs";
+
+export const TERRAIN_COLORS: Record<number, string> = {};
+export const TERRAIN_NAMES: Record<number, string> = {};
+
+const TERRAIN_BY_ID: Record<string, Terrain> = {
+  normal: Terrain.Normal,
+  stop: Terrain.Stop,
+  water: Terrain.Water,
+  forest: Terrain.Forest,
+  ice: Terrain.Ice,
+  air: Terrain.Air,
+  sticky: Terrain.Sticky,
+  lava: Terrain.Lava,
+  broken: Terrain.Broken,
+  bone: Terrain.Bone,
+  stone: Terrain.Stone,
+  hearth: Terrain.Hearth,
+  boost: Terrain.Boost,
 };
 
-export const TERRAIN_NAMES: Record<number, string> = {
-  [Terrain.Normal]: "Normal",
-  [Terrain.Stop]: "Stop",
-  [Terrain.Water]: "Water",
-  [Terrain.Forest]: "Forest",
-  [Terrain.Ice]: "Ice",
-  [Terrain.Air]: "Air",
-  [Terrain.Sticky]: "Sticky",
-  [Terrain.Lava]: "Lava",
-  [Terrain.Broken]: "Broken",
-  [Terrain.Bone]: "Bone",
-  [Terrain.Stone]: "Stone",
-  [Terrain.Hearth]: "Hearth",
-  [Terrain.Boost]: "Boost",
-};
+for (const [id, entry] of Object.entries(terrainColors)) {
+  const t = TERRAIN_BY_ID[id];
+  if (t === undefined) continue;
+  TERRAIN_COLORS[t] = entry.color;
+  TERRAIN_NAMES[t] = entry.label;
+}
 
 // Per the BD 4.4 glossary (Map -> Obstructions): "Stop/Bone, Ice, Stone, and
 // Hearth tiles, as well as foes, are considered obstructions." Obstructions
@@ -127,14 +126,14 @@ export interface AbilityData {
   roll: string;
   damageType: "Physical" | "Magical" | "Varies" | "";
   actionType:
-    | "Standard"
-    | "Full"
-    | "Movement"
-    | "Swift"
-    | "Free"
-    | "Trigger"
-    | "Reaction"
-    | "Passive";
+  | "Standard"
+  | "Full"
+  | "Movement"
+  | "Swift"
+  | "Free"
+  | "Trigger"
+  | "Reaction"
+  | "Passive";
   targetAmount: number | "AoE";
   targetGroup: string;
   range: string;
@@ -210,7 +209,7 @@ export interface Entity {
   weaponLevel: number;
   abilities: AbilityData[];
   statuses: StatusEffect[];
-  buffs: { stat: string; amount: number; rounds: number }[];
+  buffs: { stat: string; amount: number; rounds: number; percent?: boolean }[];
   cooldowns: Record<string, number>;
   usesUsed: Record<string, number>;
   pendingAction: PendingAction | null;
@@ -318,6 +317,8 @@ export interface Game {
   chatLog: ChatEntry[];
   toasts: ChatEntry[];
   signupsOpen: boolean;
+  /** Whether players can use %endturn (default false). */
+  playersIdle: boolean;
   /** Gamemode votes: entity num -> voted mode id. Active between %close and %endvote. */
   votes: Record<string, string>;
   /** Whether gamemode voting is open (opened by %close, closed by %endvote). */
@@ -343,25 +344,15 @@ export const games = new Map<string, Game>();
 function serializeState(game: Game): string {
   return JSON.stringify({
     entities: game.entities.map((e) => ({
-      num: e.num,
-      name: e.name,
-      curhp: e.curhp,
-      maxhp: e.maxhp,
-      pos: e.pos,
-      team: e.team,
-      statuses: e.statuses,
-      buffs: e.buffs,
-      cooldowns: e.cooldowns,
-      usesUsed: e.usesUsed,
-      dashUsed: e.dashUsed,
-      standardUsed: e.standardUsed,
-      movementUsed: e.movementUsed,
-      swiftUsed: e.swiftUsed,
-      triggered: e.triggered,
+      ...e,
+      pendingResolution: undefined,
     })),
+    turnOrder: game.turnOrder,
     turnIndex: game.turnIndex,
     round: game.round,
     log: game.log,
+    votes: game.votes,
+    kills: game.kills,
   });
 }
 
@@ -374,27 +365,29 @@ export function popSnapshot(game: Game): boolean {
   const snap = game.snapshots.pop();
   if (!snap) return false;
   const data = JSON.parse(snap);
-  for (const e of data.entities) {
+
+  // Rebuild the array in snapshot order so consumers that iterate
+  // game.entities directly (or index into it, e.g. game.entities[0]) observe
+  // the pre-undo order, not the filtered+appended current order. Live entity
+  // objects are kept where possible so references stay valid.
+  game.entities = data.entities.map((e: Entity) => {
     const ent = game.entities.find((x) => x.num === e.num);
     if (ent) {
-      ent.curhp = e.curhp;
-      ent.maxhp = e.maxhp;
-      ent.pos = e.pos;
-      ent.team = e.team;
-      ent.statuses = e.statuses;
-      ent.buffs = e.buffs;
-      ent.cooldowns = e.cooldowns;
-      ent.usesUsed = e.usesUsed;
-      ent.dashUsed = e.dashUsed;
-      ent.standardUsed = e.standardUsed;
-      ent.movementUsed = e.movementUsed;
-      ent.swiftUsed = e.swiftUsed;
-      ent.triggered = e.triggered;
+      // Clear properties added after snapshot to avoid state pollution
+      for (const key of Object.keys(ent)) { if (!(key in e)) delete (ent as any)[key]; }
+      Object.assign(ent, e);
+      ent.pendingResolution = undefined;
+      return ent;
     }
-  }
+    return e as Entity;
+  });
+
+  game.turnOrder = data.turnOrder;
   game.turnIndex = data.turnIndex;
   game.round = data.round;
   if (data.log) game.log = data.log;
+  if (data.votes) game.votes = data.votes;
+  if (data.kills) game.kills = data.kills;
   return true;
 }
 
@@ -1267,6 +1260,13 @@ function tickEndingBuffs(prev: Entity, messages: string[]) {
   prev.buffs = prev.buffs.filter((b) => {
     b.rounds--;
     if (b.rounds <= 0) {
+      // An mpCap marker stores the MP delta removed by handleMpCap;
+      // restore it so the cap only lasts its declared rounds.
+      if (b.stat === "mpCap") {
+        prev.mp += b.amount;
+        messages.push(`  ${prev.num}'s MP cap expired (MP restored to ${prev.mp}).`);
+        return false;
+      }
       messages.push(
         `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
       );
