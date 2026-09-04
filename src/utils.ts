@@ -123,9 +123,19 @@ export function sendPm(user: string, msg: string) {
 // Showdown caps a single message at 1000 chars (server MAX_MESSAGE_LENGTH).
 // Chunk well under it so the "/pm user, " command never pushes a chunk over
 // the limit; older Showdown forks used 300, so the size is overridable via
-// PM_CHUNK_LIMIT.
-const PM_CHUNK_LIMIT = Math.max(1, Number(process.env.PM_CHUNK_LIMIT) || 950);
+// PM_CHUNK_LIMIT. The value is clamped to a finite positive number so a
+// non-finite environment value (e.g. Infinity) cannot disable chunking.
+const PM_CHUNK_LIMIT = Math.min(
+  950,
+  Math.max(1, Math.trunc(Number(process.env.PM_CHUNK_LIMIT)) || 950),
+);
 export function splitPmChunks(msg: string, limit = PM_CHUNK_LIMIT): string[] {
+  if (msg.length === 0) return [];
+  // Validate direct arguments: limit must be a finite positive integer.
+  // Reject invalid values before entering the loop and fall back to the
+  // module limit so chunking can never loop forever on a bad argument.
+  if (!Number.isFinite(limit) || limit < 1) limit = PM_CHUNK_LIMIT;
+  limit = Math.trunc(limit);
   if (msg.length <= limit) return [msg];
   const chunks: string[] = [];
   let start = 0;

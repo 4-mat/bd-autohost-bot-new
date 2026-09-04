@@ -232,4 +232,26 @@ describe("splitPmChunks", () => {
       expect(chunk.length).toBeLessThanOrEqual(50);
     }
   });
+
+  it("returns no chunks for an empty message", () => {
+    expect(splitPmChunks("")).toEqual([]);
+    expect(splitPmChunks("", 5)).toEqual([]);
+  });
+
+  it("rejects invalid limit arguments by falling back to the module limit", () => {
+    const msg = "x".repeat(2000);
+    // Non-finite / non-positive limits must not disable chunking.
+    for (const bad of [0, -5, NaN, Infinity, -Infinity]) {
+      const chunks = splitPmChunks(msg, bad as number);
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(chunk.length).toBeLessThanOrEqual(950);
+      }
+    }
+  });
+
+  it("truncates fractional limit arguments", () => {
+    const chunks = splitPmChunks("x".repeat(60), 10.9);
+    expect(chunks.every((c) => c.length <= 10)).toBe(true);
+  });
 });
