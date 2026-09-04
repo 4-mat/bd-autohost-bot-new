@@ -155,6 +155,26 @@ export interface OnMissEffect {
   effects: Effect[];
 }
 
+export interface PerEffect {
+  type: "per";
+  trigger: string;
+  effects: Effect[];
+}
+
+export interface TriggerEffect {
+  type: "trigger";
+  event: string;
+  effects: Effect[];
+}
+
+export type PhaseTiming = "before-acc" | "before-damage" | "on-miss" | "regardless";
+
+export interface PhaseGateEffect {
+  type: "phaseEffect";
+  phase: PhaseTiming;
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
   | MpCapEffect
@@ -177,6 +197,9 @@ export type Effect =
   | MultiHitMod
   | TileEffect
   | OnMissEffect
+  | PerEffect
+  | TriggerEffect
+  | PhaseGateEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -567,6 +590,21 @@ function parseClauseStructured(lower: string): Effect[] | null {
     return [{ type: "phase", phase: phaseMatch[1] }];
   }
 
+  // Moon-phase prefix + Per/When triggers: "New Moon: E" / "Per 5 CP: E" /
+  // "When user kills a foe: E" -- gate their sub-effects. Extracted to keep
+  // parseClauseStructured under the cyclomatic-complexity limit.
+  const prefixGate = parseTriggerPrefix(lower);
+  if (prefixGate) return prefixGate;
+
+  const tail = parseTailSimple(lower);
+  if (tail) return tail;
+
+  return null;
+}
+
+/** Single-keyword clauses parsed at the end: Delay / Recoil / Ignore / Multi-Hit.
+ * Extracted to keep parseClauseStructured under the cyclomatic-complexity limit. */
+function parseTailSimple(lower: string): Effect[] | null {
   // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
   const delayMatch =
     lower.match(/^delay[\s-]+(\d+)\s+rounds?$/) ??
@@ -591,6 +629,45 @@ function parseClauseStructured(lower: string): Effect[] | null {
   const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
   if (multiHitMatch) {
     return [{ type: "multiHit", hits: parseInt(multiHitMatch[1]) }];
+  }
+
+  return null;
+}
+
+/**
+ * Clauses that gate their sub-effects behind a prefix word + colon:
+ *   - "New Moon: EFFECT" / "Full Moon: ..." -> a phase-conditional effect.
+ *   - "Per hit: EFFECT" / "Per 5 CP: EFFECT" -> a PerEffect trigger.
+ *   - "When user kills a foe: EFFECT" -> a TriggerEffect.
+ * Returns null when the clause is not one of these prefix-gated forms.
+ */
+function parseTriggerPrefix(lower: string): Effect[] | null {
+  const moonMatch = lower.match(
+    /^(new moon|full moon|waxing|waning):\s*(.+)$/,
+  );
+  if (moonMatch) {
+    return [{
+      type: "conditional",
+      condition: `phase is ${moonMatch[1]}`,
+      thenEffects: parseEffects(moonMatch[2]),
+    }];
+  }
+
+  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
+  if (perMatch) {
+    return [{
+      type: "per",
+      trigger: perMatch[1].trim(),
+      effects: parseEffects(perMatch[2]),
+    }];
+  }
+  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
+  if (whenMatch) {
+    return [{
+      type: "trigger",
+      event: whenMatch[1].trim(),
+      effects: parseEffects(whenMatch[2]),
+    }];
   }
 
   return null;
@@ -1238,6 +1315,7 @@ export function evaluateCondition(
   text: string,
   user: Entity,
   target: Entity,
+  moonPhase?: string,
 ): ConditionOutcome {
   const lower = text.toLowerCase().trim();
 
@@ -1265,6 +1343,9 @@ export function evaluateCondition(
   const word = evalStatWordCompare(lower, user, target);
   if (word !== null) return word;
 
+  const phase = evalMoonPhase(lower, moonPhase);
+  if (phase !== null) return phase;
+
   const debuffed = evalDebuffed(lower, user, target);
   if (debuffed !== null) return debuffed;
 
@@ -1272,6 +1353,18 @@ export function evaluateCondition(
   if (active !== null) return active;
 
   return "unknown";
+}
+
+/** "phase is new moon" / "phase is full moon" — checks against the game's
+ * active moon phase. When none has been set, the default phase is new moon. */
+function evalMoonPhase(
+  lower: string,
+  moonPhase?: string,
+): ConditionOutcome | null {
+  const m = lower.match(/^phase is (.+)$/);
+  if (!m) return null;
+  const active = (moonPhase ?? "new moon").toLowerCase();
+  return m[1].trim().toLowerCase() === active ? "then" : "else";
 }
 
 /** "<user|target> debuffed (by foe)" -- any negative buff active. */
@@ -1483,8 +1576,9 @@ function applyConditional(
   user: Entity,
   target: Entity,
   effect: ConditionalEffect,
+  moonPhase?: string,
 ): { messages: string[]; outcome: ConditionOutcome } {
-  const outcome = evaluateCondition(effect.condition, user, target);
+  const outcome = evaluateCondition(effect.condition, user, target, moonPhase);
   const messages: string[] = [];
   if (outcome === "unknown") {
     messages.push(
@@ -1719,7 +1813,7 @@ function* handleSwap(
 }
 
 function* handleSimple(
-  { user, messages }: EffectCtx,
+  { game, user, messages }: EffectCtx,
   effect: any,
 ) {
   switch (effect.type) {
@@ -1746,6 +1840,8 @@ function* handleSimple(
       messages.push(`  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`);
       return;
     case "phase":
+      // Only shift the game's moon phase to the named phase.
+      if (game) game.moonPhase = effect.phase;
       messages.push(`  Phase shifts to ${effect.phase}.`);
       return;
     case "multiHit":
@@ -1773,7 +1869,12 @@ function* handleConditional(
   { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: ConditionalEffect,
 ) {
-  const { outcome, messages: condMsgs } = applyConditional(user, target, effect);
+  const { outcome, messages: condMsgs } = applyConditional(
+    user,
+    target,
+    effect,
+    game ? game.moonPhase : undefined,
+  );
   messages.push(...condMsgs);
   // "unknown" defaults to then-branch (legacy fallback). "else" without
   // an else-branch drops the sub-effects entirely.
@@ -1799,6 +1900,32 @@ function* handleThirst(
   }
   const thirstMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
   messages.push(...thirstMsgs.map((m) => `    [Thirst ${effect.threshold}] ${m}`));
+}
+
+function* handlePer(
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
+  effect: PerEffect,
+) {
+  if (!perTriggerApplies(effect.trigger, user)) {
+    // Pool below the count (or an unsupported trigger): stays summarized.
+    messages.push(`  [Per ${effect.trigger}]`);
+    return;
+  }
+  const subMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
+  messages.push(...subMsgs.map((m) => `    [Per ${effect.trigger}] ${m}`));
+}
+
+function* handleTrigger(
+  { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
+  effect: TriggerEffect,
+) {
+  if (!triggerApplies(effect.event, user, target)) {
+    // Event not met in this context: stays summarized.
+    messages.push(`  [When ${effect.event}]`);
+    return;
+  }
+  const subMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
+  messages.push(...subMsgs.map((m) => `    [When ${effect.event}] ${m}`));
 }
 
 function* handleApex(
@@ -1858,6 +1985,8 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   thirst: handleThirst,
   apex: handleApex,
   choose: handleChoose,
+  per: handlePer,
+  trigger: handleTrigger,
   teleport: handleSimple,
   move: handleSimple,
   resource: handleSimple,
@@ -1902,6 +2031,50 @@ export function* applyEffectStream(
  * -- this matches the legacy "fan out" log and lets unit tests assert on the
  * output without driving interaction.
  */
+/** Join sub-effect summaries into a single string. */
+function summariseEffects(effects: Effect[]): string {
+  return effects.map(summariseEffect).join(", ");
+}
+
+/**
+ * True when a `Per X:` trigger fires in the current stream context.
+ *
+ * These effects reach the stream on a successful hit (resolve.ts applies
+ * non-phase effects after damage), so hit-context triggers dispatch their
+ * sub-effects. Resource-count triggers ("Per 5 CP:") dispatch when the
+ * user's pool meets the count; anything else stays summarized until a
+ * dedicated dispatch point exists for it.
+ */
+function perTriggerApplies(trigger: string, user: Entity): boolean {
+  const t = trigger.toLowerCase().trim();
+  // "Per hit:" fires on a successful hit (the context these effects reach
+  // the stream in). "Per crit:" needs crit context the stream doesn't have,
+  // so it stays summarized until a dedicated crit dispatch point exists.
+  if (t === "hit") return true;
+  const resMatch = t.match(/^(\d+)\s+(.+)$/);
+  if (resMatch) {
+    const need = parseInt(resMatch[1]);
+    const res = canonicalResource(resMatch[2]);
+    if (res) return (user.resources[res] ?? 0) >= need;
+  }
+  return false;
+}
+
+/**
+ * True when a `When X:` trigger fires in the current stream context.
+ * Hit-context events ("user damages a foe", "user kills a foe", "hit")
+ * dispatch their sub-effects on a successful hit; other events stay
+ * summarized until a dedicated dispatch point exists for them.
+ */
+function triggerApplies(event: string, user: Entity, target: Entity): boolean {
+  const t = event.toLowerCase().trim();
+  if (t === "hit") return true;
+  if (t === "user damages a foe" || t === "user damages foe") return true;
+  if (t === "user kills a foe" || t === "user kills foe")
+    return target.curhp <= 0;
+  return false;
+}
+
 function drainApplyStream(
   gen: Generator<EffectChoosePrompt, string[], string>,
 ): string[] {
