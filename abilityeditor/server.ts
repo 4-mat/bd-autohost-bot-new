@@ -303,6 +303,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
             if (cs && cs.has(toId(name))) {
               cs.delete(toId(name));
               cs.add(toId(newName));
+              // Persist the rename so customs.local.json doesn't resurrect the
+              // old name on the next editor start.
+              saveCustoms();
             }
             map.set(toId(newName), entry);
           } else if (newName !== entry.name) {
@@ -393,6 +396,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
           send(res, 404, { error: `ability '${name ?? "?"}' not found` });
           return;
         }
+        // Tell the GUI the copy's real name so it can open the right card
+        // (guessing "<name> Copy" is wrong when that name is already taken).
+        send(res, 200, { ok: true, name: String((copy as { name?: unknown }).name ?? "") });
+        return;
       } else {
         send(res, 400, { error: "action must be add|save|remove|move|duplicate" });
         return;
