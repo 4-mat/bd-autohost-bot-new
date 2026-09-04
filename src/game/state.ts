@@ -126,14 +126,14 @@ export interface AbilityData {
   roll: string;
   damageType: "Physical" | "Magical" | "Varies" | "";
   actionType:
-    | "Standard"
-    | "Full"
-    | "Movement"
-    | "Swift"
-    | "Free"
-    | "Trigger"
-    | "Reaction"
-    | "Passive";
+  | "Standard"
+  | "Full"
+  | "Movement"
+  | "Swift"
+  | "Free"
+  | "Trigger"
+  | "Reaction"
+  | "Passive";
   targetAmount: number | "AoE";
   targetGroup: string;
   range: string;
@@ -330,6 +330,8 @@ export interface Game {
   voteRunoff: string[] | null;
   /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
   timer?: { entity: string | null; endAt: number } | null;
+  /** Whether players can use %endturn (default false) */
+  playersIdle: boolean;
 }
 
 export const games = new Map<string, Game>();

@@ -119,6 +119,7 @@ function makeGame(
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 

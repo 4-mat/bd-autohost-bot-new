@@ -170,7 +170,6 @@ describe("voteOptionsFor", () => {
       "2v2",
       "NTR",
       "JUGG",
-      "3vJ",
       "PvPNTR",
     ]);
     expect(voteOptionsFor(6).map((o) => o.id)).toEqual([
@@ -203,10 +202,15 @@ describe("voteOptionsFor", () => {
     expect(voteOptionsFor(9)).toEqual([]);
   });
 
-  test("offers Juggernaut formats at their exact sizes", () => {
-    expect(voteOptionsFor(3).map((o) => o.id)).toContain("2vJ");
-    expect(voteOptionsFor(4).map((o) => o.id)).toContain("3vJ");
-    expect(voteOptionsFor(5).map((o) => o.id)).toContain("4vJ");
+  test("offers a single Juggernaut option that scales to the lobby", () => {
+    expect(voteOptionsFor(3).map((o) => o.id)).toContain("JUGG");
+    expect(voteOptionsFor(4).map((o) => o.id)).toContain("JUGG");
+    expect(voteOptionsFor(5).map((o) => o.id)).toContain("JUGG");
+    // The exact-size NvJ variants are folded into JUGG — no duplicate buttons.
+    expect(voteOptionsFor(3).map((o) => o.id)).not.toContain("2vJ");
+    expect(voteOptionsFor(4).map((o) => o.id)).not.toContain("3vJ");
+    expect(voteOptionsFor(5).map((o) => o.id)).not.toContain("4vJ");
+    // PvPJ (teams, one side juggernauts) remains a distinct offering.
     expect(voteOptionsFor(5).map((o) => o.id)).toContain("PvPJ");
     expect(voteOptionsFor(7).map((o) => o.id)).toContain("PvPJ");
     expect(voteOptionsFor(5).map((o) => o.id)).not.toContain("3vJ");
@@ -235,7 +239,9 @@ describe("normalizeVoteMode", () => {
     expect(normalizeVoteMode("pvpj")).toBe("PvPJ");
     expect(normalizeVoteMode("pvp juggernaut")).toBe("PvPJ");
     expect(normalizeVoteMode("pvp ntr")).toBe("PvPNTR");
-    expect(normalizeVoteMode("2vj")).toBe("2vJ");
+    expect(normalizeVoteMode("2vj")).toBe("JUGG");
+    expect(normalizeVoteMode("3vj")).toBe("JUGG");
+    expect(normalizeVoteMode("4vj")).toBe("JUGG");
     expect(normalizeVoteMode("4v4")).toBe("4v4");
     expect(normalizeVoteMode("2v2v2")).toBe("2v2v2");
   });

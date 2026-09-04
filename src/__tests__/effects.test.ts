@@ -90,6 +90,7 @@ function makeGame(opts: {
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
