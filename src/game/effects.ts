@@ -1182,7 +1182,22 @@ export function evaluateCondition(
   const word = evalStatWordCompare(lower, user, target);
   if (word !== null) return word;
 
+  const phase = evalMoonPhase(lower, moonPhase);
+  if (phase !== null) return phase;
+
   return "unknown";
+}
+
+/** "phase is new moon" / "phase is full moon" — checks against the game's
+ * active moon phase. When none has been set, the default phase is new moon. */
+function evalMoonPhase(
+  lower: string,
+  moonPhase?: string,
+): ConditionOutcome | null {
+  const m = lower.match(/^phase is (.+)$/);
+  if (!m) return null;
+  const active = (moonPhase ?? "new moon").toLowerCase();
+  return m[1].trim().toLowerCase() === active ? "then" : "else";
 }
 
 /** "5 Blood" / "0 Campaigns" / "no Campaigns" — resource threshold. */
@@ -1553,7 +1568,7 @@ function* handleSwap(
   );
 }
 
-function* handleSimple({ user, messages }: EffectCtx, effect: any) {
+function* handleSimple({ game, user, messages }: EffectCtx, effect: any) {
   switch (effect.type) {
     case "teleport":
       messages.push(
@@ -1584,6 +1599,10 @@ function* handleSimple({ user, messages }: EffectCtx, effect: any) {
       );
       return;
     case "phase":
+      // "Phase: X" SETS the game's moon phase (moon-phase mechanic). Store
+      // it on game state so "Phase is X" / "New Moon:" conditions later
+      // evaluate against the current phase instead of the default.
+      if (game) game.moonPhase = effect.phase.toLowerCase();
       messages.push(`  Phase shifts to ${effect.phase}.`);
       return;
     case "multiHit":
@@ -1617,6 +1636,7 @@ function* handleConditional(
     user,
     target,
     effect,
+    game?.moonPhase,
   );
   messages.push(...condMsgs);
   // "unknown" defaults to then-branch (legacy fallback). "else" without

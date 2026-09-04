@@ -145,6 +145,72 @@ describe("parseEffects", () => {
 });
 
 // =============================================================================
+// Moon phase -- "Phase: X" state setting + "X Moon: EFFECT" condition routing
+// =============================================================================
+
+describe("applyEffects: moon phase wiring", () => {
+  it("parses 'Phase: X' into a phase effect", () => {
+    const effects = parseEffects("Phase: Full Moon");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("phase");
+    if (effects[0].type !== "phase") return;
+    expect(effects[0].phase).toBe("full moon");
+  });
+
+  it("applying 'Phase: X' writes the phase to game state", () => {
+    const user = makeEntity({ num: "P1", name: "A", team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", team: 1 });
+    const game = makeGame({ entities: [user, target] });
+    const ability = makeAbility({ name: "Lunar Shift", effect: "Phase: Full Moon" });
+
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+    expect(game.moonPhase).toBe("full moon");
+  });
+
+  it("routes 'Full Moon: ...' clauses on the matching phase only", () => {
+    const user = makeEntity({ num: "P1", name: "A", team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", team: 1, mp: 2 });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "full moon";
+
+    const effects = parseEffects("Full Moon: gain +1 MP/1");
+    const messages = applyEffects(game, user, target, effects);
+
+    // On full moon the then-branch applies: target gains +1 MP.
+    const mpBuff = target.buffs.find((b) => b.stat === "mp" && b.amount === 1);
+    expect(mpBuff).toBeDefined();
+    expect(messages.join(" ")).toContain("gains");
+  });
+
+  it("skips 'New Moon: ...' clauses while the phase is full moon", () => {
+    const user = makeEntity({ num: "P1", name: "A", team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", team: 1, mp: 2 });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "full moon";
+
+    const effects = parseEffects("New Moon: gain +1 MP/1");
+    const messages = applyEffects(game, user, target, effects);
+
+    const mpBuff = target.buffs.find((b) => b.stat === "mp" && b.amount === 1);
+    expect(mpBuff).toBeUndefined();
+    expect(messages.join(" ")).toContain("false");
+  });
+
+  it("defaults to new moon when no phase has been set", () => {
+    const user = makeEntity({ num: "P1", name: "A", team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", team: 1, mp: 2 });
+    const game = makeGame({ entities: [user, target] });
+    delete game.moonPhase;
+
+    const effects = parseEffects("New Moon: gain +1 MP/1");
+    applyEffects(game, user, target, effects);
+
+    const mpBuff = target.buffs.find((b) => b.stat === "mp" && b.amount === 1);
+    expect(mpBuff).toBeDefined();
+  });
+});
+
+// =============================================================================
 // isApexActive -- per-range-type semantics
 // =============================================================================
 

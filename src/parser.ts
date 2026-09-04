@@ -1,5 +1,5 @@
 import { bot } from "./connection.js";
-import { send, sendPm, resumeSending, toId, splitMessage, parseArgs } from "./utils.js";
+import { send, resumeSending, toId, splitMessage } from "./utils.js";
 import config from "./config.js";
 import { rooms, getRoom, type Room } from "./rooms.js";
 import { users, type User } from "./users.js";

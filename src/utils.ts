@@ -19,6 +19,11 @@ const MAX_SEND_QUEUE = 2000;
 const sendQueue: Array<{ room: string; msg: string }> = [];
 let sending = false;
 let drainTimer: ReturnType<typeof setTimeout> | null = null;
+// Pre-authentication pause: a fresh connection must not transmit queued
+// messages until /trn confirms the login. `send()` skips the auto-drain
+// while paused; `resumeSending()` (called by the updateuser handler after
+// a successful login) clears the pause and drains.
+let authPaused = false;
 // True when resumeSending() ran while a send was still in flight (the
 // socket reconnected during the send). The error callback uses it to
 // restart the drain, because the resumeSending() call itself was a no-op
@@ -41,7 +46,7 @@ export function send(room: string, msg: string) {
     sendQueue.splice(sendInFlight ? 1 : 0, excess);
   }
   sendQueue.push({ room, msg });
-  if (!sending) drain();
+  if (!authPaused && !sending) drain();
 }
 
 function drain() {
@@ -87,8 +92,21 @@ function drain() {
   }
 }
 
-/** Resume draining the outbound queue once the WebSocket (re)opens. */
+/**
+ * Pause the outbound queue (pre-authentication). Queued messages stay put
+ * until `resumeSending()` is called after the login /trn is confirmed.
+ */
+export function pauseSending() {
+  authPaused = true;
+}
+
+/**
+ * Resume draining the outbound queue. Clears the pre-authentication pause
+ * (called by the updateuser handler after a successful login) and restarts
+ * the drain when the WebSocket (re)opens.
+ */
 export function resumeSending() {
+  authPaused = false;
   if (!sending) {
     drain();
   } else {
@@ -98,10 +116,16 @@ export function resumeSending() {
   }
 }
 
-/** Send a message immediately, bypassing the queue. Used for /trn during login. */
+/**
+ * Send a message immediately, bypassing the queue. Used for /trn during
+ * login. A synchronous throw OR an asynchronous send-callback error both
+ * fall back to the retained queue so the message (/trn) is never lost.
+ */
 export function sendImmediate(msg: string) {
   try {
-    ws!.send(`|${msg}`);
+    ws!.send(`|${msg}`, (err?: Error) => {
+      if (err) send("", msg);
+    });
   } catch {
     // ws not available — fall back to queue so the message isn't lost.
     send("", msg);
@@ -119,6 +143,7 @@ export function resetSendQueueForTests() {
   sending = false;
   resumeWhileSending = false;
   sendInFlight = false;
+  authPaused = false;
 }
 
 /** Test-only: expose the current queue so tests can assert the cap. */
@@ -214,4 +239,20 @@ export function setWs(w: {
   send: (msg: string, cb?: (err?: Error) => void) => void;
 }) {
   ws = w;
+}
+
+// Registered by connection.ts: reports whether a given connection generation
+// is still the active one. login.ts uses it to discard a stale /trn
+// assertion when the socket was superseded mid-request. Kept in utils.ts
+// (not connection.ts) so login.ts can query it without an import cycle.
+let currentGenerationChecker: ((gen: number) => boolean) | null = null;
+
+/** Register the connection-generation checker (called from connection.ts). */
+export function setGenerationChecker(fn: (gen: number) => boolean) {
+  currentGenerationChecker = fn;
+}
+
+/** True when the given connection generation is still the active one. */
+export function isConnectionCurrent(gen: number): boolean {
+  return currentGenerationChecker ? currentGenerationChecker(gen) : true;
 }

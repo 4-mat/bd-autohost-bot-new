@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import {
   send,
   setWs,
+  pauseSending,
   resumeSending,
   resetSendQueueForTests,
   getSendQueueForTests,
+  sendImmediate,
 } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -177,5 +179,39 @@ describe("send queue", () => {
     sock.failPending(new Error("socket dropped mid-flight"));
     await new Promise((r) => setTimeout(r, 500));
     expect(sock.sent).toEqual(["|hello"]);
+  });
+
+  it("holds messages while the pre-auth pause is on, then flushes on resume", async () => {
+    const sock = makeFakeSocket();
+    pauseSending();
+    sock.open();
+
+    send("battledome", "hello");
+    // Socket is open but auth hasn't completed: nothing may transmit.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(sock.sent).toEqual([]);
+    expect(getSendQueueForTests().length).toBe(1);
+
+    resumeSending(); // the updateuser handler calls this after /trn
+    await new Promise((r) => setTimeout(r, 500));
+    expect(sock.sent).toEqual(["|hello"]);
+  });
+
+  it("queues an immediate send whose callback reports an async error", async () => {
+    // A ws whose send invokes the callback with an error (async failure).
+    let cbResult: ((err?: Error) => void) | undefined;
+    setWs({
+      send: (msg: string, cb?: (err?: Error) => void) => {
+        cbResult = cb;
+      },
+    });
+
+    sendImmediate("/trn user,0,abc");
+    expect(getSendQueueForTests().length).toBe(0);
+
+    // The send fails asynchronously: /trn must be retained in the queue.
+    cbResult?.(new Error("socket dropped mid-flight"));
+    expect(getSendQueueForTests().length).toBe(1);
+    expect(getSendQueueForTests()[0].msg).toBe("/trn user,0,abc");
   });
 });
