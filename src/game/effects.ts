@@ -2214,6 +2214,28 @@ export interface CombatIgnoreMetadata {
   other: string[];
 }
 
+/**
+ * Parse-once cache for combat metadata. `extractCombatMetadata` is a pure
+ * function of the (already parsed) effect tree, and the tree is a pure
+ * function of the immutable effect string — so the whole damage-modifier
+ * summary is computed once per distinct ability text and reused across
+ * every use of that ability.
+ */
+const combatMetadataCache = new Map<string, CombatMetadata>();
+
+/**
+ * Parse (once) + extract (once) the combat-relevant metadata for an
+ * ability's effect text. Prefer this over calling `parseEffects` +
+ * `extractCombatMetadata` separately in hot paths.
+ */
+export function getCombatMetadataForEffect(effectText: string): CombatMetadata {
+  const cached = combatMetadataCache.get(effectText);
+  if (cached) return cached;
+  const meta = extractCombatMetadata(parseEffects(effectText));
+  combatMetadataCache.set(effectText, meta);
+  return meta;
+}
+
 export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
   const out: CombatMetadata = {
     damagePercent: 0,
