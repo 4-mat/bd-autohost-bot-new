@@ -46,9 +46,20 @@ export const reachPreview = new Map<string, string>();
 // entity key -> currently in dash mode (map shows dash-reachable tiles).
 export const dashMode = new Set<string>();
 
+// viewer key -> the map grid (tile/table borders) is hidden for this viewer.
+// A per-viewer display preference, so it deliberately persists across turns
+// (unlike path/dash state) and is only scoped to one game.
+export const gridHidden = new Set<string>();
+
 // Composite key scoping movement UI state to one entity in one game.
 export function movementKey(game: Game, entity: Entity): string {
   return `${game.id}:${entity.id}`;
+}
+
+// Key scoping per-viewer display state (e.g. the grid toggle). Players are
+// keyed by their entity; the host page (no entity) gets a game-scoped key.
+export function viewerKey(game: Game, entity: Entity | null): string {
+  return entity ? movementKey(game, entity) : `${game.id}:host`;
 }
 
 export function clearMovementState(game: Game, entity: Entity) {
@@ -422,6 +433,19 @@ function buildMapTable(
     return html;
   }
 
+  // Per-viewer grid toggle: strips the tile/table borders when the viewer
+  // prefers a clean map. The button re-renders this page via %grid.
+  const hideGrid = gridHidden.has(viewerKey(game, self));
+  const gridLabel = hideGrid ? "Grid: off" : "Grid: on";
+  const gridValue = self ? `%grid ${self.name}` : "%grid";
+  html += ` <span style="font-size:11px;color:#888">${btn(gridValue, gridLabel)}</span>`;
+
+  // Borderless variants of the cell/table styles when the grid is hidden.
+  const noBorder = ";border:1px solid #888";
+  const hcell = hideGrid ? HEADER_CELL.replace(noBorder, "") : HEADER_CELL;
+  const mcell = hideGrid ? MAP_CELL.replace(noBorder, "") : MAP_CELL;
+  const tableStyle = hideGrid ? TABLE_STYLE.replace(noBorder, "") : TABLE_STYLE;
+
   // -- Compute reachable/path/dash/preview tile sets for self, if interactive --
   const reachableSet = new Set<string>();
   const pathSet = new Set<string>();
@@ -459,19 +483,19 @@ function buildMapTable(
   }
 
   html += `<div style="overflow-x:auto">`;
-  html += `<table align="center" ${TABLE_BORDER}>`;
+  html += `<table align="center" style="${tableStyle}">`;
 
   // Column header row -- numbers
-  html += `<tr><td class="hcell" style="${HEADER_CELL}"></td>`;
+  html += `<tr><td class="hcell" style="${hcell}"></td>`;
   for (let c = 0; c < cols; c++) {
-    html += `<td class="hcell" style="${HEADER_CELL}"><b>${c + 1}</b></td>`;
+    html += `<td class="hcell" style="${hcell}"><b>${c + 1}</b></td>`;
   }
   html += "</tr>";
 
   // Data rows -- letter labels
   for (let r = 0; r < rows; r++) {
     html += `<tr>`;
-    html += `<td style="${HEADER_CELL}"><b>${String.fromCharCode(65 + r)}</b></td>`;
+    html += `<td style="${hcell}"><b>${String.fromCharCode(65 + r)}</b></td>`;
 
     for (let c = 0; c < cols; c++) {
       const terrain = game.map[r][c];
@@ -545,7 +569,7 @@ function buildMapTable(
         inner = "";
       }
 
-      html += `<td class="mcell" style="position:relative;background:${color};${highlight}${MAP_CELL}" title="${esc(title)}">${overlayDiv}${inner}</td>`;
+      html += `<td class="mcell" style="position:relative;background:${color};${highlight}${mcell}" title="${esc(title)}">${overlayDiv}${inner}</td>`;
     }
     html += "</tr>";
   }

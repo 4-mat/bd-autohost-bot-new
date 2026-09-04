@@ -455,10 +455,13 @@ export function getReachableTiles(
   start: [number, number],
   mp: number,
   entity?: Entity,
+  // Dash passes a budget above the effective MP (1.5x); only clamp when the
+  // caller wants the effective-MP ceiling (normal move/path commands).
+  clampToEffective = true,
 ): Map<string, number> {
   // Apply Slow MP reduction if entity is provided
   const effectiveMp = entity ? getEffectiveMp(entity) : mp;
-  const finalMp = Math.min(mp, effectiveMp);
+  const finalMp = clampToEffective && entity ? Math.min(mp, effectiveMp) : mp;
   const reachable = new Map<string, number>();
   const queue: Array<{ pos: [number, number]; cost: number }> = [
     { pos: start, cost: 0 },
