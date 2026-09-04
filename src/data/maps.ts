@@ -3348,20 +3348,6 @@ MAPS.set("garden", {
   ],
 });
 
-MAPS.set("sprint", {
-  name: "sprint",
-  displayName: "Sprint",
-  rows: 5,
-  cols: 5,
-  grid: [
-    [0, 0, 8, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 2, 0, 2, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 8, 0, 0],
-  ],
-});
-
 MAPS.set("steamvent", {
   name: "steamvent",
   displayName: "Steamvent",

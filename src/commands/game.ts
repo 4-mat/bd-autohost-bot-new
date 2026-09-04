@@ -139,7 +139,7 @@ const GAME_CMDS: Record<string, GameCmd> = {
   regp: (g, u, _a, full) => withGame(g, u, (game) => handleRegp(game, u, full)),
   dir: (g, u, args) =>
     withGame(g, u, (game) => handleDirChoice(game, u, args), "No active game."),
-  tile: (g, u, _a, full) =>
+  picktile: (g, u, _a, full) =>
     withGame(
       g,
       u,
@@ -714,6 +714,15 @@ function handleVoteStatus(game: Game, user: User) {
   sendPm(user.name, buildVoteStatus(game));
 }
 
+function creditKills(game: Game, entity: Entity, step: AttackStep) {
+  if (step.done === false) return;
+  for (const death of step.result.deaths) {
+    if (death.num !== entity.num) {
+      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+    }
+  }
+}
+
 function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
@@ -736,7 +745,7 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
     } else if (step.prompt.kind === "tile") {
       send(
         game.room,
-        `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
+        `Use %picktile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
       );
     }
     return;
@@ -745,6 +754,8 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
   for (const msg of step.result.messages) {
     send(game.room, msg);
   }
+
+  creditKills(game, entity, step);
 
   logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
 
@@ -785,19 +796,15 @@ function handleCancel(game: Game, user: User) {
   broadcastPages(game);
 }
 
-function handleAdvanceTurn(game: Game, user: User) {
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can advance turns.");
-  }
-
-  const entity = getCurrentEntity(game);
-  if (!entity) return;
-
-  pushSnapshot(game);
-
-  let acted = "";
-
-  // Stunned entities can't act — skip their action and clear pending
+/** Resolve the current entity's action at turn advance: stunned entities
+ * waste or skip their action; pending actions resolve or return null when
+ * a prompt still needs an answer. Returns the performed action, an empty
+ * string when the turn was passed, or null when the turn must not advance. */
+function resolveEntityTurnAction(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
   if (isStunned(entity)) {
     if (entity.pendingAction) {
       send(game.room, `${entity.num} is **Stunned** — action wasted!`);
@@ -805,11 +812,35 @@ function handleAdvanceTurn(game: Game, user: User) {
     } else {
       send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
     }
-  } else if (entity.pendingAction) {
-    const done = resolvePendingAction(game, user, entity);
-    if (done === null) return; // prompt needs an answer — turn not advanced
-    acted = done;
+    return "";
   }
+  if (entity.pendingAction) {
+    const done = resolvePendingAction(game, user, entity);
+    if (done === null) return null; // prompt needs an answer
+    return done;
+  }
+  return "";
+}
+
+function handleAdvanceTurn(game: Game, user: User) {
+  const entity = getCurrentEntity(game);
+  const phase = game.phase;
+  if (!entity || phase !== "playing")
+    return sendPm(user.name, "No active turn.");
+  const isHost = toId(user.name) === toId(game.host);
+  const isSelf = toId(entity.name) === toId(user.name);
+
+  if (!isHost) {
+    if (!isSelf) return sendPm(user.name, "It's not your turn.");
+    if (!game.playersIdle) return sendPm(user.name, "The host hasn't enabled this option");
+  }
+
+  pushSnapshot(game);
+
+  // Resolve the current entity's turn: stunned entities waste/skip their
+  // action; pending actions either resolve or need a prompt answer.
+  const acted = resolveEntityTurnAction(game, user, entity);
+  if (acted === null) return; // prompt needs an answer — turn not advanced
 
   if (
     acted ||
@@ -891,7 +922,10 @@ function resolvePendingAction(
 
   const acted = summarizeResult(game, entity, step.result.messages);
 
-  for (const _ of step.result.deaths) {
+  // Credit kills on the confirm path, excluding self-deaths (recoil /
+  // confusion kills are not kills the entity scored).
+  for (const death of step.result.deaths) {
+    if (death.num === entity.num) continue;
     game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
   }
 
@@ -900,6 +934,10 @@ function resolvePendingAction(
     announceGameOver(game, winner);
     return null;
   }
+
+  // The action resolved and the turn advanced — clear the pending action
+  // so it isn't re-run on a later turn.
+  entity.pendingAction = null;
 
   return acted;
 }
@@ -1049,7 +1087,7 @@ function handleTileChoice(game: Game, user: User, args: string) {
   if (!isHost && toId(entity.name) !== toId(user.name)) {
     return sendPm(user.name, "It's not your turn.");
   }
-  if (!args) return sendPm(user.name, "Usage: %tile <tile>");
+  if (!args) return sendPm(user.name, "Usage: %picktile <tile>");
 
   pushSnapshot(game);
   try {

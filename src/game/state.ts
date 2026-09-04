@@ -126,14 +126,14 @@ export interface AbilityData {
   roll: string;
   damageType: "Physical" | "Magical" | "Varies" | "";
   actionType:
-    | "Standard"
-    | "Full"
-    | "Movement"
-    | "Swift"
-    | "Free"
-    | "Trigger"
-    | "Reaction"
-    | "Passive";
+  | "Standard"
+  | "Full"
+  | "Movement"
+  | "Swift"
+  | "Free"
+  | "Trigger"
+  | "Reaction"
+  | "Passive";
   targetAmount: number | "AoE";
   targetGroup: string;
   range: string;
@@ -330,6 +330,8 @@ export interface Game {
   voteRunoff: string[] | null;
   /** Active shot-clock/timer: the entity it's on (null = global) and when it ends. */
   timer?: { entity: string | null; endAt: number } | null;
+  /** Whether players can use %endturn (default false) */
+  playersIdle: boolean;
 }
 
 export const games = new Map<string, Game>();
@@ -337,25 +339,15 @@ export const games = new Map<string, Game>();
 function serializeState(game: Game): string {
   return JSON.stringify({
     entities: game.entities.map((e) => ({
-      num: e.num,
-      name: e.name,
-      curhp: e.curhp,
-      maxhp: e.maxhp,
-      pos: e.pos,
-      team: e.team,
-      statuses: e.statuses,
-      buffs: e.buffs,
-      cooldowns: e.cooldowns,
-      usesUsed: e.usesUsed,
-      dashUsed: e.dashUsed,
-      standardUsed: e.standardUsed,
-      movementUsed: e.movementUsed,
-      swiftUsed: e.swiftUsed,
-      triggered: e.triggered,
+      ...e,
+      pendingResolution: undefined,
     })),
+    turnOrder: game.turnOrder,
     turnIndex: game.turnIndex,
     round: game.round,
     log: game.log,
+    votes: game.votes,
+    kills: game.kills,
   });
 }
 
@@ -368,27 +360,29 @@ export function popSnapshot(game: Game): boolean {
   const snap = game.snapshots.pop();
   if (!snap) return false;
   const data = JSON.parse(snap);
-  for (const e of data.entities) {
+
+  // Rebuild the array in snapshot order so consumers that iterate
+  // game.entities directly (or index into it, e.g. game.entities[0]) observe
+  // the pre-undo order, not the filtered+appended current order. Live entity
+  // objects are kept where possible so references stay valid.
+  game.entities = data.entities.map((e: Entity) => {
     const ent = game.entities.find((x) => x.num === e.num);
     if (ent) {
-      ent.curhp = e.curhp;
-      ent.maxhp = e.maxhp;
-      ent.pos = e.pos;
-      ent.team = e.team;
-      ent.statuses = e.statuses;
-      ent.buffs = e.buffs;
-      ent.cooldowns = e.cooldowns;
-      ent.usesUsed = e.usesUsed;
-      ent.dashUsed = e.dashUsed;
-      ent.standardUsed = e.standardUsed;
-      ent.movementUsed = e.movementUsed;
-      ent.swiftUsed = e.swiftUsed;
-      ent.triggered = e.triggered;
+      // Clear properties added after snapshot to avoid state pollution
+      for (const key of Object.keys(ent)) { if (!(key in e)) delete (ent as any)[key]; }
+      Object.assign(ent, e);
+      ent.pendingResolution = undefined;
+      return ent;
     }
-  }
+    return e as Entity;
+  });
+
+  game.turnOrder = data.turnOrder;
   game.turnIndex = data.turnIndex;
   game.round = data.round;
   if (data.log) game.log = data.log;
+  if (data.votes) game.votes = data.votes;
+  if (data.kills) game.kills = data.kills;
   return true;
 }
 

@@ -90,6 +90,7 @@ function makeGame(opts: {
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
@@ -116,6 +117,35 @@ function makeAbility(
 // =============================================================================
 
 describe("parseEffects", () => {
+  it("memoizes: the same normalized text returns the identical array (cache hit)", () => {
+    // Ability effect strings are static game data re-parsed on hot paths
+    // (getPassiveRangeBonus / getDefenderDiceMods via inRange); the cache
+    // must return the SAME array for the same normalized text so repeated
+    // parses are O(1) lookups, and the tree stays immutable across callers.
+    const a = parseEffects("+1 dice. +2 dice faces.");
+    const b = parseEffects("+1 dice. +2 dice faces.");
+    expect(a).toBe(b);
+    // Whitespace-only / newline variants normalize to the same key.
+    expect(parseEffects("\n  +1 dice.\n +2 dice faces. ")).toBe(a);
+    // Empty / whitespace-only input: referentially stable singleton, not a
+    // fresh array per call (PR-Agent #184).
+    expect(parseEffects("")).toBe(parseEffects(""));
+    expect(parseEffects("   \n ")).toBe(parseEffects(""));
+  });
+
+  it("evicts the oldest entry once the bounded cache overflows", () => {
+    // 2048 unique entries fill the cache; the 2049th evicts the first, so
+    // the first text's array is freed and gets re-parsed as a fresh entry
+    // (still referentially stable for the SAME input at any moment).
+    const first = parseEffects("unique effect 0");
+    for (let i = 1; i <= 2048; i++) {
+      parseEffects(`unique effect ${i}`);
+    }
+    const again = parseEffects("unique effect 0");
+    expect(again).toBeDefined();
+    expect(again).not.toBe(first); // evicted old entry, then re-parsed
+  });
+
   it("recognises 'Apex: ...' as an apex clause", () => {
     const effects = parseEffects("Apex: Pull 3");
     expect(effects).toHaveLength(1);

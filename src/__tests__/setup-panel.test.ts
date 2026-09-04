@@ -80,6 +80,7 @@ function makeGame(opts: {
     votes: opts.votes ?? {},
     voteOpen: opts.voteOpen ?? false,
     voteRunoff: null,
+    playersIdle: false,
     hideFfaShortcut: opts.hideFfaShortcut ?? false,
   };
 }

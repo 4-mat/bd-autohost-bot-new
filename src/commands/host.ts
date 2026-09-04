@@ -99,13 +99,13 @@ function recalcEntityStats(
   entity.abilities = [
     ...(classData
       ? classData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
+        hasAbility(a, lvl, !!entity.isJuggernaut),
+      )
       : []),
     ...(weaponData
       ? weaponData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
+        hasAbility(a, lvl, !!entity.isJuggernaut),
+      )
       : []),
   ] as any[];
   return newMaxhp;
@@ -127,6 +127,7 @@ const HOST_CMDS_NOVAL: Record<string, (room: Room, user: User) => void> = {
   start: handleStart,
   close: handleClose,
   endvote: handleEndVote,
+  toggleidle: handleToggleIdle,
   ffabtn: handleFfaButton,
   nudge: handleNudge,
 };
@@ -247,6 +248,7 @@ function handleHost(room: Room, user: User, args: string) {
     voteOpen: false,
     voteRunoff: null,
     timer: null,
+    playersIdle: false,
   };
 
   games.set(id, game);
@@ -892,9 +894,9 @@ export function placeTeamPlayers(
   teamB: Entity[],
 ):
   | [
-      placedA: [Entity, [number, number]][],
-      placedB: [Entity, [number, number]][],
-    ]
+    placedA: [Entity, [number, number]][],
+    placedB: [Entity, [number, number]][],
+  ]
   | null {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
@@ -1284,6 +1286,9 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
   }
+  if (game.modeChosen) {
+    return sendPm(user.name, "The game is already set — loadouts are locked.");
+  }
   if (!applyClassChange(game, room, entity, parts[0])) {
     return sendPm(user.name, `Unknown class: ${parts[0]}. Use %wt to look up.`);
   }
@@ -1300,6 +1305,9 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   }
   const entity = getEntity(game, user.name);
   if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
+  if (game.modeChosen) {
+    return sendPm(user.name, "The game is already set — loadouts are locked.");
+  }
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
   }
@@ -1325,6 +1333,9 @@ function handleSelfLoadout(room: Room, user: User, args: string) {
   }
   const entity = getEntity(game, user.name);
   if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
+  if (game.modeChosen) {
+    return sendPm(user.name, "The game is already set — loadouts are locked.");
+  }
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
   }
@@ -1421,13 +1432,13 @@ function applyEntityLevel(
   entity.abilities = [
     ...(classData
       ? classData.abilities.filter((a) =>
-          hasAbility(a, level, !!entity.isJuggernaut),
-        )
+        hasAbility(a, level, !!entity.isJuggernaut),
+      )
       : []),
     ...(weaponData
       ? weaponData.abilities.filter((a) =>
-          hasAbility(a, level, !!entity.isJuggernaut),
-        )
+        hasAbility(a, level, !!entity.isJuggernaut),
+      )
       : []),
   ] as any[];
   return oldLvl;
@@ -1818,6 +1829,18 @@ function handleStart(room: Room, user: User) {
   }
 
   broadcastPages(game);
+}
+
+// -- .toggleidle - Toggle players idle ---------------------------------------------------
+
+function handleToggleIdle(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %toggleidle.");
+  }
+  game.playersIdle = !game.playersIdle;
+  send(room.id, `**Players Idle**: ${game.playersIdle ? "Enabled" : "Disabled"}`);
 }
 
 // -- Map generators ------------------------------------------------------------
