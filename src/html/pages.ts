@@ -50,6 +50,11 @@ export function movementKey(game: Game, entity: Entity): string {
   return `${game.id}:${entity.id}`;
 }
 
+/**
+ * Clear path/reach/dash preview for a single entity.
+ * Use when a single entity's turn is cancelled (e.g., %cancel).
+ * For game-wide cleanup, use clearGameMovementState instead.
+ */
 export function clearMovementState(game: Game, entity: Entity) {
   const key = movementKey(game, entity);
   pathState.delete(key);
