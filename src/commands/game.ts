@@ -114,6 +114,7 @@ const GAME_CMDS: Record<string, GameCmd> = {
   endturn: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   next: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   back: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
+  undo: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
   r: (_g, u, args) => handleRoll(u.name, args),
   roll: (_g, u, args) => handleRoll(u.name, args),
   dice: (_g, u, args) => handleRoll(u.name, args),
@@ -138,7 +139,7 @@ const GAME_CMDS: Record<string, GameCmd> = {
   regp: (g, u, _a, full) => withGame(g, u, (game) => handleRegp(game, u, full)),
   dir: (g, u, args) =>
     withGame(g, u, (game) => handleDirChoice(game, u, args), "No active game."),
-  tile: (g, u, _a, full) =>
+  picktile: (g, u, _a, full) =>
     withGame(
       g,
       u,
@@ -713,6 +714,15 @@ function handleVoteStatus(game: Game, user: User) {
   sendPm(user.name, buildVoteStatus(game));
 }
 
+function creditKills(game: Game, entity: Entity, step: AttackStep) {
+  if (step.done === false) return;
+  for (const death of step.result.deaths) {
+    if (death.num !== entity.num) {
+      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+    }
+  }
+}
+
 function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
@@ -735,7 +745,7 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
     } else if (step.prompt.kind === "tile") {
       send(
         game.room,
-        `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
+        `Use %picktile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
       );
     }
     return;
@@ -744,6 +754,8 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
   for (const msg of step.result.messages) {
     send(game.room, msg);
   }
+
+  creditKills(game, entity, step);
 
   logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
 
@@ -921,7 +933,10 @@ function resolvePendingAction(
 
   const acted = summarizeResult(game, entity, step.result.messages);
 
-  for (const _ of step.result.deaths) {
+  // Credit kills on the confirm path, excluding self-deaths (recoil /
+  // confusion kills are not kills the entity scored).
+  for (const death of step.result.deaths) {
+    if (death.num === entity.num) continue;
     game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
   }
 
@@ -930,6 +945,10 @@ function resolvePendingAction(
     announceGameOver(game, winner);
     return null;
   }
+
+  // The action resolved and the turn advanced — clear the pending action
+  // so it isn't re-run on a later turn.
+  entity.pendingAction = null;
 
   return acted;
 }
@@ -1079,7 +1098,7 @@ function handleTileChoice(game: Game, user: User, args: string) {
   if (!isHost && toId(entity.name) !== toId(user.name)) {
     return sendPm(user.name, "It's not your turn.");
   }
-  if (!args) return sendPm(user.name, "Usage: %tile <tile>");
+  if (!args) return sendPm(user.name, "Usage: %picktile <tile>");
 
   pushSnapshot(game);
   try {

@@ -70,13 +70,18 @@ function defensiveStat(entity: Entity, damageType: string): number {
 }
 
 // BD 4.3 evasion: physical uses PE (PD/10), magical uses ME (MD/10), max 9.
+// EVA buffs raise PE/ME; poison applies -2 on top.
 export function eva43(entity: Entity, damageType: string): number {
   const base =
     damageType === "Physical"
       ? getEffectiveStat(entity, "pd")
       : getEffectiveStat(entity, "md");
+  const bonus = entity.buffs
+    .filter((b) => b.stat === "eva")
+    .reduce((sum, b) => sum + b.amount, 0);
   const pen = hasStatus(entity, "poison") ? -2 : 0;
-  return Math.max(0, Math.min(9, Math.floor(base / 10) + pen));
+  const capped = Math.min(9, Math.floor(base / 10) + bonus);
+  return Math.max(0, capped + pen);
 }
 
 export function getEffectiveStat(entity: Entity, stat: string): number {
@@ -461,6 +466,12 @@ function* resolveTargetAction(
         return true;
       }
 
+      // The target died on this hit: stop swinging at the corpse. Later
+      // hits only re-roll against a dead entity and re-announce the defeat.
+      if (target.curhp <= 0 || !game.entities.includes(target)) {
+        break;
+      }
+
       if (!confusionApplied && singleResult.confusionTriggered) {
         confusionApplied = true;
       }
@@ -545,9 +556,9 @@ export function respondToDir(user: Entity, dir: string): AttackStep {
   return respondToPromptOfKind(user, "direction", dir, "%dir");
 }
 
-// %tile <tileRef> -- only valid while a "tile" prompt is pending.
+// %picktile <tileRef> -- only valid while a "tile" prompt is pending.
 export function respondToTile(user: Entity, tileRef: string): AttackStep {
-  return respondToPromptOfKind(user, "tile", tileRef, "%tile");
+  return respondToPromptOfKind(user, "tile", tileRef, "%picktile");
 }
 
 function respondToPromptOfKind(
@@ -567,7 +578,7 @@ function respondToPromptOfKind(
       selection: "%choose",
       target: "%target",
       direction: "%dir",
-      tile: "%tile",
+      tile: "%picktile",
     };
     const wants = kindMap[user.pendingPromptKind ?? ""] ?? "%target";
     throw new Error(
@@ -825,6 +836,12 @@ function* resolveSingleTarget(
     game.version === "4.3"
       ? eva43(target, ability.damageType)
       : getEffectiveStat(target, "eva");
+  const evaLabel =
+    game.version === "4.3"
+      ? ability.damageType === "Physical"
+        ? "PE"
+        : "ME"
+      : "EVA";
   const {
     hit,
     roll: accRoll,
@@ -832,7 +849,7 @@ function* resolveSingleTarget(
   } = rollAccuracy(ability.mr, targetEva, userAccBonus);
 
   result.messages.push(
-    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
+    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + ${evaLabel} ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
   // --- Hit resolves first (damage to target first) ---

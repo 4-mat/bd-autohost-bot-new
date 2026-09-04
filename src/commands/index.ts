@@ -71,6 +71,7 @@ const GAME_COMMANDS = new Set([
   "endturn",
   "next",
   "back",
+  "undo",
   "r",
   "roll",
   "dice",
@@ -86,7 +87,7 @@ const GAME_COMMANDS = new Set([
   "regp",
   "log",
   "dir",
-  "tile",
+  "picktile",
 ]);
 
 /** Character/loot commands handled by the player module. */
