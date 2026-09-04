@@ -3,10 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%2322622F'/><rect x='8' y='8' width='38' height='38' rx='6' fill='%23A9F5A9'/><rect x='54' y='8' width='38' height='38' rx='6' fill='%2333E9E9'/><rect x='8' y='54' width='38' height='38' rx='6' fill='%23CCCC00'/><rect x='54' y='54' width='38' height='38' rx='6' fill='%23454FDF'/></svg>"
-    />
+    <link rel="icon" href="" />
     <title>Battle Dome Map Editor</title>
     <style>
       :root {
@@ -1210,10 +1207,31 @@
 
     <div id="toasts"></div>
 
+    <script src="../src/game/terrain-colors.cjs"></script>
     <script src="mapcore.cjs"></script>
     <script>
       "use strict";
       const MC = window.MapCore;
+
+      /* Favicon built from the shared terrain palette (terrain-colors.cjs). */
+      (function () {
+        const C = globalThis.TERRAIN_COLORS;
+        const hex = (s) => String(s).replace("#", "%23");
+        const svg =
+          "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>" +
+          "<rect width='100' height='100' rx='18' fill='%2322622F'/>" +
+          "<rect x='8' y='8' width='38' height='38' rx='6' fill='" +
+          hex(C.normal.color) +
+          "'/><rect x='54' y='8' width='38' height='38' rx='6' fill='" +
+          hex(C.ice.color) +
+          "'/><rect x='8' y='54' width='38' height='38' rx='6' fill='" +
+          hex(C.sticky.color) +
+          "'/><rect x='54' y='54' width='38' height='38' rx='6' fill='" +
+          hex(C.water.color) +
+          "'/></svg>";
+        const link = document.querySelector('link[rel="icon"]');
+        if (link) link.href = "data:image/svg+xml," + svg;
+      })();
 
       /* ------------------------------------------------------------------ */
       /* state                                                                */
@@ -1372,7 +1390,19 @@
       /* ------------------------------------------------------------------ */
       /* grid rendering                                                       */
       /* ------------------------------------------------------------------ */
+      // render() rebuilds the full grid (up to 60x60 cells). Painting drags
+      // can fire dozens of mousemove events per frame, so coalesce them with
+      // requestAnimationFrame — the last renderRequested wins within a frame.
+      let renderPending = false;
       function render() {
+        if (renderPending) return; // already queued for this frame
+        renderPending = true;
+        requestAnimationFrame(() => {
+          renderPending = false;
+          renderNow();
+        });
+      }
+      function renderNow() {
         const grid = $("grid");
         grid.innerHTML = "";
 
@@ -1845,6 +1875,12 @@
           if (!res.ok) throw new Error("HTTP " + res.status);
           const data = await res.json();
           modesCache = { modes: data.modes || {}, labels: data.labels || {} };
+          // Keep mapcore's mode rules in lockstep with the bot's generated
+          // data (aliases + per-mode min sizes).
+          MC.setModeData({
+            aliases: data.aliases || {},
+            minSizes: data.minSizes || {},
+          });
           return modesCache;
         } catch (e) {
           return { modes: {}, labels: {} };

@@ -47,6 +47,7 @@ import {
   extractCombatMetadata,
   getCombatMetadataForEffect,
   type CombatMetadata,
+  type Effect,
   type EffectChoosePrompt,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
@@ -71,13 +72,18 @@ function defensiveStat(entity: Entity, damageType: string): number {
 }
 
 // BD 4.3 evasion: physical uses PE (PD/10), magical uses ME (MD/10), max 9.
+// EVA buffs raise PE/ME; poison applies -2 on top.
 export function eva43(entity: Entity, damageType: string): number {
   const base =
     damageType === "Physical"
       ? getEffectiveStat(entity, "pd")
       : getEffectiveStat(entity, "md");
+  const bonus = entity.buffs
+    .filter((b) => b.stat === "eva")
+    .reduce((sum, b) => sum + b.amount, 0);
   const pen = hasStatus(entity, "poison") ? -2 : 0;
-  return Math.max(0, Math.min(9, Math.floor(base / 10) + pen));
+  const capped = Math.min(9, Math.floor(base / 10) + bonus);
+  return Math.max(0, capped + pen);
 }
 
 export function getEffectiveStat(entity: Entity, stat: string): number {
@@ -300,6 +306,69 @@ function* resolveDirection(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
+/** Roll a damage/heal formula applying the attacker's dice-count and
+ * dice-faces buffs (e.g. Kinetic Impact's "+1 dice", Final Hour's "+4 dice
+ * faces"). rollDice takes the dice-count modifier before the die-face
+ * modifier, so the count bonus must be passed first. */
+function rollWithUserBuffs(user: Entity, formula: string) {
+  return rollDice(
+    formula,
+    getStatBonus(user, "dice"),
+    getStatBonus(user, "dice faces"),
+  );
+}
+
+/**
+ * Flips subject "self" -> "target" on every stat mod in the subtree,
+ * recursing through wrapper effects (conditional/thirst/apex/choose).
+ * Used for exclusively-friendly groups so gated ally buffs ("If origin
+ * has more MAG: gain +4 MAG/1") land on each ally, not the user.
+ */
+function rerouteSelfToTarget(effects: Effect[]): void {
+  for (const e of effects) {
+    if (e.type === "buff" || e.type === "debuff") {
+      if (e.subject === "self") e.subject = "target";
+      continue;
+    }
+    if (e.type === "conditional") {
+      rerouteSelfToTarget(e.thenEffects);
+      if (e.elseEffects) rerouteSelfToTarget(e.elseEffects);
+    } else if (e.type === "thirst" || e.type === "apex") {
+      rerouteSelfToTarget(e.effects);
+    } else if (e.type === "choose") {
+      for (const opts of e.options) rerouteSelfToTarget(opts);
+    }
+  }
+}
+
+/**
+ * True when the ability targets an exclusively-friendly group (allies/ally
+ * but never foe). Only such groups get "gain +N STAT" clauses rerouted
+ * from the user onto each target.
+ */
+function isFriendlyOnlyGroup(targetGroup: string): boolean {
+  return (
+    !/(^| )foe/i.test(targetGroup) &&
+    /(^| )(allies|ally)/i.test(targetGroup)
+  );
+}
+
+/**
+ * Fold the attacker's persistent outgoing-damage buffs/debuffs (a "-25%
+ * damage" debuff from Sandstorm, a "gain +50% damage/2" self-buff from a
+ * previous turn) into this attack's combat metadata. The ability's own
+ * text clauses are already folded by extractCombatMetadata; entity.buffs
+ * carry the round-limited persistent ones. Percent-marked dmg buffs are
+ * percentages; plain "dmg" buffs are flat amounts (CodeRabbit L1435).
+ */
+function foldDamageBuffs(user: Entity, combat: CombatMetadata): void {
+  for (const b of user.buffs) {
+    if (b.stat !== "dmg") continue;
+    if (b.percent) combat.damagePercent += b.amount;
+    else combat.flatDamage += b.amount;
+  }
+}
+
 function* resolveAttackFlow(
   game: Game,
   user: Entity,
@@ -376,7 +445,21 @@ function* resolveAttackFlow(
   // no repeated tree walk per attack.
   const effects = parseEffects(active.effect);
   const combat = getCombatMetadataForEffect(active.effect);
+
+  foldDamageBuffs(user, combat);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
+
+  // Ally-targeted abilities (Rising Hope, Primadonna, Crusade, Flower
+  // Crown, Windmill, ...): a "gain +N STAT" clause is a buff FOR EACH
+  // TARGET, not a self-buff for the user -- parseStatMods defaults "gain"
+  // to subject "self" because it has no ability context, so re-route it
+  // here. Foe-targeted abilities keep the user as the "gain" recipient
+  // (Blitz, Point-in-Line, ...). Only exclusively-friendly groups reroute:
+  // "Any" / "Foe or Ally" / "Self, Foes, Allies" can select a foe, and a
+  // foe would then receive the buff instead of the user.
+  if (isFriendlyOnlyGroup(ability.targetGroup)) {
+    rerouteSelfToTarget(effects);
+  }
 
   for (const target of targets) {
     const userDefeated = yield* resolveTargetAction(
@@ -385,6 +468,7 @@ function* resolveAttackFlow(
       active,
       target,
       combat,
+      effects,
       effectiveHitCount,
       isAttack,
       isHeal,
@@ -437,6 +521,7 @@ function* resolveTargetAction(
   active: AbilityData,
   target: Entity,
   combat: CombatMetadata,
+  effects: Effect[],
   effectiveHitCount: number,
   isAttack: boolean,
   isHeal: boolean,
@@ -454,6 +539,7 @@ function* resolveTargetAction(
         active,
         target,
         combat,
+        effects,
         label,
         confusionApplied,
       );
@@ -463,6 +549,12 @@ function* resolveTargetAction(
       // If the attacker was defeated by recoil or confusion, stop remaining hits
       if (singleResult.deaths.some((d) => d.num === user.num)) {
         return true;
+      }
+
+      // The target died on this hit: stop swinging at the corpse. Later
+      // hits only re-roll against a dead entity and re-announce the defeat.
+      if (target.curhp <= 0 || !game.entities.includes(target)) {
+        break;
       }
 
       if (!confusionApplied && singleResult.confusionTriggered) {
@@ -485,6 +577,7 @@ function* resolveTargetAction(
       user,
       active,
       target,
+      effects,
     );
     result.messages.push(...statusResult.messages);
     result.deaths.push(...statusResult.deaths);
@@ -549,9 +642,9 @@ export function respondToDir(user: Entity, dir: string): AttackStep {
   return respondToPromptOfKind(user, "direction", dir, "%dir");
 }
 
-// %tile <tileRef> -- only valid while a "tile" prompt is pending.
+// %picktile <tileRef> -- only valid while a "tile" prompt is pending.
 export function respondToTile(user: Entity, tileRef: string): AttackStep {
-  return respondToPromptOfKind(user, "tile", tileRef, "%tile");
+  return respondToPromptOfKind(user, "tile", tileRef, "%picktile");
 }
 
 function respondToPromptOfKind(
@@ -571,7 +664,7 @@ function respondToPromptOfKind(
       selection: "%choose",
       target: "%target",
       direction: "%dir",
-      tile: "%tile",
+      tile: "%picktile",
     };
     const wants = kindMap[user.pendingPromptKind ?? ""] ?? "%target";
     throw new Error(
@@ -819,6 +912,7 @@ function* resolveSingleTarget(
   ability: AbilityData,
   target: Entity,
   combat: CombatMetadata,
+  effects: Effect[],
   hitLabel = "",
   confusionAlreadyApplied = false,
 ): Generator<AttackPrompt, ResolutionResult, string> {
@@ -829,6 +923,12 @@ function* resolveSingleTarget(
     game.version === "4.3"
       ? eva43(target, ability.damageType)
       : getEffectiveStat(target, "eva");
+  const evaLabel =
+    game.version === "4.3"
+      ? ability.damageType === "Physical"
+        ? "PE"
+        : "ME"
+      : "EVA";
   const {
     hit,
     roll: accRoll,
@@ -836,7 +936,7 @@ function* resolveSingleTarget(
   } = rollAccuracy(ability.mr, targetEva, userAccBonus);
 
   result.messages.push(
-    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
+    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + ${evaLabel} ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
   // --- Hit resolves first (damage to target first) ---
@@ -1203,7 +1303,7 @@ function resolveHeal(
   const result = newResult();
 
   if (ability.roll) {
-    const healRoll = rollDice(ability.roll);
+    const healRoll = rollWithUserBuffs(user, ability.roll);
     let healAmount = healRoll.total;
 
     const effect = ability.effect.toLowerCase();
@@ -1235,9 +1335,9 @@ function* resolveNonDamaging(
   user: Entity,
   ability: AbilityData,
   target: Entity,
+  effects: Effect[],
 ): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
-  const effects = parseEffects(ability.effect);
   const effectMsgs: string[] = yield* runEffectStream(
     applyEffectStream(game, user, target, effects, ability),
   );
@@ -1283,7 +1383,7 @@ function resolveSplash(
   result.messages.push(`  **Splash ${radius}**: hits ${names}`);
 
   for (const target of splashTargets) {
-    const damageRoll = rollDice(ability.roll);
+    const damageRoll = rollWithUserBuffs(user, ability.roll);
     const half = (v: number) => Math.floor(v / 2);
     // Splash halves defense by default per the home page ("half target
     // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores
