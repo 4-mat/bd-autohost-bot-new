@@ -48,7 +48,6 @@ import {
   type CombatMetadata,
   type Effect,
   type EffectChoosePrompt,
-  type Effect,
   type PhaseTiming,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
