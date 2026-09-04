@@ -1,11 +1,8 @@
-import { send, sendPm, toId } from "../utils.js";
+import { sendPm, toId } from "../utils.js";
 import type { User } from "../users.js";
 import {
   classes,
   weapons,
-  branches,
-  type ClassData,
-  type WeaponData,
 } from "../data/index.js";
 import { WhatIs, Reference } from "../data/index.js";
 import { modeDescription, describeModes } from "../data/gamemodes.js";

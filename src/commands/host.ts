@@ -1,13 +1,11 @@
-import { send, sendPm, toId, parsePos, posToStr, rollDice } from "../utils.js";
+import { send, sendPm, toId, posToStr, rollDice } from "../utils.js";
 import type { Room } from "../rooms.js";
 import type { User } from "../users.js";
 import {
   games,
   getCurrentEntity,
   getEntity,
-  getReachableTiles,
   pushSnapshot,
-  nextTurn,
   removeEntity,
   type Game,
   type Entity,
@@ -17,7 +15,6 @@ import {
 import {
   classes,
   weapons,
-  loadGameData,
   type ClassData,
   type WeaponData,
 } from "../data/index.js";
@@ -31,12 +28,10 @@ import {
   pendingVoterIds,
   randomMapForMode,
   recommendedMaps,
-  normalizeVoteMode,
   tallyVotes,
   tieModes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
-import { buildHostPage, buildPlayerPage } from "../html/pages.js";
 import { broadcastPages } from "./game.js";
 import type { AbilityData } from "../data/index.js";
 
@@ -109,13 +104,6 @@ function recalcEntityStats(
       : []),
   ] as any[];
   return newMaxhp;
-}
-
-function findGameForHost(username: string): Game | null {
-  for (const game of games.values()) {
-    if (toId(game.host) === toId(username)) return game;
-  }
-  return null;
 }
 
 type HostCmd = (room: Room, user: User, full: string) => void;

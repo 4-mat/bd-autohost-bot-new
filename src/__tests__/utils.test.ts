@@ -88,7 +88,7 @@ function makeFakeSocketDeferred() {
 
 describe("send queue", () => {
   it("caps the queue at MAX_SEND_QUEUE and drops the oldest messages", () => {
-    const sock = makeFakeSocket();
+    const _sock = makeFakeSocket();
 
     // Socket is down: every send throws and accumulates in the queue.
     for (let i = 0; i < 2005; i++) {
@@ -103,7 +103,7 @@ describe("send queue", () => {
   });
 
   it("caps the queue while a send is in flight, keeping the in-flight head", () => {
-    const sock = makeFakeSocketDeferred();
+    const _sock = makeFakeSocketDeferred();
     // The first send goes in flight (its callback stays pending), so the
     // cap trim must preserve it and evict the oldest non-head entry.
     send("battledome", "head");

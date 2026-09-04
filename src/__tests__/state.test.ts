@@ -35,7 +35,6 @@ import {
   removeEntity,
   type Game,
   type Entity,
-  type AbilityData,
 } from "../game/state.js";
 import { posToStr } from "../utils.js";
 

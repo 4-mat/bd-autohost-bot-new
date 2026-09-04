@@ -21,7 +21,6 @@ import {
   sendPm,
   sendPmChunks,
   toId,
-  parseArgs,
   parsePos,
   posToStr,
 } from "../utils.js";
@@ -46,7 +45,6 @@ import {
   isStunned,
   isRooted,
   isSealed,
-  isConfused,
   getEffectiveMp,
   parseFrequency,
   type Game,
@@ -61,11 +59,9 @@ import {
   respondToTarget,
   respondToDir,
   respondToTile,
-  startAttack,
   isValidTarget,
   type AttackStep,
 } from "../game/resolve.js";
-import { DIRECTION_LABELS } from "../game/state.js";
 import {
   normalizeVoteMode,
   pendingVoterIds,
@@ -817,7 +813,6 @@ function handleAdvanceTurn(game: Game, user: User) {
     return sendPm(user.name, "No active turn.");
   const isHost = toId(user.name) === toId(game.host);
   const isSelf = toId(entity.name) === toId(user.name);
-
   if (!isHost) {
     if (!isSelf) return sendPm(user.name, "It's not your turn.");
     if (!game.playersIdle) return sendPm(user.name, "The host hasn't enabled this option");
@@ -955,7 +950,7 @@ function summarizeResult(
   return `${entity.name} ${action}${tail ? `: ${tail}` : ""}`;
 }
 
-function handleBack(game: Game, user: User) {
+function handleBack(game: Game, _user: User) {
   if (popSnapshot(game)) {
     send(game.room, "Action undone.");
     broadcastPages(game);

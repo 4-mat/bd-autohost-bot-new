@@ -52,7 +52,7 @@ const R = `<style>
 }
 </style>`;
 
-const TILE =
+const _TILE =
   "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
 
 const HEADER_CELL =
@@ -633,7 +633,7 @@ function buildSetupPanel(game: Game): string {
 }
 // -- Controls (Host) ----------------------------------------------------------
 
-function buildControls(game: Game): string {
+function buildControls(_game: Game): string {
   return `<details style="margin-top:4px"><summary style="cursor:pointer;user-select:none"><b>Controls</b></summary>
 <div style="margin-top:4px">
   ${btn("%next", "Next Turn")}

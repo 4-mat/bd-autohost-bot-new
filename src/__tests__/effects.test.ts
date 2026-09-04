@@ -4,7 +4,6 @@ import {
   type Entity,
   type AbilityData,
   Terrain,
-  isObstruction,
 } from "../game/state.js";
 import {
   parseEffects,
@@ -324,7 +323,7 @@ describe("isApexActive: Beam", () => {
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
     const game = makeGame({ entities: [user] });
 
-    for (const [r, c, label] of [
+    for (const [r, c, _label] of [
       [4, 7, "above-centerline"],
       [5, 7, "centerline"],
       [6, 7, "below-centerline"],
@@ -647,7 +646,7 @@ describe("isThirstActive", () => {
       name: "A",
       resources: { blood: 5 },
     });
-    const { effects } = parseEffects("Thirst 4: +1 MP")![0] as any; // not used
+    const { effects: _effects } = parseEffects("Thirst 4: +1 MP")![0] as any; // not used
     // Build a ThirstEffect directly
     const thirst = { type: "thirst", threshold: 4, effects: [] } as any;
     expect(isThirstActive(user, thirst)).toBe(true);
@@ -933,7 +932,7 @@ describe("applyEffectStream: choose prompt", () => {
     // Pick option 2 (+4 DEF/1)
     const { prompts } = driveStream(
       applyEffectStream(game, user, target, effects, ability),
-      (p) => 2,
+      (_p) => 2,
     );
 
     expect(prompts).toHaveLength(1);
@@ -996,7 +995,7 @@ describe("applyEffectStream: choose prompt", () => {
     let pickerCalls = 0;
     const { prompts } = driveStream(
       applyEffectStream(game, user, target, effects),
-      (p) => {
+      (_p) => {
         pickerCalls++;
         return pickerCalls === 1 ? 1 : 1; // pick option 1 of outer, then option 1 of inner
       },

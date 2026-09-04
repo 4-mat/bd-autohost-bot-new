@@ -4,7 +4,7 @@ import { MAPS } from "../data/maps.js";
 
 // Terrain values (mirror the enum in game/state.ts)
 const Normal = 0;
-const Lava = 7;
+const _Lava = 7;
 
 // Passability mirrors isObstruction() + lava rule from game/state.ts.
 // Obstructions: Stop(1), Ice(4), Stone(10), Bone(9), Hearth(11); Broken(8) is
