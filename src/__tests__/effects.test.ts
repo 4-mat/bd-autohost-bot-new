@@ -1478,6 +1478,8 @@ describe("parse-once caching", () => {
     expect(a).not.toBe(b);
     expect(a[0]).toMatchObject({ type: "status", name: "Bleed", damage: 3 });
     expect(b[0]).toMatchObject({ type: "status", name: "Cripple", damage: 5 });
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Moon-phase conditions and phase effects
