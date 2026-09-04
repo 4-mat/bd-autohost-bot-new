@@ -119,6 +119,7 @@ function makeGame(
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
@@ -1048,6 +1049,25 @@ describe("processStartOfTurn", () => {
     expect(e.buffs.length).toBe(1);
     expect(e.buffs[0].stat).toBe("atk");
     expect(e.buffs[0].rounds).toBe(1);
+    expect(result.entity?.num).toBe("P2");
+  });
+
+  it("restores MP when an mpCap marker expires", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      mp: 3, // capped from 5 -> marker stores the removed delta
+      buffs: [{ stat: "mpCap", amount: 2, rounds: 1 }],
+    });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [e, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    const result = nextTurn(game);
+    expect(e.mp).toBe(5);
+    expect(e.buffs.find((b) => b.stat === "mpCap")).toBeUndefined();
     expect(result.entity?.num).toBe("P2");
   });
 

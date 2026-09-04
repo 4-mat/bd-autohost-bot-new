@@ -114,6 +114,7 @@ const GAME_CMDS: Record<string, GameCmd> = {
   endturn: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   next: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   back: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
+  undo: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
   r: (_g, u, args) => handleRoll(u.name, args),
   roll: (_g, u, args) => handleRoll(u.name, args),
   dice: (_g, u, args) => handleRoll(u.name, args),
@@ -138,7 +139,7 @@ const GAME_CMDS: Record<string, GameCmd> = {
   regp: (g, u, _a, full) => withGame(g, u, (game) => handleRegp(game, u, full)),
   dir: (g, u, args) =>
     withGame(g, u, (game) => handleDirChoice(game, u, args), "No active game."),
-  tile: (g, u, _a, full) =>
+  picktile: (g, u, _a, full) =>
     withGame(
       g,
       u,
@@ -744,7 +745,7 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
     } else if (step.prompt.kind === "tile") {
       send(
         game.room,
-        `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
+        `Use %picktile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
       );
     }
     return;
@@ -796,30 +797,18 @@ function handleCancel(game: Game, user: User) {
 }
 
 function handleAdvanceTurn(game: Game, user: User) {
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can advance turns.");
-  }
-
   const entity = getCurrentEntity(game);
-  if (!entity) return;
+  const phase = game.phase;
+  if (!entity || phase !== "playing")
+    return sendPm(user.name, "No active turn.");
+
+  const guard = advanceTurnGuard(game, user, entity);
+  if (guard) return sendPm(user.name, guard);
 
   pushSnapshot(game);
 
-  let acted = "";
-
-  // Stunned entities can't act — skip their action and clear pending
-  if (isStunned(entity)) {
-    if (entity.pendingAction) {
-      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
-      entity.pendingAction = null;
-    } else {
-      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
-    }
-  } else if (entity.pendingAction) {
-    const done = resolvePendingAction(game, user, entity);
-    if (done === null) return; // prompt needs an answer — turn not advanced
-    acted = done;
-  }
+  const acted = resolveTurnActions(game, user, entity);
+  if (acted === null) return; // prompt needs an answer — turn not advanced
 
   if (
     acted ||
@@ -847,6 +836,49 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+/**
+ * Authorization guard for advancing the turn. Returns an error message to
+ * send back to the user, or null when the advance is permitted. Extracted
+ * from handleAdvanceTurn to keep its cyclomatic complexity under the limit.
+ */
+function advanceTurnGuard(game: Game, user: User, entity: Entity): string | null {
+  const isHost = toId(user.name) === toId(game.host);
+  const isSelf = toId(entity.name) === toId(user.name);
+
+  if (isHost) return null;
+  if (!isSelf) return "It's not your turn.";
+  if (!game.playersIdle) return "The host hasn't enabled this option";
+  return null;
+}
+
+/**
+ * Advance a single entity's action: skip if stunned, resolve a pending
+ * action, or pass. Returns null when the turn must NOT advance (a prompt
+ * answer is needed), otherwise the acted-summary string (possibly empty when
+ * the entity passed its turn). Extracted from handleAdvanceTurn.
+ */
+function resolveTurnActions(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  // Stunned entities can't act — skip their action and clear pending
+  if (isStunned(entity)) {
+    if (entity.pendingAction) {
+      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
+      entity.pendingAction = null;
+    } else {
+      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
+    }
+    return "";
+  }
+
+  if (!entity.pendingAction) return "";
+  const done = resolvePendingAction(game, user, entity);
+  if (done === null) return null;
+  return done;
 }
 
 /** Handle a death at turn advance: game over, or skip to the next living
@@ -1066,7 +1098,7 @@ function handleTileChoice(game: Game, user: User, args: string) {
   if (!isHost && toId(entity.name) !== toId(user.name)) {
     return sendPm(user.name, "It's not your turn.");
   }
-  if (!args) return sendPm(user.name, "Usage: %tile <tile>");
+  if (!args) return sendPm(user.name, "Usage: %picktile <tile>");
 
   pushSnapshot(game);
   try {

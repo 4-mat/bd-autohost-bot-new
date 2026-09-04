@@ -20,18 +20,19 @@ TOP=""
 SCAN_PATH="src/"
 REPORT=false
 
-for arg in "$@"; do
-  case "$arg" in
+# Parse args with a shift loop so both `--top=N` and the documented
+# `--top N` (space-separated) forms work; the value is consumed as TOP so it
+# is never treated as a stray separate argument.
+while [ $# -gt 0 ]; do
+  case "$1" in
     --json) MODE="json" ;;
-    --top=*) TOP="${arg#--top=}" ;;
-    --top)
-      shift
-      if [ $# -gt 0 ]; then TOP="$1"; fi
-      ;;
-    --path=*) SCAN_PATH="${arg#--path=}" ;;
+    --top=*) TOP="${1#--top=}" ;;
+    --top) shift; TOP="${1:-}" ;;
+    --path=*) SCAN_PATH="${1#--path=}" ;;
     --report) REPORT=true ;;
     *) ;;
   esac
+  shift
 done
 
 # Run oxlint, capture raw output and exit code.
@@ -50,24 +51,42 @@ printf '%s\n' "$RAW"
 # Pass raw output to the parser via a temp file (heredoc + stdin don't
 # mix well on Windows).
 TMP_FILE="$(mktemp)"
+trap 'rm -f "$TMP_FILE"' EXIT
 printf '%s' "$RAW" > "$TMP_FILE"
 
+# Run parser to generate the report (text or json)
 MODE_ENV="$MODE" TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE"
 
-rm -f "$TMP_FILE"
-
-# Propagate scanner failure: if oxlint itself failed (config, resolution, etc.),
-# exit with its code so CI does not pass silently.
-if [ $SCAN_EXIT -ne 0 ]; then
-  exit $SCAN_EXIT
+# Non-blocking modes (--report) only print the report.
+if [ "$REPORT" = "true" ]; then
+  exit 0
 fi
 
-# Gate mode: fail when any function exceeds the threshold.
-# Use a here-string on "$RAW" (NOT `printf | grep -q`): under pipefail,
-# `grep -q` can exit early on a match and SIGPIPE the writer, making the
-# pipeline fail spuriously and letting real complexity violations pass CI.
-# The temp file is already removed above, so gate on $RAW directly instead.
-if [ "$REPORT" != "true" ] && grep -q "complexity" <<< "$RAW"; then
+# Gate mode: an oxlint execution failure must fail the gate even when no
+# complexity diagnostic is present; otherwise a broken scan is masked as clean.
+if [ "$SCAN_EXIT" -ne 0 ]; then
+  echo "error: oxlint failed (exit $SCAN_EXIT); scan did not complete" >&2
+  exit "$SCAN_EXIT"
+fi
+
+# Gate on parsed results: run parser in JSON mode and check if any functions
+# exceed the threshold. This avoids the crude grep which matches "complexity"
+# in "Maximum allowed is 15" or parser warnings.
+#
+# The parser must not be allowed to fail open: if it crashes or emits invalid
+# JSON, the gate fails the scan instead of silently counting 0 violations.
+set +e
+JSON_OUT="$(MODE_ENV=json TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE" 2>&1)"
+PARSER_RC=$?
+set -e
+if [ "$PARSER_RC" -ne 0 ]; then
+  echo "error: complexity parser failed (exit $PARSER_RC); scan did not complete" >&2
+  exit "$PARSER_RC"
+fi
+# Count elements in JSON array (handles empty array "[]"). Under set -e a JSON
+# parse failure here is a hard error (fails the gate), not a clean scan.
+COUNT="$(printf '%s' "$JSON_OUT" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))")"
+if [ "$COUNT" -gt 0 ]; then
   exit 1
 fi
 exit 0

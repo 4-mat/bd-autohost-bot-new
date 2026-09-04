@@ -82,6 +82,7 @@ function makeGame(opts: { entities?: Entity[]; mode?: string } = {}): Game {
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
