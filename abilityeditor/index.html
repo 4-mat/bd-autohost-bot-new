@@ -464,6 +464,8 @@
       <div id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></div>
       <span class="spacer"></span>
       <span id="dirty-chip">● unsaved edits</span>
+      <button id="btn-import" title="Import a saved .json export of the editor data">Import</button>
+      <button id="btn-export" title="Download the current editor data (classes, weapons, abilities) as a .json file">Export</button>
       <button id="btn-revert" title="Discard all unsaved edits (reload data from src/data/index.ts)">Revert</button>
       <button id="btn-save" class="primary" title="Regenerate src/data/index.ts with the current edits (customs are excluded)">Save to Bot</button>
     </header>
@@ -784,6 +786,114 @@
       toast("Proposal drafted — a GitHub issue should open in a new tab.", "ok");
     }
 
+    // ---------- export / import ----------
+
+    // The full working dataset (classes, weapons, customs + custom id lists).
+    // Custom test entries are included so a shared file round-trips exactly.
+    function exportedData() {
+      return {
+        format: "bd-ability-editor",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        classes: JSON.parse(JSON.stringify(state.data.classes || [])),
+        weapons: JSON.parse(JSON.stringify(state.data.weapons || [])),
+        customClasses: (state.data.customClasses || []).slice(),
+        customWeapons: (state.data.customWeapons || []).slice(),
+      };
+    }
+
+    async function exportData() {
+      const data = exportedData();
+      try {
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "bd-ability-editor-" + new Date().toISOString().slice(0, 10) + ".json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        toast("Exported " + data.classes.length + " classes and " + data.weapons.length + " weapons.", "ok");
+      } catch (e) {
+        toast("Export failed: " + e.message, "err");
+      }
+    }
+
+    function importData(raw) {
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== "object") throw new Error("Not a valid JSON object.");
+      // Filter invalid entries (missing a name) FIRST so the custom-id lists
+      // below can never reference a dropped entry.
+      const classes = Array.isArray(data.classes)
+        ? data.classes.filter((c) => c && c.name)
+        : [];
+      const weapons = Array.isArray(data.weapons)
+        ? data.weapons.filter((w) => w && w.name)
+        : [];
+      if (classes.length + weapons.length === 0)
+        throw new Error("No classes or weapons found in that file.");
+      // Accept both the editor's own format and a bare { classes, weapons }.
+      // Only entries the payload EXPLICITLY lists as custom are custom: a
+      // bare payload carries no custom lists, so its entries are treated as
+      // regular data (marking every imported entry as custom would silently
+      // exclude all of them from "Save to Bot", which skips customs).
+      const customClasses = Array.isArray(data.customClasses)
+        ? data.customClasses.map((s) => String(s))
+        : [];
+      const customWeapons = Array.isArray(data.customWeapons)
+        ? data.customWeapons.map((s) => String(s))
+        : [];
+      state.data = {
+        classes,
+        weapons,
+        customClasses,
+        customWeapons,
+      };
+      state.pending = true;
+      state.dirty = true;
+      state.selected = null;
+      state.openAbility = null;
+    }
+
+    function importViaFile() {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "application/json,.json";
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        // Import replaces the whole working set: warn before discarding
+        // unsaved edits (the reviewer flagged silent data loss here).
+        if (
+          state.dirty &&
+          !confirm(
+            "Importing will discard your unsaved edits and replace the whole dataset. Continue?",
+          )
+        )
+          return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            importData(String(reader.result));
+            renderList();
+            $("#empty-state").style.display = "";
+            $("#detail").style.display = "none";
+            // In demo mode, persist the imported customs so they survive reloads.
+            if (STATIC) persistCustoms();
+            refreshStatus();
+            toast("Imported editor data.", "ok");
+          } catch (e) {
+            toast("Import failed: " + e.message, "err");
+          }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    }
+
     async function fetchData() {
       const d = STATIC ? state.data : await api("/api/data");
       state.data = d;
@@ -894,6 +1004,101 @@
       });
     }
 
+    // ---------- cross-branch copy ----------
+
+    // Flush a card's pending edits (same deferred-save path as flushAbility)
+    // so the copy uses the latest typed values. Returns the collected ability
+    // record, or null if the current item is gone.
+    async function abilityFromCard(card) {
+      const item = currentItem();
+      if (!item) return null;
+      const ability = collectAbility(card);
+      if (!ability.name || !String(ability.name).trim()) return null;
+      return ability;
+    }
+
+    function copyAbilityModal(idx) {
+      const source = currentItem();
+      if (!source) return;
+      const sourceName = source.name;
+
+      const back = document.createElement("div");
+      back.className = "modal-backdrop";
+      const kinds = ["class", "weapon"];
+      const kindOpts = kinds
+        .map(
+          (k) =>
+            '<option value="' +
+            k +
+            '">' +
+            (k === "class" ? "Classes" : "Weapons") +
+            "</option>",
+        )
+        .join("");
+      const renderItems = (kind) =>
+        state.data[kind === "class" ? "classes" : "weapons"]
+          .filter((x) => x.name !== sourceName || kind !== state.kind)
+          .map(
+            (x) =>
+              '<option value="' +
+              esc(x.name) +
+              '">' +
+              esc(x.name) +
+              "</option>",
+          )
+          .join("");
+      back.innerHTML =
+        '<div class="modal"><h3>Copy ability to…</h3><div class="field"><label>Item type</label><select id="copy-kind">' +
+        kindOpts +
+        '</select></div><div class="field"><label id="copy-dest-label"></label><select id="copy-item"></select></div><div class="actions"><button data-act="cancel">Cancel</button><button data-act="copy" class="primary">Copy</button></div></div>';
+      document.body.appendChild(back);
+      const kindSel = back.querySelector("#copy-kind");
+      const itemSel = back.querySelector("#copy-item");
+      const destLabel = back.querySelector("#copy-dest-label");
+      function refresh(kind) {
+        // The destination label must follow the dropdown, not the source
+        // item's kind (the reviewer flagged it showing "class" while
+        // targeting a weapon).
+        destLabel.textContent = "Destination (" + kind + ")";
+        itemSel.innerHTML = renderItems(kind);
+      }
+      refresh(kindSel.value);
+      kindSel.addEventListener("change", () => refresh(kindSel.value));
+
+      const close = () => back.remove();
+      back.addEventListener("click", async (e) => {
+        if (e.target === back) return close();
+        const act = e.target.closest("button")?.dataset.act;
+        if (act === "cancel") return close();
+        if (act !== "copy") return;
+        const destKind = kindSel.value;
+        const destName = itemSel.value;
+        if (!destName) {
+          toast("Pick a destination item to copy into.", "warn");
+          return;
+        }
+        const card = document.querySelector("#detail .ability-card[data-idx='" + idx + "']");
+        const ability = card ? await abilityFromCard(card) : null;
+        if (!ability) {
+          toast("That ability is missing a name.", "err");
+          return;
+        }
+        const copy = JSON.parse(JSON.stringify(ability));
+        try {
+          await api("/api/ability", {
+            kind: destKind,
+            owner: destName,
+            action: "add",
+            ability: copy,
+          });
+          close();
+          toast('Copied "' + copy.name + '" to ' + destName + ".", "ok");
+        } catch (err) {
+          toast(err.message, "err");
+        }
+      });
+    }
+
     // ---------- detail editor ----------
     function field(id, label, value, extra) {
       return (
@@ -990,7 +1195,9 @@
           choices,
           { textarea: true, full: true },
         ) +
-        '<div class="card-actions"><button class="mini danger" data-act="del-ability" data-idx="' +
+        '<div class="card-actions"><button class="mini" data-act="copy-ability" data-idx="' +
+        idx +
+        '">Copy to…</button><button class="mini danger" data-act="del-ability" data-idx="' +
         idx +
         '">Delete ability</button></div>'
       );
@@ -1351,6 +1558,7 @@
       const act = actEl.dataset.act;
       if (act === "add-ability") addAbility();
       else if (act === "del-ability") deleteAbility(Number(actEl.dataset.idx));
+      else if (act === "copy-ability") copyAbilityModal(Number(actEl.dataset.idx));
       else if (act === "del-custom") deleteCustom();
     });
 
@@ -1479,6 +1687,8 @@
     $("#btn-save").addEventListener("click", saveToBot);
     $("#btn-revert").addEventListener("click", revertAll);
     $("#btn-new").addEventListener("click", newCustom);
+    $("#btn-export").addEventListener("click", exportData);
+    $("#btn-import").addEventListener("click", importViaFile);
 
     // ---------- init ----------
     (async function init() {

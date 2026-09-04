@@ -21,6 +21,17 @@
       "modes": []
     },
     {
+      "name": "sprint",
+      "display": "Sprint",
+      "format": "txt",
+      "file": "sprint.txt",
+      "rows": 5,
+      "cols": 5,
+      "modes": [
+        "ntr"
+      ]
+    },
+    {
       "name": "diodes",
       "display": "Diodes",
       "format": "curated",
@@ -1378,7 +1389,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "nyoom",
@@ -1386,7 +1397,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "pond",
@@ -1394,7 +1405,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "duelingground",
@@ -1402,7 +1413,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "slushrush",
@@ -1418,14 +1429,6 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 4,
-      "cols": 6
-    },
-    {
-      "name": "sprint",
-      "display": "Sprint",
-      "format": "curated",
-      "file": "curated.json",
-      "rows": 5,
       "cols": 6
     },
     {
@@ -1466,7 +1469,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "minicrossroads",
@@ -1474,7 +1477,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "vortex",
@@ -1482,7 +1485,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "ntr",
@@ -1490,7 +1493,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "plus",
@@ -1514,7 +1517,7 @@
       "format": "curated",
       "file": "curated.json",
       "rows": 5,
-      "cols": 6
+      "cols": 5
     },
     {
       "name": "blade",

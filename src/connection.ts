@@ -2,23 +2,69 @@ import WebSocket from "ws";
 import { EventEmitter } from "events";
 import config from "./config.js";
 import { login } from "./login.js";
-import { setWs, resumeSending } from "./utils.js";
+import { pauseSending, setGenerationChecker, setWs } from "./utils.js";
 
 export const bot = new EventEmitter();
+
+const RECONNECT_DELAY_MS = 5000;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+// Monotonic id handed to login() so a challstr/assertion pair is bound to
+// the socket generation that received the challstr. If the socket was
+// superseded (reconnect) before the HTTP assertion returns, the stale
+// assertion is discarded instead of being sent over the new connection.
+let connectionGeneration = 0;
+// The socket that owns the active connection. Handlers compare against it so
+// a superseded socket (one that errored and was reconnected, or a late event
+// from an older socket) can never schedule an overlapping reconnect or flush
+// the outbound queue.
+let currentWs: WebSocket | null = null;
+
+/**
+ * Schedule a reconnect. Single-flight: only one reconnect may be pending at a
+ * time, and the timer is cleared once a socket actually opens.
+ */
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  console.log("Disconnected. Reconnecting in 5s...");
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, RECONNECT_DELAY_MS);
+}
 
 /** Connect to the Pokemon Showdown WebSocket and wire up login and message handling. */
 export function connect() {
   const proto = config.useTLS ? "wss" : "ws";
   const url = `${proto}://${config.server}:${config.port}/showdown/websocket`;
   const ws = new WebSocket(url);
+  currentWs = ws;
+  const generation = ++connectionGeneration;
+  setGenerationChecker((gen) => gen === generation && ws === currentWs);
+
+  // Install the wrapper before any event handler runs so any drain or queued
+  // message can never reach a stale socket from a previous reconnect or an unset
+  // wrapper on first connect.
+  setWs({ send: (msg: string, cb) => ws.send(msg, cb) });
+  // Pause the outbound queue until this connection authenticates (the
+  // updateuser handler calls resumeSending after /trn). Messages sent in the
+  // window between socket-open and login-confirm would otherwise be
+  // transmitted to an unauthenticated session.
+  pauseSending();
 
   ws.on("open", () => {
+    if (ws !== currentWs) return;
     console.log(`Connected to ${config.server}`);
-    // Flush anything queued while the previous socket was down.
-    resumeSending();
+    // A stale reconnect may still be pending from a superseded socket;
+    // cancel it now that a socket is actually up.
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
   });
 
   ws.on("message", (data) => {
+    if (ws !== currentWs) return;
     const msg = data.toString();
     if (!msg.startsWith("|")) return;
 
@@ -27,21 +73,30 @@ export function connect() {
 
     if (event === "challstr") {
       const challstr = parts.slice(2).join("|");
-      login(challstr);
+      // Bind this login attempt to the socket that received the challstr so
+      // its assertion is only sent while that connection is still current.
+      login(challstr, generation);
     }
 
     bot.emit(event, parts);
   });
 
   ws.on("close", () => {
-    console.log("Disconnected. Reconnecting in 5s...");
-    setTimeout(connect, 5000);
+    if (ws !== currentWs) return;
+    currentWs = null;
+    scheduleReconnect();
   });
 
   ws.on("error", (err) => {
     console.error("WebSocket error:", err.message);
+    if (ws !== currentWs) return;
+    currentWs = null;
+    // Some error paths never emit close: terminate the socket so a half-dead
+    // connection can't linger and double up with the reconnected one, then
+    // reconnect regardless.
+    scheduleReconnect();
+    ws.terminate();
   });
 
-  setWs({ send: (msg: string, cb) => ws.send(msg, cb) });
   return ws;
 }
