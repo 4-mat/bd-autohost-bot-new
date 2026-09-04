@@ -796,50 +796,18 @@ function handleCancel(game: Game, user: User) {
   broadcastPages(game);
 }
 
-/** Resolve the current entity's action at turn advance: stunned entities
- * waste or skip their action; pending actions resolve or return null when
- * a prompt still needs an answer. Returns the performed action, an empty
- * string when the turn was passed, or null when the turn must not advance. */
-function resolveEntityTurnAction(
-  game: Game,
-  user: User,
-  entity: Entity,
-): string | null {
-  if (isStunned(entity)) {
-    if (entity.pendingAction) {
-      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
-      entity.pendingAction = null;
-    } else {
-      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
-    }
-    return "";
-  }
-  if (entity.pendingAction) {
-    const done = resolvePendingAction(game, user, entity);
-    if (done === null) return null; // prompt needs an answer
-    return done;
-  }
-  return "";
-}
-
 function handleAdvanceTurn(game: Game, user: User) {
   const entity = getCurrentEntity(game);
   const phase = game.phase;
   if (!entity || phase !== "playing")
     return sendPm(user.name, "No active turn.");
-  const isHost = toId(user.name) === toId(game.host);
-  const isSelf = toId(entity.name) === toId(user.name);
 
-  if (!isHost) {
-    if (!isSelf) return sendPm(user.name, "It's not your turn.");
-    if (!game.playersIdle) return sendPm(user.name, "The host hasn't enabled this option");
-  }
+  const guard = advanceTurnGuard(game, user, entity);
+  if (guard) return sendPm(user.name, guard);
 
   pushSnapshot(game);
 
-  // Resolve the current entity's turn: stunned entities waste/skip their
-  // action; pending actions either resolve or need a prompt answer.
-  const acted = resolveEntityTurnAction(game, user, entity);
+  const acted = resolveTurnActions(game, user, entity);
   if (acted === null) return; // prompt needs an answer — turn not advanced
 
   if (
@@ -868,6 +836,49 @@ function handleAdvanceTurn(game: Game, user: User) {
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+/**
+ * Authorization guard for advancing the turn. Returns an error message to
+ * send back to the user, or null when the advance is permitted. Extracted
+ * from handleAdvanceTurn to keep its cyclomatic complexity under the limit.
+ */
+function advanceTurnGuard(game: Game, user: User, entity: Entity): string | null {
+  const isHost = toId(user.name) === toId(game.host);
+  const isSelf = toId(entity.name) === toId(user.name);
+
+  if (isHost) return null;
+  if (!isSelf) return "It's not your turn.";
+  if (!game.playersIdle) return "The host hasn't enabled this option";
+  return null;
+}
+
+/**
+ * Advance a single entity's action: skip if stunned, resolve a pending
+ * action, or pass. Returns null when the turn must NOT advance (a prompt
+ * answer is needed), otherwise the acted-summary string (possibly empty when
+ * the entity passed its turn). Extracted from handleAdvanceTurn.
+ */
+function resolveTurnActions(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  // Stunned entities can't act — skip their action and clear pending
+  if (isStunned(entity)) {
+    if (entity.pendingAction) {
+      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
+      entity.pendingAction = null;
+    } else {
+      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
+    }
+    return "";
+  }
+
+  if (!entity.pendingAction) return "";
+  const done = resolvePendingAction(game, user, entity);
+  if (done === null) return null;
+  return done;
 }
 
 /** Handle a death at turn advance: game over, or skip to the next living

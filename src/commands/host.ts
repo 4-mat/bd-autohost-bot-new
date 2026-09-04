@@ -1841,6 +1841,7 @@ function handleToggleIdle(room: Room, user: User) {
   }
   game.playersIdle = !game.playersIdle;
   send(room.id, `**Players Idle**: ${game.playersIdle ? "Enabled" : "Disabled"}`);
+  broadcastPages(game);
 }
 
 // -- Map generators ------------------------------------------------------------
