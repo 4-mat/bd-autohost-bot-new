@@ -3,10 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%2322622F'/><rect x='8' y='8' width='38' height='38' rx='6' fill='%23A9F5A9'/><rect x='54' y='8' width='38' height='38' rx='6' fill='%2333E9E9'/><rect x='8' y='54' width='38' height='38' rx='6' fill='%23CCCC00'/><rect x='54' y='54' width='38' height='38' rx='6' fill='%23454FDF'/></svg>"
-    />
+    <link rel="icon" href="" />
     <title>Battle Dome Map Editor</title>
     <style>
       :root {
@@ -931,6 +928,43 @@
         </div>
 
         <div class="section">
+          <h3>Selection</h3>
+          <div class="maprow">
+            <button
+              class="btn small"
+              id="btnSelCopy"
+              title="Copy the selected block to the clipboard (Ctrl+C)"
+            >
+              📋 Copy
+            </button>
+            <button
+              class="btn small"
+              id="btnSelPaste"
+              title="Paste the copied block at the top-left of the current selection — or top-left of the map if none (Ctrl+V)"
+            >
+              📥 Paste
+            </button>
+          </div>
+          <div class="maprow">
+            <button
+              class="btn small"
+              id="btnSelTileCmd"
+              title="Copy the selected block as %tile commands to set it in-game (e.g. %tile water,a1b2b3)"
+            >
+              🧱 Copy %tile
+            </button>
+            <button
+              class="btn small"
+              id="btnSelTileApply"
+              title="Paste %tile / %settile command lines from your clipboard to paint tiles onto the map"
+            >
+              🧱 Import %tile
+            </button>
+          </div>
+          <div id="selStatus" class="hint"></div>
+        </div>
+
+        <div class="section">
           <h3>Undo / Redo</h3>
           <div class="maprow">
             <button class="btn small" id="btnUndo" title="Ctrl+Z">
@@ -1210,10 +1244,31 @@
 
     <div id="toasts"></div>
 
+    <script src="../src/game/terrain-colors.cjs"></script>
     <script src="mapcore.cjs"></script>
     <script>
       "use strict";
       const MC = window.MapCore;
+
+      /* Favicon built from the shared terrain palette (terrain-colors.cjs). */
+      (function () {
+        const C = globalThis.TERRAIN_COLORS;
+        const hex = (s) => String(s).replace("#", "%23");
+        const svg =
+          "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>" +
+          "<rect width='100' height='100' rx='18' fill='%2322622F'/>" +
+          "<rect x='8' y='8' width='38' height='38' rx='6' fill='" +
+          hex(C.normal.color) +
+          "'/><rect x='54' y='8' width='38' height='38' rx='6' fill='" +
+          hex(C.ice.color) +
+          "'/><rect x='8' y='54' width='38' height='38' rx='6' fill='" +
+          hex(C.sticky.color) +
+          "'/><rect x='54' y='54' width='38' height='38' rx='6' fill='" +
+          hex(C.water.color) +
+          "'/></svg>";
+        const link = document.querySelector('link[rel="icon"]');
+        if (link) link.href = "data:image/svg+xml," + svg;
+      })();
 
       /* ------------------------------------------------------------------ */
       /* state                                                                */
@@ -1232,6 +1287,7 @@
       let selBox = null; // selected box {r0,c0,r1,c1} inclusive (select tool)
       let selDrag = null; // marquee being drawn {r, c}
       let translateDrag = null; // box being moved {startR, startC, before, ghost}
+      let selClip = null; // copied selection block (sliceBlock output) {rows,cols,tiles,tokens}
       let zoom = 1.5; // grid scale (default 150% for comfy editing; 100% = exact game size)
 
       const $ = (id) => document.getElementById(id);
@@ -1258,6 +1314,12 @@
       /* ------------------------------------------------------------------ */
       function snapshot() {
         return JSON.stringify(map);
+      }
+      // Restore the map to a prior snapshot string. Used by operations that
+      // modify the map in-place and need to roll back on failure (e.g. an
+      // invalid %tile clipboard import).
+      function restoreSnapshot(snap) {
+        map = JSON.parse(snap);
       }
       function pushHistory() {
         history = history.slice(0, historyIdx + 1);
@@ -1372,7 +1434,19 @@
       /* ------------------------------------------------------------------ */
       /* grid rendering                                                       */
       /* ------------------------------------------------------------------ */
+      // render() rebuilds the full grid (up to 60x60 cells). Painting drags
+      // can fire dozens of mousemove events per frame, so coalesce them with
+      // requestAnimationFrame — the last renderRequested wins within a frame.
+      let renderPending = false;
       function render() {
+        if (renderPending) return; // already queued for this frame
+        renderPending = true;
+        requestAnimationFrame(() => {
+          renderPending = false;
+          renderNow();
+        });
+      }
+      function renderNow() {
         const grid = $("grid");
         grid.innerHTML = "";
 
@@ -1463,6 +1537,7 @@
         if (document.activeElement !== $("mapName"))
           $("mapName").value = map.name;
         renderCounts();
+        updateSelStatus();
         scheduleDraft();
       }
 
@@ -1542,8 +1617,7 @@
               h +
               " — drag inside to move · ↑↓←→ nudge · Del erase · Esc clear";
           } else {
-            $("cellInfo").textContent =
-              "🔲 drag to select a box of tiles — tokens move too";
+            $("cellInfo").textContent = "🔲 drag to select a box of tiles";
           }
           return;
         }
@@ -1712,6 +1786,135 @@
       }
 
       /* ------------------------------------------------------------------ */
+      /* selection copy / paste / %tile                                       */
+      /* ------------------------------------------------------------------ */
+      function updateSelStatus() {
+        const el = $("selStatus");
+        if (!el) return;
+        const parts = [];
+        if (selClip) parts.push("copied " + selClip.rows + "×" + selClip.cols);
+        if (selBox)
+          parts.push(
+            "selected " +
+              (selBox.r1 - selBox.r0 + 1) +
+              "×" +
+              (selBox.c1 - selBox.c0 + 1),
+          );
+        el.textContent = parts.join(" · ");
+      }
+
+      function copySelection() {
+        if (!selBox) {
+          toast("First select a box with the 🔲 Select tool", "err");
+          return;
+        }
+        selClip = MC.sliceBlock(map, selBox);
+        updateSelStatus();
+        toast(
+          "Copied " +
+            selClip.rows +
+            "×" +
+            selClip.cols +
+            " block (Ctrl+V to paste)",
+          "ok",
+        );
+      }
+
+      function pasteSelection(anchorR, anchorC) {
+        if (!selClip) {
+          toast("Nothing copied yet — select a box and press Ctrl+C", "err");
+          return;
+        }
+        const before = snapshot();
+        let r = anchorR != null ? anchorR : selBox ? selBox.r0 : 0;
+        let c = anchorC != null ? anchorC : selBox ? selBox.c0 : 0;
+        const pasted = MC.pasteBlock(
+          map,
+          selClip,
+          Math.max(0, r),
+          Math.max(0, c),
+        );
+        if (!pasted) {
+          toast("Can't paste there — out of bounds", "err");
+          return;
+        }
+        // Highlight the pasted block so the user can move/clip at that anchor.
+        selBox = pasted;
+        draftUserEdit = true;
+        if (before !== snapshot()) pushHistory();
+        updateSelStatus();
+        render();
+        toast(
+          "Pasted " +
+            selClip.rows +
+            "×" +
+            selClip.cols +
+            " at " +
+            MC.rowLabel(pasted.r0) +
+            (pasted.c0 + 1),
+          "ok",
+        );
+      }
+
+      async function copySelectionTileCmd() {
+        if (!selBox) {
+          toast("First select a box with the 🔲 Select tool", "err");
+          return;
+        }
+        const lines = MC.selectionToTileCmds(map, selBox);
+        if (!lines.length) {
+          toast("Selection has no solid tiles (only normal/empty)", "err");
+          return;
+        }
+        const text = lines.join("\n");
+        await copyText(text);
+        toast(
+          "Copied %tile commands (" +
+            lines.length +
+            " line" +
+            (lines.length === 1 ? "" : "s") +
+            ")",
+          "ok",
+        );
+      }
+
+      async function importTileCmds() {
+        let text = "";
+        try {
+          text = await navigator.clipboard.readText();
+        } catch (e) {
+          text = prompt("Paste your %tile / %settile commands here:");
+        }
+        if (!text) return;
+        const before = snapshot();
+        let placed = 0;
+        let importError = null;
+        try {
+          placed = MC.applyTileCmds(map, text);
+        } catch (err) {
+          importError = err;
+          // applyTileCmds modifies in-place, so on error the map may be
+          // partially modified. Restore the pre-import snapshot so the user
+          // sees no half-applied changes — they can fix and retry.
+          restoreSnapshot(before);
+        }
+        draftUserEdit = true;
+        render();
+        if (importError) {
+          toast("Could not import: " + importError.message, "err");
+        } else {
+          if (before !== snapshot()) pushHistory();
+          toast(
+            placed +
+              " tile" +
+              (placed === 1 ? "" : "s") +
+              " painted from %tile commands",
+            "ok",
+          );
+        }
+      }
+
+      /* ------------------------------------------------------------------ */
       /* size / maps                                                          */
       /* ------------------------------------------------------------------ */
       function resizeGrid(rows, cols) {
@@ -1845,6 +2048,12 @@
           if (!res.ok) throw new Error("HTTP " + res.status);
           const data = await res.json();
           modesCache = { modes: data.modes || {}, labels: data.labels || {} };
+          // Keep mapcore's mode rules in lockstep with the bot's generated
+          // data (aliases + per-mode min sizes).
+          MC.setModeData({
+            aliases: data.aliases || {},
+            minSizes: data.minSizes || {},
+          });
           return modesCache;
         } catch (e) {
           return { modes: {}, labels: {} };
@@ -2202,6 +2411,16 @@
           saveMap();
           return;
         }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+          e.preventDefault();
+          copySelection();
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+          e.preventDefault();
+          pasteSelection();
+          return;
+        }
         if ((e.ctrlKey || e.metaKey) && (e.key === "=" || e.key === "+")) {
           e.preventDefault();
           zoomBy(0.25);
@@ -2312,6 +2531,10 @@
       });
       $("btnUndo").addEventListener("click", undo);
       $("btnRedo").addEventListener("click", redo);
+      $("btnSelCopy").addEventListener("click", copySelection);
+      $("btnSelPaste").addEventListener("click", () => pasteSelection());
+      $("btnSelTileCmd").addEventListener("click", copySelectionTileCmd);
+      $("btnSelTileApply").addEventListener("click", importTileCmds);
       $("btnResize").addEventListener("click", () => {
         const rows = Math.max(
           5,
@@ -2595,6 +2818,11 @@
         toast('Restored draft "' + (draft.name || "untitled") + '"', "ok");
       }
       function discardDraft() {
+        // Cancel any pending autosave so it can't re-create the draft right
+        // after the user discards it (the 700ms timer would otherwise fire
+        // and bring the "Draft of ..." banner back on the next reload).
+        clearTimeout(draftTimer);
+        draftUserEdit = false;
         try {
           localStorage.removeItem("bd-editor-draft");
         } catch (e) {

@@ -14,7 +14,13 @@ import {
   Terrain,
   isStandable,
 } from "../game/state.js";
-import { classes, weapons, loadGameData } from "../data/index.js";
+import {
+  classes,
+  weapons,
+  loadGameData,
+  type ClassData,
+  type WeaponData,
+} from "../data/index.js";
 import { getVersionData } from "../data/version43.js";
 import type { GameVersion } from "../data/index.js";
 import { getMapByName, listMaps } from "../data/maps.js";
@@ -63,50 +69,47 @@ function mayChangeLoadout(user: User, game: Game, entity: Entity): boolean {
 
 // Recalculate an entity's maxhp/curhp, stats, and abilities from its current
 // class + weapon. Returns the new max HP.
+/** Sum a stat across class + weapon data (0 when either is missing). */
+function sumStat(
+  classData: ClassData | undefined,
+  weaponData: WeaponData | undefined,
+  stat: string,
+): number {
+  const sv = (s: string) => parseFloat(s) || 0;
+  return (
+    (classData ? sv(String((classData.stats as Record<string, unknown>)[stat])) : 0) +
+    (weaponData ? sv(String((weaponData.stats as Record<string, unknown>)[stat])) : 0)
+  );
+}
+
 function recalcEntityStats(
   entity: Entity,
   data: { classes: typeof classes; weapons: typeof weapons },
 ): number {
   const classData = data.classes.get(toId(entity.className));
   const weaponData = data.weapons.get(toId(entity.weaponName));
-  const sv = (s: string) => parseFloat(s) || 0;
-  const newMaxhp =
-    (classData ? parseInt(classData.stats.hp) : 0) +
-    (weaponData ? parseInt(weaponData.stats.hp) : 0);
+  const newMaxhp = sumStat(classData, weaponData, "hp");
   entity.maxhp = newMaxhp;
   entity.curhp = Math.min(entity.curhp, newMaxhp);
-  entity.atk =
-    (classData ? sv(classData.stats.atk) : 0) +
-    (weaponData ? sv(weaponData.stats.atk) : 0);
-  entity.mag =
-    (classData ? sv(classData.stats.mag) : 0) +
-    (weaponData ? sv(weaponData.stats.mag) : 0);
-  entity.pd =
-    (classData ? sv(classData.stats.pd) : 0) +
-    (weaponData ? sv(weaponData.stats.pd) : 0);
-  entity.md =
-    (classData ? sv(classData.stats.md) : 0) +
-    (weaponData ? sv(weaponData.stats.md) : 0);
-  entity.eva = Math.floor(
-    (classData ? sv(classData.stats.eva) : 0) +
-      (weaponData ? sv(weaponData.stats.eva) : 0),
-  );
-  entity.mp =
-    (classData ? sv(classData.stats.mp) : 0) +
-    (weaponData ? sv(weaponData.stats.mp) : 0);
+  entity.atk = sumStat(classData, weaponData, "atk");
+  entity.mag = sumStat(classData, weaponData, "mag");
+  entity.pd = sumStat(classData, weaponData, "pd");
+  entity.md = sumStat(classData, weaponData, "md");
+  entity.eva = Math.floor(sumStat(classData, weaponData, "eva"));
+  entity.mp = sumStat(classData, weaponData, "mp");
   // classLevel and weaponLevel are always set together (createPlayerEntity,
   // %setlevel), so using classLevel here is equivalent to weaponLevel.
   const lvl = entity.classLevel;
   entity.abilities = [
     ...(classData
       ? classData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
+        hasAbility(a, lvl, !!entity.isJuggernaut),
+      )
       : []),
     ...(weaponData
       ? weaponData.abilities.filter((a) =>
-          hasAbility(a, lvl, !!entity.isJuggernaut),
-        )
+        hasAbility(a, lvl, !!entity.isJuggernaut),
+      )
       : []),
   ] as any[];
   return newMaxhp;
@@ -118,6 +121,44 @@ function findGameForHost(username: string): Game | null {
   }
   return null;
 }
+
+type HostCmd = (room: Room, user: User, full: string) => void;
+
+/** Host commands that take no arguments. */
+const HOST_CMDS_NOVAL: Record<string, (room: Room, user: User) => void> = {
+  dehost: handleDehost,
+  gento: handleGenTurnOrder,
+  start: handleStart,
+  close: handleClose,
+  endvote: handleEndVote,
+  toggleidle: handleToggleIdle,
+  ffabtn: handleFfaButton,
+  nudge: handleNudge,
+};
+
+/** Host commands that pass the full argument string through. */
+const HOST_CMDS: Record<string, HostCmd> = {
+  setgame: (r, u, full) => handleSetGame(r, u, full),
+  addp: (r, u, full) => handleAddPlayer(r, u, full),
+  remp: (r, u, full) => handleRemPlayer(r, u, full),
+  setmap: (r, u, full) => handleSetMap(r, u, full),
+  setlevel: (r, u, full) => handleSetLevel(r, u, full),
+  sl: (r, u, full) => handleSetLevel(r, u, full),
+  setteam: (r, u, full) => handleSetTeam(r, u, full),
+  addm: (r, u, full) => handleAddMonster(r, u, full),
+  sc: (r, u, full) => handleSwitchClass(r, u, full),
+  sw: (r, u, full) => handleSwitchWeapon(r, u, full),
+  sco: (r, u, full) => handleSelfLoadout(r, u, full),
+  setclass: (r, u, full) => handleSetClass(r, u, full),
+  setweapon: (r, u, full) => handleSetWeapon(r, u, full),
+  setloadout: (r, u, full) => handleSetEntityLoadout(r, u, full),
+  setjugg: (r, u, full) => handleSetJugg(r, u, full),
+  listmaps: (r, u, full) => handleListMaps(r, u, full),
+  join: (r, u, full) => handleJoin(r, u, full),
+  genpos: (r, u, full) => handleGenPos(r, u, full),
+  open: (r, u) => handleOpen(r, u, false),
+  openbsu: (r, u) => handleOpen(r, u, true),
+};
 
 export function hostCommand(
   room: Room | null,
@@ -139,90 +180,21 @@ export function hostCommand(
 
   const full = val ? `${args},${val}` : args;
 
-  switch (cmd) {
-    case "host":
-      handleHost(room, user, args);
-      break;
-    case "dehost":
-      handleDehost(room, user);
-      break;
-    case "setgame":
-      handleSetGame(room, user, full);
-      break;
-    case "addp":
-      handleAddPlayer(room, user, full);
-      break;
-    case "remp":
-      handleRemPlayer(room, user, full);
-      break;
-    case "setmap":
-      handleSetMap(room, user, full);
-      break;
-    case "setlevel":
-    case "sl":
-      handleSetLevel(room, user, full);
-      break;
-    case "setteam":
-      handleSetTeam(room, user, full);
-      break;
-    case "gento":
-      handleGenTurnOrder(room, user);
-      break;
-    case "start":
-      handleStart(room, user);
-      break;
-    case "addm":
-      handleAddMonster(room, user, full);
-      break;
-    case "sc":
-      handleSwitchClass(room, user, full);
-      break;
-    case "sw":
-      handleSwitchWeapon(room, user, full);
-      break;
-    case "sco":
-      handleSelfLoadout(room, user, full);
-      break;
-    case "setclass":
-      handleSetClass(room, user, full);
-      break;
-    case "setweapon":
-      handleSetWeapon(room, user, full);
-      break;
-    case "setloadout":
-      handleSetEntityLoadout(room, user, full);
-      break;
-    case "setjugg":
-      handleSetJugg(room, user, full);
-      break;
-    case "listmaps":
-      handleListMaps(room, user, full);
-      break;
-    case "open":
-    case "openbsu":
-      handleOpen(room, user, cmd === "openbsu");
-      break;
-    case "close":
-      handleClose(room, user);
-      break;
-    case "endvote":
-      handleEndVote(room, user);
-      break;
-    case "ffabtn":
-      handleFfaButton(room, user);
-      break;
-    case "nudge":
-      handleNudge(room, user);
-      break;
-    case "join":
-      handleJoin(room, user, full);
-      break;
-    case "genpos":
-      handleGenPos(room, user, full);
-      break;
-    default:
-      sendPm(user.name, `Host command ${cmd}: not yet implemented.`);
+  const noVal = HOST_CMDS_NOVAL[cmd];
+  if (noVal) {
+    noVal(room, user);
+    return;
   }
+  if (cmd === "host") {
+    handleHost(room, user, args);
+    return;
+  }
+  const handler = HOST_CMDS[cmd];
+  if (handler) {
+    handler(room, user, full);
+    return;
+  }
+  sendPm(user.name, `Host command ${cmd}: not yet implemented.`);
 }
 
 function findGameForRoom(roomid: string): Game | null {
@@ -280,6 +252,7 @@ function handleHost(room: Room, user: User, args: string) {
     voteOpen: false,
     voteRunoff: null,
     timer: null,
+    playersIdle: false,
   };
 
   games.set(id, game);
@@ -340,22 +313,7 @@ function handleSetGame(room: Room, user: User, args: string) {
 
   // Validate team-count requirements BEFORE mutating anything.
   const teamMatch = mode.toUpperCase().match(/^(\d+)V(\d+)$/);
-  if (teamMatch) {
-    const a = parseInt(teamMatch[1]);
-    const b = parseInt(teamMatch[2]);
-    if (a < 1 || b < 1) {
-      return sendPm(
-        user.name,
-        "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.) — team modes need at least 1 player per team.",
-      );
-    }
-    if (players.length !== a + b) {
-      return sendPm(
-        user.name,
-        `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
-      );
-    }
-  }
+  if (teamMatch && !validateTeamCount(user, teamMatch, players)) return;
 
   game.mode = mode.toUpperCase();
   game.modeChosen = true;
@@ -370,55 +328,18 @@ function handleSetGame(room: Room, user: User, args: string) {
   // recommended pool, falling back to a procedural map.
   const mapMsg: string[] = [];
   if (game.map.length === 0) {
-    const poolPick = randomMapForMode(mode);
-    const poolDef = poolPick ? getMapByName(poolPick) : undefined;
-    if (poolDef) {
-      applyMap(game, poolDef, "", true);
-      mapMsg.push(
-        `Map: ${poolDef.displayName} (random ${modeIdFor(mode)!.toUpperCase()} pick)`,
-      );
-    } else {
-      applyMap(
-        game,
-        {
-          grid: generateDefaultMap(),
-          displayName: "Procedural (12x12)",
-          rows: 12,
-          cols: 12,
-        },
-        "",
-        true,
-      );
-      mapMsg.push("Map: Procedural (12x12)");
-    }
+    mapMsg.push(applyInitialMap(game, mode));
   }
 
   pushSnapshot(game);
 
   // Team modes: split the players into two teams and place mirrored halves.
-  let placedPairs: [Entity, [number, number]][] = [];
-  if (teamMatch) {
-    const a = parseInt(teamMatch[1]);
-    const b = parseInt(teamMatch[2]);
-    const teamA = players.slice(0, a);
-    const teamB = players.slice(a, a + b);
-    teamA.forEach((e) => (e.team = 1));
-    teamB.forEach((e) => (e.team = 2));
-    const placed = placeTeamPlayers(game, teamA, teamB);
-    if (!placed) {
-      broadcastPages(game); // keep the GUI in sync after the mode change
-      return sendPm(user.name, "Could not find open spawn tiles.");
-    }
-    placedPairs = [...placed[0], ...placed[1]];
-  } else {
-    // FFA and other modes: clear leftover teams, spread everyone.
-    players.forEach((e) => (e.team = 0));
-    const placed = placePlayers(game, players);
-    if (!placed) {
-      broadcastPages(game); // keep the GUI in sync after the mode change
-      return sendPm(user.name, "Could not find open spawn tiles.");
-    }
-    placedPairs = placed;
+  const placedPairs = teamMatch
+    ? placeTeamMode(game, players, teamMatch)
+    : placeFfaMode(game, players);
+  if (!placedPairs) {
+    broadcastPages(game); // keep the GUI in sync after the mode change
+    return sendPm(user.name, "Could not find open spawn tiles.");
   }
 
   // Generate the turn order so only %start remains. This RENUMBERS entities
@@ -483,6 +404,83 @@ function handleClose(room: Room, user: User) {
     send(room.id, "**Signups are now closed.**");
   }
   broadcastPages(game);
+}
+
+/** Validate a team-mode count (NvM) against the joined players. Sends the
+ * failure message (and returns false) when the count is bad. */
+function validateTeamCount(
+  user: User,
+  teamMatch: RegExpMatchArray,
+  players: Entity[],
+): boolean {
+  const a = parseInt(teamMatch[1]);
+  const b = parseInt(teamMatch[2]);
+  if (a < 1 || b < 1) {
+    sendPm(
+      user.name,
+      "Usage: %setgame <mode> (FFA, 2v2, 3v3, etc.) — team modes need at least 1 player per team.",
+    );
+    return false;
+  }
+  if (players.length !== a + b) {
+    sendPm(
+      user.name,
+      `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
+    );
+    return false;
+  }
+  return true;
+}
+
+/** Pick a map when none is chosen: random from the mode's pool, else procedural. */
+function applyInitialMap(game: Game, mode: string): string {
+  const poolPick = randomMapForMode(mode);
+  const poolDef = poolPick ? getMapByName(poolPick) : undefined;
+  if (poolDef) {
+    applyMap(game, poolDef, "", true);
+    return `Map: ${poolDef.displayName} (random ${modeIdFor(mode)!.toUpperCase()} pick)`;
+  }
+  applyMap(
+    game,
+    {
+      grid: generateDefaultMap(),
+      displayName: "Procedural (12x12)",
+      rows: 12,
+      cols: 12,
+    },
+    "",
+    true,
+  );
+  return "Map: Procedural (12x12)";
+}
+
+/** Split players into two teams, place mirrored halves, and return the pairs.
+ * Atomic: teams and positions are only committed if placement fully succeeds,
+ * so a failed placement never leaves a half-mutated setup state. */
+function placeTeamMode(
+  game: Game,
+  players: Entity[],
+  teamMatch: RegExpMatchArray,
+): [Entity, [number, number]][] | null {
+  const a = parseInt(teamMatch[1]);
+  const b = parseInt(teamMatch[2]);
+  const teamA = players.slice(0, a);
+  const teamB = players.slice(a, a + b);
+  const placed = placeTeamPlayers(game, teamA, teamB);
+  if (!placed) return null;
+  // Placement succeeded for everyone — only now commit team assignments.
+  teamA.forEach((e) => (e.team = 1));
+  teamB.forEach((e) => (e.team = 2));
+  return [...placed[0], ...placed[1]];
+}
+
+/** Clear leftover teams and spread everyone FFA-style. */
+function placeFfaMode(
+  game: Game,
+  players: Entity[],
+): [Entity, [number, number]][] | null {
+  players.forEach((e) => (e.team = 0));
+  return placePlayers(game, players);
 }
 
 // -- .endvote - Close gamemode voting and apply the winner --------------------
@@ -661,59 +659,16 @@ function handleGenPos(room: Room, user: User, args: string) {
   if (game.map.length === 0) {
     return sendPm(
       user.name,
-      "No map set. Use %setmap <name> (see %listmaps) or %setmap gen first.",
+      "Set a map first (%setmap <name> or %setmap gen), then %genpos.",
     );
   }
 
   const arg = args.trim().toLowerCase();
 
-  if (game.map.length === 0) {
-    return sendPm(
-      user.name,
-      "Set a map first (%setmap <name> or %setmap gen), then %genpos.",
-    );
-  }
-
   // Team mode: %genpos <N>v<M> (e.g. %genpos 2v2, %genpos 3v3)
   const teamMatch = arg.match(/^(\d+)\s*v\s*(\d+)$/);
   if (teamMatch) {
-    const a = parseInt(teamMatch[1]);
-    const b = parseInt(teamMatch[2]);
-    if (a < 1 || b < 1 || a > 5 || b > 5) {
-      return sendPm(
-        user.name,
-        "Usage: %genpos <N>v<M> with 1-5 per team (e.g. %genpos 2v2).",
-      );
-    }
-    const players = game.entities.filter((e) => !e.isMonster);
-    if (a + b !== players.length) {
-      return sendPm(
-        user.name,
-        `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
-      );
-    }
-
-    const teamA = players.slice(0, a);
-    const teamB = players.slice(a, a + b);
-
-    pushSnapshot(game);
-    const placed = placeTeamPlayers(game, teamA, teamB);
-    if (!placed) {
-      return sendPm(user.name, "Could not find open spawn tiles.");
-    }
-    teamA.forEach((e) => (e.team = 1));
-    teamB.forEach((e) => (e.team = 2));
-    game.mode = `${a}V${b}`;
-    game.modeChosen = true;
-    // Setting a mode directly supersedes any ongoing vote / runoff.
-    game.voteOpen = false;
-    game.votes = {};
-    game.voteRunoff = null;
-    const spots = [...placed[0], ...placed[1]]
-      .map(([e, p]) => `${e.num} (T${e.team}) at ${posToStr(p[0], p[1])}`)
-      .join(" | ");
-    send(room.id, `**Positions set (${a}v${b}):** ${spots}`);
-    broadcastPages(game);
+    genPosTeams(room, user, game, teamMatch[1], teamMatch[2]);
     return;
   }
 
@@ -725,10 +680,52 @@ function handleGenPos(room: Room, user: User, args: string) {
       "Usage: %genpos <N><mode> (e.g. %genpos 4pffa) or %genpos <N>v<M> (e.g. %genpos 2v2).",
     );
   }
+  genPosFfa(room, user, game, parseInt(match[1]), match[2]);
+}
 
-  const n = parseInt(match[1]);
-  const mode = match[2];
+/** %genpos <N>v<M> — split players into two teams and place them. */
+function genPosTeams(room: Room, user: User, game: Game, aStr: string, bStr: string) {
+  const a = parseInt(aStr);
+  const b = parseInt(bStr);
+  if (a < 1 || b < 1 || a > 5 || b > 5) {
+    return sendPm(
+      user.name,
+      "Usage: %genpos <N>v<M> with 1-5 per team (e.g. %genpos 2v2).",
+    );
+  }
+  const players = game.entities.filter((e) => !e.isMonster);
+  if (a + b !== players.length) {
+    return sendPm(
+      user.name,
+      `${a}v${b} needs exactly ${a + b} players, but ${players.length} joined.`,
+    );
+  }
 
+  const teamA = players.slice(0, a);
+  const teamB = players.slice(a, a + b);
+
+  pushSnapshot(game);
+  const placed = placeTeamPlayers(game, teamA, teamB);
+  if (!placed) {
+    return sendPm(user.name, "Could not find open spawn tiles.");
+  }
+  teamA.forEach((e) => (e.team = 1));
+  teamB.forEach((e) => (e.team = 2));
+  game.mode = `${a}V${b}`;
+  game.modeChosen = true;
+  // Setting a mode directly supersedes any ongoing vote / runoff.
+  game.voteOpen = false;
+  game.votes = {};
+  game.voteRunoff = null;
+  const spots = [...placed[0], ...placed[1]]
+    .map(([e, p]) => `${e.num} (T${e.team}) at ${posToStr(p[0], p[1])}`)
+    .join(" | ");
+  send(room.id, `**Positions set (${a}v${b}):** ${spots}`);
+  broadcastPages(game);
+}
+
+/** %genpos <N><mode> — place N players FFA-style on the map. */
+function genPosFfa(room: Room, user: User, game: Game, n: number, mode: string) {
   if (mode.includes("v")) {
     return sendPm(
       user.name,
@@ -902,9 +899,9 @@ export function placeTeamPlayers(
   teamB: Entity[],
 ):
   | [
-      placedA: [Entity, [number, number]][],
-      placedB: [Entity, [number, number]][],
-    ]
+    placedA: [Entity, [number, number]][],
+    placedB: [Entity, [number, number]][],
+  ]
   | null {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
@@ -915,10 +912,20 @@ export function placeTeamPlayers(
   // See placePlayers: ignore the placed players' old positions so repeated
   // %genpos calls still hit the exact anchors.
   const placing = new Set([...teamA, ...teamB].map((e) => e.id));
+  // Snapshot original positions so a failed placement can be rolled back
+  // atomically instead of leaving entities half-moved.
+  const origPos = new Map<string, [number, number]>();
+  for (const e of [...teamA, ...teamB]) origPos.set(e.id, [...e.pos] as [number, number]);
 
   for (let i = 0; i < teamA.length; i++) {
     const pos = findNearestOpenTile(game, top[i][0], top[i][1], used, placing);
-    if (!pos) return null;
+    if (!pos) {
+      for (const e of [...teamA, ...teamB]) {
+        const orig = origPos.get(e.id);
+        if (orig) e.pos = [...orig] as [number, number];
+      }
+      return null;
+    }
     teamA[i].pos = pos;
     used.add(`${pos[0]},${pos[1]}`);
     outA.push([teamA[i], pos]);
@@ -931,7 +938,13 @@ export function placeTeamPlayers(
       used,
       placing,
     );
-    if (!pos) return null;
+    if (!pos) {
+      for (const e of [...teamA, ...teamB]) {
+        const orig = origPos.get(e.id);
+        if (orig) e.pos = [...orig] as [number, number];
+      }
+      return null;
+    }
     teamB[i].pos = pos;
     used.add(`${pos[0]},${pos[1]}`);
     outB.push([teamB[i], pos]);
@@ -1278,6 +1291,9 @@ function handleSwitchClass(room: Room, user: User, args: string) {
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
   }
+  if (game.modeChosen) {
+    return sendPm(user.name, "The game is already set — loadouts are locked.");
+  }
   if (!applyClassChange(game, room, entity, parts[0])) {
     return sendPm(user.name, `Unknown class: ${parts[0]}. Use %wt to look up.`);
   }
@@ -1294,6 +1310,9 @@ function handleSwitchWeapon(room: Room, user: User, args: string) {
   }
   const entity = getEntity(game, user.name);
   if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
+  if (game.modeChosen) {
+    return sendPm(user.name, "The game is already set — loadouts are locked.");
+  }
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
   }
@@ -1319,6 +1338,9 @@ function handleSelfLoadout(room: Room, user: User, args: string) {
   }
   const entity = getEntity(game, user.name);
   if (!entity) return sendPm(user.name, `Unknown entity: ${user.name}`);
+  if (game.modeChosen) {
+    return sendPm(user.name, "The game is already set — loadouts are locked.");
+  }
   if (!mayChangeLoadout(user, game, entity)) {
     return sendPm(user.name, "The game has already started.");
   }
@@ -1415,13 +1437,13 @@ function applyEntityLevel(
   entity.abilities = [
     ...(classData
       ? classData.abilities.filter((a) =>
-          hasAbility(a, level, !!entity.isJuggernaut),
-        )
+        hasAbility(a, level, !!entity.isJuggernaut),
+      )
       : []),
     ...(weaponData
       ? weaponData.abilities.filter((a) =>
-          hasAbility(a, level, !!entity.isJuggernaut),
-        )
+        hasAbility(a, level, !!entity.isJuggernaut),
+      )
       : []),
   ] as any[];
   return oldLvl;
@@ -1586,21 +1608,7 @@ function handleSetMap(room: Room, user: User, args: string) {
   // recommendations plus any volunteer maps tagged for the mode).
   // (e.g. %setmap pvp, %setmap 1v1, %setmap 2v2).
   const modeId = modeIdFor(lower);
-  if (modeId) {
-    let pick = randomMapForMode(lower)!;
-    // Avoid instantly re-setting the same map when the pool has options.
-    if (GAMEMODE_MAPS[modeId].length > 1 && game.mapName) {
-      for (let tries = 0; tries < 4; tries++) {
-        if (getMapByName(pick)?.displayName !== game.mapName) break;
-        pick = randomMapForMode(lower)!;
-      }
-    }
-    const modeDef = getMapByName(pick);
-    if (modeDef) {
-      applyMap(game, modeDef, ` — random ${modeId.toUpperCase()} pick`);
-      return;
-    }
-  }
+  if (modeId && pickRandomModeMap(game, lower, modeId)) return;
 
   // Curated map database
   const def = getMapByName(lower);
@@ -1611,31 +1619,7 @@ function handleSetMap(room: Room, user: User, args: string) {
 
   // %setmap gen [12|16|20] — the ONLY procedural map trigger.
   if (lower === "gen" || lower.startsWith("gen ")) {
-    const size = lower === "gen" ? 12 : parseInt(lower.slice(4));
-    if (
-      lower !== "gen" &&
-      (isNaN(size) || (size !== 12 && size !== 16 && size !== 20))
-    ) {
-      return sendPm(user.name, "Usage: %setmap gen [12|16|20].");
-    }
-    let grid: Terrain[][];
-    let displayName: string;
-    if (size === 16) {
-      grid = generateMediumMap();
-      displayName = "Procedural (16x16)";
-    } else if (size === 20) {
-      grid = generateLargeMap();
-      displayName = "Procedural (20x20)";
-    } else {
-      grid = generateDefaultMap();
-      displayName = "Procedural (12x12)";
-    }
-    applyMap(game, {
-      grid,
-      displayName,
-      rows: grid.length,
-      cols: grid[0]?.length ?? 0,
-    });
+    applyProceduralMap(game, user, lower);
     return;
   }
 
@@ -1643,6 +1627,48 @@ function handleSetMap(room: Room, user: User, args: string) {
     user.name,
     "Unknown map. Use %listmaps to see curated maps, or %setmap gen for a procedural map.",
   );
+}
+
+/** Pick a random map from a gamemode's pool, avoiding instantly re-setting the same map. */
+function pickRandomModeMap(game: Game, lower: string, modeId: string) {
+  let pick = randomMapForMode(lower)!;
+  if (GAMEMODE_MAPS[modeId].length > 1 && game.mapName) {
+    for (let tries = 0; tries < 4; tries++) {
+      if (getMapByName(pick)?.displayName !== game.mapName) break;
+      pick = randomMapForMode(lower)!;
+    }
+  }
+  const modeDef = getMapByName(pick);
+  if (!modeDef) return false;
+  applyMap(game, modeDef, ` — random ${modeId.toUpperCase()} pick`);
+  return true;
+}
+
+/** Apply a procedurally generated map of the requested size (gen [12|16|20]). */
+function applyProceduralMap(game: Game, user: User, lower: string) {
+  const sizeArg = lower.slice(4).trim();
+  if (lower !== "gen" && !["12", "16", "20"].includes(sizeArg)) {
+    return sendPm(user.name, "Usage: %setmap gen [12|16|20].");
+  }
+  const size = lower === "gen" ? 12 : Number(sizeArg);
+  let grid: Terrain[][];
+  let displayName: string;
+  if (size === 16) {
+    grid = generateMediumMap();
+    displayName = "Procedural (16x16)";
+  } else if (size === 20) {
+    grid = generateLargeMap();
+    displayName = "Procedural (20x20)";
+  } else {
+    grid = generateDefaultMap();
+    displayName = "Procedural (12x12)";
+  }
+  applyMap(game, {
+    grid,
+    displayName,
+    rows: grid.length,
+    cols: grid[0]?.length ?? 0,
+  });
 }
 
 // -- .listmaps [size] - List available maps -----------------------------------
@@ -1810,6 +1836,19 @@ function handleStart(room: Room, user: User) {
   broadcastPages(game);
 }
 
+// -- .toggleidle - Toggle players idle ---------------------------------------------------
+
+function handleToggleIdle(room: Room, user: User) {
+  const game = findGameForRoom(room.id);
+  if (!game) return sendPm(user.name, "No active game in this room.");
+  if (toId(user.name) !== toId(game.host)) {
+    return sendPm(user.name, "Only the host can use %toggleidle.");
+  }
+  game.playersIdle = !game.playersIdle;
+  send(room.id, `**Players Idle**: ${game.playersIdle ? "Enabled" : "Disabled"}`);
+  broadcastPages(game);
+}
+
 // -- Map generators ------------------------------------------------------------
 
 function generateDefaultMap(): Terrain[][] {
@@ -1932,13 +1971,8 @@ export function findSpawnPosition(game: Game): [number, number] {
     for (let dr = -radius; dr <= radius; dr++) {
       for (let dc = -radius; dc <= radius; dc++) {
         if (Math.abs(dr) !== radius && Math.abs(dc) !== radius) continue;
-        const r = centerR + dr;
-        const c = centerC + dc;
-        if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
-        if (!isStandable(game.map[r][c])) continue;
-        if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c))
-          continue;
-        return [r, c];
+        const pos = openSpawnAt(game, centerR + dr, centerC + dc);
+        if (pos) return pos;
       }
     }
   }
@@ -1947,10 +1981,18 @@ export function findSpawnPosition(game: Game): [number, number] {
   // dump a spawn onto Broken/Lava/obstruction blindly.
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (!isStandable(game.map[r][c])) continue;
-      if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c)) continue;
-      return [r, c];
+      const pos = openSpawnAt(game, r, c);
+      if (pos) return pos;
     }
   }
   return [1, 1];
+}
+
+/** [r,c] when the tile is in-bounds, standable, and unoccupied; else null. */
+function openSpawnAt(game: Game, r: number, c: number): [number, number] | null {
+  if (r < 0 || r >= game.map.length || c < 0 || c >= (game.map[0]?.length ?? 0))
+    return null;
+  if (!isStandable(game.map[r][c])) return null;
+  if (game.entities.some((e) => e.pos[0] === r && e.pos[1] === c)) return null;
+  return [r, c];
 }

@@ -90,6 +90,19 @@ const VARIANTS: Record<string, NonNullable<AbilityData["variants"]>> = {
   ],
 };
 
+// 4.3 source data leaves the target-group column blank ("-") for these
+// tile-placement and defensive abilities; pin them to their intended groups
+// (mirrors the 4.4 data).
+const TARGET_GROUPS: Record<string, string> = {
+  "Ice Wall": "Tile",
+  "Flash Freeze": "Self",
+  "Blood Storm": "Tile",
+  "Masonry": "Tile",
+  "Terraform": "Tile",
+  "Rototill": "Foe",
+  "Bloom": "Tile",
+};
+
 function parseAbility(r: Row): AbilityData {
   const level = num(r[1]);
   const damageType = (() => {
@@ -119,7 +132,7 @@ function parseAbility(r: Row): AbilityData {
     damageType: damageType as AbilityData["damageType"],
     actionType: actionType as AbilityData["actionType"],
     targetAmount,
-    targetGroup: r[8] === "-" ? "" : r[8],
+    targetGroup: TARGET_GROUPS[r[0]] ?? (r[8] === "-" ? "" : r[8]),
     range: r[9] === "-" ? "" : r[9],
     effect: stripQuotes(r[10]),
   };

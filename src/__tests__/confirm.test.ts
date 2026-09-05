@@ -86,6 +86,7 @@ function makeGame(
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
@@ -348,6 +349,45 @@ describe("confirm", () => {
 
     expect(user.pendingAction).toBeNull();
     expect(game.entities.some((e) => e.num === "P2")).toBe(false);
+    expect(game.kills.P1).toBe(1);
+  });
+
+  it("does not credit the attacker's own recoil death as a kill", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+      atk: 999,
+      pd: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+      curhp: 1,
+      maxhp: 100,
+      pd: 0,
+      md: 0,
+      eva: 0,
+    });
+    const game = makeGame({ entities: [user, target] });
+    games.set(game.id, game);
+
+    const ability = makeAbility({
+      name: "Kamikaze",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "recoil 100%",
+    });
+    user.pendingAction = { type: "attack", ability, target: "P2" };
+
+    gameCommand(room, alice, "confirm", "", "");
+
+    expect(game.entities.some((e) => e.num === "P2")).toBe(false);
+    expect(game.entities.some((e) => e.num === "P1")).toBe(false);
+    expect(game.kills.P1).toBe(1);
   });
 });
 

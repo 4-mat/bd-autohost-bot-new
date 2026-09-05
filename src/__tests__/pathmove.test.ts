@@ -13,6 +13,7 @@ import {
   pathState,
   reachPreview,
   dashMode,
+  gridHidden,
   premoveSet,
   movementKey,
 } from "../html/pages.js";
@@ -26,6 +27,7 @@ beforeEach(() => {
   pathState.clear();
   reachPreview.clear();
   dashMode.clear();
+  gridHidden.clear();
   premoveSet.clear();
 });
 
@@ -142,6 +144,16 @@ describe("interactive movement pathing", () => {
     gameCommand(room, alice, "pathstep", "b", "2,P1"); // [1,1], ok (2 MP)
     expect(pathState.get(key1(game))?.length).toBe(2);
     gameCommand(room, alice, "pathstep", "c", "3,P1"); // occupied
+    expect(pathState.get(key1(game))?.length).toBe(2);
+  });
+
+  it("allows pathing back through the mover's own tile", () => {
+    const game = freshGame();
+    gameCommand(room, alice, "pathstep", "a", "2,P1"); // [0,1]
+    expect(pathState.get(key1(game))?.length).toBe(1);
+    // [0,0] is the mover's own start tile — not a foreign occupant, so the
+    // path can pass back through it (PR-Agent on #188).
+    gameCommand(room, alice, "pathstep", "a", "1,P1");
     expect(pathState.get(key1(game))?.length).toBe(2);
   });
 
@@ -283,5 +295,73 @@ describe("interactive movement pathing", () => {
     expect(dashMode.has(key1(game))).toBe(false);
     expect(reachPreview.get(key1(game))).toBeUndefined();
     expect(pathState.get(k2)).toBeUndefined();
+  });
+});
+
+describe("map grid toggle (%grid)", () => {
+  // Exact map-table opening tags: with and without the grid border. The map
+  // table is the only `<table align="center" ...>` without a class, so these
+  // uniquely match it (the player-data/log tables carry their own borders
+  // regardless of the grid toggle).
+  const GRID_ON =
+    '<table align="center" style="border-spacing:0px;border-collapse:collapse;border:1px solid #888;background:rgba(120,120,225,0.10)">';
+  const GRID_OFF =
+    '<table align="center" style="border-spacing:0px;border-collapse:collapse;background:rgba(120,120,225,0.10)">';
+
+  it("defaults to the grid on and hides it per viewer via %grid", () => {
+    const game = freshGame();
+    const p1 = game.entities[0];
+
+    // Default: gridlines present, button reads "Grid: on".
+    let html = buildPlayerPage(game, p1);
+    expect(html).toContain(GRID_ON);
+    expect(html).toContain("Grid: on");
+
+    gameCommand(room, alice, "grid", "Alice", "");
+    expect(gridHidden.has(key1(game))).toBe(true);
+
+    // Player page now renders the map without tile/table borders.
+    html = buildPlayerPage(game, p1);
+    expect(html).toContain(GRID_OFF);
+    expect(html).not.toContain(GRID_ON);
+    expect(html).toContain("Grid: off");
+
+    // Toggling back restores the grid.
+    gameCommand(room, alice, "grid", "Alice", "");
+    expect(gridHidden.has(key1(game))).toBe(false);
+    expect(buildPlayerPage(game, p1)).toContain(GRID_ON);
+  });
+
+  it("a player without a name toggles their own view", () => {
+    const game = freshGame();
+    const p1 = game.entities[0];
+
+    gameCommand(room, alice, "grid", "", "");
+    expect(gridHidden.has(key1(game))).toBe(true);
+    expect(buildPlayerPage(game, p1)).toContain(GRID_OFF);
+  });
+
+  it("a player cannot toggle another player's grid", () => {
+    const game = freshGame();
+    const p2 = game.entities[1];
+
+    gameCommand(room, alice, "grid", "Bob", "");
+    expect(gridHidden.has(movementKey(game, p2))).toBe(false);
+  });
+
+  it("the host toggles the host-page view with no name and a named entity with one", () => {
+    const game = freshGame();
+    const p1 = game.entities[0];
+    const host: User = { id: "host", name: game.host, rooms: {}, last: 0 };
+
+    // Host page defaults to grid on; %grid (no name) hides the host view.
+    expect(buildHostPage(game)).toContain(GRID_ON);
+    gameCommand(room, host, "grid", "", "");
+    expect(buildHostPage(game)).toContain(GRID_OFF);
+
+    // Host may also toggle a named player's view.
+    gameCommand(room, host, "grid", "Alice", "");
+    expect(gridHidden.has(key1(game))).toBe(true);
+    expect(buildPlayerPage(game, p1)).toContain(GRID_OFF);
   });
 });

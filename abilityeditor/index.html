@@ -464,6 +464,8 @@
       <div id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></div>
       <span class="spacer"></span>
       <span id="dirty-chip">● unsaved edits</span>
+      <button id="btn-import" title="Import a saved .json export of the editor data">Import</button>
+      <button id="btn-export" title="Download the current editor data (classes, weapons, abilities) as a .json file">Export</button>
       <button id="btn-revert" title="Discard all unsaved edits (reload data from src/data/index.ts)">Revert</button>
       <button id="btn-save" class="primary" title="Regenerate src/data/index.ts with the current edits (customs are excluded)">Save to Bot</button>
     </header>
@@ -501,7 +503,7 @@
       kind: "class",
       selected: null,
       filter: "",
-      data: { classes: [], weapons: [], customs: [] },
+      data: { classes: [], weapons: [], customClasses: [], customWeapons: [] },
       pending: false,
       dirty: false,
     };
@@ -522,8 +524,12 @@
     function list() {
       return state.data[state.kind === "class" ? "classes" : "weapons"];
     }
+    function customListFor(kind) {
+      return kind === "class" ? state.data.customClasses : state.data.customWeapons;
+    }
     function isCustomName(name) {
-      return state.data.customs.includes(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
+      const list = customListFor(state.kind);
+      return list.includes(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
     }
     function getItem(name) {
       return list().find((x) => x.name === name) || null;
@@ -562,7 +568,8 @@
       const data = {
         classes: (base.classes || []).map((c) => JSON.parse(JSON.stringify(c))),
         weapons: (base.weapons || []).map((w) => JSON.parse(JSON.stringify(w))),
-        customs: [],
+        customClasses: [],
+        customWeapons: [],
       };
       try {
         const saved = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
@@ -572,9 +579,13 @@
           // (e.g. the demo was rebuilt and it became a real class).
           if (c.kind === "class" && data.classes.some((x) => x.name === c.entry.name)) continue;
           if (c.kind === "weapon" && data.weapons.some((x) => x.name === c.entry.name)) continue;
-          if (c.kind === "class") data.classes.push(c.entry);
-          else if (c.kind === "weapon") data.weapons.push(c.entry);
-          data.customs.push(toId(c.entry.name));
+          if (c.kind === "class") {
+            data.classes.push(c.entry);
+            data.customClasses.push(toId(c.entry.name));
+          } else if (c.kind === "weapon") {
+            data.weapons.push(c.entry);
+            data.customWeapons.push(toId(c.entry.name));
+          }
         }
       } catch (e) {
         /* corrupt storage — start fresh */
@@ -587,8 +598,9 @@
         const out = [];
         for (const kind of ["class", "weapon"]) {
           const arr = state.data[kind === "class" ? "classes" : "weapons"];
+          const list = customListFor(kind);
           for (const item of arr) {
-            if (state.data.customs.includes(toId(item.name))) {
+            if (list.includes(toId(item.name))) {
               out.push({ kind, entry: item });
             }
           }
@@ -604,7 +616,10 @@
         case "/api/data":
           return Promise.resolve(state.data);
         case "/api/status":
-          return Promise.resolve({ pendingRegen: false, customCount: state.data.customs.length });
+          return Promise.resolve({
+            pendingRegen: false,
+            customCount: state.data.customClasses.length + state.data.customWeapons.length,
+          });
         case "/api/update":
           return Promise.resolve({ ok: true }); // GUI applies the patch locally
         case "/api/ability":
@@ -628,6 +643,17 @@
       const abilities = item.abilities || (item.abilities = []);
       if (body.action === "save") {
         const i = abilities.findIndex((x) => x.name === body.name);
+        // Renaming into an id another ability already uses must be rejected
+        // (mirrors the server-side guard in abilityeditor/server.ts).
+        const rawName = body.ability?.name;
+        if (typeof rawName !== "string" || !rawName.trim()) {
+          return Promise.reject(new Error("ability needs a name"));
+        }
+        body.ability.name = rawName.trim();
+        const newId = toId(body.ability.name);
+        if (i >= 0 && newId !== toId(String(body.name)) && abilities.some((x) => toId(String(x.name)) === newId)) {
+          return Promise.reject(new Error("An ability with that name already exists"));
+        }
         if (i >= 0) abilities[i] = body.ability;
         else abilities.push(body.ability);
       } else if (body.action === "add") {
@@ -637,7 +663,8 @@
         if (i >= 0) abilities.splice(i, 1);
       }
       // Persist custom entries so their edits survive a reload in demo mode.
-      if (state.data.customs.includes(toId(item.name))) persistCustoms();
+      const kindList = customListFor(body.kind);
+      if (kindList.includes(toId(item.name))) persistCustoms();
       return Promise.resolve({ ok: true });
     }
 
@@ -657,7 +684,8 @@
       entry.abilities = [];
       arr.push(entry);
       const id = toId(name);
-      if (!state.data.customs.includes(id)) state.data.customs.push(id);
+      const kindList = customListFor(kind);
+      if (!kindList.includes(id)) kindList.push(id);
       persistCustoms();
       return Promise.resolve({ ok: true });
     }
@@ -667,7 +695,10 @@
       const arr = state.data[kind === "class" ? "classes" : "weapons"];
       const i = arr.findIndex((x) => x.name === body.name);
       if (i >= 0) arr.splice(i, 1);
-      state.data.customs = state.data.customs.filter((id) => id !== toId(body.name));
+      const kindList = customListFor(kind);
+      state.data[kind === "class" ? "customClasses" : "customWeapons"] = kindList.filter(
+        (id) => id !== toId(body.name),
+      );
       persistCustoms();
       return Promise.resolve({ ok: true });
     }
@@ -755,6 +786,114 @@
       toast("Proposal drafted — a GitHub issue should open in a new tab.", "ok");
     }
 
+    // ---------- export / import ----------
+
+    // The full working dataset (classes, weapons, customs + custom id lists).
+    // Custom test entries are included so a shared file round-trips exactly.
+    function exportedData() {
+      return {
+        format: "bd-ability-editor",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        classes: JSON.parse(JSON.stringify(state.data.classes || [])),
+        weapons: JSON.parse(JSON.stringify(state.data.weapons || [])),
+        customClasses: (state.data.customClasses || []).slice(),
+        customWeapons: (state.data.customWeapons || []).slice(),
+      };
+    }
+
+    async function exportData() {
+      const data = exportedData();
+      try {
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "bd-ability-editor-" + new Date().toISOString().slice(0, 10) + ".json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        toast("Exported " + data.classes.length + " classes and " + data.weapons.length + " weapons.", "ok");
+      } catch (e) {
+        toast("Export failed: " + e.message, "err");
+      }
+    }
+
+    function importData(raw) {
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== "object") throw new Error("Not a valid JSON object.");
+      // Filter invalid entries (missing a name) FIRST so the custom-id lists
+      // below can never reference a dropped entry.
+      const classes = Array.isArray(data.classes)
+        ? data.classes.filter((c) => c && c.name)
+        : [];
+      const weapons = Array.isArray(data.weapons)
+        ? data.weapons.filter((w) => w && w.name)
+        : [];
+      if (classes.length + weapons.length === 0)
+        throw new Error("No classes or weapons found in that file.");
+      // Accept both the editor's own format and a bare { classes, weapons }.
+      // Only entries the payload EXPLICITLY lists as custom are custom: a
+      // bare payload carries no custom lists, so its entries are treated as
+      // regular data (marking every imported entry as custom would silently
+      // exclude all of them from "Save to Bot", which skips customs).
+      const customClasses = Array.isArray(data.customClasses)
+        ? data.customClasses.map((s) => String(s))
+        : [];
+      const customWeapons = Array.isArray(data.customWeapons)
+        ? data.customWeapons.map((s) => String(s))
+        : [];
+      state.data = {
+        classes,
+        weapons,
+        customClasses,
+        customWeapons,
+      };
+      state.pending = true;
+      state.dirty = true;
+      state.selected = null;
+      state.openAbility = null;
+    }
+
+    function importViaFile() {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "application/json,.json";
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        // Import replaces the whole working set: warn before discarding
+        // unsaved edits (the reviewer flagged silent data loss here).
+        if (
+          state.dirty &&
+          !confirm(
+            "Importing will discard your unsaved edits and replace the whole dataset. Continue?",
+          )
+        )
+          return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            importData(String(reader.result));
+            renderList();
+            $("#empty-state").style.display = "";
+            $("#detail").style.display = "none";
+            // In demo mode, persist the imported customs so they survive reloads.
+            if (STATIC) persistCustoms();
+            refreshStatus();
+            toast("Imported editor data.", "ok");
+          } catch (e) {
+            toast("Import failed: " + e.message, "err");
+          }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    }
+
     async function fetchData() {
       const d = STATIC ? state.data : await api("/api/data");
       state.data = d;
@@ -810,13 +949,14 @@
         state.pending = false;
         $("#dirty-chip").classList.toggle("show", state.pending || state.dirty);
         $("#dot").className = "dot on";
+        const nCustom = state.data.customClasses.length + state.data.customWeapons.length;
         $("#status-text").textContent =
           "demo mode · " +
           list().length +
           " " +
           state.kind +
           (state.kind === "class" ? "es" : "s") +
-          (state.data.customs.length ? " · " + state.data.customs.length + " custom" : "");
+          (nCustom ? " · " + nCustom + " custom" : "");
         return;
       }
       try {
@@ -861,6 +1001,101 @@
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") done(input.value.trim() || null);
         if (e.key === "Escape") done(null);
+      });
+    }
+
+    // ---------- cross-branch copy ----------
+
+    // Flush a card's pending edits (same deferred-save path as flushAbility)
+    // so the copy uses the latest typed values. Returns the collected ability
+    // record, or null if the current item is gone.
+    async function abilityFromCard(card) {
+      const item = currentItem();
+      if (!item) return null;
+      const ability = collectAbility(card);
+      if (!ability.name || !String(ability.name).trim()) return null;
+      return ability;
+    }
+
+    function copyAbilityModal(idx) {
+      const source = currentItem();
+      if (!source) return;
+      const sourceName = source.name;
+
+      const back = document.createElement("div");
+      back.className = "modal-backdrop";
+      const kinds = ["class", "weapon"];
+      const kindOpts = kinds
+        .map(
+          (k) =>
+            '<option value="' +
+            k +
+            '">' +
+            (k === "class" ? "Classes" : "Weapons") +
+            "</option>",
+        )
+        .join("");
+      const renderItems = (kind) =>
+        state.data[kind === "class" ? "classes" : "weapons"]
+          .filter((x) => x.name !== sourceName || kind !== state.kind)
+          .map(
+            (x) =>
+              '<option value="' +
+              esc(x.name) +
+              '">' +
+              esc(x.name) +
+              "</option>",
+          )
+          .join("");
+      back.innerHTML =
+        '<div class="modal"><h3>Copy ability to…</h3><div class="field"><label>Item type</label><select id="copy-kind">' +
+        kindOpts +
+        '</select></div><div class="field"><label id="copy-dest-label"></label><select id="copy-item"></select></div><div class="actions"><button data-act="cancel">Cancel</button><button data-act="copy" class="primary">Copy</button></div></div>';
+      document.body.appendChild(back);
+      const kindSel = back.querySelector("#copy-kind");
+      const itemSel = back.querySelector("#copy-item");
+      const destLabel = back.querySelector("#copy-dest-label");
+      function refresh(kind) {
+        // The destination label must follow the dropdown, not the source
+        // item's kind (the reviewer flagged it showing "class" while
+        // targeting a weapon).
+        destLabel.textContent = "Destination (" + kind + ")";
+        itemSel.innerHTML = renderItems(kind);
+      }
+      refresh(kindSel.value);
+      kindSel.addEventListener("change", () => refresh(kindSel.value));
+
+      const close = () => back.remove();
+      back.addEventListener("click", async (e) => {
+        if (e.target === back) return close();
+        const act = e.target.closest("button")?.dataset.act;
+        if (act === "cancel") return close();
+        if (act !== "copy") return;
+        const destKind = kindSel.value;
+        const destName = itemSel.value;
+        if (!destName) {
+          toast("Pick a destination item to copy into.", "warn");
+          return;
+        }
+        const card = document.querySelector("#detail .ability-card[data-idx='" + idx + "']");
+        const ability = card ? await abilityFromCard(card) : null;
+        if (!ability) {
+          toast("That ability is missing a name.", "err");
+          return;
+        }
+        const copy = JSON.parse(JSON.stringify(ability));
+        try {
+          await api("/api/ability", {
+            kind: destKind,
+            owner: destName,
+            action: "add",
+            ability: copy,
+          });
+          close();
+          toast('Copied "' + copy.name + '" to ' + destName + ".", "ok");
+        } catch (err) {
+          toast(err.message, "err");
+        }
       });
     }
 
@@ -960,7 +1195,9 @@
           choices,
           { textarea: true, full: true },
         ) +
-        '<div class="card-actions"><button class="mini danger" data-act="del-ability" data-idx="' +
+        '<div class="card-actions"><button class="mini" data-act="copy-ability" data-idx="' +
+        idx +
+        '">Copy to…</button><button class="mini danger" data-act="del-ability" data-idx="' +
         idx +
         '">Delete ability</button></div>'
       );
@@ -1198,7 +1435,8 @@
             renderList();
           }
           // Keep custom edits persisted in demo mode (they live in localStorage).
-          if (STATIC && state.data.customs.includes(toId(newName))) persistCustoms();
+          const renameList = customListFor(state.kind);
+          if (STATIC && renameList.includes(toId(newName))) persistCustoms();
         } catch (e) {
           toast(e.message, "err");
         }
@@ -1320,6 +1558,7 @@
       const act = actEl.dataset.act;
       if (act === "add-ability") addAbility();
       else if (act === "del-ability") deleteAbility(Number(actEl.dataset.idx));
+      else if (act === "copy-ability") copyAbilityModal(Number(actEl.dataset.idx));
       else if (act === "del-custom") deleteCustom();
     });
 
@@ -1448,6 +1687,8 @@
     $("#btn-save").addEventListener("click", saveToBot);
     $("#btn-revert").addEventListener("click", revertAll);
     $("#btn-new").addEventListener("click", newCustom);
+    $("#btn-export").addEventListener("click", exportData);
+    $("#btn-import").addEventListener("click", importViaFile);
 
     // ---------- init ----------
     (async function init() {
