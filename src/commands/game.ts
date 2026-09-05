@@ -49,12 +49,25 @@ import {
   isConfused,
   getEffectiveMp,
   parseFrequency,
+  isStandable,
   type Game,
   type Entity,
   type AbilityData,
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
-import { buildHostPage, buildPlayerPage, premoveSet } from "../html/pages.js";
+import {
+  buildHostPage,
+  buildPlayerPage,
+  premoveSet,
+  pathState,
+  reachPreview,
+  dashMode,
+  gridHidden,
+  clearMovementState,
+  clearGameMovementState,
+  movementKey,
+  pathCost,
+} from "../html/pages.js";
 import {
   resolveAction,
   respondToChoice,
@@ -114,6 +127,7 @@ const GAME_CMDS: Record<string, GameCmd> = {
   endturn: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   next: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   back: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
+  undo: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
   r: (_g, u, args) => handleRoll(u.name, args),
   roll: (_g, u, args) => handleRoll(u.name, args),
   dice: (_g, u, args) => handleRoll(u.name, args),
@@ -122,6 +136,18 @@ const GAME_CMDS: Record<string, GameCmd> = {
   premove: (g, u) => withGame(g, u, (game) => handlePremove(game, u)),
   passmove: (g, u) => withGame(g, u, (game) => handlePassMove(game, u)),
   pass: (g, u) => withGame(g, u, (game) => handlePassMove(game, u)),
+  pathstep: (g, u, _a, full) =>
+    withGame(g, u, (game) => handlePathStep(game, u, full)),
+  confirmmove: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleConfirmMove(game, u, full)),
+  cancelpath: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleCancelPath(game, u, full)),
+  viewreach: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleViewReach(game, u, full)),
+  dashmode: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleDashMode(game, u, full)),
+  grid: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleGridToggle(game, u, full)),
   pl: (g, u) => withGame(g, u, (game) => sendPm(u.name, buildPlayerList(game))),
   log: (g, u, args) => withGame(g, u, (game) => handleLog(game, u, args)),
   to: (g, u) => withGame(g, u, (game) => sendPm(u.name, buildTurnOrder(game))),
@@ -163,10 +189,12 @@ export function gameCommand(
   }
 
   const full = val ? `${args},${val}` : args;
+
   const handler = GAME_CMDS[cmd];
   if (handler) {
     handler(game, user, args, full);
     return;
+
   }
   sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
 }
@@ -237,17 +265,29 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
   const dash = cmd === "dash";
   const mp = dash ? Math.floor(getEffectiveMp(entity) * 1.5) : entity.mp;
+  // Pass the mover for dash too so its own tile is never treated as an
+  // occupied foreign tile; the 1.5x dash budget avoids the effective-MP
+  // clamp by requesting clampToEffective=false.
   const reachable = getReachableTiles(
     game,
     entity.pos,
     mp,
-    dash ? undefined : entity,
+    entity,
+    !dash,
   );
   const key = posToStr(pos[0], pos[1]);
 
   if (!reachable.has(key)) {
     failAct(game, entity, "tile not reachable");
     return sendPm(user.name, "That tile is not reachable with remaining MP.");
+  }
+
+  const occupied = game.entities.some(
+    (e) => e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
+  );
+  if (occupied) {
+    failAct(game, entity, "tile occupied");
+    return sendPm(user.name, "That tile is occupied.");
   }
 
   pushSnapshot(game);
@@ -257,7 +297,8 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
     entity.dashUsed = true;
     entity.standardUsed = true;
   }
-  premoveSet.delete(entity.num);
+  premoveSet.delete(movementKey(game, entity));
+  clearMovementState(game, entity);
 
   logEntry(
     game,
@@ -476,6 +517,8 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   if (ability.actionType === "Full") {
     entity.standardUsed = true;
     entity.movementUsed = true;
+    premoveSet.delete(movementKey(game, entity));
+    clearMovementState(game, entity);
   }
   if (ability.actionType === "Trigger") entity.triggered = true;
   entity.pendingAction = {
@@ -713,6 +756,15 @@ function handleVoteStatus(game: Game, user: User) {
   sendPm(user.name, buildVoteStatus(game));
 }
 
+function creditKills(game: Game, entity: Entity, step: AttackStep) {
+  if (step.done === false) return;
+  for (const death of step.result.deaths) {
+    if (death.num !== entity.num) {
+      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+    }
+  }
+}
+
 function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
@@ -745,12 +797,15 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
     send(game.room, msg);
   }
 
+  creditKills(game, entity, step);
+
   logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
 
   entity.pendingAction = null;
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
+    clearGameMovementState(game);
     announceGameOver(game, winner);
     return;
   }
@@ -785,30 +840,20 @@ function handleCancel(game: Game, user: User) {
 }
 
 function handleAdvanceTurn(game: Game, user: User) {
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can advance turns.");
-  }
-
   const entity = getCurrentEntity(game);
-  if (!entity) return;
+  const phase = game.phase;
+  if (!entity || phase !== "playing")
+    return sendPm(user.name, "No active turn.");
+
+  const guard = advanceTurnGuard(game, user, entity);
+  if (guard) return sendPm(user.name, guard);
 
   pushSnapshot(game);
 
-  let acted = "";
 
-  // Stunned entities can't act — skip their action and clear pending
-  if (isStunned(entity)) {
-    if (entity.pendingAction) {
-      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
-      entity.pendingAction = null;
-    } else {
-      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
-    }
-  } else if (entity.pendingAction) {
-    const done = resolvePendingAction(game, user, entity);
-    if (done === null) return; // prompt needs an answer — turn not advanced
-    acted = done;
-  }
+  const acted = resolveTurnActions(game, user, entity);
+  if (acted === null) return; // prompt needs an answer — turn not advanced
+
 
   if (
     acted ||
@@ -820,6 +865,11 @@ function handleAdvanceTurn(game: Game, user: User) {
       acted || `${entity.num} (${entity.name}) -- turn passed`,
     );
   }
+
+  // Any in-progress movement path/reach preview ends only once the turn
+  // actually advances (not when a pending action still needs input). Iterates
+  // store keys so entities removed during resolution are cleared too.
+  clearGameMovementState(game);
 
   // If the actor died mid-turn (recoil/confusion), removeEntity already
   // repositioned turnIndex onto the next entity; tell nextTurn so it does
@@ -838,6 +888,49 @@ function handleAdvanceTurn(game: Game, user: User) {
   broadcastPages(game);
 }
 
+/**
+ * Authorization guard for advancing the turn. Returns an error message to
+ * send back to the user, or null when the advance is permitted. Extracted
+ * from handleAdvanceTurn to keep its cyclomatic complexity under the limit.
+ */
+function advanceTurnGuard(game: Game, user: User, entity: Entity): string | null {
+  const isHost = toId(user.name) === toId(game.host);
+  const isSelf = toId(entity.name) === toId(user.name);
+
+  if (isHost) return null;
+  if (!isSelf) return "It's not your turn.";
+  if (!game.playersIdle) return "The host hasn't enabled this option";
+  return null;
+}
+
+/**
+ * Advance a single entity's action: skip if stunned, resolve a pending
+ * action, or pass. Returns null when the turn must NOT advance (a prompt
+ * answer is needed), otherwise the acted-summary string (possibly empty when
+ * the entity passed its turn). Extracted from handleAdvanceTurn.
+ */
+function resolveTurnActions(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  // Stunned entities can't act — skip their action and clear pending
+  if (isStunned(entity)) {
+    if (entity.pendingAction) {
+      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
+      entity.pendingAction = null;
+    } else {
+      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
+    }
+    return "";
+  }
+
+  if (!entity.pendingAction) return "";
+  const done = resolvePendingAction(game, user, entity);
+  if (done === null) return null;
+  return done;
+}
+
 /** Handle a death at turn advance: game over, or skip to the next living
  * entity. Returns true when the turn was fully handled. */
 function handleTurnDeath(
@@ -846,6 +939,7 @@ function handleTurnDeath(
 ): boolean {
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
+    clearGameMovementState(game);
     announceGameOver(game, winner);
     return true;
   }
@@ -857,6 +951,7 @@ function handleTurnDeath(
     }
     if (!retry.entity) {
       const winner = checkGameOver(game);
+      clearGameMovementState(game);
       announceGameOver(game, winner);
       return true;
     }
@@ -890,15 +985,23 @@ function resolvePendingAction(
 
   const acted = summarizeResult(game, entity, step.result.messages);
 
-  for (const _ of step.result.deaths) {
+  // Credit kills on the confirm path, excluding self-deaths (recoil /
+  // confusion kills are not kills the entity scored).
+  for (const death of step.result.deaths) {
+    if (death.num === entity.num) continue;
     game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
   }
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
+    clearGameMovementState(game);
     announceGameOver(game, winner);
     return null;
   }
+
+  // The action resolved and the turn advanced — clear the pending action
+  // so it isn't re-run on a later turn.
+  entity.pendingAction = null;
 
   return acted;
 }
@@ -1010,11 +1113,12 @@ function handlePremove(game: Game, user: User) {
     return sendPm(user.name, "You already moved this turn.");
   }
 
-  if (premoveSet.has(entity.num)) {
-    premoveSet.delete(entity.num);
+  const key = movementKey(game, entity);
+  if (premoveSet.has(key)) {
+    premoveSet.delete(key);
     send(game.room, `/me ${entity.num} back to movement view`);
   } else {
-    premoveSet.add(entity.num);
+    premoveSet.add(key);
     send(game.room, `/me ${entity.num} viewing pre-move abilities`);
   }
   broadcastPages(game);
@@ -1074,9 +1178,315 @@ function handlePassMove(game: Game, user: User) {
 
   pushSnapshot(game);
   entity.movementUsed = true;
-  premoveSet.delete(entity.num);
+  premoveSet.delete(movementKey(game, entity));
+  clearMovementState(game, entity);
   logEntry(game, entity, `${entity.num} (${entity.name}) passes movement`);
   send(game.room, `/me ${entity.num} passes movement`);
+  broadcastPages(game);
+}
+
+// -- Interactive movement path handlers ----------------------------------------
+
+function handlePathStep(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entityName = "";
+  let posStr = args;
+
+  const parts = args.split(",").map((s) => s.trim());
+  if (
+    parts.length >= 3 ||
+    (parts.length === 2 &&
+      (isNaN(parseInt(parts[1])) || getEntity(game, parts[1])))
+  ) {
+    entityName = parts[parts.length - 1];
+    posStr = parts.slice(0, -1).join(",");
+  }
+
+  let entity: Entity | null = null;
+  if (entityName && isHost) {
+    entity = getEntity(game, entityName);
+    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
+  } else {
+    entity = getCurrentEntity(game);
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (isStunned(entity)) {
+    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+  }
+  if (isRooted(entity)) {
+    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+  if (entity.dashUsed) {
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
+
+  const pos = parsePos(posStr);
+  if (!pos)
+    return sendPm(user.name, "Invalid tile. Use: %pathstep e4[,entity]");
+
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  if (pos[0] < 0 || pos[0] >= rows || pos[1] < 0 || pos[1] >= cols) {
+    return sendPm(user.name, "That tile is off the map.");
+  }
+  if (!isStandable(game.map[pos[0]][pos[1]])) {
+    return sendPm(user.name, "That tile cannot be moved onto.");
+  }
+  const occupied = game.entities.some(
+    (e) => e !== entity && e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
+  );
+  if (occupied) return sendPm(user.name, "That tile is occupied.");
+
+  const mk = movementKey(game, entity);
+  const path = pathState.get(mk) ?? [];
+  const key = posToStr(pos[0], pos[1]);
+  const idx = path.findIndex(([r, c]) => posToStr(r, c) === key);
+  // Clicking a tile already in the path truncates the path there, keeping the
+  // clicked tile as the new end (lets the player shorten it) regardless of
+  // adjacency. Otherwise it must be adjacent to the current tip to be appended
+  // as the next step.
+  if (idx >= 0) {
+    const candidate = path.slice(0, idx + 1);
+    pathState.set(mk, candidate);
+    broadcastPages(game);
+    return;
+  }
+  const tip = path.length > 0 ? path[path.length - 1] : entity.pos;
+  if (manhattan(tip, pos) !== 1) {
+    return sendPm(user.name, "You can only step to an adjacent tile.");
+  }
+  const candidate = [...path, pos];
+
+  const movementMp = dashMode.has(mk)
+    ? Math.floor(getEffectiveMp(entity) * 1.5)
+    : getEffectiveMp(entity);
+  if (pathCost(game, candidate) > movementMp) {
+    return sendPm(user.name, "That tile costs too much MP.");
+  }
+
+  pathState.set(mk, candidate);
+  broadcastPages(game);
+}
+
+function handleConfirmMove(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entity = getCurrentEntity(game);
+  const name = args.trim();
+  if (isHost && name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    entity = named;
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (isStunned(entity)) {
+    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+  }
+  if (isRooted(entity)) {
+    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+
+  const mk = movementKey(game, entity);
+  const path = pathState.get(mk);
+  if (!path || path.length === 0) {
+    return sendPm(
+      user.name,
+      "No path to confirm. Click tiles on the map first.",
+    );
+  }
+  const isDash = dashMode.has(mk);
+  if (isDash && entity.standardUsed) {
+    return sendPm(
+      user.name,
+      `${entity.num} already used their Standard — Dash is a Full action.`,
+    );
+  }
+  if (isDash && entity.dashUsed) {
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
+  const movementMp = isDash
+    ? Math.floor(getEffectiveMp(entity) * 1.5)
+    : getEffectiveMp(entity);
+  if (pathCost(game, path) > movementMp) {
+    return sendPm(user.name, "That path costs more MP than you have.");
+  }
+
+  const occupied = path.some(([row, col]) =>
+    game.entities.some(
+      (e) =>
+        e !== entity && e.curhp > 0 && e.pos[0] === row && e.pos[1] === col,
+    ),
+  );
+  if (occupied) {
+    return sendPm(user.name, "The path crosses an occupied tile.");
+  }
+
+  const target = path[path.length - 1];
+  pushSnapshot(game);
+  entity.pos = target;
+  entity.movementUsed = true;
+  if (isDash) {
+    entity.dashUsed = true;
+    entity.standardUsed = true;
+  }
+  premoveSet.delete(mk);
+  clearMovementState(game, entity);
+
+  const key = posToStr(target[0], target[1]);
+  logEntry(game, entity, `${entity.num} (${entity.name}) moves to ${key}`);
+  send(game.room, `/me moves ${entity.num} to ${key}`);
+  broadcastPages(game);
+}
+
+function handleCancelPath(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entity = getCurrentEntity(game);
+  const name = args.trim();
+  if (isHost && name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    entity = named;
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+
+  const key = movementKey(game, entity);
+  pathState.delete(key);
+  dashMode.delete(key);
+  broadcastPages(game);
+}
+
+function handleViewReach(game: Game, user: User, args: string) {
+  const parts = args.split(",").map((s) => s.trim());
+  const targetNum = parts[0];
+  const viewerName = parts.slice(1).join(",");
+
+  let viewer: Entity | null = null;
+  if (viewerName) {
+    viewer = getEntity(game, viewerName);
+    if (!viewer) return sendPm(user.name, `Unknown entity: ${viewerName}`);
+  } else {
+    viewer = getCurrentEntity(game);
+  }
+
+  if (!viewer) return sendPm(user.name, "No active turn.");
+  if (
+    toId(viewer.name) !== toId(user.name) &&
+    toId(user.name) !== toId(game.host)
+  ) {
+    return sendPm(user.name, "You can only preview your own view.");
+  }
+
+  const target = getEntity(game, targetNum);
+  if (!target) return sendPm(user.name, `Unknown entity: ${targetNum}`);
+  if (target.num === viewer.num) {
+    return sendPm(
+      user.name,
+      "That's you. Click a highlighted tile to move instead.",
+    );
+  }
+
+  const viewerKey = movementKey(game, viewer);
+  if (reachPreview.get(viewerKey) === target.num) {
+    reachPreview.delete(viewerKey);
+  } else {
+    reachPreview.set(viewerKey, target.num);
+  }
+  broadcastPages(game);
+}
+
+function handleDashMode(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  let entity = getCurrentEntity(game);
+  const name = args.trim();
+  // Host may toggle dash mode for a named entity (the GUI button emits
+  // %dashmode <name>); fall back to the current entity like other movement
+  // commands.
+  if (isHost && name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    entity = named;
+  }
+
+  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, "It's not your turn.");
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+  if (entity.dashUsed) {
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
+  if (entity.standardUsed) {
+    return sendPm(
+      user.name,
+      `${entity.num} already used their Standard — Dash is a Full action.`,
+    );
+  }
+
+  const key = movementKey(game, entity);
+  if (dashMode.has(key)) {
+    dashMode.delete(key);
+    send(game.room, `/me ${entity.num} back to normal movement`);
+  } else {
+    pathState.delete(key);
+    dashMode.add(key);
+    send(game.room, `/me ${entity.num} entering dash mode`);
+  }
+  broadcastPages(game);
+}
+
+// %grid toggles the map gridlines (tile/table borders) for one viewer. It's a
+// display preference, not a gameplay action: no turn/movement checks. The GUI
+// button emits %grid <entity name>; the host may also pass a name to toggle
+// another player's view. Without a name, players toggle their own entity's
+// view and the host toggles the host-page view.
+function handleGridToggle(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const name = args.trim();
+  let entity: Entity | null = null;
+
+  if (name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    if (!isHost && toId(named.name) !== toId(user.name)) {
+      return sendPm(user.name, "You can only toggle your own map grid.");
+    }
+    entity = named;
+  } else if (!isHost) {
+    // No name: non-host players toggle their own view even outside their turn.
+    entity = getEntity(game, user.name);
+    if (!entity) return sendPm(user.name, "No entity found for you.");
+  }
+
+  const key = entity ? movementKey(game, entity) : `${game.id}:host`;
+  if (gridHidden.has(key)) {
+    gridHidden.delete(key);
+    sendPm(user.name, "Map grid: on");
+  } else {
+    gridHidden.add(key);
+    sendPm(user.name, "Map grid: off");
+  }
   broadcastPages(game);
 }
 
