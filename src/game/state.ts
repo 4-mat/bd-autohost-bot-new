@@ -235,9 +235,25 @@ export interface PendingAction {
 
 export const DIRECTION_LABELS: Record<string, string> = {
   up: "\u2191 Up",
-  down: "\u2193 Down",
-  left: "\u2190 Left",
+  "up-right": "\u2197 Up-Right",
   right: "\u2192 Right",
+  "down-right": "\u2198 Down-Right",
+  down: "\u2193 Down",
+  "down-left": "\u2199 Down-Left",
+  left: "\u2190 Left",
+  "up-left": "\u2196 Up-Left",
+};
+
+// Row/col deltas for each direction label (row, col).
+const DIRECTION_DELTAS: Record<string, [number, number]> = {
+  up: [-1, 0],
+  "up-right": [-1, 1],
+  right: [0, 1],
+  "down-right": [1, 1],
+  down: [1, 0],
+  "down-left": [1, -1],
+  left: [0, -1],
+  "up-left": [-1, -1],
 };
 
 export function needsDirection(ability: AbilityData): boolean {
@@ -245,8 +261,15 @@ export function needsDirection(ability: AbilityData): boolean {
   return /^(cone|line|beam|pierce)\b/.test(r);
 }
 
-export function getDirectionCandidates(): string[] {
-  return ["up", "down", "left", "right"];
+// Line/Pierce can fire diagonally (X/2 rounded up); Cone/Beam are cardinal-only.
+export function getDirectionCandidates(ability?: AbilityData): string[] {
+  const dirs = ["up", "right", "down", "left"];
+  if (!ability) return dirs;
+  const r = ability.range.toLowerCase().trim();
+  if (/^(line|pierce)\b/.test(r)) {
+    return [...dirs, "up-right", "down-right", "down-left", "up-left"];
+  }
+  return dirs;
 }
 
 export function placeTerrain(
@@ -439,10 +462,13 @@ export function getReachableTiles(
   start: [number, number],
   mp: number,
   entity?: Entity,
+  // Dash passes a budget above the effective MP (1.5x); only clamp when the
+  // caller wants the effective-MP ceiling (normal move/path commands).
+  clampToEffective = true,
 ): Map<string, number> {
   // Apply Slow MP reduction if entity is provided
   const effectiveMp = entity ? getEffectiveMp(entity) : mp;
-  const finalMp = Math.min(mp, effectiveMp);
+  const finalMp = clampToEffective && entity ? Math.min(mp, effectiveMp) : mp;
   const reachable = new Map<string, number>();
   const queue: Array<{ pos: [number, number]; cost: number }> = [
     { pos: start, cost: 0 },
@@ -464,16 +490,28 @@ export function getReachableTiles(
     for (const [dr, dc] of dirs) {
       const nr = pos[0] + dr;
       const nc = pos[1] + dc;
-      if (nr < 0 || nr >= game.map.length || nc < 0 || nc >= game.map[0].length)
-        continue;
+      // Bounds + standable terrain. We intentionally do NOT use
+      // isPassable here because isPassable rejects any living entity,
+      // including the moving entity on its own start tile (which stays
+      // at the start position until the path is confirmed). The
+      // occupancy check below is the correct gate for this pathing
+      // path: it skips the moving entity itself so the entity can
+      // path back through (or re-enter) its own tile.
+      if (nr < 0 || nr >= game.map.length) continue;
+      if (nc < 0 || nc >= game.map[0].length) continue;
 
       const terrain = game.map[nr][nc];
       // Obstructions + Broken (impassable) + Lava (damages on entry).
       if (!isStandable(terrain)) continue;
-      // Exclude tiles occupied by a living entity from move/dash reachability.
+      // Tiles occupied by a living FOREIGN entity cannot be entered or
+      // passed through, matching %pathstep/%confirmmove (and the
+      // Revealed map). The moving entity itself is skipped so the
+      // pathing back through the start tile is allowed. Dead entities
+      // do not obstruct, consistent with the occupancy checks in
+      // handleMove/handlePathStep.
       if (
         game.entities.some(
-          (e) => e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
+          (e) => e !== entity && e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
         )
       )
         continue;
@@ -706,59 +744,45 @@ export function getStarTiles(
 export function getConeTiles(
   from: [number, number],
   range: number,
+  dir = "right",
 ): [number, number][] {
+  // Diagonals are invalid for cones (candidates are cardinal-only); fall back.
+  const [dr0, dc0] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
+  const [dr, dc] = dr0 !== 0 && dc0 !== 0 ? DIRECTION_DELTAS.right : [dr0, dc0];
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-  ];
-  for (const [dr, dc] of dirs) {
-    for (let d = 1; d <= range; d++) {
-      // At distance d, width extends d tiles perpendicular
-      for (let w = -d; w <= d; w++) {
-        let tr: number, tc: number;
-        if (dr !== 0) {
-          // Vertical cone
-          tr = from[0] + dr * d;
-          tc = from[1] + w;
-        } else {
-          // Horizontal cone
-          tr = from[0] + w;
-          tc = from[1] + dc * d;
-        }
-        tiles.push([tr, tc]);
+  for (let d = 1; d <= range; d++) {
+    // At distance d, width extends d tiles perpendicular
+    for (let w = -d; w <= d; w++) {
+      let tr: number, tc: number;
+      if (dr !== 0) {
+        // Vertical cone
+        tr = from[0] + dr * d;
+        tc = from[1] + w;
+      } else {
+        // Horizontal cone
+        tr = from[0] + w;
+        tc = from[1] + dc * d;
       }
+      tiles.push([tr, tc]);
     }
   }
   return tiles;
 }
 
-// Get all tiles in a Line from user in the closest matching direction
+// Get all tiles in a Line from user in the given direction
 export function getLineTiles(
   from: [number, number],
   range: number,
+  dir = "right",
 ): [number, number][] {
+  const [dr, dc] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-    [1, 1],
-    [1, -1],
-    [-1, 1],
-    [-1, -1],
-  ];
-  for (const [dr, dc] of dirs) {
-    for (let d = 1; d <= range; d++) {
-      if (dr !== 0 && dc !== 0) {
-        // Diagonal: max distance is ceil(range/2)
-        if (d > Math.ceil(range / 2)) break;
-      }
-      tiles.push([from[0] + dr * d, from[1] + dc * d]);
+  for (let d = 1; d <= range; d++) {
+    if (dr !== 0 && dc !== 0) {
+      // Diagonal: max distance is ceil(range/2)
+      if (d > Math.ceil(range / 2)) break;
     }
+    tiles.push([from[0] + dr * d, from[1] + dc * d]);
   }
   return tiles;
 }
@@ -767,36 +791,33 @@ export function getLineTiles(
 export function getPierceTiles(
   from: [number, number],
   range: number,
+  dir = "right",
 ): [number, number][] {
-  return getLineTiles(from, range);
+  return getLineTiles(from, range, dir);
 }
 
-// Get all tiles in a Beam (3 wide, X deep in each cardinal direction)
+// Get all tiles in a Beam (3 wide, X deep in the chosen cardinal direction)
 export function getBeamTiles(
   from: [number, number],
   range: number,
+  dir = "right",
 ): [number, number][] {
+  // Diagonals are invalid for beams (candidates are cardinal-only); fall back.
+  const [dr0, dc0] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
+  const [dr, dc] = dr0 !== 0 && dc0 !== 0 ? DIRECTION_DELTAS.right : [dr0, dc0];
   const tiles: [number, number][] = [];
-  const dirs: [number, number][] = [
-    [0, 1],
-    [0, -1],
-    [1, 0],
-    [-1, 0],
-  ];
-  for (const [dr, dc] of dirs) {
-    for (let d = 1; d <= range; d++) {
-      // 3 wide perpendicular
-      for (let w = -1; w <= 1; w++) {
-        let tr: number, tc: number;
-        if (dr !== 0) {
-          tr = from[0] + dr * d;
-          tc = from[1] + w;
-        } else {
-          tr = from[0] + w;
-          tc = from[1] + dc * d;
-        }
-        tiles.push([tr, tc]);
+  for (let d = 1; d <= range; d++) {
+    // 3 wide perpendicular
+    for (let w = -1; w <= 1; w++) {
+      let tr: number, tc: number;
+      if (dr !== 0) {
+        tr = from[0] + dr * d;
+        tc = from[1] + w;
+      } else {
+        tr = from[0] + w;
+        tc = from[1] + dc * d;
       }
+      tiles.push([tr, tc]);
     }
   }
   return tiles;
@@ -808,6 +829,7 @@ export function getAoETargets(
   user: Entity,
   range: string,
   group: string,
+  dir?: string,
 ): Entity[] {
   const rangeStr = range.toLowerCase().trim();
   let tiles: [number, number][] = [];
@@ -824,22 +846,22 @@ export function getAoETargets(
 
   const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
   if (coneMatch) {
-    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]));
+    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]), dir);
   }
 
   const lineMatch = rangeStr.match(/^line\s*(\d+)/);
   if (lineMatch) {
-    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]));
+    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]), dir);
   }
 
   const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
   if (pierceMatch) {
-    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]));
+    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]), dir);
   }
 
   const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
   if (beamMatch) {
-    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]));
+    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]), dir);
   }
 
   if (tiles.length === 0) return [];

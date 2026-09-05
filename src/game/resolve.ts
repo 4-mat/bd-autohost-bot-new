@@ -297,7 +297,8 @@ function* resolveDirection(
   return yield {
     kind: "direction",
     message: `Choose a direction for ${ability.name}`,
-    candidates: getDirectionCandidates(),
+    // Line/Pierce can fire diagonally (X/2 rounded up); Cone/Beam cardinal-only.
+    candidates: getDirectionCandidates(active),
   };
 }
 
@@ -402,14 +403,16 @@ function* resolveAttackFlow(
   if (!active) return result;
 
   // --- Direction prompt for AoE abilities ---
+
   const dir = yield* resolveDirection(user, ability, active);
+
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   const {
     hits: hitCount,
     isAoE,
     targets: autoTargets,
-  } = prepareTargeting(game, user, active);
+  } = prepareTargeting(game, user, active, dir);
   let targets = autoTargets;
   if (targets.length === 0) {
     const chosen = yield* chooseTargets(
@@ -841,6 +844,7 @@ function prepareTargeting(
   game: Game,
   user: Entity,
   ability: AbilityData,
+  dir?: string,
 ): { hits: number; isAoE: boolean; targets: Entity[] } {
   const hits = parseMultiHit(ability);
   const range = ability.range.toLowerCase().trim();
@@ -855,7 +859,13 @@ function prepareTargeting(
 
   let targets: Entity[] = [];
   if (isAoE) {
-    targets = getAoETargets(game, user, ability.range, ability.targetGroup);
+    targets = getAoETargets(
+      game,
+      user,
+      ability.range,
+      ability.targetGroup,
+      dir,
+    );
   }
   return { hits, isAoE, targets };
 }

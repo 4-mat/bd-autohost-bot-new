@@ -17,6 +17,8 @@ import {
   getLineTiles,
   getPierceTiles,
   getBeamTiles,
+  getDirectionCandidates,
+  needsDirection,
   getAoETargets,
   getSplashTargets,
   pushEntity,
@@ -100,6 +102,7 @@ function makeGame(
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map,
     mapName: "test",
@@ -269,6 +272,61 @@ describe("getReachableTiles", () => {
     expect(reachable.has(posToStr(1, 0))).toBe(false);
   });
 
+  it("does not move through or onto tiles occupied by a living entity", () => {
+    // P2 and P3 wall off the corner at [0,0]: both exits are occupied, so
+    // nothing beyond them may be reached — matching %pathstep/%confirmmove.
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 }),
+        makeEntity({ num: "P3", name: "Cara", pos: [1, 0], team: 1 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(0, 1))).toBe(false); // occupied
+    expect(reachable.has(posToStr(1, 0))).toBe(false); // occupied
+    expect(reachable.has(posToStr(0, 2))).toBe(false); // beyond the occupied wall
+    expect(reachable.size).toBe(0);
+  });
+
+  it("does not treat the moving entity's own tile as occupied", () => {
+    // When reachability is computed from an intermediate path step (entity
+    // passed), the tile the entity physically stands on is not a blocker —
+    // pathing back through the start is allowed (PR-Agent on #188).
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0, mp: 8 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 1 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [4, 4], 6, game.entities[0]);
+    expect(reachable.has(posToStr(2, 2))).toBe(true); // self's tile
+    expect(reachable.has(posToStr(2, 3))).toBe(false); // foreign tile still blocked
+  });
+
+  it("keeps blocking foreign entities when no entity is passed", () => {
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(0, 1))).toBe(false);
+  });
+
+  it("treats tiles occupied by dead entities as traversable", () => {
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1, curhp: 0 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(0, 1))).toBe(true);
+    expect(reachable.has(posToStr(0, 2))).toBe(true);
+  });
+
   it("sticky terrain costs 2 MP", () => {
     const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
     map[0][1] = Terrain.Sticky;
@@ -430,28 +488,65 @@ describe("getStarTiles", () => {
 });
 
 describe("getConeTiles", () => {
-  it("cone generates tiles in all 4 cardinal directions", () => {
-    const tiles = getConeTiles([5, 5], 1);
-    // Cone 1: 3 tiles forward in each direction (1 forward + 1 to each side)
-    // Up: [4,4], [4,5], [4,6]
-    // Down: [6,4], [6,5], [6,6]
-    // Left: [4,4], [5,4], [6,4]
-    // Right: [4,6], [5,6], [6,6]
-    // Total = 12 (with some overlap at corners)
-    expect(tiles.length).toBe(12);
+  it("cone range 1 covers 3 tiles forward in the chosen direction", () => {
+    const tiles = getConeTiles([5, 5], 1, "right");
+    // Right: 1 forward + 1 to each side = [4,6], [5,6], [6,6]
+    expect(tiles.length).toBe(3);
+    expect(tiles).toContainEqual([4, 6]);
+    expect(tiles).toContainEqual([5, 6]);
+    expect(tiles).toContainEqual([6, 6]);
+  });
+
+  it("cone honors each cardinal direction", () => {
+    expect(getConeTiles([5, 5], 1, "up")).toContainEqual([4, 5]);
+    expect(getConeTiles([5, 5], 1, "down")).toContainEqual([6, 5]);
+    expect(getConeTiles([5, 5], 1, "left")).toContainEqual([5, 4]);
+  });
+
+  it("cone range 2 grows wider with depth", () => {
+    const tiles = getConeTiles([5, 5], 2, "right");
+    // d=1: 3 tiles, d=2: 5 tiles = 8
+    expect(tiles.length).toBe(8);
   });
 
   it("cone does not include origin", () => {
     const tiles = getConeTiles([5, 5], 3);
     expect(tiles.some(([r, c]) => r === 5 && c === 5)).toBe(false);
   });
+
+  it("cone falls back to right on an invalid diagonal dir", () => {
+    // Diagonal dirs are not candidates for cones; treat as right.
+    const tiles = getConeTiles([5, 5], 1, "up-right");
+    expect(tiles).toContainEqual([4, 6]);
+    expect(tiles).toContainEqual([5, 6]);
+    expect(tiles).toContainEqual([6, 6]);
+  });
 });
 
 describe("getLineTiles", () => {
-  it("generates tiles in all 8 directions", () => {
-    const tiles = getLineTiles([5, 5], 3);
-    // 4 cardinal * 3 + 4 diagonal * ceil(3/2) = 12 + 8 = 20
-    expect(tiles.length).toBe(20);
+  it("generates range tiles in the chosen direction", () => {
+    const tiles = getLineTiles([5, 5], 3, "right");
+    expect(tiles.length).toBe(3);
+    expect(tiles).toContainEqual([5, 6]);
+    expect(tiles).toContainEqual([5, 8]);
+  });
+
+  it("line honors each cardinal direction", () => {
+    expect(getLineTiles([5, 5], 3, "up")).toContainEqual([2, 5]);
+    expect(getLineTiles([5, 5], 3, "down")).toContainEqual([8, 5]);
+    expect(getLineTiles([5, 5], 3, "left")).toContainEqual([5, 2]);
+  });
+
+  it("line honors diagonal directions with half range", () => {
+    // Diagonal: max distance is ceil(range/2)
+    expect(getLineTiles([5, 5], 4, "down-right")).toEqual([
+      [6, 6],
+      [7, 7],
+    ]);
+    expect(getLineTiles([5, 5], 3, "up-left")).toEqual([
+      [4, 4],
+      [3, 3],
+    ]);
   });
 
   it("does not include origin", () => {
@@ -461,18 +556,57 @@ describe("getLineTiles", () => {
 });
 
 describe("getPierceTiles", () => {
-  it("same as getLineTiles", () => {
-    const line = getLineTiles([5, 5], 3);
-    const pierce = getPierceTiles([5, 5], 3);
-    expect(pierce.length).toBe(line.length);
+  it("same as getLineTiles in the chosen direction", () => {
+    const line = getLineTiles([5, 5], 3, "left");
+    const pierce = getPierceTiles([5, 5], 3, "left");
+    expect(pierce).toEqual(line);
   });
 });
 
 describe("getBeamTiles", () => {
-  it("generates 3-wide tiles in 4 cardinal directions", () => {
-    const tiles = getBeamTiles([5, 5], 2);
-    // 4 directions * 2 depth * 3 width = 24
-    expect(tiles.length).toBe(24);
+  it("generates 3-wide tiles in the chosen direction", () => {
+    const tiles = getBeamTiles([5, 5], 2, "right");
+    // 2 depth * 3 width = 6
+    expect(tiles.length).toBe(6);
+    expect(tiles).toContainEqual([4, 6]);
+    expect(tiles).toContainEqual([5, 7]);
+    expect(tiles).toContainEqual([6, 6]);
+  });
+
+  it("beam honors each cardinal direction", () => {
+    expect(getBeamTiles([5, 5], 1, "up")).toContainEqual([4, 4]);
+    expect(getBeamTiles([5, 5], 1, "down")).toContainEqual([6, 6]);
+    expect(getBeamTiles([5, 5], 1, "left")).toContainEqual([4, 4]);
+  });
+
+  it("beam falls back to right on an invalid diagonal dir", () => {
+    const tiles = getBeamTiles([5, 5], 1, "down-right");
+    expect(tiles).toContainEqual([4, 6]);
+    expect(tiles).toContainEqual([5, 6]);
+    expect(tiles).toContainEqual([6, 6]);
+  });
+});
+
+describe("getDirectionCandidates", () => {
+  const ability = (range: string): AbilityData =>
+    ({ range, name: "A", cooldown: 1 }) as unknown as AbilityData;
+
+  it("line and pierce offer diagonals", () => {
+    const dirs = getDirectionCandidates(ability("Line 4"));
+    expect(dirs).toContain("up-right");
+    expect(dirs).toContain("down-left");
+    expect(dirs.length).toBe(8);
+    expect(getDirectionCandidates(ability("Pierce 3"))).toContain("up-left");
+  });
+
+  it("cone and beam stay cardinal-only", () => {
+    const dirs = getDirectionCandidates(ability("Cone 2"));
+    expect(dirs).toEqual(["up", "right", "down", "left"]);
+    expect(getDirectionCandidates(ability("Beam 3"))).toEqual(dirs);
+  });
+
+  it("defaults to cardinal without an ability", () => {
+    expect(getDirectionCandidates()).toEqual(["up", "right", "down", "left"]);
   });
 });
 

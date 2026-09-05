@@ -6,12 +6,7 @@ import {
   placePlayers,
   placeTeamPlayers,
 } from "../commands/host.js";
-import {
-  isStandable,
-  type Entity,
-  Terrain,
-  type Game,
-} from "../game/state.js";
+import { isStandable, type Entity, Terrain, type Game } from "../game/state.js";
 
 function makeEntity(num: string, pos: [number, number] = [0, 0]): Entity {
   return {
@@ -53,6 +48,7 @@ function makeGame(entities: Entity[], terrain = Terrain.Normal): Game {
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map,
     mapName: "test",
@@ -128,7 +124,8 @@ describe("genPosSlots", () => {
       const idxs = slots.map(([r, c]) => ring.indexOf(`${r},${c}`));
       const sorted = [...idxs].sort((a, b) => a - b);
       const gaps = [];
-      for (let i = 1; i < sorted.length; i++) gaps.push(sorted[i] - sorted[i - 1]);
+      for (let i = 1; i < sorted.length; i++)
+        gaps.push(sorted[i] - sorted[i - 1]);
       gaps.push(ring.length - sorted[sorted.length - 1] + sorted[0]);
       const minGap = Math.min(...gaps);
       expect(minGap).toBeGreaterThanOrEqual(Math.floor(ring.length / n) - 2);
@@ -223,8 +220,14 @@ describe("placeTeamPlayers", () => {
     for (const [, pos] of out![1]) expect(pos[0]).toBeGreaterThanOrEqual(5); // bottom half
 
     // 2v2: each team clumps in its own corner (a1/b1 vs j10/i10).
-    expect(out![0].map(([, p]) => `${p[0]},${p[1]}`).sort()).toEqual(["0,0", "0,1"]);
-    expect(out![1].map(([, p]) => `${p[0]},${p[1]}`).sort()).toEqual(["9,8", "9,9"]);
+    expect(out![0].map(([, p]) => `${p[0]},${p[1]}`).sort()).toEqual([
+      "0,0",
+      "0,1",
+    ]);
+    expect(out![1].map(([, p]) => `${p[0]},${p[1]}`).sort()).toEqual([
+      "9,8",
+      "9,9",
+    ]);
   });
 
   it("returns null when no open tiles exist", () => {
@@ -301,7 +304,9 @@ describe("placePlayers", () => {
   it("never places a player on a Broken tile, even when all anchors are Broken", () => {
     // Entire perimeter ring (the genPosSlots anchors) is Broken — players must
     // snap inward to standable tiles instead of landing on Broken.
-    const map = Array.from({ length: 10 }, () => Array(10).fill(Terrain.Normal));
+    const map = Array.from({ length: 10 }, () =>
+      Array(10).fill(Terrain.Normal),
+    );
     for (let r = 0; r < 10; r++) {
       map[r][0] = Terrain.Broken;
       map[r][9] = Terrain.Broken;
@@ -326,9 +331,18 @@ describe("placePlayers", () => {
 
 describe("findSpawnPosition", () => {
   it("never returns a Broken or obstruction tile", () => {
-    const map = Array.from({ length: 10 }, () => Array(10).fill(Terrain.Normal));
+    const map = Array.from({ length: 10 }, () =>
+      Array(10).fill(Terrain.Normal),
+    );
     // Scatter impassable tiles around so the spiral has to dodge them.
-    for (const [r, c] of [[4, 4], [4, 5], [5, 4], [5, 5], [8, 1], [1, 8]] as const) {
+    for (const [r, c] of [
+      [4, 4],
+      [4, 5],
+      [5, 4],
+      [5, 5],
+      [8, 1],
+      [1, 8],
+    ] as const) {
       map[r][c] = Terrain.Broken;
     }
     const game: Game = { ...makeGame([]), map };
@@ -342,7 +356,9 @@ describe("findSpawnPosition", () => {
     // (which starts at center) reaches it via the exhaustive ring walk, but if
     // the map had zero standable tiles the fallback would still never invent a
     // Broken spawn. Here we prove the scan finds the one good tile anywhere.
-    const map = Array.from({ length: 10 }, () => Array(10).fill(Terrain.Broken));
+    const map = Array.from({ length: 10 }, () =>
+      Array(10).fill(Terrain.Broken),
+    );
     map[0][9] = Terrain.Normal;
     const game: Game = { ...makeGame([]), map };
     const pos = findSpawnPosition(game);

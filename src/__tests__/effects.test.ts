@@ -55,11 +55,13 @@ function makeEntity(
   };
 }
 
-function makeGame(opts: {
-  size?: number;
-  terrain?: Terrain[][];
-  entities?: Entity[];
-} = {}): Game {
+function makeGame(
+  opts: {
+    size?: number;
+    terrain?: Terrain[][];
+    entities?: Entity[];
+  } = {},
+): Game {
   const size = opts.size ?? 10;
   const map =
     opts.terrain ??
@@ -72,6 +74,7 @@ function makeGame(opts: {
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map,
     mapName: "test",
@@ -430,7 +433,8 @@ describe("applyEffects: apex gate", () => {
     const ability = makeAbility({
       name: "Razor Rust",
       range: "Pierce 4",
-      effect: "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
+      effect:
+        "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
     });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 9], team: 1 });
@@ -453,7 +457,8 @@ describe("applyEffects: apex gate", () => {
     const ability = makeAbility({
       name: "Razor Rust",
       range: "Pierce 4",
-      effect: "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
+      effect:
+        "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
     });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 7], team: 1 });
@@ -467,7 +472,9 @@ describe("applyEffects: apex gate", () => {
     expect(target.statuses.length).toBe(beforeStatuses);
 
     // Messages mention "inactive" and NOT "[Apex]" prefix on the sub-effect
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
+      true,
+    );
     expect(messages.some((m) => m.startsWith("    [Apex]"))).toBe(false);
   });
 
@@ -490,7 +497,9 @@ describe("applyEffects: apex gate", () => {
 
     // Pull 3 should NOT have moved anyone
     expect(target.pos).toEqual([5, 9]);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
+      true,
+    );
   });
 
   it("non-apex effects still apply when target is below max range", () => {
@@ -528,9 +537,9 @@ describe("applyEffects: apex gate", () => {
     const effects = parseEffects(ability.effect);
     const messages = applyEffects(game, user, target, effects); // no ability arg
 
-    expect(messages.some((m) => m.toLowerCase().includes("cannot evaluate"))).toBe(
-      true,
-    );
+    expect(
+      messages.some((m) => m.toLowerCase().includes("cannot evaluate")),
+    ).toBe(true);
   });
 
   it("MP cap clamps the target's MP budget and records a marker", () => {
@@ -586,7 +595,9 @@ describe("applyEffects: apex gate", () => {
 
     // Not at max range -> nested apex should also be inactive
     expect(target.pos).toEqual([5, 7]);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
+      true,
+    );
   });
 });
 
@@ -805,8 +816,12 @@ describe("applyEffects: thirst gate", () => {
     expect(target.statuses).toHaveLength(0);
 
     // Inactive message names both the threshold and the actual Blood value.
-    expect(messages.some((m) => m.toLowerCase().includes("thirst 4"))).toBe(true);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("thirst 4"))).toBe(
+      true,
+    );
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
+      true,
+    );
     expect(messages.some((m) => m.startsWith("    [Thirst 4]"))).toBe(false);
   });
 
@@ -841,8 +856,7 @@ describe("applyEffects: thirst gate", () => {
     const ability = makeAbility({
       name: "Dual Clause",
       range: "Melee",
-      effect:
-        "Thirst 5: Pull 2. Always: target -2 ATK/1.",
+      effect: "Thirst 5: Pull 2. Always: target -2 ATK/1.",
     });
     const user = makeEntity({
       num: "P1",
@@ -897,9 +911,7 @@ describe("applyEffects: thirst gate", () => {
     applyEffects(game, user, target, effects, ability);
 
     // Melee apex at chebyshev 1 -> nested apex should fire its +2 ATK buff.
-    const atkBuff = target.buffs.find(
-      (b) => b.stat === "atk",
-    );
+    const atkBuff = target.buffs.find((b) => b.stat === "atk");
     expect(atkBuff?.amount).toBe(2);
   });
 });
@@ -1109,7 +1121,9 @@ describe("applyEffectStream: choose prompt", () => {
 
 describe("parseEffects: conditional clause", () => {
   it("recognises 'If CONDITION, EFFECT [Otherwise EFFECT]'", () => {
-    const effects = parseEffects("If user ATK > 5, +3 ATK/1. Otherwise, +1 DEF/1.");
+    const effects = parseEffects(
+      "If user ATK > 5, +3 ATK/1. Otherwise, +1 DEF/1.",
+    );
     expect(effects).toHaveLength(1);
     expect(effects[0].type).toBe("conditional");
     if (effects[0].type !== "conditional") return;
@@ -1318,9 +1332,9 @@ describe("evaluateCondition: supported patterns", () => {
     const user = makeEntity({ num: "P1", name: "A" });
     const target = makeEntity({ num: "P2", name: "B" });
 
-    expect(evaluateCondition("target Dashes before user's next turn", user, target)).toBe(
-      "unknown",
-    );
+    expect(
+      evaluateCondition("target Dashes before user's next turn", user, target),
+    ).toBe("unknown");
     expect(
       evaluateCondition(
         "the player this ability originates from has more MAG than ATK",
@@ -1385,8 +1399,13 @@ describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => 
     const effects = parseEffects(
       "If target Dashes before user's next turn, +5 ATK/1.",
     );
-    const messages = applyEffectStream(game, user, target, effects, ability)
-      .next(undefined).value as string[];
+    const messages = applyEffectStream(
+      game,
+      user,
+      target,
+      effects,
+      ability,
+    ).next(undefined).value as string[];
     expect(target.buffs.some((b) => b.stat === "atk" && b.amount === 5)).toBe(
       true,
     );
@@ -1430,7 +1449,11 @@ describe("applyEffects: regressions for non-apex effects", () => {
   beforeEach(() => {});
 
   it("applies buff effects unchanged", () => {
-    const ability = makeAbility({ name: "Boost", range: "Melee", effect: "+3 ATK/2" });
+    const ability = makeAbility({
+      name: "Boost",
+      range: "Melee",
+      effect: "+3 ATK/2",
+    });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
     const game = makeGame({ entities: [user, target] });
@@ -1442,7 +1465,11 @@ describe("applyEffects: regressions for non-apex effects", () => {
   });
 
   it("applies status effects unchanged", () => {
-    const ability = makeAbility({ name: "Bleed", range: "Melee", effect: "inflict 5 Bleed/3" });
+    const ability = makeAbility({
+      name: "Bleed",
+      range: "Melee",
+      effect: "inflict 5 Bleed/3",
+    });
     const user = makeEntity({ num: "P1", name: "A" });
     const target = makeEntity({ num: "P2", name: "B" });
     const game = makeGame({ entities: [user, target] });
