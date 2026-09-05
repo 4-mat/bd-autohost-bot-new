@@ -65,6 +65,7 @@ function makeGame(
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map,
     mapName: "test",

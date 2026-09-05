@@ -835,6 +835,7 @@ function handleCancel(game: Game, user: User) {
   entity.pendingAction = null;
   entity.pendingResolution = undefined;
   entity.pendingPromptKind = undefined;
+  clearMovementState(game, entity);
   send(game.room, `/me ${entity.num} cancels ${ability.name}`);
   broadcastPages(game);
 }
@@ -1577,6 +1578,7 @@ function handleHp(game: Game, user: User, args: string) {
 
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
+      clearGameMovementState(game);
       announceGameOver(game, winner);
       return;
     }
