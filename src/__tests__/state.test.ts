@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import {
   Terrain,
+  placeTerrain,
   isObstruction,
   isStandable,
   moveCost,
@@ -122,6 +123,7 @@ function makeGame(
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
@@ -136,6 +138,23 @@ describe("Terrain", () => {
     expect(isObstruction(Terrain.Ice)).toBe(true);
     expect(isObstruction(Terrain.Stone)).toBe(true);
     expect(isObstruction(Terrain.Hearth)).toBe(true);
+  });
+
+  it("placeTerrain replaces any in-bounds tile (obstructions too)", () => {
+    const map = [
+      [Terrain.Normal, Terrain.Stone],
+      [Terrain.Lava, Terrain.Normal],
+    ];
+    // The engine places unconditionally; the confirm-before-replacing rule
+    // lives in the targeting flow (resolve.ts).
+    expect(placeTerrain(map, [0, 1], Terrain.Water)).toBe(true);
+    expect(map[0][1]).toBe(Terrain.Water);
+    expect(placeTerrain(map, [0, 0], Terrain.Water)).toBe(true);
+    expect(map[0][0]).toBe(Terrain.Water);
+    expect(placeTerrain(map, [1, 0], Terrain.Water)).toBe(true);
+    expect(map[1][0]).toBe(Terrain.Water);
+    // Out of bounds is a no-op that reports failure.
+    expect(placeTerrain(map, [9, 9], Terrain.Water)).toBe(false);
   });
 
   it("isObstruction returns false for Broken and passable tiles", () => {
@@ -269,6 +288,61 @@ describe("getReachableTiles", () => {
     const game = makeGame({ terrain: map });
     const reachable = getReachableTiles(game, [0, 0], 5);
     expect(reachable.has(posToStr(1, 0))).toBe(false);
+  });
+
+  it("does not move through or onto tiles occupied by a living entity", () => {
+    // P2 and P3 wall off the corner at [0,0]: both exits are occupied, so
+    // nothing beyond them may be reached — matching %pathstep/%confirmmove.
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 }),
+        makeEntity({ num: "P3", name: "Cara", pos: [1, 0], team: 1 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(0, 1))).toBe(false); // occupied
+    expect(reachable.has(posToStr(1, 0))).toBe(false); // occupied
+    expect(reachable.has(posToStr(0, 2))).toBe(false); // beyond the occupied wall
+    expect(reachable.size).toBe(0);
+  });
+
+  it("does not treat the moving entity's own tile as occupied", () => {
+    // When reachability is computed from an intermediate path step (entity
+    // passed), the tile the entity physically stands on is not a blocker —
+    // pathing back through the start is allowed (PR-Agent on #188).
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0, mp: 8 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 1 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [4, 4], 6, game.entities[0]);
+    expect(reachable.has(posToStr(2, 2))).toBe(true); // self's tile
+    expect(reachable.has(posToStr(2, 3))).toBe(false); // foreign tile still blocked
+  });
+
+  it("keeps blocking foreign entities when no entity is passed", () => {
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(0, 1))).toBe(false);
+  });
+
+  it("treats tiles occupied by dead entities as traversable", () => {
+    const game = makeGame({
+      entities: [
+        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
+        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1, curhp: 0 }),
+      ],
+    });
+    const reachable = getReachableTiles(game, [0, 0], 5);
+    expect(reachable.has(posToStr(0, 1))).toBe(true);
+    expect(reachable.has(posToStr(0, 2))).toBe(true);
   });
 
   it("sticky terrain costs 2 MP", () => {
@@ -943,6 +1017,50 @@ describe("Snapshots", () => {
     expect(game.log.length).toBe(0);
   });
 
+  it("resurrects entities removed after the snapshot", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 40, pos: [1, 1] });
+    const game = makeGame({ entities: [p1, p2] });
+    expect(game.turnOrder).toEqual(["P1", "P2"]);
+
+    pushSnapshot(game);
+    removeEntity(game, p2);
+    expect(game.entities.some((e) => e.num === "P2")).toBe(false);
+    expect(game.turnOrder).toEqual(["P1"]);
+
+    popSnapshot(game);
+    const revived = game.entities.find((e) => e.num === "P2");
+    expect(revived).toBeDefined();
+    expect(revived!.curhp).toBe(40);
+    expect(revived!.pos).toEqual([1, 1]);
+    expect(game.turnOrder).toEqual(["P1", "P2"]);
+  });
+
+  it("restores kill counts from the snapshot", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const game = makeGame({ entities: [p1] });
+    game.kills = { P1: 2, P2: 0 };
+
+    pushSnapshot(game);
+    game.kills = { P1: 5, P2: 4 };
+
+    popSnapshot(game);
+    expect(game.kills).toEqual({ P1: 2, P2: 0 });
+  });
+
+  it("restores entities in snapshot order after reordering", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+    const p2 = makeEntity({ num: "P2", name: "B", curhp: 40, pos: [1, 1] });
+    const game = makeGame({ entities: [p1, p2] });
+
+    pushSnapshot(game);
+    // Simulate an undo-visible reordering (e.g. death -> new join order).
+    game.entities = [p2, p1];
+
+    popSnapshot(game);
+    expect(game.entities.map((e) => e.num)).toEqual(["P1", "P2"]);
+  });
+
   it("returns false when no snapshots", () => {
     const game = makeGame();
     expect(popSnapshot(game)).toBe(false);
@@ -1083,6 +1201,25 @@ describe("processStartOfTurn", () => {
     expect(e.buffs.length).toBe(1);
     expect(e.buffs[0].stat).toBe("atk");
     expect(e.buffs[0].rounds).toBe(1);
+    expect(result.entity?.num).toBe("P2");
+  });
+
+  it("restores MP when an mpCap marker expires", () => {
+    const e = makeEntity({
+      num: "P1",
+      name: "A",
+      mp: 3, // capped from 5 -> marker stores the removed delta
+      buffs: [{ stat: "mpCap", amount: 2, rounds: 1 }],
+    });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [e, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    const result = nextTurn(game);
+    expect(e.mp).toBe(5);
+    expect(e.buffs.find((b) => b.stat === "mpCap")).toBeUndefined();
     expect(result.entity?.num).toBe("P2");
   });
 
