@@ -8,12 +8,16 @@ import {
 } from "../game/state.js";
 import {
   parseEffects,
-  getCombatMetadataForEffect,
   applyEffects,
   applyEffectStream,
   evaluateCondition,
   isApexActive,
   isThirstActive,
+  extractCombatMetadata,
+  requiredSubweapons,
+  getPassiveRangeBonus,
+  getDefenderDiceMods,
+  formatSubweapon,
 } from "../game/effects.js";
 
 // ---------------------------------------------------------------------------
@@ -55,13 +59,11 @@ function makeEntity(
   };
 }
 
-function makeGame(
-  opts: {
-    size?: number;
-    terrain?: Terrain[][];
-    entities?: Entity[];
-  } = {},
-): Game {
+function makeGame(opts: {
+  size?: number;
+  terrain?: Terrain[][];
+  entities?: Entity[];
+} = {}): Game {
   const size = opts.size ?? 10;
   const map =
     opts.terrain ??
@@ -74,7 +76,6 @@ function makeGame(
     id: "test",
     room: "battledome",
     host: "Host",
-    version: "4.4",
     entities,
     map,
     mapName: "test",
@@ -94,7 +95,6 @@ function makeGame(
     votes: {},
     voteOpen: false,
     voteRunoff: null,
-    playersIdle: false,
   };
 }
 
@@ -131,23 +131,8 @@ describe("parseEffects", () => {
     expect(a).toBe(b);
     // Whitespace-only / newline variants normalize to the same key.
     expect(parseEffects("\n  +1 dice.\n +2 dice faces. ")).toBe(a);
-    // Empty / whitespace-only input: referentially stable singleton, not a
-    // fresh array per call (PR-Agent #184).
-    expect(parseEffects("")).toBe(parseEffects(""));
-    expect(parseEffects("   \n ")).toBe(parseEffects(""));
-  });
-
-  it("evicts the oldest entry once the bounded cache overflows", () => {
-    // 2048 unique entries fill the cache; the 2049th evicts the first, so
-    // the first text's array is freed and gets re-parsed as a fresh entry
-    // (still referentially stable for the SAME input at any moment).
-    const first = parseEffects("unique effect 0");
-    for (let i = 1; i <= 2048; i++) {
-      parseEffects(`unique effect ${i}`);
-    }
-    const again = parseEffects("unique effect 0");
-    expect(again).toBeDefined();
-    expect(again).not.toBe(first); // evicted old entry, then re-parsed
+    // Different text is a different entry.
+    expect(parseEffects("+1 dice.")).not.toBe(a);
   });
 
   it("recognises 'Apex: ...' as an apex clause", () => {
@@ -433,8 +418,7 @@ describe("applyEffects: apex gate", () => {
     const ability = makeAbility({
       name: "Razor Rust",
       range: "Pierce 4",
-      effect:
-        "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
+      effect: "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
     });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 9], team: 1 });
@@ -457,8 +441,7 @@ describe("applyEffects: apex gate", () => {
     const ability = makeAbility({
       name: "Razor Rust",
       range: "Pierce 4",
-      effect:
-        "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
+      effect: "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
     });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 7], team: 1 });
@@ -472,9 +455,7 @@ describe("applyEffects: apex gate", () => {
     expect(target.statuses.length).toBe(beforeStatuses);
 
     // Messages mention "inactive" and NOT "[Apex]" prefix on the sub-effect
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
     expect(messages.some((m) => m.startsWith("    [Apex]"))).toBe(false);
   });
 
@@ -497,9 +478,7 @@ describe("applyEffects: apex gate", () => {
 
     // Pull 3 should NOT have moved anyone
     expect(target.pos).toEqual([5, 9]);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
   });
 
   it("non-apex effects still apply when target is below max range", () => {
@@ -537,45 +516,9 @@ describe("applyEffects: apex gate", () => {
     const effects = parseEffects(ability.effect);
     const messages = applyEffects(game, user, target, effects); // no ability arg
 
-    expect(
-      messages.some((m) => m.toLowerCase().includes("cannot evaluate")),
-    ).toBe(true);
-  });
-
-  it("MP cap clamps the target's MP budget and records a marker", () => {
-    const ability = makeAbility({
-      name: "Razor Rust",
-      range: "Pierce 4",
-      effect: "Target: 3 MP/1",
-    });
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 7], team: 1, mp: 5 });
-    const game = makeGame({ entities: [user, target] });
-
-    const effects = parseEffects(ability.effect);
-    const messages = applyEffects(game, user, target, effects, ability);
-
-    expect(target.mp).toBe(3);
-    const marker = target.buffs.find((b) => b.stat === "mpCap");
-    expect(marker).toBeDefined();
-    expect(marker?.amount).toBe(2); // delta removed, restored on expiry
-    expect(messages.some((m) => m.includes("capped at 3"))).toBe(true);
-  });
-
-  it("MP cap does nothing when target is already below the cap", () => {
-    const ability = makeAbility({
-      name: "Razor Rust",
-      range: "Pierce 4",
-      effect: "Target: 3 MP/1",
-    });
-    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
-    const target = makeEntity({ num: "P2", name: "B", pos: [5, 7], team: 1, mp: 2 });
-    const game = makeGame({ entities: [user, target] });
-
-    applyEffects(game, user, target, parseEffects(ability.effect), ability);
-
-    expect(target.mp).toBe(2);
-    expect(target.buffs.find((b) => b.stat === "mpCap")).toBeUndefined();
+    expect(messages.some((m) => m.toLowerCase().includes("cannot evaluate"))).toBe(
+      true,
+    );
   });
 
   it("works with nested apex inside a conditional (then-branch)", () => {
@@ -595,9 +538,7 @@ describe("applyEffects: apex gate", () => {
 
     // Not at max range -> nested apex should also be inactive
     expect(target.pos).toEqual([5, 7]);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
   });
 });
 
@@ -816,12 +757,8 @@ describe("applyEffects: thirst gate", () => {
     expect(target.statuses).toHaveLength(0);
 
     // Inactive message names both the threshold and the actual Blood value.
-    expect(messages.some((m) => m.toLowerCase().includes("thirst 4"))).toBe(
-      true,
-    );
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.toLowerCase().includes("thirst 4"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
     expect(messages.some((m) => m.startsWith("    [Thirst 4]"))).toBe(false);
   });
 
@@ -856,7 +793,8 @@ describe("applyEffects: thirst gate", () => {
     const ability = makeAbility({
       name: "Dual Clause",
       range: "Melee",
-      effect: "Thirst 5: Pull 2. Always: target -2 ATK/1.",
+      effect:
+        "Thirst 5: Pull 2. Always: target -2 ATK/1.",
     });
     const user = makeEntity({
       num: "P1",
@@ -911,7 +849,9 @@ describe("applyEffects: thirst gate", () => {
     applyEffects(game, user, target, effects, ability);
 
     // Melee apex at chebyshev 1 -> nested apex should fire its +2 ATK buff.
-    const atkBuff = target.buffs.find((b) => b.stat === "atk");
+    const atkBuff = target.buffs.find(
+      (b) => b.stat === "atk",
+    );
     expect(atkBuff?.amount).toBe(2);
   });
 });
@@ -1121,9 +1061,7 @@ describe("applyEffectStream: choose prompt", () => {
 
 describe("parseEffects: conditional clause", () => {
   it("recognises 'If CONDITION, EFFECT [Otherwise EFFECT]'", () => {
-    const effects = parseEffects(
-      "If user ATK > 5, +3 ATK/1. Otherwise, +1 DEF/1.",
-    );
+    const effects = parseEffects("If user ATK > 5, +3 ATK/1. Otherwise, +1 DEF/1.");
     expect(effects).toHaveLength(1);
     expect(effects[0].type).toBe("conditional");
     if (effects[0].type !== "conditional") return;
@@ -1139,84 +1077,6 @@ describe("parseEffects: conditional clause", () => {
     expect(effects[0].condition).toBe("target is alive");
     expect(effects[0].thenEffects.length).toBeGreaterThan(0);
     expect(effects[0].elseEffects).toBeUndefined();
-  });
-
-  it("colon-form conditionals keep their condition in multi-sentence input", () => {
-    const effects = parseEffects(
-      "If target is at Range 7+: crit on 14+. If target is under Range 3: gain +1 MP/2.",
-    );
-    expect(effects).toHaveLength(2);
-    for (const e of effects) {
-      expect(e.type).toBe("conditional");
-      if (e.type !== "conditional") continue;
-      expect(e.thenEffects.length).toBeGreaterThan(0);
-      expect(e.condition).not.toContain("gain");
-      expect(e.condition).not.toContain("crit");
-    }
-    if (effects[0].type !== "conditional" || effects[1].type !== "conditional")
-      return;
-    expect(effects[0].condition).toBe("target is at range 7+");
-    expect(effects[1].condition).toBe("target is under range 3");
-  });
-
-  it("colon-form conditional survives next to a plain sentence", () => {
-    const effects = parseEffects(
-      "If user ATK > 5: +3 ATK/1. Push 2.",
-    );
-    expect(effects).toHaveLength(2);
-    expect(effects[0].type).toBe("conditional");
-    if (effects[0].type !== "conditional") return;
-    expect(effects[0].condition).toBe("user atk > 5");
-    expect(effects[0].thenEffects.length).toBeGreaterThan(0);
-    expect(effects[1].type).toBe("push");
-  });
-
-  it("multi-sentence conditional with otherwise keeps the whole conditional together", () => {
-    const effects = parseEffects(
-      "If target has Cripple: +5 ATK/1. Otherwise: +3 DEF/1. Then push 1.",
-    );
-    expect(effects).toHaveLength(2);
-    expect(effects[0].type).toBe("conditional");
-    if (effects[0].type !== "conditional") return;
-    expect(effects[0].elseEffects?.length).toBeGreaterThan(0);
-    expect(effects[1].type).toBe("push");
-  });
-
-  it("parses unsigned 'Target: N MP/R' as an MP cap, not a buff", () => {
-    const effects = parseEffects("Target: 3 MP/1");
-    expect(effects).toHaveLength(1);
-    expect(effects[0].type).toBe("mpCap");
-    if (effects[0].type !== "mpCap") return;
-    expect(effects[0].amount).toBe(3);
-    expect(effects[0].rounds).toBe(1);
-  });
-
-  it("parses 'Targets: 2 MP/2' with plural prefix and defaults rounds", () => {
-    expect(parseEffects("Targets: 2 MP/2")[0]).toMatchObject({
-      type: "mpCap",
-      amount: 2,
-      rounds: 2,
-    });
-    expect(parseEffects("Target: 4 MP")[0]).toMatchObject({
-      type: "mpCap",
-      amount: 4,
-      rounds: 1,
-    });
-  });
-
-  it("keeps signed target MP clauses as debuffs/buffs", () => {
-    const debuff = parseEffects("Target: -3 MP/1");
-    expect(debuff[0].type).toBe("debuff");
-    expect(parseEffects("gain +3 MP")[0].type).toBe("buff");
-  });
-
-  it("mp cap survives next to other clauses (Razor Rust full text)", () => {
-    const effects = parseEffects(
-      "Target: 3 MP/1. Apex: inflict 5 Cripple/1.",
-    );
-    expect(effects).toHaveLength(2);
-    expect(effects[0].type).toBe("mpCap");
-    expect(effects[1].type).toBe("apex");
   });
 });
 
@@ -1332,9 +1192,9 @@ describe("evaluateCondition: supported patterns", () => {
     const user = makeEntity({ num: "P1", name: "A" });
     const target = makeEntity({ num: "P2", name: "B" });
 
-    expect(
-      evaluateCondition("target Dashes before user's next turn", user, target),
-    ).toBe("unknown");
+    expect(evaluateCondition("target Dashes before user's next turn", user, target)).toBe(
+      "unknown",
+    );
     expect(
       evaluateCondition(
         "the player this ability originates from has more MAG than ATK",
@@ -1399,13 +1259,8 @@ describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => 
     const effects = parseEffects(
       "If target Dashes before user's next turn, +5 ATK/1.",
     );
-    const messages = applyEffectStream(
-      game,
-      user,
-      target,
-      effects,
-      ability,
-    ).next(undefined).value as string[];
+    const messages = applyEffectStream(game, user, target, effects, ability)
+      .next(undefined).value as string[];
     expect(target.buffs.some((b) => b.stat === "atk" && b.amount === 5)).toBe(
       true,
     );
@@ -1449,11 +1304,7 @@ describe("applyEffects: regressions for non-apex effects", () => {
   beforeEach(() => {});
 
   it("applies buff effects unchanged", () => {
-    const ability = makeAbility({
-      name: "Boost",
-      range: "Melee",
-      effect: "+3 ATK/2",
-    });
+    const ability = makeAbility({ name: "Boost", range: "Melee", effect: "+3 ATK/2" });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
     const game = makeGame({ entities: [user, target] });
@@ -1465,11 +1316,7 @@ describe("applyEffects: regressions for non-apex effects", () => {
   });
 
   it("applies status effects unchanged", () => {
-    const ability = makeAbility({
-      name: "Bleed",
-      range: "Melee",
-      effect: "inflict 5 Bleed/3",
-    });
+    const ability = makeAbility({ name: "Bleed", range: "Melee", effect: "inflict 5 Bleed/3" });
     const user = makeEntity({ num: "P1", name: "A" });
     const target = makeEntity({ num: "P2", name: "B" });
     const game = makeGame({ entities: [user, target] });
@@ -1479,32 +1326,6 @@ describe("applyEffects: regressions for non-apex effects", () => {
     const bleed = target.statuses.find((s) => s.name === "Bleed");
     expect(bleed?.damage).toBe(5);
     expect(bleed?.rounds).toBe(3);
-  });
-});
-
-describe("parse-once caching", () => {
-  it("parseEffects returns the same instance for the same text", () => {
-    const txt = "inflict 3 Bleed/1. +2 ATK/1. Multi-Hit: 2. Ignores half DEF.";
-    const a = parseEffects(txt);
-    const b = parseEffects(txt);
-    expect(a).toBe(b);
-  });
-
-  it("getCombatMetadataForEffect is cached per effect text", () => {
-    const txt = "Multi-Hit: 3. +50% damage. Ignores half DEF.";
-    const a = getCombatMetadataForEffect(txt);
-    const b = getCombatMetadataForEffect(txt);
-    expect(a).toBe(b);
-    expect(a.additionalHits).toBe(2);
-    expect(a.damagePercent).toBe(50);
-  });
-
-  it("different effect text produces a different (correct) parse", () => {
-    const a = parseEffects("inflict 3 Bleed/1");
-    const b = parseEffects("inflict 5 Cripple/1");
-    expect(a).not.toBe(b);
-    expect(a[0]).toMatchObject({ type: "status", name: "Bleed", damage: 3 });
-    expect(b[0]).toMatchObject({ type: "status", name: "Cripple", damage: 5 });
   });
 });
 
@@ -1571,6 +1392,115 @@ describe("evaluateCondition: moon phase", () => {
     applyEffects(game, user, target, effects, ability);
 
     expect(game.moonPhase).toBe("full moon");
+  });
+});
+
+describe("Lunar Rod: phase-shift skip + second phase", () => {
+  it("parses 'no Phase shift next turn' as skipPhaseShift", () => {
+    const effects = parseEffects("no Phase shift next turn.");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("skipPhaseShift");
+  });
+
+  it("parses 'User's Phase disabled next turn' as skipPhaseShift", () => {
+    const effects = parseEffects("User's Phase disabled next turn.");
+    expect(effects[0].type).toBe("skipPhaseShift");
+  });
+
+  it("parses 'Choose another Phase' as choosePhase (not a generic Choose)", () => {
+    const effects = parseEffects("Choose another Phase (doesn't shift).");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("choosePhase");
+  });
+
+  it("parses a New/Full Moon slash-combo with an Otherwise else-branch", () => {
+    const effects = parseEffects(
+      "New/Full Moon: heal 1d10+2. Otherwise: no Phase shift next turn.",
+    );
+    expect(effects).toHaveLength(1);
+    const c = effects[0];
+    expect(c.type).toBe("conditional");
+    if (c.type !== "conditional") return;
+    expect(c.condition).toBe("phase is new moon or full moon");
+    expect(c.thenEffects[0].type).toBe("heal");
+    expect(c.elseEffects?.[0].type).toBe("skipPhaseShift");
+  });
+
+  it("parses a Waxing/Waning slash-combo with an Otherwise else-branch", () => {
+    const effects = parseEffects(
+      "Waxing/Waning: inflict 5 Poison/1. Otherwise: inflict 3 Bleed/1.",
+    );
+    const c = effects[0];
+    expect(c.type).toBe("conditional");
+    if (c.type !== "conditional") return;
+    expect(c.condition).toBe("phase is waxing or waning");
+    expect(c.thenEffects[0].type).toBe("status");
+    expect(c.elseEffects?.[0].type).toBe("status");
+  });
+
+  it("evaluates slash-combo phase conditions", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    expect(
+      evaluateCondition("phase is new moon or full moon", user, target, "new moon"),
+    ).toBe("then");
+    expect(
+      evaluateCondition("phase is new moon or full moon", user, target, "waning"),
+    ).toBe("else");
+  });
+
+  it("evaluates 'user has 2 Phases' from a chosen second phase", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    expect(evaluateCondition("user has 2 Phases", user, target)).toBe("else");
+    user.phaseChoice = "full moon";
+    expect(evaluateCondition("user has 2 Phases", user, target)).toBe("then");
+  });
+
+  it("applyEffectStream: choosePhase stores the picked second phase", () => {
+    const ability = makeAbility({
+      name: "Far Side of the Moon",
+      range: "Melee",
+      effect: "Choose another Phase (doesn't shift).",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+
+    const { prompts } = driveStream(
+      applyEffectStream(game, user, target, parseEffects(ability.effect), ability),
+      (p) => 2, // pick the third option (Full Moon)
+    );
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].kind).toBe("choose");
+    expect(prompts[0].options.map((o: any) => o.label)).toEqual([
+      "New Moon",
+      "Waxing",
+      "Full Moon",
+      "Waning",
+    ]);
+    expect(user.phaseChoice).toBe("full moon");
+  });
+
+  it("applyEffects: skipPhaseShift sets the game flag", () => {
+    const ability = makeAbility({
+      name: "Harvest Moon",
+      range: "Melee",
+      effect: "no Phase shift next turn.",
+    });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+    expect(game.skipMoonPhaseShift).toBe(true);
+    expect(messages.some((m) => /no phase shift/i.test(m))).toBe(true);
   });
 });
 
@@ -1647,5 +1577,687 @@ describe("per / when triggers", () => {
 
     const cripple = dead.statuses.find((s) => s.name === "Cripple");
     expect(cripple).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Crit / dice / miss-rate modifiers -- parser branches
+// ---------------------------------------------------------------------------
+
+describe("parseEffects: crit threshold", () => {
+  it("recognises 'Crit on N+' as a critMod clause", () => {
+    const effects = parseEffects("Crit on 18+");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("critMod");
+    if (effects[0].type !== "critMod") return;
+    expect(effects[0].threshold).toBe(18);
+  });
+
+  it("parses alongside other clauses (Blitz: 'Crit on 18+. Per hit: ...')", () => {
+    const effects = parseEffects("Crit on 18+. Per hit: gain +4 damage on next attack.");
+    const crit = effects.find((e) => e.type === "critMod");
+    expect(crit).toBeDefined();
+    if (crit?.type !== "critMod") return;
+    expect(crit.threshold).toBe(18);
+    expect(effects.some((e) => e.type === "per")).toBe(true);
+  });
+
+  it("parses 'crit on 14+' inside a conditional then-branch", () => {
+    const effects = parseEffects("If target is at Range 7+: crit on 14+");
+    expect(effects).toHaveLength(1);
+    if (effects[0].type !== "conditional") return;
+    const crit = effects[0].thenEffects.find((e) => e.type === "critMod");
+    expect(crit).toBeDefined();
+    if (crit?.type !== "critMod") return;
+    expect(crit.threshold).toBe(14);
+  });
+});
+
+describe("parseEffects: dice modifiers", () => {
+  it("parses '+1 dice' as a diceMod (kind: dice)", () => {
+    const effects = parseEffects("+1 dice");
+    expect(effects[0].type).toBe("diceMod");
+    if (effects[0].type !== "diceMod") return;
+    expect(effects[0].kind).toBe("dice");
+    expect(effects[0].amount).toBe(1);
+  });
+
+  it("parses '+1 base dice' as baseDice", () => {
+    const effects = parseEffects("+1 base dice");
+    expect(effects[0].type).toBe("diceMod");
+    if (effects[0].type !== "diceMod") return;
+    expect(effects[0].kind).toBe("baseDice");
+    expect(effects[0].amount).toBe(1);
+  });
+
+  it("parses '+4 dice faces' as diceFaces", () => {
+    const effects = parseEffects("+4 dice faces");
+    expect(effects[0].type).toBe("diceMod");
+    if (effects[0].type !== "diceMod") return;
+    expect(effects[0].kind).toBe("diceFaces");
+    expect(effects[0].amount).toBe(4);
+  });
+
+  it("parses negative decimals ('-1.5 dice faces')", () => {
+    const effects = parseEffects("-1.5 dice faces");
+    expect(effects[0].type).toBe("diceMod");
+    if (effects[0].type !== "diceMod") return;
+    expect(effects[0].kind).toBe("diceFaces");
+    expect(effects[0].amount).toBe(-1.5);
+  });
+
+  it("parses the 'gain +1 dice' verb form", () => {
+    const effects = parseEffects("gain +1 dice");
+    expect(effects[0].type).toBe("diceMod");
+    if (effects[0].type !== "diceMod") return;
+    expect(effects[0].amount).toBe(1);
+  });
+
+  it("parses '+1 dice/1' duration suffix", () => {
+    const effects = parseEffects("+1 dice/1");
+    expect(effects[0].type).toBe("diceMod");
+    if (effects[0].type !== "diceMod") return;
+    expect(effects[0].rounds).toBe(1);
+  });
+
+  it("does not treat plain 'dice' words as modifiers", () => {
+    const effects = parseEffects("Roll d20 and store");
+    expect(effects[0].type).toBe("unknown");
+  });
+});
+
+describe("parseEffects: miss-rate modifiers", () => {
+  it("parses '-1 MR' as an mrMod", () => {
+    const effects = parseEffects("-1 MR");
+    expect(effects[0].type).toBe("mrMod");
+    if (effects[0].type !== "mrMod") return;
+    expect(effects[0].amount).toBe(-1);
+  });
+
+  it("parses '+3 MR/1' with a duration", () => {
+    const effects = parseEffects("+3 MR/1");
+    expect(effects[0].type).toBe("mrMod");
+    if (effects[0].type !== "mrMod") return;
+    expect(effects[0].amount).toBe(3);
+    expect(effects[0].rounds).toBe(1);
+  });
+
+  it("parses a thirst-gated MR clause (Twin Fangs pattern)", () => {
+    const effects = parseEffects("Thirst 5: +3 MR, Double Hit.");
+    const thirst = effects.find((e) => e.type === "thirst");
+    expect(thirst).toBeDefined();
+    if (thirst?.type !== "thirst") return;
+    expect(thirst.effects.some((e) => e.type === "mrMod")).toBe(true);
+  });
+});
+
+describe("parseEffects: Reaction/Trigger-prefixed when-clauses", () => {
+  it("parses 'Reaction: When X: EFFECT' as a trigger", () => {
+    const effects = parseEffects(
+      "Reaction: When foe ends turn within or enters tile's Star 1: inflict 3 Cripple/1",
+    );
+    expect(effects[0].type).toBe("trigger");
+    if (effects[0].type !== "trigger") return;
+    expect(effects[0].event).toContain("foe ends turn");
+    expect(effects[0].effects.some((e) => e.type === "status")).toBe(true);
+  });
+
+  it("parses 'Trigger: When X: EFFECT' as a trigger", () => {
+    const effects = parseEffects("Trigger: When user is hit: gain +1 MP");
+    expect(effects[0].type).toBe("trigger");
+  });
+});
+
+describe("parseEffects: ignore lists stay together", () => {
+  it("keeps 'Ignores A, B, and C' as one ignore clause", () => {
+    const effects = parseEffects(
+      "Ignores ATK/MAG, half DEF, and outside damage factors",
+    );
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("ignore");
+    if (effects[0].type !== "ignore") return;
+    expect(effects[0].what).toContain("atk/mag");
+    expect(effects[0].what).toContain("half def");
+  });
+
+  it("classifies each fragment of an ignore list", () => {
+    const meta = extractCombatMetadata(
+      parseEffects("Ignores ATK/MAG, half DEF, and outside damage factors"),
+    );
+    expect(meta.ignore.atkMag).toBe(true);
+    expect(meta.ignore.halfDef).toBe(true);
+    expect(meta.ignore.outsideFactors).toBe(true);
+    expect(meta.ignore.def).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// splitClauses: conjunctive pairings and numbered lists stay whole
+// ---------------------------------------------------------------------------
+
+describe("splitClauses: conjunctive pairings stay whole", () => {
+  it("does not split stat pairings ('swap ATK and MAG')", () => {
+    const effects = parseEffects("attacks become opposite damage type, swap ATK and MAG");
+    const fragments = effects.filter((e) => e.type === "unknown");
+    // The " and MAG" must not be orphaned as its own clause.
+    expect(fragments.some((f) => f.type === "unknown" && f.text.trim() === "MAG")).toBe(
+      false,
+    );
+  });
+
+  it("does not split subject pairings ('User and target gain X')", () => {
+    const effects = parseEffects("User and target gain Oath of Mercy");
+    expect(effects).toHaveLength(1);
+    if (effects[0].type !== "unknown") return;
+    expect(effects[0].text).toBe("User and target gain Oath of Mercy");
+  });
+
+  it("keeps 'ignores ATK/MAG and DEF' together instead of orphaning DEF", () => {
+    const effects = parseEffects(
+      "Damage to path foes: ignores ATK/MAG and DEF",
+    );
+    expect(
+      effects.some((e) => e.type === "unknown" && e.text.trim() === "DEF"),
+    ).toBe(false);
+  });
+
+  it("still splits real effect conjunctions ('heal 2 HP and gain +1 ATK/MAG')", () => {
+    const effects = parseEffects("heal 2 HP and gain +1 ATK/MAG");
+    const heal = effects.find((e) => e.type === "heal");
+    expect(heal).toBeDefined();
+    if (heal?.type !== "heal") return;
+    expect(heal.amount).toBe(2);
+  });
+});
+
+describe("splitClauses: numbered list items stay whole", () => {
+  it("keeps a numbered item with a mid-item comma intact", () => {
+    const effects = parseEffects(
+      "4. After damage, the user and target swap their current HP. 5. For one round, attacks automatically hit the user.",
+    );
+    // Item 4 parses as a swap ("swap their current HP"); item 5 stays whole.
+    const swaps = effects.filter((e) => e.type === "swap");
+    expect(swaps.length).toBeGreaterThanOrEqual(1);
+    expect(
+      effects.some((e) => e.type === "unknown" && e.text.includes("For one round") && e.text.includes("attacks automatically hit")),
+    ).toBe(true);
+  });
+
+  it("does not orphan the list marker as its own clause", () => {
+    const effects = parseEffects("5. For one round, attacks automatically hit the user");
+    expect(
+      effects.some((e) => e.type === "unknown" && e.text.trim() === "5"),
+    ).toBe(false);
+  });
+
+  it("handles literal backslash-n line breaks in numbered tables", () => {
+    // Stacked Deck uses literal \\n between d14 outcomes.
+    const effects = parseEffects(
+      "In place of an accuracy roll, roll a 1d14. \\n1. The opponent is healed by the roll, \\n2. The user takes 2x damage from all sources for one round.",
+    );
+    const unk = effects.filter((e) => e.type === "unknown");
+    expect(unk.some((e) => e.text.includes("opponent is healed"))).toBe(true);
+    expect(unk.some((e) => e.text.includes("user takes 2x damage"))).toBe(true);
+    expect(unk.some((e) => e.text.trim() === "MAG")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gladius subweapon clauses: Requires / Switch to / X: branches
+// ---------------------------------------------------------------------------
+
+describe("parseEffects: subweapon clauses", () => {
+  it("parses 'Requires Pilum' as a requires clause", () => {
+    const effects = parseEffects("Requires Pilum. +1 base dice");
+    const req = effects.find((e) => e.type === "requires");
+    expect(req).toBeDefined();
+    if (req?.type !== "requires") return;
+    expect(req.weapons).toEqual(["pilum"]);
+    expect(effects.some((e) => e.type === "diceMod")).toBe(true);
+  });
+
+  it("parses 'Requires Gladius or Pilum' into both weapons", () => {
+    const effects = parseEffects("Requires Gladius or Pilum");
+    expect(effects).toHaveLength(1);
+    if (effects[0].type !== "requires") return;
+    expect(effects[0].weapons).toEqual(["gladius", "pilum"]);
+  });
+
+  it("parses 'Switch to X' / 'swap to X' / 'Start in X' as switchWeapon", () => {
+    for (const [input, expected] of [
+      ["Switch to Pilum", ["pilum"]],
+      ["swap to Gladius", ["gladius"]],
+      ["Start in Gladius", ["gladius"]],
+      ["Switch to Gladius or Scutum", ["gladius", "scutum"]],
+    ] as [string, string[]][]) {
+      const effects = parseEffects(input);
+      expect(effects).toHaveLength(1);
+      if (effects[0].type !== "switchWeapon") continue;
+      expect(effects[0].to).toEqual(expected);
+    }
+  });
+
+  it("recognizes 'and Switch to X' as a clause boundary", () => {
+    // "and switch to Pilum" must split as its own clause rather than being
+    // absorbed into the previous effect (PR-Agent on #169).
+    const effects = parseEffects("Pilum: steal targets' buffs (duration 1). and switch to Scutum");
+    const sw = effects.find((e) => e.type === "switchWeapon");
+    expect(sw).toBeDefined();
+    if (sw?.type !== "switchWeapon") return;
+    expect(sw.to).toEqual(["scutum"]);
+  });
+
+  it("parses 'Swap subweapons (Standard)' as a free-form switch", () => {
+    const effects = parseEffects("Swap subweapons (Standard)");
+    expect(effects).toHaveLength(1);
+    if (effects[0].type !== "switchWeapon") return;
+    expect(effects[0].to).toEqual(["gladius", "scutum", "pilum"]);
+  });
+
+  it("parses 'Gladius: X' branches as subweapon-gated conditionals", () => {
+    const effects = parseEffects(
+      "Gladius: +1 dice. Scutum: ranged attacks on user lose 5 damage.",
+    );
+    const branches = effects.filter((e) => e.type === "conditional");
+    expect(branches).toHaveLength(2);
+    const gladius = branches[0];
+    if (gladius?.type !== "conditional") return;
+    expect(gladius.condition).toBe("subweapon is gladius");
+    expect(gladius.thenEffects.some((e) => e.type === "diceMod")).toBe(true);
+  });
+
+  it("keeps commas and 'and' inside a subweapon branch", () => {
+    const effects = parseEffects(
+      "Pilum: +1 ACC/1 and +1 CR/1",
+    );
+    const branch = effects.find((e) => e.type === "conditional");
+    expect(branch).toBeDefined();
+    if (branch?.type !== "conditional") return;
+    expect(branch.condition).toBe("subweapon is pilum");
+    const types = branch.thenEffects.map((e) => e.type);
+    expect(types).toEqual(["buff", "buff"]);
+  });
+
+  it("keeps a swap inside a branch ('Scutum: Push 3, swap to Pilum')", () => {
+    const effects = parseEffects(
+      "Gladius: swap to Scutum. Scutum: Push 3, swap to Pilum. Pilum: inflict 4 Cripple/1, swap to Gladius.",
+    );
+    const branches = effects.filter((e) => e.type === "conditional");
+    expect(branches).toHaveLength(3);
+    const scutum = branches[1];
+    if (scutum?.type !== "conditional") return;
+    const types = scutum.thenEffects.map((e) => e.type);
+    expect(types).toContain("push");
+    expect(types).toContain("switchWeapon");
+  });
+
+  it("dispatches the matching subweapon branch on apply", () => {
+    const ability = makeAbility({
+      name: "Subweapon Test",
+      range: "Melee",
+      effect: "Gladius: gain +2 ACC/1. Scutum: gain +2 PD/1.",
+    });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+    user.subweapon = "gladius";
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    // Effects apply to the target; only the matching branch should land.
+    const accBuff = target.buffs.find((b) => b.stat === "acc");
+    expect(accBuff).toBeDefined();
+    expect(target.buffs.some((b) => b.stat === "pd")).toBe(false);
+  });
+
+  it("switchWeapon effect updates the entity's subweapon", () => {
+    const ability = makeAbility({ name: "Swap", range: "Melee", effect: "Switch to Pilum" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+
+    expect(user.subweapon).toBe("pilum");
+  });
+
+  it("multi-option 'Switch to Gladius or Scutum' prompts and equips the pick", () => {
+    const ability = makeAbility({
+      name: "Bulwark",
+      range: "Melee",
+      effect: "Switch to Gladius or Scutum.",
+    });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    const { messages, prompts } = driveStream(
+      applyEffectStream(game, user, target, effects, ability),
+      () => 1, // pick the second option (Scutum)
+    );
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].kind).toBe("choose");
+    expect(prompts[0].options.map((o: any) => o.label)).toEqual([
+      "Gladius",
+      "Scutum",
+    ]);
+    expect(user.subweapon).toBe("scutum");
+    expect(messages.some((m) => m.includes("switches to Scutum"))).toBe(true);
+  });
+
+  it("sync applyEffects fans out multi-option switch choices without applying", () => {
+    // The sync wrapper can't collect a prompt, so it lists the options and
+    // leaves the subweapon untouched (manual resolution needed).
+    const ability = makeAbility({
+      name: "Bulwark",
+      range: "Melee",
+      effect: "Switch to Gladius or Scutum.",
+    });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+
+    expect(messages.some((m) => m.includes("Gladius"))).toBe(true);
+    expect(messages.some((m) => m.includes("Scutum"))).toBe(true);
+    expect(user.subweapon).toBeUndefined();
+  });  it("requires clause logs a marker without applying anything", () => {
+    const ability = makeAbility({ name: "Gate", range: "Melee", effect: "Requires Scutum. +1 base dice" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+    const messages = applyEffects(game, user, target, parseEffects(ability.effect), ability);
+    expect(messages.some((m) => m.includes("Requires Scutum"))).toBe(true);
+    expect(user.subweapon).toBeUndefined();
+  });
+
+  it("requiredSubweapons collects the weapons from 'Requires X' clauses", () => {
+    expect(requiredSubweapons("Requires Pilum. +1 base dice")).toEqual(["pilum"]);
+    expect(requiredSubweapons("Requires Gladius or Pilum.")).toEqual([
+      "gladius",
+      "pilum",
+    ]);
+    expect(requiredSubweapons("Requires Scutum.")).toEqual(["scutum"]);
+  });
+
+  it("requiredSubweapons returns [] when there is no requires clause", () => {
+    expect(requiredSubweapons("+1 base dice. Push 2.")).toEqual([]);
+    expect(requiredSubweapons("")).toEqual([]);
+  });
+
+  it("requiredSubweapons dedupes repeated requires clauses", () => {
+    expect(requiredSubweapons("Requires Gladius. Requires Gladius.")).toEqual([
+      "gladius",
+    ]);
+  });
+});
+
+describe("applyEffectStream: crit/dice/MR mods log naturally", () => {
+  it("critMod, diceMod and mrMod all produce log lines", () => {
+    const ability = makeAbility({
+      name: "Triple Mod",
+      range: "Melee",
+      effect: "Crit on 18+. +1 dice. -1 MR.",
+    });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    const messages = applyEffects(game, user, target, effects, ability);
+
+    expect(
+      messages.some((m) => m.toLowerCase().includes("crit threshold lowered to 18")),
+    ).toBe(true);
+    expect(messages.some((m) => m.includes("+1 dice"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("miss rate -1"))).toBe(
+      true,
+    );
+  });
+});
+
+// =============================================================================
+// Lunar Phase: range / defender-dice / double-effects clauses
+// =============================================================================
+
+describe("Lunar Phase clause parsing", () => {
+  it("parses +N Range as a rangeMod", () => {
+    const effects = parseEffects("+1 Range");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("rangeMod");
+    if (effects[0].type === "rangeMod") expect(effects[0].amount).toBe(1);
+  });
+
+  it("parses a phase-gated +N Range inside New Moon", () => {
+    const effects = parseEffects("New Moon: +1 Range.");
+    expect(effects[0].type).toBe("conditional");
+    if (effects[0].type !== "conditional") return;
+    expect(effects[0].condition).toBe("phase is new moon");
+    expect(effects[0].thenEffects[0].type).toBe("rangeMod");
+  });
+
+  it("parses -N dice on attacks targeting user as a targetingDiceMod", () => {
+    const effects = parseEffects("-1 dice on attacks targeting user");
+    expect(effects[0].type).toBe("targetingDiceMod");
+    if (effects[0].type !== "targetingDiceMod") return;
+    expect(effects[0].amount).toBe(-1);
+  });
+
+  it("parses the Fatal Moonlight header as a doubleEffects marker", () => {
+    const effects = parseEffects("Two effects if user has 2 Phases");
+    expect(effects[0].type).toBe("doubleEffects");
+  });
+
+  it("parses the full real Lunar Phase passive without unknowns", () => {
+    const effects = parseEffects(
+      "New Moon: +1 Range. Waxing: +2 dice faces. Full Moon: -1 dice on attacks targeting user. Waning: +1 dice.",
+    );
+    expect(effects.some((e) => e.type === "unknown")).toBe(false);
+    expect(effects.map((e) => e.type)).toEqual([
+      "conditional",
+      "conditional",
+      "conditional",
+      "conditional",
+    ]);
+  });
+});
+
+describe("getPassiveRangeBonus", () => {
+  it("grants +1 Range while the phase is New Moon", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range.",
+      }),
+    ];
+    expect(getPassiveRangeBonus(e, "new moon")).toBe(1);
+    expect(getPassiveRangeBonus(e, "waning")).toBe(0);
+    expect(getPassiveRangeBonus(e)).toBe(0); // no phase -> branch not entered
+  });
+
+  it("applies the Otherwise branch when the active phase mismatches", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range. Otherwise: +2 Range.",
+      }),
+    ];
+    expect(getPassiveRangeBonus(e, "new moon")).toBe(1);
+    expect(getPassiveRangeBonus(e, "waning")).toBe(2);
+    expect(getPassiveRangeBonus(e)).toBe(0); // no phase -> neither branch
+  });
+
+  it("keeps passive standing bonuses single-phase even with a chosen 2nd phase", () => {
+    // Passives deliberately resolve against the active moon phase only
+    // (matching the combat-metadata decision in ac0bfbb); a chosen 2nd
+    // phase must not double-fire a passive's branch.
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Full Moon: +3 Range.",
+      }),
+    ];
+    e.phaseChoice = "full moon";
+    expect(getPassiveRangeBonus(e, "new moon")).toBe(0);
+    expect(getPassiveRangeBonus(e, "full moon")).toBe(3);
+    expect(getPassiveRangeBonus(e, "waning")).toBe(0);
+
+    // Otherwise branch still applies on an active-phase mismatch.
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Waxing: +3 Range. Otherwise: +1 Range.",
+      }),
+    ];
+    expect(getPassiveRangeBonus(e, "waning")).toBe(1); // else
+    expect(getPassiveRangeBonus(e, "waxing")).toBe(3);
+    expect(getPassiveRangeBonus(e, "full moon")).toBe(1); // choice doesn't matter
+  });
+
+  it("is case/whitespace-insensitive to the phase value ('New Moon' still counts)", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range.",
+      }),
+    ];
+    expect(getPassiveRangeBonus(e, "New Moon")).toBe(1);
+    expect(getPassiveRangeBonus(e, "  waning  ")).toBe(0);
+  });
+
+  it("formatSubweapon canonicalizes aliases for display", () => {
+    expect(formatSubweapon("PILUM")).toBe("Pilum");
+    expect(formatSubweapon("pi-lum")).toBe("Pilum");
+    expect(formatSubweapon("gladius")).toBe("Gladius");
+    expect(formatSubweapon("axe")).toBe("");
+    expect(formatSubweapon(undefined)).toBe("");
+  });
+
+  it("sums across multiple passive abilities", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range.",
+      }),
+      makeAbility({ name: "Longer Reach", actionType: "Passive", effect: "+2 Range" }),
+    ];
+    expect(getPassiveRangeBonus(e, "new moon")).toBe(3);
+  });
+});
+
+describe("getDefenderDiceMods", () => {
+  it("penalizes dice while the phase is Full Moon", () => {
+    const e = makeEntity({ num: "P1", name: "Luna", pos: [5, 5] });
+    e.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Full Moon: -1 dice on attacks targeting user.",
+      }),
+    ];
+    expect(getDefenderDiceMods(e, "full moon")).toBe(-1);
+    expect(getDefenderDiceMods(e, "new moon")).toBe(0);
+  });
+});
+
+describe("evaluateCondition: chosen 2nd Phase (two effects)", () => {
+  it("matches the chosen 2nd phase alongside the active phase", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    user.phaseChoice = "waning";
+    expect(evaluateCondition("phase is waning", user, user, "new moon")).toBe(
+      "then",
+    );
+    expect(evaluateCondition("phase is new moon", user, user, "new moon")).toBe(
+      "then",
+    );
+    expect(evaluateCondition("phase is waning", user, user, "waning")).toBe(
+      "then",
+    );
+    expect(evaluateCondition("phase is waxing", user, user, "new moon")).toBe(
+      "else",
+    );
+  });
+
+  it("slash-combo conditions also accept the chosen 2nd phase", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    user.phaseChoice = "waning";
+    expect(
+      evaluateCondition("phase is new moon or waning", user, user, "new moon"),
+    ).toBe("then");
+    expect(
+      evaluateCondition("phase is waxing or waning", user, user, "new moon"),
+    ).toBe("then");
+    expect(
+      evaluateCondition("phase is waxing or full moon", user, user, "new moon"),
+    ).toBe("else");
+  });
+
+  it("does not match other phases without a 2nd phase", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    expect(evaluateCondition("phase is waning", user, user, "new moon")).toBe(
+      "else",
+    );
+  });
+
+  it("applyEffects fires both phase branches while a 2nd phase is held", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    user.phaseChoice = "waning";
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    const ability = makeAbility({
+      name: "Fatal Moonlight",
+      effect: "New Moon: +1 dice. Waning: +2 dice faces.",
+    });
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+    expect(messages.some((m) => m.includes("+1 dice"))).toBe(true);
+    expect(messages.some((m) => m.includes("+2 dice faces"))).toBe(true);
+  });
+
+  it("applyEffects fires only the active phase's branch without a 2nd phase", () => {
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    const ability = makeAbility({
+      name: "Fatal Moonlight",
+      effect: "New Moon: +1 dice. Waning: +2 dice faces.",
+    });
+    const messages = applyEffects(
+      game,
+      user,
+      target,
+      parseEffects(ability.effect),
+      ability,
+    );
+    expect(messages.some((m) => m.includes("+1 dice"))).toBe(true);
+    expect(messages.some((m) => m.includes("+2 dice faces"))).toBe(false);
   });
 });

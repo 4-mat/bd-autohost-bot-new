@@ -8,10 +8,11 @@ import {
   dealDamage,
   hasLineOfSight,
   inRange,
-  hasStatus,
   manhattan,
   pushEntity,
   pullEntity,
+  MOON_PHASE_CYCLE,
+  formatPhase,
 } from "./state.js";
 import { rollDice, toId } from "../utils.js";
 
@@ -26,25 +27,12 @@ export interface StatusInflict {
   rounds: number;
 }
 
-export interface MpCapEffect {
-  type: "mpCap";
-  /** The maximum MP the target has while the cap lasts. */
-  amount: number;
-  rounds: number;
-}
-
 export interface StatMod {
   type: "buff" | "debuff";
   stat: string;
   amount: number;
   rounds?: number;
   percent?: number;
-  /**
-   * Who receives the stat mod: "self" (the ability user) or "target".
-   * Absent (legacy hand-built effects) means target, matching the old
-   * behaviour.
-   */
-  subject?: "self" | "target";
 }
 
 export interface Displacement {
@@ -130,6 +118,39 @@ export interface PhaseEffect {
   phase: string;
 }
 
+/** "No Phase shift next turn" / "User's Phase disabled next turn" (Harvest Moon / Celestial Blessing). */
+export interface SkipPhaseShiftEffect {
+  type: "skipPhaseShift";
+}
+
+/** "Choose another Phase (doesn't shift)" (Far Side of the Moon) -- prompts for a second phase. */
+export interface ChoosePhaseEffect {
+  type: "choosePhase";
+}
+
+/** "+N Range" (Lunar Phase New Moon) -- extends the user's ability ranges. */
+export interface RangeModEffect {
+  type: "rangeMod";
+  amount: number;
+}
+
+/** "-N dice on attacks targeting user" (Lunar Phase Full Moon) -- defender-side. */
+export interface TargetingDiceModEffect {
+  type: "targetingDiceMod";
+  amount: number;
+}
+
+/**
+ * "Two effects if user has 2 Phases" (Fatal Moonlight) -- marker. The actual
+ * double application is driven by evaluateCondition: while the user holds a
+ * chosen 2nd phase (entity.phaseChoice), every "phase is X" branch whose
+ * phase matches the current *or* chosen phase fires, so two phase effects
+ * land.
+ */
+export interface DoubleEffectsEffect {
+  type: "doubleEffects";
+}
+
 export interface DelayLandEffect {
   type: "delayLand";
 }
@@ -150,11 +171,6 @@ export interface TileEffect {
   range: number;
 }
 
-export interface OnMissEffect {
-  type: "onMiss";
-  effects: Effect[];
-}
-
 export interface PerEffect {
   type: "per";
   trigger: string;
@@ -169,15 +185,47 @@ export interface TriggerEffect {
 
 export type PhaseTiming = "before-acc" | "before-damage" | "on-miss" | "regardless";
 
-export interface PhaseGateEffect {
+export interface RequiresEffect {
+  type: "requires";
+  weapons: string[]; // gladius / scutum / pilum
+}
+
+export interface SwitchWeaponEffect {
+  type: "switchWeapon";
+  to: string[]; // gladius / scutum / pilum -- >1 when the player may pick
+}
+
+export interface CritModEffect {
+  type: "critMod";
+  threshold: number;
+}
+
+export interface DiceModEffect {
+  type: "diceMod";
+  kind: "dice" | "diceFaces" | "baseDice";
+  amount: number;
+  rounds?: number;
+}
+
+export interface MrModEffect {
+  type: "mrMod";
+  amount: number;
+  rounds?: number;
+}
+
+export interface PhaseTimingEffect {
   type: "phaseEffect";
   phase: PhaseTiming;
   effects: Effect[];
 }
 
+export interface OnMissEffect {
+  type: "onMiss";
+  effects: Effect[];
+}
+
 export type Effect =
   | StatusInflict
-  | MpCapEffect
   | StatMod
   | Displacement
   | ResourceChange
@@ -193,13 +241,23 @@ export type Effect =
   | ChooseEffect
   | ChannelEffect
   | PhaseEffect
+  | SkipPhaseShiftEffect
+  | ChoosePhaseEffect
+  | RangeModEffect
+  | TargetingDiceModEffect
+  | DoubleEffectsEffect
   | DelayLandEffect
   | MultiHitMod
   | TileEffect
-  | OnMissEffect
   | PerEffect
   | TriggerEffect
-  | PhaseGateEffect
+  | PhaseTimingEffect
+  | OnMissEffect
+  | RequiresEffect
+  | SwitchWeaponEffect
+  | CritModEffect
+  | DiceModEffect
+  | MrModEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -265,6 +323,62 @@ function canonicalResource(name: string): string | null {
   return null;
 }
 
+/** Gladius-class subweapons referenced by "Requires X" / "Switch to X" / "X: EFFECT" clauses. */
+const SUBWEAPONS = ["gladius", "scutum", "pilum"] as const;
+
+/**
+ * Canonicalize any subweapon value ("Gladius", " PILUM ", garbage, undefined)
+ * into the lowercase engine id ("gladius" | "scutum" | "pilum"), or undefined
+ * when it isn't a known subweapon. Every reader that compares an entity's
+ * equipped subweapon should route through this so the id forms always agree.
+ */
+export function normalizeSubweapon(
+  value: string | undefined | null,
+): string | undefined {
+  const id = toId(value ?? "");
+  return (SUBWEAPONS as readonly string[]).includes(id) ? id : undefined;
+}
+
+/**
+ * Canonical display form for a subweapon value ("Pilum" / "pi-lum" ->
+ * "Pilum"). Empty string for invalid/absent values, so stale restored state
+ * never renders raw.
+ */
+export function formatSubweapon(s?: string): string {
+  const n = normalizeSubweapon(s);
+  if (!n) return "";
+  return n.charAt(0).toUpperCase() + n.slice(1);
+}
+
+/**
+ * Splits a subweapon list like "Gladius or Pilum" / "Scutum" into canonical
+ * lowercase ids, ignoring anything that isn't a known subweapon.
+ */
+function parseSubweaponList(text: string): string[] {
+  return text
+    .split(/\s+(?:or|and)\s+|\s*,\s*/)
+    .map((w) => normalizeSubweapon(w))
+    .filter((w): w is string => !!w);
+}
+
+/**
+ * Collect the subweapons required by an ability's effect text ("Requires
+ * Pilum" / "Requires Gladius or Scutum"). Returns [] when the effect has
+ * no `requires` clause. Command/resolve layers use this to gate abilities
+ * the user's equipped subweapon doesn't satisfy.
+ */
+export function requiredSubweapons(effect: string): string[] {
+  const required: string[] = [];
+  for (const e of parseEffects(effect)) {
+    if (e.type === "requires") {
+      for (const w of e.weapons) {
+        if (!required.includes(w)) required.push(w);
+      }
+    }
+  }
+  return required;
+}
+
 /**
  * Memoization for parseEffects. Ability effect strings are static game
  * data, so the same normalized text always parses to the same Effect[].
@@ -292,13 +406,8 @@ function cachedParseEffects(normalized: string): Effect[] {
   return parsed;
 }
 
-// Referentially stable empty result: parseEffects is memoized, and callers
-// may rely on identical inputs yielding the identical array rather than a
-// fresh allocation per call (PR-Agent on #184).
-const EMPTY_EFFECTS: Effect[] = [];
-
 export function parseEffects(text: string): Effect[] {
-  if (!text || !text.trim()) return EMPTY_EFFECTS;
+  if (!text || !text.trim()) return [];
 
   const normalized = text
     .replace(/\n/g, " ")
@@ -311,11 +420,10 @@ export function parseEffects(text: string): Effect[] {
 }
 
 function parseEffectsUncached(normalized: string): Effect[] {
-  const lowerFull = normalized.toLowerCase();
-
   // "On Miss: <effects>" wraps subsequent effects so they only fire
   // when the attack misses.  The prefix is case-insensitive and may
   // appear at the start of the entire ability text.
+  const lowerFull = normalized.toLowerCase();
   const onMissMatch = lowerFull.match(/^on\s+miss:\s*(.+)$/i);
   if (onMissMatch) {
     const inner = parseEffects(onMissMatch[1].trim());
@@ -327,19 +435,11 @@ function parseEffectsUncached(normalized: string): Effect[] {
   // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return
   // one effect rather than splitting on the inner period and losing context.
   // The regex tolerates either ", " or ". " before "Otherwise", and an
-  // optional trailing period at the end of the else-branch. Both comma and
-  // colon separators are accepted ("If X, Y" and "If X: Y").
+  // optional trailing period at the end of the else-branch.
   const fullIfMatch = lowerFull.match(
-    /^if\s+(.+?)\s*[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
-  // A ". " sentence boundary not followed by "otherwise" means the input
-  // is several independent effects, not one conditional: "If target is at
-  // Range 7+: crit on 14+. If target is under Range 3: gain +1 MP/2." must
-  // parse as TWO conditionals, and the second must not be nested inside
-  // the first (its condition is mutually exclusive). Skip the whole-input
-  // match in that case so each sentence is parsed as its own conditional.
-  const hasLaterSentence = /\.\s+(?!otherwise\b)/i.test(normalized);
-  if (fullIfMatch && !hasLaterSentence) {
+  if (fullIfMatch) {
     const thenEffects = parseEffects(fullIfMatch[2].trim());
     const elseEffects = fullIfMatch[3]
       ? parseEffects(fullIfMatch[3].trim())
@@ -353,93 +453,107 @@ function parseEffectsUncached(normalized: string): Effect[] {
     return [conditional];
   }
 
-  // Multi-sentence input: split into sentences (period boundaries, keeping
-  // "otherwise" attached to its conditional) and parse each sentence as a
-  // whole conditional BEFORE generic comma-level clause splitting. This
-  // preserves colon-form conditionals ("If X: Y") whose separator is not a
-  // splitClauses boundary, and keeps comma-form conditionals ("If X, Y")
-  // from being torn apart by the comma splitter.
-  const sentences = splitSentences(normalized);
+
+  const clauses = splitClauses(normalized);
   const effects: Effect[] = [];
 
-  for (const sentence of sentences) {
-    const trimmed = sentence.trim();
-    const sentenceCond = matchWholeConditional(trimmed);
-    if (sentenceCond) {
-      const thenEffects = parseEffects(sentenceCond[2].trim());
-      const elseEffects = sentenceCond[3]
-        ? parseEffects(sentenceCond[3].trim())
-        : undefined;
-      effects.push({
-        type: "conditional",
-        condition: sentenceCond[1].trim(),
-        thenEffects,
-        elseEffects,
-      } as ConditionalEffect);
-      continue;
+  for (const clause of clauses) {
+    const c = clause.trim();
+    // Standalone "Otherwise: EFFECT" / "Otherwise, EFFECT" continues the
+    // PREVIOUS conditional as its else-branch (Blood Moon / Harvest Moon
+    // style "New/Full Moon: X. Otherwise: Y." pairings). A bare "Otherwise"
+    // with no preceding conditional falls through to parseClause and is
+    // surfaced as unknown rather than silently dropped.
+    const otherwiseMatch = c.toLowerCase().match(/^otherwise,?\s*:?\s*(.+)$/);
+    if (otherwiseMatch) {
+      const prev = effects[effects.length - 1];
+      // Never clobber an else-branch a conditional may already carry (a
+      // second "Otherwise:" after "If X, A. Otherwise, B." keeps B).
+      if (prev && prev.type === "conditional" && !prev.elseEffects) {
+        prev.elseEffects = parseEffects(otherwiseMatch[1]);
+        continue;
+      }
     }
-    for (const clause of splitClauses(trimmed)) {
-      const parsed = parseClause(clause.trim());
-      if (parsed) effects.push(...parsed);
-    }
+    const parsed = parseClause(c);
+    if (parsed) effects.push(...parsed);
   }
 
   return effects;
 }
 
-/** Match a single sentence as `If CONDITION[,:] EFFECT [Otherwise EFFECT]`.
- * Returns null when the sentence is not a whole-sentence conditional. */
-function matchWholeConditional(
-  sentence: string,
-): RegExpMatchArray | null {
-  const lower = sentence.toLowerCase();
-  return lower.match(
-    /^if\s+(.+?)\s*[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
+/**
+ * At a depth-0 position, how many characters the clause separator occupies
+ * (0 = not a boundary). Handles sentence periods (but not decimals or
+ * numbered-list markers), list commas (but not inside dice notation,
+ * after "and"/"or", inside thirst/apex/ignore/if/subweapon clauses, or
+ * mid-numbered-item), and " and " only when the right side starts an
+ * effect of its own.
+ */
+function clauseBoundarySkip(
+  text: string,
+  i: number,
+  current: string,
+): number {
+  const ch = text[i];
+  // A period inside a decimal number (e.g. "-1.5 dice faces", "x1.25")
+  // is not a clause boundary -- only sentence periods are.
+  const isDecimalDot =
+    /\d/.test(text[i - 1] ?? "") && /\d/.test(text[i + 1] ?? "");
+  // A period after a bare number is a numbered-list marker ("4. After
+  // damage"), not a sentence end -- keep it attached to the item.
+  const isListMarkerDot = /^\d+$/.test(current.trim());
+  if (
+    ch === "." &&
+    !isInsideDice(text, i) &&
+    !isDecimalDot &&
+    !isListMarkerDot
+  ) {
+    return 1;
+  }
+  if (ch === "," && isCommaBoundary(text, i, current)) return 1;
+  if (isAndBoundary(text, i, current)) return 5;
+  return 0;
+}
+
+/** True when a comma at `i` starts a new clause (not a list continuation). */
+function isCommaBoundary(
+  text: string,
+  i: number,
+  current: string,
+): boolean {
+  const inNumberedItem = /^\d+[.:]\s/.test(current.trim());
+  const commaStartsNewItem = /^,\s*\d+[.:]\s/.test(text.slice(i));
+  return (
+    !isInsideDice(text, i) &&
+    !text.slice(i).match(/^,\s*(?:and|or)\s/i) &&
+    !/^(thirst\s+\d+:|apex:|ignores?\b|if\b|gladius:|scutum:|pilum:)/i.test(
+      current.trim(),
+    ) &&
+    // A comma inside a numbered list item ("5. For one round, attacks
+    // ...") is mid-item, not a clause boundary -- unless it introduces
+    // the next item ("..., 6. The user ...").
+    !(inNumberedItem && !commaStartsNewItem)
   );
 }
 
-/** Split text into sentences on period boundaries at depth 0, treating a
- * period before "otherwise" as part of the same conditional (so
- * "If X: Y. Otherwise: Z." stays one sentence). Periods inside dice
- * notation are ignored. */
-function splitSentences(text: string): string[] {
-  const sentences: string[] = [];
-  let depth = 0;
-  let current = "";
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === "(" || ch === "[") depth++;
-    else if (ch === ")" || ch === "]") depth--;
-
-    const isOtherwisePeriod =
-      ch === "." && /^\.\s+otherwise\b/i.test(text.slice(i));
-    if (
-      depth === 0 &&
-      ch === "." &&
-      !isInsideDice(text, i) &&
-      !isOtherwisePeriod
-    ) {
-      if (current.trim()) sentences.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += ch;
-  }
-  if (current.trim()) sentences.push(current.trim());
-
-  return sentences;
+/** True when " and " at `i` starts a new clause (right side is an effect). */
+function isAndBoundary(text: string, i: number, current: string): boolean {
+  return (
+    text.slice(i).match(/^ and /i) &&
+    !isInsideDice(text, i) &&
+    !/^(thirst\s+\d+:|apex:|ignores?\b|if\b|gladius:|scutum:|pilum:)/i.test(
+      current.trim(),
+    ) &&
+    // Only treat " and " as a clause boundary when the right side
+    // starts an effect of its own.
+    looksLikeEffectStart(text.slice(i + 5))
+  );
 }
 
-/** Whether position `i` ends a clause: a period/comma/" and " at depth 0,
- * excluding periods and commas inside dice notation like 2d6+1 or 1d8,2. */
-function isClauseBoundary(text: string, i: number): boolean {
-  if (isInsideDice(text, i)) return false;
-  const ch = text[i];
-  if (ch === ".") return true;
-  if (ch === "," && !text.slice(i).match(/^,\s*(?:and|or)\s/i)) return true;
-  if (ch === " " && text.slice(i).match(/^ and /i)) return true;
-  return false;
+function looksLikeEffectStart(text: string): boolean {
+  return /^(?:gain|gains|lose|loses|take|takes|inflict|inflicts|deal|deals|heal|heals|push|pulls?|add|adds|reduce|reduces|remove|removes|become|becomes|treat|treated|convert|converts|double|halve|grant|grants|spend|spends|swap|swaps|switch|switches|shield|ignore|ignores|attack|attacks|regain|recover|cleanse|reset|recharge|restore|sacrifice|designate|channel|reroll|roll|start|starts|end|ends|prevent|cannot|may|also|next|this|until|while|per\b|when\b|if\b|crit\b|requir|once|for\s+\d+|[+\-]|x|×|\d)/i.test(
+    text.trim(),
+  );
 }
 
 function splitClauses(text: string): string[] {
@@ -447,17 +561,25 @@ function splitClauses(text: string): string[] {
   let depth = 0;
   let current = "";
 
+  // The data sometimes uses a literal "\n" (backslash-n) as a line break
+  // (e.g. the numbered d14 table on Cards/Stacked Deck). Normalize to a
+  // real newline so the whitespace guards below treat it as a separator.
+  text = text.replace(/\\n/g, "\n");
+
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
 
     if (ch === "(" || ch === "[") depth++;
     else if (ch === ")" || ch === "]") depth--;
-    else if (depth === 0 && isClauseBoundary(text, i)) {
-      if (current.trim()) clauses.push(current.trim());
-      current = "";
-      // " and " is 5 chars: skip past it so it isn't re-scanned.
-      if (/^ and /i.test(text.slice(i))) i += 4;
-      continue;
+    else if (depth === 0) {
+      const skip = clauseBoundarySkip(text, i, current);
+      if (skip > 0) {
+        if (current.trim()) clauses.push(current.trim());
+        current = "";
+        // " and " is 5 chars: skip past it so it isn't re-scanned.
+        i += skip - 1;
+        continue;
+      }
     }
     current += ch;
   }
@@ -466,6 +588,13 @@ function splitClauses(text: string): string[] {
   return clauses;
 }
 
+/**
+ * True when the given text plausibly *starts an effect clause* ("gain +1
+ * ACC", "-1 MR", "inflict 3 Bleed/1") rather than continuing a list
+ * ("and MAG", "and target gain X"). splitClauses uses this so conjunctive
+ * pairings like "swap ATK and MAG" / "User and target ..." / "obstructions
+ * and DEF" stay whole instead of fragmenting into orphan tokens.
+ */
 function isInsideDice(text: string, pos: number): boolean {
   let depth = 0;
   for (let i = 0; i < pos; i++) {
@@ -486,15 +615,9 @@ function parseClause(clause: string): Effect[] {
 
   const clauseMatch = parseClauseStructured(lower);
   if (clauseMatch) return clauseMatch;
-
   // Inflict: "inflict N Status/M" or "inflict Status/M" or "N Status/M" or "Status/M"
   const statusEffects = parseStatusInflict(lower);
   if (statusEffects.length > 0) return statusEffects;
-
-  // MP cap: "Target: 3 MP/1" (unsigned, target-directed) = the target
-  // only has 3 MP for one round. This must NOT become a positive buff.
-  const mpCap = parseMpCap(lower);
-  if (mpCap) return [mpCap];
 
   // Stat modifiers: "+N STAT/M" or "-N STAT/M" or "+N% STAT/M"
   const statMods = parseStatMods(lower);
@@ -529,10 +652,288 @@ function parseClause(clause: string): Effect[] {
 }
 
 /** Structured clauses with a fixed keyword prefix (If/Thirst/Apex/...). */
+/**
+ * Parse subweapon clauses: "Requires Pilum.", "Switch to Pilum.",
+ * "Swap subweapons", and "Gladius: EFFECT" branches. Returns null when
+ * the clause isn't a subweapon statement.
+ */
+function parseSubweaponClause(lower: string): Effect[] | null {
+  // Subweapon requirement: "Requires Pilum." / "Requires Gladius or Pilum."
+  // (Gladius class). Gated abilities may only be used while the named
+  // subweapon is equipped; the resolve layer surfaces this as a marker.
+  const requiresMatch = lower.match(/^requires\s+(.+?)\s*\.?$/);
+  if (requiresMatch) {
+    const weapons = parseSubweaponList(requiresMatch[1]);
+    if (weapons.length > 0) {
+      return [{ type: "requires", weapons }];
+    }
+  }
+
+  // Switch subweapon: "Switch to Pilum." / "swap to Gladius" /
+  // "Switch to Gladius or Scutum." / "Start in Gladius."
+  const switchMatch = lower.match(
+    /^(?:switch|swap)\s+to\s+(.+?)\s*\.?$|^start\s+in\s+(.+?)\s*\.?$/,
+  );
+  if (switchMatch) {
+    const weapons = parseSubweaponList(switchMatch[1] ?? switchMatch[2]);
+    if (weapons.length > 0) {
+      return [{ type: "switchWeapon", to: weapons }];
+    }
+  }
+
+  // "Swap subweapons (Standard)" -- free-form swap action.
+  if (/^swap subweapons?/.test(lower)) {
+    return [{ type: "switchWeapon", to: ["gladius", "scutum", "pilum"] }];
+  }
+
+  // Subweapon-conditional sub-effect: "Gladius: EFFECT" / "Scutum: EFFECT" /
+  // "Pilum: EFFECT" -- each branch applies only while that subweapon is held.
+  const subweaponCondMatch = lower.match(
+    /^(gladius|scutum|pilum):\s*(.+)$/,
+  );
+  if (subweaponCondMatch) {
+    return [{
+      type: "conditional",
+      condition: `subweapon is ${subweaponCondMatch[1]}`,
+      thenEffects: parseEffects(subweaponCondMatch[2]),
+    }];
+  }
+
+  return null;
+}
+
+/**
+ * Parse combat-mod clauses: "Crit on N+" / "+N dice" / "+N base dice" /
+ * "+N dice faces" / "+N MR". Returns null when the clause isn't one.
+ */
+function parseModClause(lower: string): Effect[] | null {
+  // Crit threshold: "Crit on 18+" / "Crit on 14+" -- lowers the roll
+  // needed to crit from the engine default of 20.
+  const critModMatch = lower.match(/^crit\s+on\s+(\d+)\+?$/);
+  if (critModMatch) {
+    return [{ type: "critMod", threshold: parseInt(critModMatch[1]) }];
+  }
+
+  // Dice modifiers: "+1 dice" / "+1 base dice" / "+4 dice faces" /
+  // "-1.5 dice faces" / "+1 dice/1". Optional "gain/gains" verb. We
+  // deliberately do NOT accept a "label:" prefix (e.g. "Melee on Bounty:
+  // +1 dice") -- those clauses are gated conditions, and extractCombatMetadata
+  // would otherwise apply them to every attack as unconditional dice.
+  const diceModMatch = lower.match(
+    /^(?:(?:gain|gains)\s*)?([+-])\s*(\d+(?:\.\d+)?)\s+(?:(base)\s+)?dice(?:\s+faces)?(?:\s*\/\s*(\d+))?$/,
+  );
+  if (diceModMatch) {
+    const sign = diceModMatch[1] === "-" ? -1 : 1;
+    const kind = diceModMatch[3]
+      ? "baseDice"
+      : /faces/.test(diceModMatch[0])
+        ? "diceFaces"
+        : "dice";
+    return [{
+      type: "diceMod",
+      kind,
+      amount: sign * parseFloat(diceModMatch[2]),
+      rounds: diceModMatch[4] ? parseInt(diceModMatch[4]) : undefined,
+    }];
+  }
+
+  // Miss-rate modifier: "+2 MR" / "-1 MR" / "+3 MR/1" (with duration).
+  const mrModMatch = lower.match(/^([+-])\s*(\d+)\s+mr(?:\s*\/\s*(\d+))?$/);
+  if (mrModMatch) {
+    const sign = mrModMatch[1] === "-" ? -1 : 1;
+    return [{
+      type: "mrMod",
+      amount: sign * parseInt(mrModMatch[2]),
+      rounds: mrModMatch[3] ? parseInt(mrModMatch[3]) : undefined,
+    }];
+  }
+
+  // Range bonus: "+1 Range" / "-1 Range" -- standing passive bonus
+  // (Lunar Phase's "+1 Range") consumed statically by getPassiveRangeBonus.
+  const rangeModMatch = lower.match(/^([+-])\s*(\d+)\s+range$/);
+  if (rangeModMatch) {
+    return [{
+      type: "rangeMod",
+      amount: (rangeModMatch[1] === "-" ? -1 : 1) * parseInt(rangeModMatch[2]),
+    }];
+  }
+
+  // Defender dice penalty: "-1 dice on attacks targeting user" -- Lunar
+  // Phase's "Full Moon: -N dice on attacks targeting user", consumed
+  // statically by getDefenderDiceMods when this entity is attacked.
+  const targetingDiceModMatch = lower.match(
+    /^([+-])\s*(\d+)\s+dice on attacks targeting (?:the )?user$/,
+  );
+  if (targetingDiceModMatch) {
+    return [{
+      type: "targetingDiceMod",
+      amount: (targetingDiceModMatch[1] === "-" ? -1 : 1) *
+        parseInt(targetingDiceModMatch[2]),
+    }];
+  }
+
+  return null;
+}
+
+const PHASE_PREFIX_MAP: Record<string, PhaseTiming> = {
+  "before accuracy": "before-acc",
+  "before damage": "before-damage",
+  "on miss": "on-miss",
+  "regardless": "regardless",
+  "regard": "regardless",
+};
+
+interface SimpleClausePattern {
+  re: RegExp;
+  build: (m: RegExpMatchArray) => Effect[] | null;
+}
+
+// Table of single-match clause patterns tried in order after the special
+// cases (if/choose/subweapon/mod). Each entry knows how to turn its match
+// into an Effect, keeping parseClauseStructured a flat loop.
+const SIMPLE_CLAUSE_PATTERNS: SimpleClausePattern[] = [
+  // Thirst: "Thirst N: EFFECT"
+  {
+    re: /^thirst\s+(\d+):\s*(.+)$/,
+    build: (m) => [{
+      type: "thirst",
+      threshold: parseInt(m[1]),
+      effects: parseEffects(m[2]),
+    }],
+  },
+  // Apex: "Apex: EFFECT"
+  {
+    re: /^apex:\s*(.+)$/,
+    build: (m) => [{ type: "apex", effects: parseEffects(m[1]) }],
+  },
+  // Channel: "Channel STAT for N rounds"
+  {
+    re: /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
+    build: (m) => [{
+      type: "channel",
+      stat: m[1],
+      rounds: m[2] ? parseInt(m[2]) : 1,
+    }],
+  },
+  // Phase slash-combo: "New/Full Moon: EFFECT" / "Waxing/Waning: EFFECT" --
+  // two phases share one branch; the other two are the implicit else. The
+  // else can arrive either as an inline "... Otherwise: Y" (Harvest Moon's
+  // "1d10+2" plus-sign keeps the whole text in ONE clause) or as a separate
+  // clause (Blood Moon), which parseEffects' loop attaches below.
+  // "New/Full Moon" writes the first phase as a bare "new" (and the data
+  // only ever shortens "new"/"full"), so both spellings are accepted and
+  // normalized before building the condition.
+  {
+    re: /^(new moon|new|waxing|full moon|full|waning)\s*\/\s*(new moon|waxing|full moon|waning):\s*(.+)$/,
+    build: (m) => {
+      const norm = (p: string) =>
+        p === "new" ? "new moon" : p === "full" ? "full moon" : p;
+      const body = m[3];
+      const elseAt = body.search(/\s+otherwise,?\s*:?\s*/i);
+      const thenText = elseAt >= 0 ? body.slice(0, elseAt) : body;
+      const elseText =
+        elseAt >= 0
+          ? body.slice(elseAt).replace(/^\s+otherwise,?\s*:?\s*/i, "")
+          : undefined;
+      return [{
+        type: "conditional",
+        condition: `phase is ${norm(m[1])} or ${norm(m[2])}`,
+        thenEffects: parseEffects(thenText),
+        elseEffects: elseText ? parseEffects(elseText) : undefined,
+      }];
+    },
+  },
+  // Phase: "Phase: PHASE_NAME"
+  {
+    re: /^phase:\s*(new moon|waxing|full moon|waning)$/,
+    build: (m) => [{ type: "phase", phase: m[1] }],
+  },
+  // Phase-conditional sub-effect: "New Moon: EFFECT" / "Full Moon: EFFECT" etc.
+  {
+    re: /^(new moon|waxing|full moon|waning):\s*(.+)$/,
+    build: (m) => [{
+      type: "conditional",
+      condition: `phase is ${m[1]}`,
+      thenEffects: parseEffects(m[2]),
+    }],
+  },
+  // "No Phase shift next turn" / "User's Phase disabled next turn" -- the
+  // Lunar Rod (Harvest Moon / Celestial Blessing) can suppress the next
+  // turn's auto-advance. nextTurn consumes the game-level flag.
+  {
+    re: /^(?:no|skip)\s+phase shift(?: next turn)?$|^user'?s phase disabled next turn$/,
+    build: () => [{ type: "skipPhaseShift" }],
+  },
+  // "Two effects if user has 2 Phases" (Fatal Moonlight header) -- marker.
+  // The double-application itself is driven by evaluateCondition matching
+  // the user's chosen 2nd phase, so no runtime behavior lives here.
+  {
+    re: /^two effects? if (?:the )?user has (?:2|two) phases?$/,
+    build: () => [{ type: "doubleEffects" }],
+  },
+  // Phase-prefixed: "Before accuracy: EFFECT" / "On Miss: EFFECT" / etc.
+  {
+    re: /^(before accuracy|before damage|on miss|regard(?:less)?):\s*(.+)$/,
+    build: (m) => [{
+      type: "phaseEffect",
+      phase: PHASE_PREFIX_MAP[m[1]],
+      effects: parseEffects(m[2]),
+    }],
+  },
+  // Per: "Per hit: EFFECT" / "Per 5 CP: EFFECT" / "Per X: EFFECT"
+  {
+    re: /^per\s+(.+?):\s*(.+)$/,
+    build: (m) => [{
+      type: "per",
+      trigger: m[1].trim(),
+      effects: parseEffects(m[2]),
+    }],
+  },
+  // "Trigger: When X: EFFECT" -- the action-economy label is redundant
+  // with the ability's actionType, so strip it and parse the When clause.
+  {
+    re: /^(?:reaction|trigger):\s*when\s+(.+?):\s*(.+)$/,
+    build: (m) => [{
+      type: "trigger",
+      event: m[1].trim(),
+      effects: parseEffects(m[2]),
+    }],
+  },
+  // When: "When user damages a foe: EFFECT" / "When attacked for 40+: EFFECT"
+  {
+    re: /^when\s+(.+?):\s*(.+)$/,
+    build: (m) => [{
+      type: "trigger",
+      event: m[1].trim(),
+      effects: parseEffects(m[2]),
+    }],
+  },
+  // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
+  {
+    re: /^(?:delay[\s-]+(\d+)\s+rounds?|delay-?(\d+))$/,
+    build: (m) => [{ type: "delay", rounds: parseInt(m[1] ?? m[2]) }],
+  },
+  // Recoil: "Recoil N%"
+  {
+    re: /^recoil\s+(\d+)%$/,
+    build: (m) => [{ type: "recoil", percent: parseInt(m[1]) }],
+  },
+  // Ignore: "Ignore(s) X"
+  {
+    re: /^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/,
+    build: (m) => [{ type: "ignore", what: m[1].trim() }],
+  },
+  // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
+  {
+    re: /multi[\s-]hit[:\s]+(\d+)/,
+    build: (m) => [{ type: "multiHit", hits: parseInt(m[1]) }],
+  },
+];
+
 function parseClauseStructured(lower: string): Effect[] | null {
-  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]"
+  // Conditional: "If CONDITION, EFFECT [Otherwise, EFFECT]" (comma or colon)
   const ifMatch = lower.match(
-    /^if\s+(.+?),\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
+    /^if\s+(.+?)[,:]\s*(.+?)(?:\s+otherwise,?\s*(.+))?$/,
   );
   if (ifMatch) {
     return [{
@@ -543,20 +944,12 @@ function parseClauseStructured(lower: string): Effect[] | null {
     }];
   }
 
-  // Thirst: "Thirst N: EFFECT"
-  const thirstMatch = lower.match(/^thirst\s+(\d+):\s*(.+)$/);
-  if (thirstMatch) {
-    return [{
-      type: "thirst",
-      threshold: parseInt(thirstMatch[1]),
-      effects: parseEffects(thirstMatch[2]),
-    }];
-  }
-
-  // Apex: "Apex: EFFECT"
-  const apexMatch = lower.match(/^apex:\s*(.+)$/);
-  if (apexMatch) {
-    return [{ type: "apex", effects: parseEffects(apexMatch[1]) }];
+  // "Choose another Phase (doesn't shift)" -- Far Side of the Moon. Prompts
+  // the user for a SECOND phase that can power Lunar Rod effects; it never
+  // shifts the active phase itself. Must run before the generic Choose branch
+  // (which would otherwise treat "another phase (doesn't shift)" as an option).
+  if (/^choose (?:another|a) phase/.test(lower)) {
+    return [{ type: "choosePhase" }];
   }
 
   // Choose: "Choose: EFFECT1 [or EFFECT2 [or EFFECT3]]" or "Choose EFFECT1 or EFFECT2".
@@ -570,106 +963,18 @@ function parseClauseStructured(lower: string): Effect[] | null {
     if (options.length > 0) return [{ type: "choose", options }];
   }
 
-  // Channel: "Channel STAT for N rounds"
-  const channelMatch = lower.match(
-    /^channel\s+(\w+)(?:\s+for\s+(\d+)\s+rounds?)?$/,
-  );
-  if (channelMatch) {
-    return [{
-      type: "channel",
-      stat: channelMatch[1],
-      rounds: channelMatch[2] ? parseInt(channelMatch[2]) : 1,
-    }];
+  const subweaponClause = parseSubweaponClause(lower);
+  if (subweaponClause) return subweaponClause;
+
+  const modClause = parseModClause(lower);
+  if (modClause) return modClause;
+
+  for (const clause of SIMPLE_CLAUSE_PATTERNS) {
+    const m = lower.match(clause.re);
+    if (!m) continue;
+    const built = clause.build(m);
+    if (built) return built;
   }
-
-  // Phase: "Phase: PHASE_NAME"
-  const phaseMatch = lower.match(
-    /^phase:\s*(new moon|waxing|full moon|waning)$/,
-  );
-  if (phaseMatch) {
-    return [{ type: "phase", phase: phaseMatch[1] }];
-  }
-
-  // Moon-phase prefix + Per/When triggers: "New Moon: E" / "Per 5 CP: E" /
-  // "When user kills a foe: E" -- gate their sub-effects. Extracted to keep
-  // parseClauseStructured under the cyclomatic-complexity limit.
-  const prefixGate = parseTriggerPrefix(lower);
-  if (prefixGate) return prefixGate;
-
-  const tail = parseTailSimple(lower);
-  if (tail) return tail;
-
-  return null;
-}
-
-/** Single-keyword clauses parsed at the end: Delay / Recoil / Ignore / Multi-Hit.
- * Extracted to keep parseClauseStructured under the cyclomatic-complexity limit. */
-function parseTailSimple(lower: string): Effect[] | null {
-  // Delay: "Delay N rounds" or "Delay-N" or "Delay-1. May delay up to +2 more turns."
-  const delayMatch =
-    lower.match(/^delay[\s-]+(\d+)\s+rounds?$/) ??
-    lower.match(/^delay-?(\d+)$/);
-  if (delayMatch) {
-    return [{ type: "delay", rounds: parseInt(delayMatch[1]) }];
-  }
-
-  // Recoil: "Recoil N%"
-  const recoilMatch = lower.match(/^recoil\s+(\d+)%$/);
-  if (recoilMatch) {
-    return [{ type: "recoil", percent: parseInt(recoilMatch[1]) }];
-  }
-
-  // Ignore: "Ignore(s) X"
-  const ignoreMatch = lower.match(/^ignores?\s+(?:non-\w+\s+)?(.+?)\.?$/);
-  if (ignoreMatch) {
-    return [{ type: "ignore", what: ignoreMatch[1].trim() }];
-  }
-
-  // Multi-hit from dice: "Multi-Hit: N" or "becomes Multi-Hit: N"
-  const multiHitMatch = lower.match(/multi[\s-]hit[:\s]+(\d+)/);
-  if (multiHitMatch) {
-    return [{ type: "multiHit", hits: parseInt(multiHitMatch[1]) }];
-  }
-
-  return null;
-}
-
-/**
- * Clauses that gate their sub-effects behind a prefix word + colon:
- *   - "New Moon: EFFECT" / "Full Moon: ..." -> a phase-conditional effect.
- *   - "Per hit: EFFECT" / "Per 5 CP: EFFECT" -> a PerEffect trigger.
- *   - "When user kills a foe: EFFECT" -> a TriggerEffect.
- * Returns null when the clause is not one of these prefix-gated forms.
- */
-function parseTriggerPrefix(lower: string): Effect[] | null {
-  const moonMatch = lower.match(
-    /^(new moon|full moon|waxing|waning):\s*(.+)$/,
-  );
-  if (moonMatch) {
-    return [{
-      type: "conditional",
-      condition: `phase is ${moonMatch[1]}`,
-      thenEffects: parseEffects(moonMatch[2]),
-    }];
-  }
-
-  const perMatch = lower.match(/^per\s+(.+?):\s*(.+)$/);
-  if (perMatch) {
-    return [{
-      type: "per",
-      trigger: perMatch[1].trim(),
-      effects: parseEffects(perMatch[2]),
-    }];
-  }
-  const whenMatch = lower.match(/^when\s+(.+?):\s*(.+)$/);
-  if (whenMatch) {
-    return [{
-      type: "trigger",
-      event: whenMatch[1].trim(),
-      effects: parseEffects(whenMatch[2]),
-    }];
-  }
-
   return null;
 }
 
@@ -739,102 +1044,49 @@ function parseStatusInflict(lower: string): Effect[] {
   return [];
 }
 
-/**
- * "Target: 3 MP/1" / "Targets: 2 MP/2" -- an unsigned, target-directed
- * clause that SETS the target's MP budget for the round (Razor Rust: "the
- * target only has 3 MP"). Only matches when the value is unsigned; signed
- * forms ("target -3 MP/1", "+3 MP") are ordinary buffs/debuffs handled by
- * parseStatMods.
- */
-function parseMpCap(lower: string): MpCapEffect | null {
-  const m = lower.match(
-    /^targets?\s*:?\s*(\d+)\s*mp\s*(?:\/\s*(\d+))?$/,
-  );
-  if (!m) return null;
-  return {
-    type: "mpCap",
-    amount: parseInt(m[1], 10),
-    rounds: m[2] ? parseInt(m[2], 10) : 1,
-  };
-}
-
 function parseStatMods(lower: string): Effect[] {
   const effects: Effect[] = [];
-  const subject = statModSubject(lower);
+
+  // Pattern: "+N STAT/M" or "-N STAT/M" with optional "for" or "until"
+  // Also: "+N% STAT" or "-N% STAT"
+  // Also: "+N STAT" without duration
+  // Also: "gain +N STAT/M"
 
   const statRegex =
-    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range|dice faces|dice)\s*(?:\/\s*(\d+))?/g;
+    /([+-]?)\s*(\d+(?:\.\d+)?%?)\s+(atk|mag|pd|md|def|mdef|pdef|eva|mp|acc|cr|dmg|damage|range)\s*(?:\/\s*(\d+))?/g;
   let match;
   while ((match = statRegex.exec(lower)) !== null) {
     const sign = match[1] === "-" ? -1 : 1;
     const isPercent = match[2].includes("%");
     const value = parseFloat(match[2].replace("%", ""));
-    const stat = normalizeStatName(match[3]);
+    let stat = match[3].toLowerCase();
 
-    // "remove 1 dice" / "lose 2 MP" -- an unsigned value preceded by a
-    // removal verb is a negative modifier, not a gain.
-    const before = lower.slice(0, match.index);
-    const removed = sign > 0 && /(remove|lose|spend|cost)\s*$/.test(before);
+    // Normalize stat names
+    if (stat === "damage") stat = "dmg";
+    if (stat === "mdef") stat = "md";
+    if (stat === "pdef") stat = "pd";
 
     const rounds = match[4] ? parseInt(match[4]) : undefined;
 
     if (isPercent) {
       effects.push({
-        type: sign > 0 && !removed ? "buff" : "debuff",
+        type: sign > 0 ? "buff" : "debuff",
         stat,
         amount: 0,
-        percent: (removed ? -1 : sign) * value,
+        percent: sign * value,
         rounds,
-        subject,
       });
     } else {
       effects.push({
-        type: sign > 0 && !removed ? "buff" : "debuff",
+        type: sign > 0 ? "buff" : "debuff",
         stat,
-        amount: (removed ? -1 : sign) * value,
+        amount: sign * value,
         rounds,
-        subject,
       });
     }
   }
 
   return effects;
-}
-
-// Clause-level subject: a stat-mod clause is a self-buff ("gain +3 ATK/1"
-// and the common bare "+3 ATK/1", e.g. Fantasia's Choose or "This turn:
-// +2 MP") unless the clause opens with a target recipient marker
-// ("inflict -3 DEF/1", "target -3 MP/1", "Targets: -25% damage", "Foes
-// in Star 3: ..."). "target" inside a condition ("targets at full HP:
-// +5 damage") stays a self-buff.
-function statModSubject(lower: string): "self" | "target" {
-  if (/\binflict/.test(lower)) return "target";
-  // "Target: N STAT" clauses may be unsigned (e.g. Razor Rust's
-  // "Target: 3 MP/1" = the target only has 3 MP). Accept an optional
-  // +/- sign so those route to the target, not the user.
-  if (/^targets?\s*:?\s*[-+]?\s*\d/.test(lower)) return "target";
-  if (/^targets?\s+[-+]?\s*\d/.test(lower)) return "target";
-  if (/^foes?\s+in\b/.test(lower)) return "target";
-  // "Each target's ..." clauses are also target-directed.
-  if (/^each\s+target/.test(lower)) return "target";
-  // "Target gains +4 DMG/1" / "Healed targets gain +1 EVA/1" -- the
-  // target is the recipient. "Targets at full HP: +5 damage" (a
-  // condition) stays a self-buff because it uses "at", not "gain".
-  if (/targets?\s+gains?\b/.test(lower)) return "target";
-  // "Next Standard/Full on each target: +2 ACC" -- recipient is target.
-  if (/on each target/.test(lower)) return "target";
-  return "self";
-}
-
-const STAT_ALIASES: Record<string, string> = {
-  damage: "dmg",
-  mdef: "md",
-  pdef: "pd",
-};
-
-function normalizeStatName(raw: string): string {
-  const stat = raw.toLowerCase();
-  return STAT_ALIASES[stat] ?? stat;
 }
 
 function parseDamageMod(lower: string): Effect[] {
@@ -923,14 +1175,12 @@ function parseDisplacement(lower: string): Effect[] {
 function parseResource(lower: string): Effect[] {
   const effects: Effect[] = [];
 
-  const resRegex = /(gain|spend|lose)\s+([+-]?\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
+  const resRegex = /(gain|spend|lose)\s+(\d+(?:\+|-?\d+)?|X|any)\s+([a-z]+)/i;
   const match = lower.match(resRegex);
   if (match) {
     const action = match[1].toLowerCase() as "gain" | "spend" | "lose";
     const amountStr = match[2];
-    const amount = /^[+-]?\d+$/.test(amountStr)
-      ? parseInt(amountStr, 10)
-      : amountStr;
+    const amount = /^\d+$/.test(amountStr) ? parseInt(amountStr) : amountStr;
     const resource = match[3].toLowerCase();
 
     if (RESOURCE_NAMES.includes(resource) || lower.includes(resource)) {
@@ -1196,7 +1446,16 @@ export function isApexActive(
   // inBeam helper, so beam is handled separately below (with its own
   // centerline LOS check). For all other range types, require the target
   // to be in range (handles LOS).
-  if (type !== "beam" && !inRange(game, user.pos, target.pos, ability.range)) {
+  if (
+    type !== "beam" &&
+    !inRange(
+      game,
+      user.pos,
+      target.pos,
+      ability.range,
+      getPassiveRangeBonus(user, game.moonPhase),
+    )
+  ) {
     return false;
   }
 
@@ -1311,6 +1570,40 @@ export function applyEffects(
  */
 export type ConditionOutcome = "then" | "else" | "unknown";
 
+/**
+ * "phase is X" / "phase is X or Y" -- moon-phase conditions generated by the
+ * "New Moon: EFFECT" and "New/Full Moon: EFFECT" parser branches. Returns
+ * the outcome, or null when the text isn't a phase condition. The user's
+ * chosen 2nd Phase (Far Side of the Moon) also counts: while one is held,
+ * BOTH the active phase's branch and the chosen phase's branch fire for
+ * every phase-gated ability (the general rule behind Fatal Moonlight's
+ * "Two effects if user has 2 Phases").
+ */
+function evalMoonPhaseCondition(
+  lower: string,
+  user: Entity,
+  moonPhase?: string,
+): ConditionOutcome | null {
+  const current = (moonPhase ?? "new moon").toLowerCase().trim();
+  const second = (user.phaseChoice ?? "").toLowerCase().trim();
+  const matches = (p: string) => current === p || second === p;
+  const phaseOrMatch = lower.match(
+    /^phase is (new moon|waxing|full moon|waning) or (new moon|waxing|full moon|waning)$/,
+  );
+  if (phaseOrMatch) {
+    return matches(phaseOrMatch[1]) || matches(phaseOrMatch[2])
+      ? "then"
+      : "else";
+  }
+  const phaseMatch = lower.match(
+    /^phase is (new moon|waxing|full moon|waning)$/,
+  );
+  if (phaseMatch) {
+    return matches(phaseMatch[1]) ? "then" : "else";
+  }
+  return null;
+}
+
 export function evaluateCondition(
   text: string,
   user: Entity,
@@ -1322,7 +1615,28 @@ export function evaluateCondition(
   const resourceEq = evalResourceEquality(lower, user);
   if (resourceEq !== null) return resourceEq;
 
-  const negate = evalNegation(lower, user, target);
+  const moonPhaseCond = evalMoonPhaseCondition(lower, user, moonPhase);
+  if (moonPhaseCond !== null) return moonPhaseCond;
+
+  // "user has 2 Phases" -- Far Side of the Moon stores a chosen second phase
+  // on the user (entity.phaseChoice); the condition holds while one exists.
+  if (/^user has (?:2|two) phases?$/.test(lower)) {
+    return user.phaseChoice ? "then" : "else";
+  }
+
+  // Subweapon condition, generated by the "Gladius: EFFECT" / "Scutum: EFFECT"
+  // / "Pilum: EFFECT" parser branch (condition text: "subweapon is gladius"
+  // etc.). Resolves against the user's equipped subweapon; entities without
+  // one fail the check.
+  const subweaponMatch = lower.match(
+    /^subweapon is (gladius|scutum|pilum)$/,
+  );
+  if (subweaponMatch) {
+    const current = normalizeSubweapon(user.subweapon) ?? "";
+    return current === subweaponMatch[1] ? "then" : "else";
+  }
+
+  const negate = evalNegation(lower, user, target, moonPhase);
   if (negate !== null) return negate;
 
   const alive = evalAlive(lower, target);
@@ -1343,76 +1657,7 @@ export function evaluateCondition(
   const word = evalStatWordCompare(lower, user, target);
   if (word !== null) return word;
 
-  const phase = evalMoonPhase(lower, moonPhase);
-  if (phase !== null) return phase;
-
-  const debuffed = evalDebuffed(lower, user, target);
-  if (debuffed !== null) return debuffed;
-
-  const active = evalActive(lower, user, target);
-  if (active !== null) return active;
-
   return "unknown";
-}
-
-/** "phase is new moon" / "phase is full moon" — checks against the game's
- * active moon phase. When none has been set, the default phase is new moon. */
-function evalMoonPhase(
-  lower: string,
-  moonPhase?: string,
-): ConditionOutcome | null {
-  const m = lower.match(/^phase is (.+)$/);
-  if (!m) return null;
-  const active = (moonPhase ?? "new moon").toLowerCase();
-  return m[1].trim().toLowerCase() === active ? "then" : "else";
-}
-
-/** "<user|target> debuffed (by foe)" -- any negative buff active. */
-function evalDebuffed(
-  lower: string,
-  user: Entity,
-  target: Entity,
-): ConditionOutcome | null {
-  const m = lower.match(
-    /^(user|target)\s+debuffed(?:\s+by\s+[a-z]+)?$/,
-  );
-  if (!m) return null;
-  const entity = m[1] === "user" ? user : target;
-  return entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
-}
-
-/**
- * "<name> (not) active" / "<user|target> <name> (not) active"
- * e.g. "Moonblast active", "Moonblast or Celestial Blessing active",
- * "debuff not active". Bare names default to the target (for self-targeted
- * abilities the target *is* the user, so both readings line up).
- */
-function evalActive(
-  lower: string,
-  user: Entity,
-  target: Entity,
-): ConditionOutcome | null {
-  const m = lower.match(/^(?:(user|target)\s+)?(.+?)\s+(not\s+)?active$/);
-  if (!m) return null;
-  const which = m[1] ?? "target";
-  const name = m[2].trim();
-  const negated = Boolean(m[3]);
-  const entity = which === "user" ? user : target;
-  let outcome: ConditionOutcome;
-  if (name === "debuff") {
-    outcome = entity.buffs.some((b) => b.amount < 0) ? "then" : "else";
-  } else if (name === "buff") {
-    outcome = entity.buffs.some((b) => b.amount > 0) ? "then" : "else";
-  } else {
-    const candidates = name
-      .split(/\s+or\s+|\s*,\s*/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    outcome = candidates.some((c) => hasStatus(entity, c))
-      ? "then"
-      : "else";
-  }
-  return negated ? (outcome === "then" ? "else" : "then") : outcome;
 }
 
 /** "5 Blood" / "0 Campaigns" / "no Campaigns" — resource threshold. */
@@ -1439,10 +1684,11 @@ function evalNegation(
   lower: string,
   user: Entity,
   target: Entity,
+  moonPhase?: string,
 ): ConditionOutcome | null {
   const m = lower.match(/^(?:not|no)\s+(.+)$/);
   if (!m) return null;
-  const inner = evaluateCondition(m[1], user, target);
+  const inner = evaluateCondition(m[1], user, target, moonPhase);
   if (inner === "then") return "else";
   if (inner === "else") return "then";
   return "unknown";
@@ -1672,36 +1918,6 @@ function* handleStatus(
   }
 }
 
-/**
- * Apply an MP cap: clamp the target's MP budget to `amount` for `rounds`
- * rounds. The original budget is stored on the entity as an "mpCap" marker
- * buff so state.ts can restore it when the cap expires.
- */
-function* handleMpCap(
-  { target, messages }: EffectCtx,
-  effect: MpCapEffect,
-) {
-  const original = target.mp;
-  const capped = Math.min(original, effect.amount);
-  if (capped < original) {
-    target.mp = capped;
-    // Marker buff: amount = the delta removed, restored on expiry by
-    // tickEndingBuffs in state.ts.
-    target.buffs.push({
-      stat: "mpCap",
-      amount: original - capped,
-      rounds: effect.rounds,
-    });
-    messages.push(
-      `  ${target.num}'s MP is capped at ${effect.amount} for ${effect.rounds} round${effect.rounds > 1 ? "s" : ""}.`,
-    );
-  } else {
-    messages.push(
-      `  ${target.num}'s MP (${original}) is already at or below the cap of ${effect.amount}.`,
-    );
-  }
-}
-
 function* handleStatMod(
   { target, messages }: EffectCtx,
   effect: StatMod,
@@ -1812,57 +2028,78 @@ function* handleSwap(
   );
 }
 
+/** Log the informational marker for crit-threshold / dice / MR mods. */
+function handleCombatMod(
+  messages: string[],
+  effect: CritModEffect | DiceModEffect | MrModEffect,
+): void {
+  if (effect.type === "critMod") {
+    // The crit threshold itself is consumed by extractCombatMetadata /
+    // rollAccuracy in resolve.ts; here we just announce the marker so
+    // the effect stream log reads naturally.
+    messages.push(
+      `  Crit threshold lowered to ${effect.threshold}+.`,
+    );
+    return;
+  }
+  if (effect.type === "mrMod") {
+    messages.push(
+      `  Miss rate ${effect.amount > 0 ? "+" : ""}${effect.amount} MR${effect.rounds ? `/${effect.rounds}` : ""}.`,
+    );
+    return;
+  }
+  const kindLabel =
+    effect.kind === "baseDice"
+      ? "base dice"
+      : effect.kind === "diceFaces"
+        ? "dice faces"
+        : "dice";
+  messages.push(
+    `  Attack gains ${effect.amount > 0 ? "+" : ""}${effect.amount} ${kindLabel}${effect.rounds ? `/${effect.rounds}` : ""}.`,
+  );
+}
+
+/** One-line log messages for simple effects, keyed by effect type. */
+const SIMPLE_LOG: Record<
+  string,
+  (user: Entity, e: any, game?: Game) => string | null
+> = {
+  teleport: (u, e) =>
+    `  ${u.num} teleports${e.range ? ` to ${e.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
+  move: (u, e) =>
+    `  ${u.num} moves up to ${e.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
+  resource: (u, e) => `  ${u.num} ${e.action} ${e.amount} ${e.resource}.`,
+  delay: (u, e) =>
+    `  Delay ${e.rounds} round${e.rounds > 1 ? "s" : ""} applied.`,
+  ignore: (u, e) => `  Ignores ${e.what}.`,
+  channel: (u, e) =>
+    `  Channeling ${e.stat.toUpperCase()} for ${e.rounds} rounds.`,
+  phase: (u, e, g) => {
+    // Track the active moon phase on the game so "Phase is X"
+    // conditions (e.g. "New Moon:") evaluate correctly downstream.
+    if (g) g.moonPhase = e.phase;
+    return `  Phase shifts to ${e.phase}.`;
+  },
+  multiHit: (u, e) => `  Attack gains +${e.hits - 1} additional hits.`,
+  recoil: (u, e) =>
+    // Recoil damage itself is applied in resolve.ts after on-hit damage
+    // is dealt. Here we just announce the marker so the log is readable.
+    `  ${u.num} takes ${e.percent}% recoil on damage dealt.`,
+  tile: (u, e) =>
+    `  ${u.num} attempts to place terrain. (Tile placement needed — pick a tile within ${e.range} range)`,
+  unknown: (u, e) => e.text,
+};
+
 function* handleSimple(
   { game, user, messages }: EffectCtx,
   effect: any,
 ) {
-  switch (effect.type) {
-    case "teleport":
-      messages.push(
-        `  ${user.num} teleports${effect.range ? ` to ${effect.range}` : ""}. (Teleport resolution needed — host pick a valid tile)`,
-      );
-      return;
-    case "move":
-      messages.push(
-        `  ${user.num} moves up to ${effect.amount} tiles. (Movement resolution needed — host pick a valid tile)`,
-      );
-      return;
-    case "resource":
-      messages.push(`  ${user.num} ${effect.action} ${effect.amount} ${effect.resource}.`);
-      return;
-    case "delay":
-      messages.push(`  Delay ${effect.rounds} round${effect.rounds > 1 ? "s" : ""} applied.`);
-      return;
-    case "ignore":
-      messages.push(`  Ignores ${effect.what}.`);
-      return;
-    case "channel":
-      messages.push(`  Channeling ${effect.stat.toUpperCase()} for ${effect.rounds} rounds.`);
-      return;
-    case "phase":
-      // Only shift the game's moon phase to the named phase.
-      if (game) game.moonPhase = effect.phase;
-      messages.push(`  Phase shifts to ${effect.phase}.`);
-      return;
-    case "multiHit":
-      messages.push(`  Attack gains +${effect.hits - 1} additional hits.`);
-      return;
-    case "recoil":
-      // Recoil damage itself is applied in resolve.ts after on-hit damage
-      // is dealt. Here we just announce the marker so the log is readable.
-      messages.push(`  ${user.num} takes ${effect.percent}% recoil on damage dealt.`);
-      return;
-    case "tile":
-      messages.push(
-        `  ${user.num} attempts to place terrain. (Tile placement needed — pick a tile within ${effect.range} range)`,
-      );
-      return;
-    case "unknown":
-      messages.push(`  ${effect.text}`);
-      return;
-    default:
-      return;
+  if (effect.type === "critMod" || effect.type === "diceMod" || effect.type === "mrMod") {
+    handleCombatMod(messages, effect);
+    return;
   }
+  const line = SIMPLE_LOG[effect.type]?.(user, effect, game);
+  if (line) messages.push(`  ${line}`);
 }
 
 function* handleConditional(
@@ -1873,7 +2110,7 @@ function* handleConditional(
     user,
     target,
     effect,
-    game ? game.moonPhase : undefined,
+    game.moonPhase,
   );
   messages.push(...condMsgs);
   // "unknown" defaults to then-branch (legacy fallback). "else" without
@@ -1906,26 +2143,86 @@ function* handlePer(
   { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: PerEffect,
 ) {
-  if (!perTriggerApplies(effect.trigger, user)) {
-    // Pool below the count (or an unsupported trigger): stays summarized.
-    messages.push(`  [Per ${effect.trigger}]`);
-    return;
+  // Per-X triggers fire at their applicable resolution event. These
+  // effects reach the stream on a successful hit (resolve.ts applies
+  // non-phase effects after damage), so "Per hit:" dispatches its
+  // sub-effects now. Resource-count triggers ("Per 5 CP:") dispatch
+  // when the user's pool meets the count. Triggers that can't be
+  // confirmed from the current stream context keep a summary log.
+  if (perTriggerApplies(effect.trigger, user)) {
+    messages.push(`  [Per ${effect.trigger}]:`);
+    const perMsgs = yield* applyEffectStream(
+      game,
+      user,
+      target,
+      effect.effects,
+      ability,
+      routeBuffsToUser,
+    );
+    messages.push(...perMsgs.map((m) => `    ${m}`));
+  } else {
+    messages.push(
+      `  [Per ${effect.trigger}]: ${summariseEffects(effect.effects)}`,
+    );
   }
-  const subMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
-  messages.push(...subMsgs.map((m) => `    [Per ${effect.trigger}] ${m}`));
 }
 
 function* handleTrigger(
   { game, user, target, ability, messages, routeBuffsToUser }: EffectCtx,
   effect: TriggerEffect,
 ) {
-  if (!triggerApplies(effect.event, user, target)) {
-    // Event not met in this context: stays summarized.
-    messages.push(`  [When ${effect.event}]`);
+  // When-X triggers fire when their event condition is met. These
+  // effects reach the stream on a successful hit, so hit-context
+  // events ("When user damages a foe", "When user kills foe") dispatch
+  // their sub-effects now; other events keep a summary log.
+  if (triggerApplies(effect.event, user, target)) {
+    messages.push(`  [When ${effect.event}]:`);
+    const trigMsgs = yield* applyEffectStream(
+      game,
+      user,
+      target,
+      effect.effects,
+      ability,
+      routeBuffsToUser,
+    );
+    messages.push(...trigMsgs.map((m) => `    ${m}`));
+  } else {
+    messages.push(
+      `  [When ${effect.event}]: ${summariseEffects(effect.effects)}`,
+    );
+  }
+}
+
+function* handleSubweapon(
+  { user, messages }: EffectCtx,
+  effect: RequiresEffect | SwitchWeaponEffect,
+): Generator<EffectChoosePrompt, void, string> {
+  if (effect.type === "requires") {
+    messages.push(
+      `  Requires ${effect.weapons.map(capitalize).join(" or ")}.`,
+    );
     return;
   }
-  const subMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability, routeBuffsToUser);
-  messages.push(...subMsgs.map((m) => `    [When ${effect.event}] ${m}`));
+  if (effect.to.length === 1) {
+    user.subweapon = effect.to[0];
+    messages.push(`  ${user.num} switches to ${capitalize(effect.to[0])}.`);
+    return;
+  }
+  // Multi-option switch ("Switch to Gladius or Scutum"): ask the player
+  // which subweapon to equip, same prompt machinery as `choose` clauses.
+  const clauseId = `switch-${messages.length}`;
+  const chosenId = yield {
+    kind: "choose",
+    clauseId,
+    message: `Choose a subweapon to switch to`,
+    options: effect.to.map((w, i) => ({
+      id: `${clauseId}:${i}`,
+      label: capitalize(w),
+    })),
+  } satisfies EffectChoosePrompt;
+  const idx = parseChosenIdx(chosenId, effect.to.length);
+  user.subweapon = effect.to[idx];
+  messages.push(`  ${user.num} switches to ${capitalize(effect.to[idx])}.`);
 }
 
 function* handleApex(
@@ -1942,6 +2239,49 @@ function* handleApex(
   }
   const apexMsgs = yield* applyEffectStream(game, user, target, effect.effects, ability);
   messages.push(...apexMsgs.map((m) => `    [Apex] ${m}`));
+}
+
+function* handleSkipPhaseShift(
+  { game, messages }: EffectCtx,
+  _effect: { type: "skipPhaseShift" },
+) {
+  // Harvest Moon / Celestial Blessing: no auto-advance at the next
+  // turn boundary. nextTurn consumes (resets) the flag.
+  game.skipMoonPhaseShift = true;
+  messages.push(`  No Phase shift next turn.`);
+}
+
+function* handleDoubleEffects(
+  _ctx: EffectCtx,
+  _effect: { type: "doubleEffects" },
+) {
+  // Fatal Moonlight marker: two effects fire while the user holds a 2nd
+  // Phase. evaluateCondition already matches both phases, so this is a
+  // no-op here.
+}
+
+function* handleChoosePhase(
+  { user, messages }: EffectCtx,
+  _effect: { type: "choosePhase" },
+): Generator<EffectChoosePrompt, void, string> {
+  // Far Side of the Moon: pick a second phase (never shifts the active
+  // one). Stored on the user so "user has 2 Phases" conditions read it.
+  const clauseId = `phase-${messages.length}`;
+  const chosenId = yield {
+    kind: "choose",
+    clauseId,
+    message: "Choose another Phase (doesn't shift the current one)",
+    options: MOON_PHASE_CYCLE.map((p, i) => ({
+      id: `${clauseId}:${i}`,
+      label: formatPhase(p),
+    })),
+  } satisfies EffectChoosePrompt;
+  const idx = parseChosenIdx(chosenId, MOON_PHASE_CYCLE.length);
+  const picked = MOON_PHASE_CYCLE[idx];
+  user.phaseChoice = picked;
+  messages.push(
+    `  ${user.num} picks **${formatPhase(picked)}** as a second Phase.`,
+  );
 }
 
 function* handleChoose(
@@ -1972,7 +2312,6 @@ function* handleChoose(
 /** Dispatch an effect of any type to its handler. */
 const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   status: handleStatus,
-  mpCap: handleMpCap,
   buff: handleStatMod,
   debuff: handleStatMod,
   damageMod: handleDamageMod,
@@ -1985,8 +2324,6 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   thirst: handleThirst,
   apex: handleApex,
   choose: handleChoose,
-  per: handlePer,
-  trigger: handleTrigger,
   teleport: handleSimple,
   move: handleSimple,
   resource: handleSimple,
@@ -1997,6 +2334,19 @@ const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   multiHit: handleSimple,
   recoil: handleSimple,
   tile: handleSimple,
+  per: handlePer,
+  trigger: handleTrigger,
+  phaseEffect: handleSimple,
+  requires: handleSubweapon,
+  switchWeapon: handleSubweapon,
+  critMod: handleSimple,
+  diceMod: handleSimple,
+  mrMod: handleSimple,
+  choosePhase: handleChoosePhase,
+  skipPhaseShift: handleSkipPhaseShift,
+  rangeMod: handleSimple,
+  targetingDiceMod: handleSimple,
+  doubleEffects: handleDoubleEffects,
   unknown: handleSimple,
 };
 
@@ -2020,7 +2370,6 @@ export function* applyEffectStream(
       messages.push(`  ${(effect as { text?: string }).text ?? ""}`);
     }
   }
-
   return messages;
 }
 
@@ -2109,7 +2458,6 @@ function summariseEffect(eff: Effect): string {
 /** Per-effect-type one-line summary, used in choose-prompt option labels. */
 const SUMMARISE: Record<string, (eff: any) => string> = {
   status: (e) => `inflict ${e.damage || 0} ${e.name}/${e.rounds}`,
-  mpCap: (e) => `cap MP at ${e.amount}/${e.rounds}`,
   buff: (e) => `+${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
   debuff: (e) => `${e.amount} ${e.stat}${e.rounds ? `/${e.rounds}` : ""}`,
   heal: (e) => `heal ${e.amount ?? "?"} HP`,
@@ -2126,12 +2474,26 @@ const SUMMARISE: Record<string, (eff: any) => string> = {
   ignore: (e) => `ignore ${e.what}`,
   channel: (e) => `channel ${e.stat} for ${e.rounds}r`,
   phase: (e) => `phase ${e.phase}`,
+  rangeMod: (e) => `${e.amount > 0 ? "+" : ""}${e.amount} range`,
+  targetingDiceMod: (e) =>
+    `${e.amount > 0 ? "+" : ""}${e.amount} dice on attacks targeting user`,
+  doubleEffects: () => "two effects if user has 2 phases",
+  choosePhase: () => "choose another phase",
+  skipPhaseShift: () => "no phase shift next turn",
   multiHit: (e) => `multi-hit ${e.hits}`,
   apex: () => "apex (...)",
   thirst: (e) => `thirst ${e.threshold} (...)`,
   choose: () => "choose (...)",
   conditional: (e) => `if [${e.condition}]`,
   delayLand: () => "delay attacks always land",
+  per: (e) => `per ${e.trigger} (${summariseEffects(e.effects)})`,
+  trigger: (e) => `when ${e.event} (${summariseEffects(e.effects)})`,
+  phaseEffect: (e) => `[${e.phase}] ${summariseEffects(e.effects)}`,
+  requires: (e) => `requires ${e.weapons.join(" or ")}`,
+  switchWeapon: (e) => `switch to ${e.to.join(" or ")}`,
+  critMod: (e) => `crit on ${e.threshold}+`,
+  diceMod: (e) => `${e.amount > 0 ? "+" : ""}${e.amount} ${e.kind === "baseDice" ? "base dice" : e.kind === "diceFaces" ? "dice faces" : "dice"}`,
+  mrMod: (e) => `${e.amount > 0 ? "+" : ""}${e.amount} MR${e.rounds ? `/${e.rounds}` : ""}`,
   unknown: (e) => e.text.slice(0, 40),
 };
 
@@ -2187,6 +2549,32 @@ export interface CombatMetadata {
    */
   additionalHits: number;
   ignore: CombatIgnoreMetadata;
+  /**
+   * Lowest parsed "Crit on N+" threshold. null when no explicit
+   * threshold clause is present (engine default of 20 applies).
+   */
+  critThreshold: number | null;
+  /**
+   * Extra damage dice added to the roll from "+N dice" clauses.
+   * Applied as additional dice of the ability's die size.
+   */
+  extraDice: number;
+  /**
+   * Extra faces per die from "+N dice faces" clauses. Applied by
+   * increasing each die's side count.
+   */
+  extraDiceFaces: number;
+  /**
+   * Extra BASE dice from "+N base dice" clauses. Base dice are the
+   * pre-crit-multiplier dice, so they double on a crit along with the
+   * rest of the roll.
+   */
+  extraBaseDice: number;
+  /**
+   * Summed Miss Rate modifier from "+N MR" / "-N MR" clauses. Added to
+   * the ability's base miss rate before the accuracy roll.
+   */
+  mrMod: number;
 }
 
 export interface CombatIgnoreMetadata {
@@ -2215,80 +2603,253 @@ export interface CombatIgnoreMetadata {
 }
 
 /**
- * Parse-once cache for combat metadata. `extractCombatMetadata` is a pure
- * function of the (already parsed) effect tree, and the tree is a pure
- * function of the immutable effect string — so the whole damage-modifier
- * summary is computed once per distinct ability text and reused across
- * every use of that ability.
+ * Walk an effect tree collecting standing-passive mods, descending only into
+ * branches that are knowable statically:
+ *  - "phase is X" / "phase is X or Y" conditionals: descend only if the
+ *    current moon phase matches (the else-branch is the complement, which is
+ *    out of scope for standing-passive scans)
+ *  - everything else that gates on runtime state (If/Apex/Thirst/Per/Trigger/
+ *    Choose) is skipped, matching mergeCombatMetadata's conservative rule so
+ *    gated mods never count as unconditional
  */
-const combatMetadataCache = new Map<string, CombatMetadata>();
-
-/**
- * Parse (once) + extract (once) the combat-relevant metadata for an
- * ability's effect text. Prefer this over calling `parseEffects` +
- * `extractCombatMetadata` separately in hot paths.
- */
-export function getCombatMetadataForEffect(effectText: string): CombatMetadata {
-  const cached = combatMetadataCache.get(effectText);
-  if (cached) return cached;
-  const meta = extractCombatMetadata(parseEffects(effectText));
-  combatMetadataCache.set(effectText, meta);
-  return meta;
+function walkPhaseAware(
+  effects: Effect[],
+  moonPhase: string | undefined,
+  visit: (e: Effect) => void,
+): void {
+  const phase = moonPhase?.toLowerCase().trim();
+  for (const e of effects) {
+    if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
+      const want = e.condition
+        .slice("phase is ".length)
+        .split(" or ")
+        .map((s) => s.trim());
+      if (phase && want.includes(phase)) {
+        walkPhaseAware(e.thenEffects, phase, visit);
+      } else if (phase && e.elseEffects) {
+        // "Otherwise:" branch applies when the active phase doesn't match.
+        walkPhaseAware(e.elseEffects, phase, visit);
+      }
+      continue;
+    }
+    if (
+      e.type === "conditional" ||
+      e.type === "per" ||
+      e.type === "trigger" ||
+      e.type === "apex" ||
+      e.type === "thirst" ||
+      e.type === "choose"
+    ) {
+      continue;
+    }
+    visit(e);
+  }
 }
 
-export function extractCombatMetadata(effects: Effect[]): CombatMetadata {
+/**
+ * Sum the "+N Range" standing bonus from the entity's Passive abilities,
+ * gated on the current moon phase (Lunar Phase's "New Moon: +1 Range").
+ * resolve.ts / pages.ts / %checkrange use this to extend targeting ranges.
+ */
+export function getPassiveRangeBonus(
+  user: Entity,
+  moonPhase?: string,
+): number {
+  let bonus = 0;
+  for (const a of user.abilities) {
+    if (a.actionType !== "Passive") continue;
+    walkPhaseAware(parseEffects(a.effect), moonPhase, (e) => {
+      if (e.type === "rangeMod") bonus += e.amount;
+    });
+  }
+  return bonus;
+}
+
+/**
+ * Sum the "-N dice on attacks targeting user" penalty from the entity's
+ * Passive abilities, gated on the current moon phase (Lunar Phase's "Full
+ * Moon: -1 dice on attacks targeting user"). resolveAttackFlow folds this
+ * into the attacker's roll for each target that carries it.
+ */
+export function getDefenderDiceMods(
+  entity: Entity,
+  moonPhase?: string,
+): number {
+  let mod = 0;
+  for (const a of entity.abilities) {
+    if (a.actionType !== "Passive") continue;
+    walkPhaseAware(parseEffects(a.effect), moonPhase, (e) => {
+      if (e.type === "targetingDiceMod") mod += e.amount;
+    });
+  }
+  return mod;
+}
+
+export function extractCombatMetadata(
+  effects: Effect[],
+  subweapon?: string,
+  moonPhase?: string,
+  phaseChoice?: string,
+): CombatMetadata {
   const out: CombatMetadata = {
     damagePercent: 0,
     flatDamage: 0,
     additionalHits: 0,
     ignore: freshIgnoreMetadata(),
+    critThreshold: null,
+    extraDice: 0,
+    extraDiceFaces: 0,
+    extraBaseDice: 0,
+    mrMod: 0,
   };
 
-  // We intentionally do NOT descend into Apex, Thirst, Conditional, or
-  // Choose sub-trees. All four are *gated* clauses whose sub-effects run
-  // only when their gate succeeds, so any metadata extracted from their
-  // children is conditional on the gate firing. resolveSingleTarget
-  // re-evaluates each gate per hit and only contributes the matching
-  // buff / status / sub-effect to the damage path through the existing
-  // entity.buffs / statuses / extra-rolls infrastructure. Surfacing
-  // gated metadata here would over-apply -- e.g. "Apex: +50% damage"
-  // would otherwise turn the ability into +50% at any range.
+  mergeCombatMetadata(out, effects, subweapon, moonPhase, phaseChoice);
+  return out;
+}
+
+/**
+ * Fold top-level combat metadata from `effects` into `out`. Recurses into
+ * subweapon branches ("Gladius: +1 dice") whose condition matches the
+ * user's equipped subweapon -- those gates ARE knowable here, so the
+ * branch's dice/crit/MR mods count toward the damage math. Other gated
+ * clauses are NOT descended into:
+ *
+ *   - Apex / Thirst / Conditional(if) / Choose sub-trees all fire only
+ *     when their runtime gate succeeds, so metadata extracted from their
+ *     children would over-apply (e.g. "Apex: +50% damage" would turn the
+ *     ability into +50% at any range). resolveSingleTarget re-evaluates
+ *     each gate per hit through the entity.buffs/statuses path instead.
+ */
+function mergeCombatMetadata(
+  out: CombatMetadata,
+  effects: Effect[],
+  subweapon?: string,
+  moonPhase?: string,
+  phaseChoice?: string,
+): void {
+  const phase = moonPhase?.toLowerCase().trim();
+  const choice = phaseChoice?.toLowerCase().trim();
   for (const e of effects) {
-    if (e.type === "damageMod") {
+    if (e.type === "conditional" && e.condition.startsWith("subweapon is ")) {
+      mergeSubweaponConditional(out, e, subweapon, phase, choice);
+      continue;
+    }
+    if (e.type === "conditional" && e.condition.startsWith("phase is ")) {
+      mergePhaseConditional(out, e, phase, choice, subweapon);
+      continue;
+    }
+    mergeOneEffect(out, e);
+  }
+}
+
+/**
+ * "Gladius: +N dice" branches: only the branch matching the user's equipped
+ * subweapon counts (the rest are dead code for this user), unless there's an
+ * "Otherwise:" branch, which applies on a mismatch.
+ */
+function mergeSubweaponConditional(
+  out: CombatMetadata,
+  e: Effect,
+  subweapon: string | undefined,
+  phase: string | undefined,
+  choice: string | undefined,
+): void {
+  const want = (e as { condition: string }).condition.slice("subweapon is ".length);
+  if (subweapon && subweapon === want) {
+    mergeCombatMetadata(out, (e as ConditionalEffect).thenEffects, subweapon, phase, choice);
+  } else if (subweapon && (e as ConditionalEffect).elseEffects) {
+    mergeCombatMetadata(out, (e as ConditionalEffect).elseEffects, subweapon, phase, choice);
+  }
+}
+
+/**
+ * Phase-gated branches (Lunar Phase's "Waxing: +2 dice faces") count only
+ * while the current moon phase matches. The condition is either "phase is X"
+ * or the slash-combo "phase is X or Y"; both are knowable at metadata time.
+ * The user's chosen 2nd phase (Far Side of the Moon / Fatal Moonlight) counts
+ * too: evaluateCondition fires a "phase is X" branch when EITHER the active
+ * phase or the chosen phase matches, so ability metadata folds both in.
+ */
+function mergePhaseConditional(
+  out: CombatMetadata,
+  e: Effect,
+  phase: string | undefined,
+  choice: string | undefined,
+  subweapon: string | undefined,
+): void {
+  const cond = e as ConditionalEffect;
+  const want = cond.condition
+    .slice("phase is ".length)
+    .split(" or ")
+    .map((s) => s.trim());
+  if (
+    (phase && want.includes(phase)) ||
+    (choice && want.includes(choice))
+  ) {
+    mergeCombatMetadata(out, cond.thenEffects, subweapon, phase, choice);
+  } else if ((phase || choice) && cond.elseEffects) {
+    // "Otherwise:" branch applies when neither phase matches.
+    mergeCombatMetadata(out, cond.elseEffects, subweapon, phase, choice);
+  }
+}
+
+/** Fold a single top-level effect's combat metadata into `out`. */
+function mergeOneEffect(out: CombatMetadata, e: Effect): void {
+  switch (e.type) {
+    case "damageMod":
       if (e.percent) out.damagePercent += e.percent;
       if (typeof e.flat === "number") out.flatDamage += e.flat;
-    } else if (e.type === "multiHit") {
+      break;
+    case "multiHit":
       out.additionalHits = Math.max(out.additionalHits, e.hits - 1);
-    } else if (e.type === "ignore") {
+      break;
+    case "ignore":
       classifyIgnore(e.what, out.ignore);
-    } else if (e.type === "buff" || e.type === "debuff") {
-      // parseStatMods emits a "buff"/"debuff" with stat: "dmg" for the
-      // every-day "+50% damage", "+5 DMG", "-10% damage" clauses --
-      // because the regex matches "damage" / "dmg" as a stat name and
-      // folds them onto the dmg alias. Those are damage modifiers, not
-      // self-buffs, so the resolve layer reads them here. The
-      // buff/debuff still lands on entity.buffs (self-buffs on the
-      // user, target debuffs on the target via `subject`) so legacy
-      // code that scans entity.buffs for damage modifiers keeps
-      // working too. Target-directed modifiers ("Targets: -25% damage")
-      // are the target's own outgoing-damage modifiers, not the user's,
-      // so they must NOT be folded into the user's metadata here.
-      // Only EXPLICIT self-directed modifiers fold into the user's outgoing
-      // damage metadata. Omitted (legacy) and explicit "target" subjects
-      // are the target's own modifiers, so they must not inflate the
-      // user's damage (CodeRabbit L1935).
-      if (e.stat === "dmg" && e.subject === "self") {
-        // parseStatMods bakes the sign into percent / amount, so a
-        // debuff for "-10% damage" arrives here with percent = -10.
-        if (typeof e.percent === "number") {
-          out.damagePercent += e.percent;
-        } else if (typeof e.amount === "number" && e.percent === undefined) {
-          out.flatDamage += e.amount;
-        }
-      }
-    }
+      break;
+    case "critMod":
+      out.critThreshold =
+        out.critThreshold === null
+          ? e.threshold
+          : Math.min(out.critThreshold, e.threshold);
+      break;
+    case "diceMod":
+      mergeDiceMod(out, e);
+      break;
+    case "mrMod":
+      out.mrMod += e.amount;
+      break;
+    case "buff":
+    case "debuff":
+      mergeStatDamage(out, e);
+      break;
   }
-  return out;
+}
+
+function mergeDiceMod(out: CombatMetadata, e: Extract<Effect, { type: "diceMod" }>): void {
+  if (e.kind === "dice") out.extraDice += e.amount;
+  else if (e.kind === "diceFaces") out.extraDiceFaces += e.amount;
+  else out.extraBaseDice += e.amount;
+}
+
+function mergeStatDamage(
+  out: CombatMetadata,
+  e: Extract<Effect, { type: "buff" | "debuff" }>,
+): void {
+  // parseStatMods emits a "buff"/"debuff" with stat: "dmg" for the
+  // every-day "+50% damage", "+5 DMG", "-10% damage" clauses --
+  // because the regex matches "damage" / "dmg" as a stat name and
+  // folds them onto the dmg alias. Those are damage modifiers, not
+  // self-buffs, so the resolve layer reads them here. The
+  // buff/debuff still lands on `target.buffs` so legacy code that
+  // scans entity.buffs for damage modifiers keeps working too.
+  if (e.stat !== "dmg") return;
+  // parseStatMods bakes the sign into percent / amount, so a
+  // debuff for "-10% damage" arrives here with percent = -10.
+  if (typeof e.percent === "number") {
+    out.damagePercent += e.percent;
+  } else if (typeof e.amount === "number" && e.percent === undefined) {
+    out.flatDamage += e.amount;
+  }
 }
 
 function freshIgnoreMetadata(): CombatIgnoreMetadata {
@@ -2304,8 +2865,26 @@ function freshIgnoreMetadata(): CombatIgnoreMetadata {
 }
 
 function classifyIgnore(what: string, out: CombatIgnoreMetadata): void {
-  const lower = what.toLowerCase().trim();
+  // Ignore lists arrive as a single clause now (splitClauses keeps
+  // "Ignores X, Y, and Z" together), e.g. "ATK/MAG, half DEF, and
+  // outside damage factors". Classify each fragment independently so
+  // a combined list sets all matching flags instead of just the first.
+  const fragments = what
+    .toLowerCase()
+    .split(/\s*(?:,| and | or )\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (fragments.length === 0) return;
+  for (const fragment of fragments) {
+    classifyIgnoreFragment(fragment, what, out);
+  }
+}
 
+function classifyIgnoreFragment(
+  lower: string,
+  original: string,
+  out: CombatIgnoreMetadata,
+): void {
   if (
     /\batk\/?mag\b/.test(lower) ||
     lower === "atk" ||
@@ -2329,11 +2908,11 @@ function classifyIgnore(what: string, out: CombatIgnoreMetadata): void {
   }
 
   if (lower.includes("non-target") || lower.includes("obstruction")) {
-    out.other.push(what);
+    out.other.push(original);
     return;
   }
 
-  out.other.push(what);
+  out.other.push(original);
 }
 
 /** Classify a DEF ignore clause. Order matters: a fractional "1/2 DEF" /

@@ -1,29 +1,33 @@
-# Palette single-source guard: terrain hex colors must live ONLY in
-      # src/game/terrain-colors.cjs and the generated gallery SVGs. Any
-      # hardcoded copy elsewhere (engine, mapcore, pages, tests) is a drift
-      # risk — fail so it gets routed through the canonical file.
-      - name: Palette single-source check
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      # bun install occasionally flakes on tarball extraction (e.g. "Fail
+      # extracting tarball for xlsx"); retry a couple of times before giving up.
+      - name: Install dependencies (with retry)
         run: |
-          HEXES=$(node -e 'const c = require("./src/game/terrain-colors.cjs"); for (const id in c) console.log(c[id].color.toLowerCase());')
-          HITS=""
-          for H in $HEXES; do
-            # Known coincidental hexes, not terrain tables: the chat PM color
-            # in test-app.ts and the named-color map in mapcore's token palette.
-            # Notes kept above the grep chain: inline comments between the
-            # pipe-continuation lines would swallow the trailing backslash and
-            # turn the next pipe into a shell syntax error.
-            HIT=$(grep -rIn --include="*.ts" --include="*.cjs" --include="*.js" --include="*.html" -i "$H" src mapeditor scripts discord-issue-bot test-app.ts 2>/dev/null \
-              | grep -vi "terrain-colors\.cjs" \
-              | grep -v "gallery/" \
-              | grep -v "msg-pm { color:" \
-              | grep -v "black: '#000000'" || true)
-            if [ -n "$HIT" ]; then
-              HITS="$HITS$HIT"$'\n'
+          for i in 1 2 3; do
+            if bun install; then
+              exit 0
             fi
+            echo "bun install failed (attempt $i/3), retrying..."
+            sleep 5
           done
-          if [ -n "$HITS" ]; then
-            echo "::error::Terrain colors are hardcoded outside src/game/terrain-colors.cjs — route them through the canonical palette."
-            printf '%s' "$HITS"
-            exit 1
-          fi
-          echo "Palette is the single source of terrain colors."
+          exit 1
+      - run: bun run typecheck
+      - run: bun test

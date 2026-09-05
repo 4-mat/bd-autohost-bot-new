@@ -78,7 +78,13 @@ import {
   isValidTarget,
   type AttackStep,
 } from "../game/resolve.js";
-import { DIRECTION_LABELS } from "../game/state.js";
+import {
+  normalizeSubweapon,
+  requiredSubweapons,
+  getPassiveRangeBonus,
+  formatSubweapon,
+} from "../game/effects.js";
+import { DIRECTION_LABELS, formatPhase } from "../game/state.js";
 import {
   normalizeVoteMode,
   pendingVoterIds,
@@ -451,6 +457,26 @@ function checkAbilityAvailability(
     );
     return false;
   }
+
+  // Subweapon requirement check ("Requires Pilum"): the ability may only
+  // be used while that subweapon is equipped.
+  const requires = requiredSubweapons(ability.effect);
+  if (
+    requires.length > 0 &&
+    !requires.includes(normalizeSubweapon(entity.subweapon) ?? "")
+  ) {
+    const equipped = entity.subweapon
+      ? ` (equipped: ${formatSubweapon(entity.subweapon)})`
+      : "";
+    failAct(game, entity, `${ability.name} requires ${requires.join(" or ")}`);
+    sendPm(
+      user.name,
+      `${ability.name} requires the ${requires.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" or ")} subweapon${equipped}.`,
+    );
+    return false;
+  }
+
+  // Max uses check
   const maxUses = ability.maxUses ?? parseFrequency(ability.frequency).uses;
   if (maxUses) {
     const used = entity.usesUsed[ability.name] ?? 0;
@@ -1530,7 +1556,7 @@ function handleInfo(game: Game, user: User, args: string) {
   if (!ref) {
     // Show game info
     const lines = [
-      `Game: ${game.id} | Mode: ${game.mode} | Phase: ${game.phase}`,
+      `Game: ${game.id} | Mode: ${game.mode} | Phase: ${game.phase}${game.moonPhase ? ` | Moon: ${formatPhase(game.moonPhase)}` : ""}`,
       `Host: ${game.host} | Map: ${game.mapName || "(none)"}`,
       `Players: ${game.entities.length} | Round: ${game.round}`,
     ];
@@ -1547,7 +1573,7 @@ function handleInfo(game: Game, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${ref}`);
 
   const lines = [
-    `${entity.num} (${entity.name}) -- ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}`,
+    `${entity.num} (${entity.name}) -- ${entity.className}/${entity.weaponName} Lv.${entity.classLevel}/${entity.weaponLevel}${formatSubweapon(entity.subweapon) ? ` | Subweapon: ${formatSubweapon(entity.subweapon)}` : ""}${entity.phaseChoice ? ` | 2nd Phase: ${formatPhase(entity.phaseChoice)}` : ""}`,
     `HP: ${entity.curhp}/${entity.maxhp} | ATK: ${entity.atk} | MAG: ${entity.mag} | PD: ${entity.pd} | MD: ${entity.md} | EVA: ${entity.eva} | MP: ${entity.mp}`,
     `Pos: ${posToStr(entity.pos[0], entity.pos[1])} | Team: ${entity.team}`,
     `Abilities: ${entity.abilities.map((a) => a.name).join(", ") || "None"}`,
@@ -1706,11 +1732,12 @@ function inRangeInParts(
   from: [number, number],
   to: [number, number],
   range: string,
+  bonus = 0,
 ): boolean {
   const parts = range.toLowerCase().includes(" or ")
     ? range.split(/\s+or\s+/i)
     : [range];
-  return parts.some((rp) => inRange(game, from, to, rp.trim()));
+  return parts.some((rp) => inRange(game, from, to, rp.trim(), bonus));
 }
 
 function formatRangeList(list: Entity[]): string {
@@ -1718,6 +1745,17 @@ function formatRangeList(list: Entity[]): string {
   return list
     .map((e) => `${e.num} at ${posToStr(e.pos[0], e.pos[1])}`)
     .join(", ");
+}
+
+// True when an ability has a "Requires X" clause the entity's equipped
+// subweapon doesn't satisfy -- such abilities are excluded from %checkrange
+// results (and the GUI) exactly as execution rejects them.
+function subweaponGated(ab: { effect: string }, entity: Entity): boolean {
+  const requires = requiredSubweapons(ab.effect);
+  return (
+    requires.length > 0 &&
+    !requires.includes(normalizeSubweapon(entity.subweapon) ?? "")
+  );
 }
 
 /**
@@ -1809,7 +1847,14 @@ function checkRangeToTarget(
   // Tile targets can't be group-filtered, so entity targets only.
   const hitAbilities = source.abilities.filter(
     (a) =>
-      inRangeInParts(game, source.pos, toPos, a.range) &&
+      !subweaponGated(a, source) &&
+      inRangeInParts(
+        game,
+        source.pos,
+        toPos,
+        a.range,
+        getPassiveRangeBonus(source, game.moonPhase),
+      ) &&
       (!targetEntity || isValidTarget(source, targetEntity, a.targetGroup)),
   );
   sendPm(
@@ -1828,12 +1873,33 @@ function checkRangeByAbility(
 ): boolean {
   const ability = source.abilities.find((a) => toId(a.name) === toId(arg));
   if (!ability) return false;
+  // A "Requires X" ability the source can't actually use is reported as
+  // unusable rather than listing phantom reachable targets.
+  if (subweaponGated(ability, source)) {
+    const requires = requiredSubweapons(ability.effect);
+    const equipped = source.subweapon
+      ? ` (equipped: ${formatSubweapon(source.subweapon)})`
+      : "";
+    sendPm(
+      user.name,
+      `${source.num} cannot use ${ability.name}: requires the ${requires
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" or ")} subweapon${equipped}.`,
+    );
+    return true;
+  }
   // isValidTarget already rejects dead entities (curhp <= 0).
   const reachable = game.entities.filter(
     (e) =>
       e.num !== source.num &&
       isValidTarget(source, e, ability.targetGroup) &&
-      inRangeInParts(game, source.pos, e.pos, ability.range),
+      inRangeInParts(
+        game,
+        source.pos,
+        e.pos,
+        ability.range,
+        getPassiveRangeBonus(source, game.moonPhase),
+      ),
   );
   const groupLabel = ability.targetGroup || "any";
   sendPm(
@@ -1862,7 +1928,15 @@ function checkRangeByPattern(
     (e) =>
       e.num !== source.num &&
       e.curhp > 0 &&
-      rangeParts.some((rp) => inRange(game, source.pos, e.pos, rp)),
+      rangeParts.some((rp) =>
+        inRange(
+          game,
+          source.pos,
+          e.pos,
+          rp,
+          getPassiveRangeBonus(source, game.moonPhase),
+        ),
+      ),
   );
   sendPm(
     user.name,
@@ -1881,7 +1955,7 @@ function buildPlayerList(game: Game): string {
     const marker = isCur ? " " : "";
     const hpColor = hpPct > 50 ? "[+]" : hpPct > 25 ? "[~]" : "[-]";
     lines.push(
-      `${hpColor} **${e.num}** ${e.name} -- ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel}) | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${marker}`,
+      `${hpColor} **${e.num}** ${e.name} -- ${e.className}/${e.weaponName} (${e.classLevel}/${e.weaponLevel})${e.subweapon ? ` [${formatSubweapon(e.subweapon)}]` : ""} | HP: ${e.curhp}/${e.maxhp} | ATK:${e.atk} MAG:${e.mag} PD:${e.pd} MD:${e.md} EVA:${e.eva} MP:${e.mp} | ${posToStr(e.pos[0], e.pos[1])}${marker}`,
     );
   }
 

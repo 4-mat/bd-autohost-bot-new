@@ -126,14 +126,14 @@ export interface AbilityData {
   roll: string;
   damageType: "Physical" | "Magical" | "Varies" | "";
   actionType:
-  | "Standard"
-  | "Full"
-  | "Movement"
-  | "Swift"
-  | "Free"
-  | "Trigger"
-  | "Reaction"
-  | "Passive";
+    | "Standard"
+    | "Full"
+    | "Movement"
+    | "Swift"
+    | "Free"
+    | "Trigger"
+    | "Reaction"
+    | "Passive";
   targetAmount: number | "AoE";
   targetGroup: string;
   range: string;
@@ -207,9 +207,22 @@ export interface Entity {
   weaponName: string;
   classLevel: number;
   weaponLevel: number;
+  /** Equipped subweapon for Gladius (Fighter weapon) users ("gladius" | "scutum" | "pilum"). Set by "Switch to X" effects; read by "Gladius:" branch conditions. */
+  // FUTURE (Stances): subweapon -- together with moonPhase, "Phase:" effects and
+  // similar per-combat toggles -- is slated to be consolidated into a single
+  // "Stance" structure owned by the entity. See STANCES.md for the design intent.
+  subweapon?: string;
+  /**
+   * Second phase chosen via "Choose another Phase" (Far Side of the Moon).
+   * Read by "user has 2 Phases" conditions (Fatal Moonlight). Never shifts
+   * the active game.moonPhase.
+   */
+  // FUTURE (Stances): phaseChoice is part of the moon-phase block slated for
+  // the consolidated Stance structure. See STANCES.md for the design intent.
+  phaseChoice?: string;
   abilities: AbilityData[];
   statuses: StatusEffect[];
-  buffs: { stat: string; amount: number; rounds: number; percent?: boolean }[];
+  buffs: { stat: string; amount: number; rounds: number }[];
   cooldowns: Record<string, number>;
   usesUsed: Record<string, number>;
   pendingAction: PendingAction | null;
@@ -224,6 +237,63 @@ export interface Entity {
   pendingPrompt?: AttackPrompt;
 }
 
+// Gladius users start with the Gladius subweapon equipped (the Fighter data
+// says "Swap subweapons (Standard)... Start in Gladius."). Everyone else has
+// no subweapon; switching away from Gladius clears it.
+export function startingSubweapon(weaponName: string): string | undefined {
+  return toId(weaponName) === "gladius" ? "gladius" : undefined;
+}
+
+// -- Moon phases (Lunar Rod / Dark-class mechanic) ------------------------------
+// Canonical cycle, in shift order. Values are the lowercase display names with
+// spaces ("new moon", ...) -- the exact forms the effect parser ("Phase: X",
+// "New Moon: EFFECT") and evaluateCondition ("phase is X") already use.
+export const MOON_PHASE_CYCLE = [
+  "new moon",
+  "waxing",
+  "full moon",
+  "waning",
+] as const;
+export type MoonPhase = (typeof MOON_PHASE_CYCLE)[number];
+
+/** True when `p` names one of the four moon phases (case/whitespace tolerant). */
+export function normalizePhase(
+  p: string | undefined | null,
+): MoonPhase | undefined {
+  const id = toId(p ?? "");
+  return MOON_PHASE_CYCLE.find((m) => toId(m) === id);
+}
+
+/** Title-case a phase id for display ("new moon" -> "New Moon"). */
+export function formatPhase(p: string | undefined): string {
+  const norm = normalizePhase(p);
+  if (!norm) return "";
+  return norm
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** The next phase in the cycle (Waning wraps back to New Moon). */
+export function shiftMoonPhase(phase: string | undefined): MoonPhase {
+  const cur = normalizePhase(phase);
+  if (!cur) return "new moon";
+  const idx = MOON_PHASE_CYCLE.indexOf(cur);
+  return MOON_PHASE_CYCLE[(idx + 1) % MOON_PHASE_CYCLE.length];
+}
+
+/**
+ * True when a living entity carries the Lunar Phase passive (the Lunar Rod
+ * weapon's signature ability). While one is in play, the moon phase advances
+ * at the start of every turn ("Start of each turn: shift Phase... Cycle
+ * repeats").
+ */
+export function hasMoonPhaseHolder(game: Game): boolean {
+  return game.entities.some(
+    (e) => e.curhp > 0 && e.abilities.some((a) => toId(a.name) === "lunarphase"),
+  );
+}
+
 export interface PendingAction {
   type: "move" | "dash" | "attack" | "ability" | "endturn";
   ability?: AbilityData;
@@ -235,25 +305,9 @@ export interface PendingAction {
 
 export const DIRECTION_LABELS: Record<string, string> = {
   up: "\u2191 Up",
-  "up-right": "\u2197 Up-Right",
-  right: "\u2192 Right",
-  "down-right": "\u2198 Down-Right",
   down: "\u2193 Down",
-  "down-left": "\u2199 Down-Left",
   left: "\u2190 Left",
-  "up-left": "\u2196 Up-Left",
-};
-
-// Row/col deltas for each direction label (row, col).
-const DIRECTION_DELTAS: Record<string, [number, number]> = {
-  up: [-1, 0],
-  "up-right": [-1, 1],
-  right: [0, 1],
-  "down-right": [1, 1],
-  down: [1, 0],
-  "down-left": [1, -1],
-  left: [0, -1],
-  "up-left": [-1, -1],
+  right: "\u2192 Right",
 };
 
 export function needsDirection(ability: AbilityData): boolean {
@@ -261,28 +315,19 @@ export function needsDirection(ability: AbilityData): boolean {
   return /^(cone|line|beam|pierce)\b/.test(r);
 }
 
-// Line/Pierce can fire diagonally (X/2 rounded up); Cone/Beam are cardinal-only.
-export function getDirectionCandidates(ability?: AbilityData): string[] {
-  const dirs = ["up", "right", "down", "left"];
-  if (!ability) return dirs;
-  const r = ability.range.toLowerCase().trim();
-  if (/^(line|pierce)\b/.test(r)) {
-    return [...dirs, "up-right", "down-right", "down-left", "up-left"];
-  }
-  return dirs;
+export function getDirectionCandidates(): string[] {
+  return ["up", "down", "left", "right"];
 }
 
 export function placeTerrain(
   map: number[][],
   pos: [number, number],
   terrain: number,
-): boolean {
+): void {
   const [r, c] = pos;
   if (r >= 0 && r < map.length && c >= 0 && c < map[0].length) {
     map[r][c] = terrain;
-    return true;
   }
-  return false;
 }
 
 export function entityOnTile(
@@ -342,8 +387,6 @@ export interface Game {
   chatLog: ChatEntry[];
   toasts: ChatEntry[];
   signupsOpen: boolean;
-  /** Whether players can use %endturn (default false). */
-  playersIdle: boolean;
   /** Gamemode votes: entity num -> voted mode id. Active between %close and %endvote. */
   votes: Record<string, string>;
   /** Whether gamemode voting is open (opened by %close, closed by %endvote). */
@@ -361,7 +404,18 @@ export interface Game {
    * Current moon phase (Dark-class mechanic). Set by "Phase: X" effects;
    * read by "Phase is X" condition clauses ("New Moon:", "Full Moon:", ...).
    */
+  // FUTURE (Stances): moonPhase -- together with subweapon and similar
+  // per-combat toggles -- is slated to be consolidated into a single "Stance"
+  // structure owned by the entity. See STANCES.md for the design intent.
   moonPhase?: string;
+  /**
+   * Set by "no Phase shift next turn" effects (Harvest Moon / Celestial
+   * Blessing): the next turn boundary skips the moon-phase auto-advance.
+   * Consumed (reset to false) by nextTurn.
+   */
+  // FUTURE (Stances): part of the moon-phase block slated for the consolidated
+  // Stance structure. See STANCES.md for the design intent.
+  skipMoonPhaseShift?: boolean;
 }
 
 export const games = new Map<string, Game>();
@@ -369,15 +423,29 @@ export const games = new Map<string, Game>();
 function serializeState(game: Game): string {
   return JSON.stringify({
     entities: game.entities.map((e) => ({
-      ...e,
-      pendingResolution: undefined,
+      num: e.num,
+      name: e.name,
+      curhp: e.curhp,
+      maxhp: e.maxhp,
+      pos: e.pos,
+      team: e.team,
+      statuses: e.statuses,
+      buffs: e.buffs,
+      cooldowns: e.cooldowns,
+      usesUsed: e.usesUsed,
+      subweapon: e.subweapon,
+      phaseChoice: e.phaseChoice,
+      dashUsed: e.dashUsed,
+      standardUsed: e.standardUsed,
+      movementUsed: e.movementUsed,
+      swiftUsed: e.swiftUsed,
+      triggered: e.triggered,
     })),
-    turnOrder: game.turnOrder,
     turnIndex: game.turnIndex,
     round: game.round,
+    moonPhase: game.moonPhase,
+    skipMoonPhaseShift: game.skipMoonPhaseShift,
     log: game.log,
-    votes: game.votes,
-    kills: game.kills,
   });
 }
 
@@ -390,31 +458,31 @@ export function popSnapshot(game: Game): boolean {
   const snap = game.snapshots.pop();
   if (!snap) return false;
   const data = JSON.parse(snap);
-
-  // Rebuild the array in snapshot order so consumers that iterate
-  // game.entities directly (or index into it, e.g. game.entities[0]) observe
-  // the pre-undo order, not the filtered+appended current order. Live entity
-  // objects are kept where possible so references stay valid.
-  game.entities = data.entities.map((e: Entity) => {
+  for (const e of data.entities) {
     const ent = game.entities.find((x) => x.num === e.num);
     if (ent) {
-      // Clear properties added after snapshot to avoid state pollution
-      for (const key of Object.keys(ent)) {
-        if (!(key in e)) delete (ent as any)[key];
-      }
-      Object.assign(ent, e);
-      ent.pendingResolution = undefined;
-      return ent;
+      ent.curhp = e.curhp;
+      ent.maxhp = e.maxhp;
+      ent.pos = e.pos;
+      ent.team = e.team;
+      ent.statuses = e.statuses;
+      ent.buffs = e.buffs;
+      ent.cooldowns = e.cooldowns;
+      ent.usesUsed = e.usesUsed;
+      ent.subweapon = e.subweapon;
+      ent.phaseChoice = e.phaseChoice;
+      ent.dashUsed = e.dashUsed;
+      ent.standardUsed = e.standardUsed;
+      ent.movementUsed = e.movementUsed;
+      ent.swiftUsed = e.swiftUsed;
+      ent.triggered = e.triggered;
     }
-    return e as Entity;
-  });
-
-  game.turnOrder = data.turnOrder;
+  }
   game.turnIndex = data.turnIndex;
   game.round = data.round;
+  game.moonPhase = data.moonPhase;
+  game.skipMoonPhaseShift = data.skipMoonPhaseShift;
   if (data.log) game.log = data.log;
-  if (data.votes) game.votes = data.votes;
-  if (data.kills) game.kills = data.kills;
   return true;
 }
 
@@ -464,13 +532,10 @@ export function getReachableTiles(
   start: [number, number],
   mp: number,
   entity?: Entity,
-  // Dash passes a budget above the effective MP (1.5x); only clamp when the
-  // caller wants the effective-MP ceiling (normal move/path commands).
-  clampToEffective = true,
 ): Map<string, number> {
   // Apply Slow MP reduction if entity is provided
   const effectiveMp = entity ? getEffectiveMp(entity) : mp;
-  const finalMp = clampToEffective && entity ? Math.min(mp, effectiveMp) : mp;
+  const finalMp = Math.min(mp, effectiveMp);
   const reachable = new Map<string, number>();
   const queue: Array<{ pos: [number, number]; cost: number }> = [
     { pos: start, cost: 0 },
@@ -492,28 +557,16 @@ export function getReachableTiles(
     for (const [dr, dc] of dirs) {
       const nr = pos[0] + dr;
       const nc = pos[1] + dc;
-      // Bounds + standable terrain. We intentionally do NOT use
-      // isPassable here because isPassable rejects any living entity,
-      // including the moving entity on its own start tile (which stays
-      // at the start position until the path is confirmed). The
-      // occupancy check below is the correct gate for this pathing
-      // path: it skips the moving entity itself so the entity can
-      // path back through (or re-enter) its own tile.
-      if (nr < 0 || nr >= game.map.length) continue;
-      if (nc < 0 || nc >= game.map[0].length) continue;
+      if (nr < 0 || nr >= game.map.length || nc < 0 || nc >= game.map[0].length)
+        continue;
 
       const terrain = game.map[nr][nc];
       // Obstructions + Broken (impassable) + Lava (damages on entry).
       if (!isStandable(terrain)) continue;
-      // Tiles occupied by a living FOREIGN entity cannot be entered or
-      // passed through, matching %pathstep/%confirmmove (and the
-      // Revealed map). The moving entity itself is skipped so the
-      // pathing back through the start tile is allowed. Dead entities
-      // do not obstruct, consistent with the occupancy checks in
-      // handleMove/handlePathStep.
+      // Exclude tiles occupied by a living entity from move/dash reachability.
       if (
         game.entities.some(
-          (e) => e !== entity && e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
+          (e) => e.curhp > 0 && e.pos[0] === nr && e.pos[1] === nc,
         )
       )
         continue;
@@ -579,24 +632,29 @@ const RANGE_CHECKERS: Record<string, RangeChecker> = {
   cone: (_g, f, t, n) => inCone(f, t, n),
 };
 
-// Check if target is in range of ability
+// Check if target is in range of ability. `bonus` extends the range by a
+// flat amount (e.g. Lunar Phase's "+1 Range" passive bonus); it is added to
+// the numeric range of every measured type and to melee (treated as range 1).
+// Global/Varies are unaffected.
 export function inRange(
   game: Game,
   from: [number, number],
   to: [number, number],
   range: string,
+  bonus = 0,
 ): boolean {
   const rangeStr = range.toLowerCase().trim();
 
   if (rangeStr === "" || rangeStr === "varies") return false;
-  if (rangeStr === "melee") return chebyshev(from, to) <= 1;
+  // Melee: 8 adjacent tiles (Chebyshev distance 1 + bonus)
+  if (rangeStr === "melee") return chebyshev(from, to) <= 1 + bonus;
   if (rangeStr === "global") return true;
 
   const n = parseInt(rangeStr.match(/(\d+)/)?.[1] ?? "");
   if (isNaN(n)) return false;
 
   const checker = RANGE_CHECKERS[rangeStr.split(/\s|\d/)[0]];
-  return checker ? checker(game, from, to, n) : false;
+  return checker ? checker(game, from, to, n + bonus) : false;
 }
 
 // Chebyshev distance (max of row diff, col diff) -- diagonal counts as 1
@@ -746,45 +804,59 @@ export function getStarTiles(
 export function getConeTiles(
   from: [number, number],
   range: number,
-  dir = "right",
 ): [number, number][] {
-  // Diagonals are invalid for cones (candidates are cardinal-only); fall back.
-  const [dr0, dc0] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
-  const [dr, dc] = dr0 !== 0 && dc0 !== 0 ? DIRECTION_DELTAS.right : [dr0, dc0];
   const tiles: [number, number][] = [];
-  for (let d = 1; d <= range; d++) {
-    // At distance d, width extends d tiles perpendicular
-    for (let w = -d; w <= d; w++) {
-      let tr: number, tc: number;
-      if (dr !== 0) {
-        // Vertical cone
-        tr = from[0] + dr * d;
-        tc = from[1] + w;
-      } else {
-        // Horizontal cone
-        tr = from[0] + w;
-        tc = from[1] + dc * d;
+  const dirs: [number, number][] = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+  ];
+  for (const [dr, dc] of dirs) {
+    for (let d = 1; d <= range; d++) {
+      // At distance d, width extends d tiles perpendicular
+      for (let w = -d; w <= d; w++) {
+        let tr: number, tc: number;
+        if (dr !== 0) {
+          // Vertical cone
+          tr = from[0] + dr * d;
+          tc = from[1] + w;
+        } else {
+          // Horizontal cone
+          tr = from[0] + w;
+          tc = from[1] + dc * d;
+        }
+        tiles.push([tr, tc]);
       }
-      tiles.push([tr, tc]);
     }
   }
   return tiles;
 }
 
-// Get all tiles in a Line from user in the given direction
+// Get all tiles in a Line from user in the closest matching direction
 export function getLineTiles(
   from: [number, number],
   range: number,
-  dir = "right",
 ): [number, number][] {
-  const [dr, dc] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
   const tiles: [number, number][] = [];
-  for (let d = 1; d <= range; d++) {
-    if (dr !== 0 && dc !== 0) {
-      // Diagonal: max distance is ceil(range/2)
-      if (d > Math.ceil(range / 2)) break;
+  const dirs: [number, number][] = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
+  ];
+  for (const [dr, dc] of dirs) {
+    for (let d = 1; d <= range; d++) {
+      if (dr !== 0 && dc !== 0) {
+        // Diagonal: max distance is ceil(range/2)
+        if (d > Math.ceil(range / 2)) break;
+      }
+      tiles.push([from[0] + dr * d, from[1] + dc * d]);
     }
-    tiles.push([from[0] + dr * d, from[1] + dc * d]);
   }
   return tiles;
 }
@@ -793,33 +865,36 @@ export function getLineTiles(
 export function getPierceTiles(
   from: [number, number],
   range: number,
-  dir = "right",
 ): [number, number][] {
-  return getLineTiles(from, range, dir);
+  return getLineTiles(from, range);
 }
 
-// Get all tiles in a Beam (3 wide, X deep in the chosen cardinal direction)
+// Get all tiles in a Beam (3 wide, X deep in each cardinal direction)
 export function getBeamTiles(
   from: [number, number],
   range: number,
-  dir = "right",
 ): [number, number][] {
-  // Diagonals are invalid for beams (candidates are cardinal-only); fall back.
-  const [dr0, dc0] = DIRECTION_DELTAS[dir] ?? DIRECTION_DELTAS.right;
-  const [dr, dc] = dr0 !== 0 && dc0 !== 0 ? DIRECTION_DELTAS.right : [dr0, dc0];
   const tiles: [number, number][] = [];
-  for (let d = 1; d <= range; d++) {
-    // 3 wide perpendicular
-    for (let w = -1; w <= 1; w++) {
-      let tr: number, tc: number;
-      if (dr !== 0) {
-        tr = from[0] + dr * d;
-        tc = from[1] + w;
-      } else {
-        tr = from[0] + w;
-        tc = from[1] + dc * d;
+  const dirs: [number, number][] = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+  ];
+  for (const [dr, dc] of dirs) {
+    for (let d = 1; d <= range; d++) {
+      // 3 wide perpendicular
+      for (let w = -1; w <= 1; w++) {
+        let tr: number, tc: number;
+        if (dr !== 0) {
+          tr = from[0] + dr * d;
+          tc = from[1] + w;
+        } else {
+          tr = from[0] + w;
+          tc = from[1] + dc * d;
+        }
+        tiles.push([tr, tc]);
       }
-      tiles.push([tr, tc]);
     }
   }
   return tiles;
@@ -831,7 +906,6 @@ export function getAoETargets(
   user: Entity,
   range: string,
   group: string,
-  dir?: string,
 ): Entity[] {
   const rangeStr = range.toLowerCase().trim();
   let tiles: [number, number][] = [];
@@ -848,22 +922,22 @@ export function getAoETargets(
 
   const coneMatch = rangeStr.match(/^cone\s*(\d+)/);
   if (coneMatch) {
-    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]), dir);
+    tiles = getConeTiles(user.pos, parseInt(coneMatch[1]));
   }
 
   const lineMatch = rangeStr.match(/^line\s*(\d+)/);
   if (lineMatch) {
-    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]), dir);
+    tiles = getLineTiles(user.pos, parseInt(lineMatch[1]));
   }
 
   const pierceMatch = rangeStr.match(/^pierce\s*(\d+)/);
   if (pierceMatch) {
-    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]), dir);
+    tiles = getPierceTiles(user.pos, parseInt(pierceMatch[1]));
   }
 
   const beamMatch = rangeStr.match(/^beam\s*(\d+)/);
   if (beamMatch) {
-    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]), dir);
+    tiles = getBeamTiles(user.pos, parseInt(beamMatch[1]));
   }
 
   if (tiles.length === 0) return [];
@@ -991,10 +1065,11 @@ export function rollAccuracy(
   mr: number,
   eva: number,
   bonuses = 0,
+  critThreshold = 20,
 ): { hit: boolean; roll: number; crit: boolean } {
   const roll = rollDice("1d20").total + bonuses;
   const hit = roll >= mr + eva;
-  const crit = roll >= 20;
+  const crit = roll >= critThreshold;
   return { hit, roll, crit };
 }
 
@@ -1286,13 +1361,6 @@ function tickEndingBuffs(prev: Entity, messages: string[]) {
   prev.buffs = prev.buffs.filter((b) => {
     b.rounds--;
     if (b.rounds <= 0) {
-      // An mpCap marker stores the MP delta removed by handleMpCap;
-      // restore it so the cap only lasts its declared rounds.
-      if (b.stat === "mpCap") {
-        prev.mp += b.amount;
-        messages.push(`  ${prev.num}'s MP cap expired (MP restored to ${prev.mp}).`);
-        return false;
-      }
       messages.push(
         `  ${prev.num}'s ${b.amount > 0 ? "+" : ""}${b.amount} ${b.stat.toUpperCase()} buff expired.`,
       );
@@ -1422,5 +1490,31 @@ export function nextTurn(
     game.phase = "ended";
     return { entity: null, messages, died };
   }
+
+  // Moon phase: the Lunar Phase passive advances the phase at the start of
+  // every turn ("Start of each turn: shift Phase... Cycle repeats"). The
+  // first turn's phase is chosen at %start (or defaults to New Moon), so the
+  // first shift here lands at the start of turn 2. "no Phase shift next
+  // turn" effects (Harvest Moon / Celestial Blessing) skip one boundary and
+  // are then consumed.
+  if (hasMoonPhaseHolder(game)) {
+    if (game.skipMoonPhaseShift) {
+      messages.push(
+        `  \u{1F319} Phase shift skipped this turn (no Phase shift effect).`,
+      );
+    } else if (!game.moonPhase) {
+      game.moonPhase = "new moon";
+      messages.push(
+        `  \u{1F319} Moon phase chosen: **${formatPhase(game.moonPhase)}**.`,
+      );
+    } else {
+      game.moonPhase = shiftMoonPhase(game.moonPhase);
+      messages.push(
+        `  \u{1F319} Phase shifts to **${formatPhase(game.moonPhase)}**.`,
+      );
+    }
+    game.skipMoonPhaseShift = false;
+  }
+
   return { entity, messages, died };
 }

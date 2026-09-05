@@ -412,6 +412,216 @@ describe("extractCombatMetadata", () => {
     expect(meta.ignore.defReduction).toBe(5);
     expect(meta.ignore.atkMag).toBe(true);
   });
+
+  it("extracts a crit threshold from 'Crit on N+'", () => {
+    const meta = extractCombatMetadata(parseEffects("Crit on 18+"));
+    expect(meta.critThreshold).toBe(18);
+  });
+
+  it("takes the lowest crit threshold when multiple clauses present", () => {
+    const meta = extractCombatMetadata(
+      parseEffects("Crit on 20+. Crit on 16+"),
+    );
+    expect(meta.critThreshold).toBe(16);
+  });
+
+  it("leaves critThreshold null when no crit clause present", () => {
+    const meta = extractCombatMetadata(parseEffects("+50% damage"));
+    expect(meta.critThreshold).toBeNull();
+  });
+
+  it("extracts extra dice / dice faces / base dice", () => {
+    const meta = extractCombatMetadata(
+      parseEffects("+1 dice. +3 dice faces. +2 base dice."),
+    );
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(3);
+    expect(meta.extraBaseDice).toBe(2);
+  });
+
+  it("extracts a summed MR modifier", () => {
+    const meta = extractCombatMetadata(parseEffects("-2 MR. +1 MR."));
+    expect(meta.mrMod).toBe(-1);
+  });
+
+  it("does NOT descend into Apex/Thirst/Conditional for the new fields", () => {
+    const meta = extractCombatMetadata(
+      parseEffects("Apex: Crit on 18+. If target is alive, +1 dice."),
+    );
+    expect(meta.critThreshold).toBeNull();
+    expect(meta.extraDice).toBe(0);
+  });
+
+  it("descends into a subweapon branch matching the user's equipped subweapon", () => {
+    const meta = extractCombatMetadata(
+      parseEffects("Gladius: +1 dice. Scutum: +2 dice faces."),
+      "gladius",
+    );
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
+  it("ignores subweapon branches that do NOT match the equipped subweapon", () => {
+    const meta = extractCombatMetadata(
+      parseEffects("Gladius: +1 dice. Scutum: +2 dice faces."),
+      "pilum",
+    );
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
+  it("descends into the Otherwise branch on a subweapon mismatch", () => {
+    const meta = extractCombatMetadata(
+      parseEffects("Gladius: +1 dice. Otherwise: +2 dice faces."),
+      "pilum",
+    );
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraDiceFaces).toBe(2);
+    // Matching subweapon still takes the then-branch.
+    const matched = extractCombatMetadata(
+      parseEffects("Gladius: +1 dice. Otherwise: +2 dice faces."),
+      "gladius",
+    );
+    expect(matched.extraDice).toBe(1);
+    expect(matched.extraDiceFaces).toBe(0);
+    // No subweapon: not knowable, so nothing counts.
+    const none = extractCombatMetadata(
+      parseEffects("Gladius: +1 dice. Otherwise: +2 dice faces."),
+    );
+    expect(none.extraDice).toBe(0);
+    expect(none.extraDiceFaces).toBe(0);
+  });
+
+  it("leaves subweapon branches unmerged when no subweapon is passed", () => {
+    const meta = extractCombatMetadata(parseEffects("Gladius: +1 dice."));
+    expect(meta.extraDice).toBe(0);
+  });
+
+  it("descends into a phase branch matching the current moon phase", () => {
+    const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "new moon");
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
+  it("matches phase names case-insensitively (formatted 'New Moon' still counts)", () => {
+    const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "New Moon");
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
+  it("descends into the Otherwise branch of a phase mismatch", () => {
+    const effects = parseEffects("New Moon: +1 dice. Otherwise: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "full moon");
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraDiceFaces).toBe(2);
+  });
+
+  it("ignores phase branches that do NOT match the current moon phase", () => {
+    const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "full moon");
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraDiceFaces).toBe(2);
+  });
+
+  it("handles slash-combo phase branches ('New/Full Moon') against the phase", () => {
+    const effects = parseEffects("New/Full Moon: +1 dice.");
+    expect(extractCombatMetadata(effects, undefined, "new moon").extraDice).toBe(1);
+    expect(extractCombatMetadata(effects, undefined, "full moon").extraDice).toBe(1);
+    expect(extractCombatMetadata(effects, undefined, "waning").extraDice).toBe(0);
+  });
+
+  it("folds BOTH phase branches when the user holds a chosen 2nd phase (phaseChoice)", () => {
+    // Far Side of the Moon / Fatal Moonlight: the user chose "waning" as a
+    // 2nd phase while the active phase is "new moon". evaluateCondition fires
+    // a "phase is X" branch when EITHER matches, so ability metadata must
+    // count both branches mods -- matching what applyEffectStream applies.
+    const effects = parseEffects("New Moon: +1 dice. Waning: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "new moon", "waning");
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(2);
+  });
+
+  it("keeps passive standing mods single-phase even with a chosen 2nd phase", () => {
+    // Passives stay single-phase (CodeRabbit): their phase-gated branches
+    // resolve against the active moon phase only, even when the user holds a
+    // chosen 2nd phase -- extractCombatMetadata is called without phaseChoice.
+    const effects = parseEffects("New Moon: +1 dice. Waning: +2 dice faces.");
+    const meta = extractCombatMetadata(effects, undefined, "new moon");
+    expect(meta.extraDice).toBe(1);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
+  it("leaves phase branches unmerged when no moon phase is active", () => {
+    const effects = parseEffects("New Moon: +1 dice. Full Moon: +2 dice faces.");
+    const meta = extractCombatMetadata(effects);
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraDiceFaces).toBe(0);
+  });
+
+  it("applies the user's Passive ability dice mods for the current moon phase", () => {
+    // Lunar Phase is a Passive: its phase-gated "Waning: +1 dice" must fold
+    // into the metadata of EVERY attack while the moon is waning.
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6], team: 1 });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "waning";
+    user.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Waning: +1 dice.",
+      }),
+      makeAbility({
+        name: "Strike",
+        damageType: "Physical",
+        roll: "1d6",
+        effect: "",
+      }),
+    ];
+    const step = startAttack(game, user, user.abilities[1], target.num);
+    const log = (step.done ? step.result.messages : []).join("\n");
+    // 1d6 + 1 extra dice => the Damage line shows a 2d6 roll.
+    expect(log).toContain("2d6");
+    expect(log).toMatch(/\+1 dice/);
+  });
+
+  it("rolls BOTH phase branches when the user holds a chosen 2nd phase", () => {
+    // Far Side of the Moon: active phase "new moon", user chose "waning".
+    // The ability's "New Moon: +1 dice. Waning: +2 dice faces." fires both
+    // branches (evaluateCondition), so the damage math must too: 1d6 + 1
+    // extra dice + 2 faces per die => 2d8.
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 6], team: 1 });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    user.phaseChoice = "waning";
+    user.abilities = [
+      makeAbility({
+        name: "Moonlight",
+        damageType: "Physical",
+        roll: "1d6",
+        effect: "New Moon: +1 dice. Waning: +2 dice faces.",
+      }),
+    ];
+    const step = startAttack(game, user, user.abilities[0], target.num);
+    const log = (step.done ? step.result.messages : []).join("\n");
+    expect(log).toContain("2d8");
+  });
+
+  it("does NOT merge a subweapon branch nested under an If-gate", () => {
+    // "If target is alive, +1 dice. Gladius: +2 base dice." parses as ONE
+    // If-conditional whose then-branch contains the subweapon branch. The
+    // outer gate isn't knowable at metadata time, so nothing merges --
+    // otherwise the +2 base dice would apply even when the target dies.
+    const meta = extractCombatMetadata(
+      parseEffects("If target is alive, +1 dice. Gladius: +2 base dice."),
+      "gladius",
+    );
+    expect(meta.extraDice).toBe(0);
+    expect(meta.extraBaseDice).toBe(0);
+  });
 });
 
 // ===========================================================================
@@ -580,6 +790,332 @@ describe("resolveAttackFlow: damage mods surface in the log", () => {
     // it as always-on.
     const meta = extractCombatMetadata(parseEffects("Apex: +50% damage"));
     expect(meta.damagePercent).toBe(0);
+  });
+
+  it("rolls extra dice for '+N dice' clauses (formula in the log)", () => {
+    // 1d1 always rolls 1, so a single hit with +2 dice must show the
+    // effective 3d1 formula in the damage line.
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const ability = makeAbility({
+      name: "Dice Up",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "+2 dice.",
+    });
+    const log = driveResolve(user, ability);
+    expect(log).toContain("3d1+0");
+    expect(log).toContain("+2 dice");
+  });
+
+  it("shows the crit threshold note when 'Crit on N+' is in effect", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const ability = makeAbility({
+      name: "Sniper",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      effect: "Crit on 18+",
+    });
+    const log = driveResolve(user, ability);
+    expect(log).toContain("crit on 18+");
+  });
+
+  it("applies the MR modifier to the accuracy line", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const ability = makeAbility({
+      name: "Heavy Trigger",
+      range: "Melee",
+      mr: 5,
+      roll: "2d6+0",
+      effect: "-3 MR",
+    });
+    const log = driveResolve(user, ability);
+    // Base MR 5 - 3 = 2: the accuracy line must reflect the modified MR.
+    expect(log).toMatch(/vs MR 2 \+ EVA/);
+  });
+
+  it("rolls a subweapon branch's dice mods when it matches the user's subweapon", () => {
+    // With subweapon "gladius", the "Gladius: +2 dice." branch must bump
+    // the 1d1 roll to 3d1 -- and with the branch NOT matching, it must not.
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const ability = makeAbility({
+      name: "Stance Bonus",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "Gladius: +2 dice.",
+    });
+    user.subweapon = "gladius";
+    const log = driveResolve(user, ability);
+    expect(log).toContain("3d1+0");
+    expect(log).toContain("+2 dice");
+
+    // Same ability with a non-matching subweapon: no dice mod.
+    user.subweapon = "pilum";
+    const log2 = driveResolve(user, ability);
+    expect(log2).not.toContain("3d1+0");
+  });
+
+  it("crit re-rolls only base dice, not '+N dice' extras", () => {
+    // 1d1 always rolls 1 and "Crit on 1+" crits every roll, so the math
+    // is deterministic: normal 3d1 = 3, crit adds ONLY base 1d1 = 1.
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const ability = makeAbility({
+      name: "Crit Dice",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "Crit on 1+. +2 dice.",
+    });
+    const log = driveResolve(user, ability);
+    // Base roll 3 (3d1) + ATK 10 - PD 5 = 8, crit re-roll 1d1 = 1 -> 9.
+    expect(log).toContain("= **9**");
+    // The crit line shows the base-only formula explicitly.
+    expect(log).toContain("(1d1+0)");
+    expect(log).not.toContain("(3d1+0)");
+  });
+
+  it("crit DOES re-roll '+N base dice' extras", () => {
+    // +2 base dice double on crit: normal 3d1 = 3, crit re-roll 3d1 = 3.
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const ability = makeAbility({
+      name: "Base Dice Crit",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "Crit on 1+. +2 base dice.",
+    });
+    const log = driveResolve(user, ability);
+    // Base 3 + ATK 10 - PD 5 = 8, crit re-roll 3d1 = 3 -> 11.
+    expect(log).toContain("= **11**");
+    // Crit formula equals the normal formula, so no parenthetical note.
+    expect(log).not.toContain("(1d1+0)");
+  });
+
+  it("blocks an attack when the ability requires a different subweapon", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    user.subweapon = "gladius";
+    const ability = makeAbility({
+      name: "Pilum Locked",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "Requires Pilum. +1 base dice",
+    });
+    const log = driveResolve(user, ability);
+    expect(log).toContain("could not use Pilum Locked");
+    expect(log).toContain("requires the Pilum subweapon");
+    // The ability must NOT resolve to a damage roll.
+    expect(log).not.toContain("**Damage**");
+  });
+
+  it("allows an attack when the subweapon matches the requirement", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    user.subweapon = "pilum";
+    const ability = makeAbility({
+      name: "Pilum Locked",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "Requires Pilum. +1 base dice",
+    });
+    const log = driveResolve(user, ability);
+    expect(log).not.toContain("could not use Pilum Locked");
+    // +1 base dice on 1d1 -> 2d1+0 shows in the damage line.
+    expect(log).toContain("2d1+0");
+  });
+});
+
+// ===========================================================================
+// Lunar Phase: range bonus (New Moon) and defender dice penalty (Full Moon)
+// ===========================================================================
+
+function driveAttack(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  targetNum: string,
+): string {
+  const step = startAttack(game, user, ability, targetNum);
+  const out: string[] = [];
+  if (step.done) out.push(...step.result.messages);
+  let lastStepDone = step.done;
+  let safety = 0;
+  while (user.pendingResolution && safety++ < 50) {
+    const flow = user.pendingResolution;
+    const step2 = flow.next("0");
+    if (step2.done) {
+      user.pendingResolution = undefined;
+      user.pendingPromptKind = undefined;
+      out.push(...step2.value.messages);
+      lastStepDone = true;
+      break;
+    }
+  }
+  expect(lastStepDone).toBe(true);
+  return out.join("\n");
+}
+
+describe("resolveAttackFlow: New Moon range bonus", () => {
+  function lunaRodUser(): Entity {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    user.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "New Moon: +1 Range.",
+      }),
+    ];
+    return user;
+  }
+
+  it("reaches one tile further with +1 Range during New Moon", () => {
+    const user = lunaRodUser();
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 7], // two tiles south -- out of plain melee reach
+      team: 1,
+      eva: 0,
+    });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    const ability = makeAbility({
+      name: "Strike",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    expect(log).toContain("**Accuracy**");
+  });
+
+  it("cannot reach two tiles away without the New Moon bonus", () => {
+    const user = lunaRodUser();
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 7],
+      team: 1,
+      eva: 0,
+    });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "waning"; // no range bonus
+    const ability = makeAbility({
+      name: "Strike",
+      range: "Melee",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    expect(log).not.toContain("**Accuracy**");
+    expect(log).not.toContain("**Damage**");
+  });
+});
+
+describe("resolveAttackFlow: defender Full Moon dice penalty", () => {
+  function lunaRodTarget(): Entity {
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    target.abilities = [
+      makeAbility({
+        name: "Lunar Phase",
+        actionType: "Passive",
+        effect: "Full Moon: -1 dice on attacks targeting user.",
+      }),
+    ];
+    return target;
+  }
+
+  it("rolls one fewer dice while the defender is under Full Moon", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = lunaRodTarget();
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "full moon";
+    user.abilities = [];
+    const ability = makeAbility({
+      name: "Strike",
+      range: "Melee",
+      mr: 0,
+      roll: "2d1+0",
+      effect: "",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    expect(log).toContain("1d1+0");
+  });
+
+  it("keeps the full dice pool when the phase is not Full Moon", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = lunaRodTarget();
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+    user.abilities = [];
+    const ability = makeAbility({
+      name: "Strike",
+      range: "Melee",
+      mr: 0,
+      roll: "2d1+0",
+      effect: "",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    expect(log).toContain("2d1+0");
+  });
+});
+
+describe("resolveAttackFlow: fractional dice mods", () => {
+  it("rounds +1.5 dice faces into a parseable formula", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    user.abilities = [];
+    const game = makeGame({ entities: [user, target] });
+    const ability = makeAbility({
+      name: "Half Faces",
+      range: "Melee",
+      mr: 0,
+      roll: "1d6+0",
+      effect: "+1.5 dice faces",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    // 6 sides + 1.5 = 7.5 -> rounded to 8; never "1d7.5".
+    expect(log).toContain("1d8+0");
+    expect(log).not.toContain("d7.5");
+  });
+
+  it("rounds +1.5 dice on the count side too", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    user.abilities = [];
+    const game = makeGame({ entities: [user, target] });
+    const ability = makeAbility({
+      name: "Half Die",
+      range: "Melee",
+      mr: 0,
+      roll: "1d6+0",
+      effect: "+1.5 dice",
+    });
+    const log = driveAttack(game, user, ability, target.num);
+    // 1 + 1.5 = 2.5 -> rounded to 3 dice; the formula stays parseable.
+    expect(log).toContain("3d6+0");
   });
 });
 

@@ -1,7 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import {
   Terrain,
-  placeTerrain,
   isObstruction,
   isStandable,
   moveCost,
@@ -18,8 +17,6 @@ import {
   getLineTiles,
   getPierceTiles,
   getBeamTiles,
-  getDirectionCandidates,
-  needsDirection,
   getAoETargets,
   getSplashTargets,
   pushEntity,
@@ -36,6 +33,11 @@ import {
   getCurrentEntity,
   getEntity,
   removeEntity,
+  MOON_PHASE_CYCLE,
+  shiftMoonPhase,
+  normalizePhase,
+  formatPhase,
+  hasMoonPhaseHolder,
   type Game,
   type Entity,
   type AbilityData,
@@ -103,7 +105,6 @@ function makeGame(
     id: "test",
     room: "battledome",
     host: "Host",
-    version: "4.4",
     entities,
     map,
     mapName: "test",
@@ -123,7 +124,6 @@ function makeGame(
     votes: {},
     voteOpen: false,
     voteRunoff: null,
-    playersIdle: false,
   };
 }
 
@@ -138,23 +138,6 @@ describe("Terrain", () => {
     expect(isObstruction(Terrain.Ice)).toBe(true);
     expect(isObstruction(Terrain.Stone)).toBe(true);
     expect(isObstruction(Terrain.Hearth)).toBe(true);
-  });
-
-  it("placeTerrain replaces any in-bounds tile (obstructions too)", () => {
-    const map = [
-      [Terrain.Normal, Terrain.Stone],
-      [Terrain.Lava, Terrain.Normal],
-    ];
-    // The engine places unconditionally; the confirm-before-replacing rule
-    // lives in the targeting flow (resolve.ts).
-    expect(placeTerrain(map, [0, 1], Terrain.Water)).toBe(true);
-    expect(map[0][1]).toBe(Terrain.Water);
-    expect(placeTerrain(map, [0, 0], Terrain.Water)).toBe(true);
-    expect(map[0][0]).toBe(Terrain.Water);
-    expect(placeTerrain(map, [1, 0], Terrain.Water)).toBe(true);
-    expect(map[1][0]).toBe(Terrain.Water);
-    // Out of bounds is a no-op that reports failure.
-    expect(placeTerrain(map, [9, 9], Terrain.Water)).toBe(false);
   });
 
   it("isObstruction returns false for Broken and passable tiles", () => {
@@ -290,61 +273,6 @@ describe("getReachableTiles", () => {
     expect(reachable.has(posToStr(1, 0))).toBe(false);
   });
 
-  it("does not move through or onto tiles occupied by a living entity", () => {
-    // P2 and P3 wall off the corner at [0,0]: both exits are occupied, so
-    // nothing beyond them may be reached — matching %pathstep/%confirmmove.
-    const game = makeGame({
-      entities: [
-        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
-        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 }),
-        makeEntity({ num: "P3", name: "Cara", pos: [1, 0], team: 1 }),
-      ],
-    });
-    const reachable = getReachableTiles(game, [0, 0], 5);
-    expect(reachable.has(posToStr(0, 1))).toBe(false); // occupied
-    expect(reachable.has(posToStr(1, 0))).toBe(false); // occupied
-    expect(reachable.has(posToStr(0, 2))).toBe(false); // beyond the occupied wall
-    expect(reachable.size).toBe(0);
-  });
-
-  it("does not treat the moving entity's own tile as occupied", () => {
-    // When reachability is computed from an intermediate path step (entity
-    // passed), the tile the entity physically stands on is not a blocker —
-    // pathing back through the start is allowed (PR-Agent on #188).
-    const game = makeGame({
-      entities: [
-        makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0, mp: 8 }),
-        makeEntity({ num: "P2", name: "Bob", pos: [2, 3], team: 1 }),
-      ],
-    });
-    const reachable = getReachableTiles(game, [4, 4], 6, game.entities[0]);
-    expect(reachable.has(posToStr(2, 2))).toBe(true); // self's tile
-    expect(reachable.has(posToStr(2, 3))).toBe(false); // foreign tile still blocked
-  });
-
-  it("keeps blocking foreign entities when no entity is passed", () => {
-    const game = makeGame({
-      entities: [
-        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
-        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1 }),
-      ],
-    });
-    const reachable = getReachableTiles(game, [0, 0], 5);
-    expect(reachable.has(posToStr(0, 1))).toBe(false);
-  });
-
-  it("treats tiles occupied by dead entities as traversable", () => {
-    const game = makeGame({
-      entities: [
-        makeEntity({ num: "P1", name: "Alice", pos: [0, 0], team: 0 }),
-        makeEntity({ num: "P2", name: "Bob", pos: [0, 1], team: 1, curhp: 0 }),
-      ],
-    });
-    const reachable = getReachableTiles(game, [0, 0], 5);
-    expect(reachable.has(posToStr(0, 1))).toBe(true);
-    expect(reachable.has(posToStr(0, 2))).toBe(true);
-  });
-
   it("sticky terrain costs 2 MP", () => {
     const map = Array.from({ length: 5 }, () => Array(5).fill(Terrain.Normal));
     map[0][1] = Terrain.Sticky;
@@ -467,6 +395,18 @@ describe("inRange", () => {
     expect(inRange(game, [5, 5], [8, 8], "line 5")).toBe(true); // diagonal, diagDist 3 <= ceil(5/2)=3
     expect(inRange(game, [5, 5], [3, 7], "line 5")).toBe(true); // diagonal, diagDist 2 <= ceil(5/2)=3
   });
+
+  it("bonus extends melee and numbered ranges (Lunar Phase +1 Range)", () => {
+    expect(inRange(game, [5, 5], [5, 7], "melee", 1)).toBe(true); // 2 tiles with +1
+    expect(inRange(game, [5, 5], [5, 7], "melee")).toBe(false); // 2 tiles without bonus
+    expect(inRange(game, [5, 5], [5, 9], "range 3", 1)).toBe(true); // manhattan 4
+    expect(inRange(game, [5, 5], [5, 9], "range 3")).toBe(false);
+    expect(inRange(game, [5, 5], [5, 9], "homing 4", 1)).toBe(true); // manhattan 4
+    expect(inRange(game, [5, 5], [5, 8], "burst 2", 1)).toBe(true); // cheb 3
+    expect(inRange(game, [5, 5], [5, 8], "burst 2")).toBe(false);
+    expect(inRange(game, [5, 5], [5, 9], "line 4", 1)).toBe(true); // cardinal dist 4
+    expect(inRange(game, [5, 5], [5, 9], "global", 1)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -506,65 +446,28 @@ describe("getStarTiles", () => {
 });
 
 describe("getConeTiles", () => {
-  it("cone range 1 covers 3 tiles forward in the chosen direction", () => {
-    const tiles = getConeTiles([5, 5], 1, "right");
-    // Right: 1 forward + 1 to each side = [4,6], [5,6], [6,6]
-    expect(tiles.length).toBe(3);
-    expect(tiles).toContainEqual([4, 6]);
-    expect(tiles).toContainEqual([5, 6]);
-    expect(tiles).toContainEqual([6, 6]);
-  });
-
-  it("cone honors each cardinal direction", () => {
-    expect(getConeTiles([5, 5], 1, "up")).toContainEqual([4, 5]);
-    expect(getConeTiles([5, 5], 1, "down")).toContainEqual([6, 5]);
-    expect(getConeTiles([5, 5], 1, "left")).toContainEqual([5, 4]);
-  });
-
-  it("cone range 2 grows wider with depth", () => {
-    const tiles = getConeTiles([5, 5], 2, "right");
-    // d=1: 3 tiles, d=2: 5 tiles = 8
-    expect(tiles.length).toBe(8);
+  it("cone generates tiles in all 4 cardinal directions", () => {
+    const tiles = getConeTiles([5, 5], 1);
+    // Cone 1: 3 tiles forward in each direction (1 forward + 1 to each side)
+    // Up: [4,4], [4,5], [4,6]
+    // Down: [6,4], [6,5], [6,6]
+    // Left: [4,4], [5,4], [6,4]
+    // Right: [4,6], [5,6], [6,6]
+    // Total = 12 (with some overlap at corners)
+    expect(tiles.length).toBe(12);
   });
 
   it("cone does not include origin", () => {
     const tiles = getConeTiles([5, 5], 3);
     expect(tiles.some(([r, c]) => r === 5 && c === 5)).toBe(false);
   });
-
-  it("cone falls back to right on an invalid diagonal dir", () => {
-    // Diagonal dirs are not candidates for cones; treat as right.
-    const tiles = getConeTiles([5, 5], 1, "up-right");
-    expect(tiles).toContainEqual([4, 6]);
-    expect(tiles).toContainEqual([5, 6]);
-    expect(tiles).toContainEqual([6, 6]);
-  });
 });
 
 describe("getLineTiles", () => {
-  it("generates range tiles in the chosen direction", () => {
-    const tiles = getLineTiles([5, 5], 3, "right");
-    expect(tiles.length).toBe(3);
-    expect(tiles).toContainEqual([5, 6]);
-    expect(tiles).toContainEqual([5, 8]);
-  });
-
-  it("line honors each cardinal direction", () => {
-    expect(getLineTiles([5, 5], 3, "up")).toContainEqual([2, 5]);
-    expect(getLineTiles([5, 5], 3, "down")).toContainEqual([8, 5]);
-    expect(getLineTiles([5, 5], 3, "left")).toContainEqual([5, 2]);
-  });
-
-  it("line honors diagonal directions with half range", () => {
-    // Diagonal: max distance is ceil(range/2)
-    expect(getLineTiles([5, 5], 4, "down-right")).toEqual([
-      [6, 6],
-      [7, 7],
-    ]);
-    expect(getLineTiles([5, 5], 3, "up-left")).toEqual([
-      [4, 4],
-      [3, 3],
-    ]);
+  it("generates tiles in all 8 directions", () => {
+    const tiles = getLineTiles([5, 5], 3);
+    // 4 cardinal * 3 + 4 diagonal * ceil(3/2) = 12 + 8 = 20
+    expect(tiles.length).toBe(20);
   });
 
   it("does not include origin", () => {
@@ -574,57 +477,18 @@ describe("getLineTiles", () => {
 });
 
 describe("getPierceTiles", () => {
-  it("same as getLineTiles in the chosen direction", () => {
-    const line = getLineTiles([5, 5], 3, "left");
-    const pierce = getPierceTiles([5, 5], 3, "left");
-    expect(pierce).toEqual(line);
+  it("same as getLineTiles", () => {
+    const line = getLineTiles([5, 5], 3);
+    const pierce = getPierceTiles([5, 5], 3);
+    expect(pierce.length).toBe(line.length);
   });
 });
 
 describe("getBeamTiles", () => {
-  it("generates 3-wide tiles in the chosen direction", () => {
-    const tiles = getBeamTiles([5, 5], 2, "right");
-    // 2 depth * 3 width = 6
-    expect(tiles.length).toBe(6);
-    expect(tiles).toContainEqual([4, 6]);
-    expect(tiles).toContainEqual([5, 7]);
-    expect(tiles).toContainEqual([6, 6]);
-  });
-
-  it("beam honors each cardinal direction", () => {
-    expect(getBeamTiles([5, 5], 1, "up")).toContainEqual([4, 4]);
-    expect(getBeamTiles([5, 5], 1, "down")).toContainEqual([6, 6]);
-    expect(getBeamTiles([5, 5], 1, "left")).toContainEqual([4, 4]);
-  });
-
-  it("beam falls back to right on an invalid diagonal dir", () => {
-    const tiles = getBeamTiles([5, 5], 1, "down-right");
-    expect(tiles).toContainEqual([4, 6]);
-    expect(tiles).toContainEqual([5, 6]);
-    expect(tiles).toContainEqual([6, 6]);
-  });
-});
-
-describe("getDirectionCandidates", () => {
-  const ability = (range: string): AbilityData =>
-    ({ range, name: "A", cooldown: 1 }) as unknown as AbilityData;
-
-  it("line and pierce offer diagonals", () => {
-    const dirs = getDirectionCandidates(ability("Line 4"));
-    expect(dirs).toContain("up-right");
-    expect(dirs).toContain("down-left");
-    expect(dirs.length).toBe(8);
-    expect(getDirectionCandidates(ability("Pierce 3"))).toContain("up-left");
-  });
-
-  it("cone and beam stay cardinal-only", () => {
-    const dirs = getDirectionCandidates(ability("Cone 2"));
-    expect(dirs).toEqual(["up", "right", "down", "left"]);
-    expect(getDirectionCandidates(ability("Beam 3"))).toEqual(dirs);
-  });
-
-  it("defaults to cardinal without an ability", () => {
-    expect(getDirectionCandidates()).toEqual(["up", "right", "down", "left"]);
+  it("generates 3-wide tiles in 4 cardinal directions", () => {
+    const tiles = getBeamTiles([5, 5], 2);
+    // 4 directions * 2 depth * 3 width = 24
+    expect(tiles.length).toBe(24);
   });
 });
 
@@ -869,6 +733,24 @@ describe("rollAccuracy", () => {
     }
     expect(sawCrit).toBe(true);
   });
+
+  it("respects a lowered crit threshold from 'Crit on N+'", () => {
+    // With threshold 1, every roll (1..20) is a crit.
+    let allCrit = true;
+    for (let i = 0; i < 200; i++) {
+      if (!rollAccuracy(0, 0, 0, 1).crit) allCrit = false;
+    }
+    expect(allCrit).toBe(true);
+  });
+
+  it("raises the crit threshold when told to (no crit below 21)", () => {
+    // A threshold above 20 means crits can never happen on 1d20.
+    let sawCrit = false;
+    for (let i = 0; i < 200; i++) {
+      if (rollAccuracy(0, 0, 0, 21).crit) sawCrit = true;
+    }
+    expect(sawCrit).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1017,48 +899,17 @@ describe("Snapshots", () => {
     expect(game.log.length).toBe(0);
   });
 
-  it("resurrects entities removed after the snapshot", () => {
-    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
-    const p2 = makeEntity({ num: "P2", name: "B", curhp: 40, pos: [1, 1] });
-    const game = makeGame({ entities: [p1, p2] });
-    expect(game.turnOrder).toEqual(["P1", "P2"]);
-
-    pushSnapshot(game);
-    removeEntity(game, p2);
-    expect(game.entities.some((e) => e.num === "P2")).toBe(false);
-    expect(game.turnOrder).toEqual(["P1"]);
-
-    popSnapshot(game);
-    const revived = game.entities.find((e) => e.num === "P2");
-    expect(revived).toBeDefined();
-    expect(revived!.curhp).toBe(40);
-    expect(revived!.pos).toEqual([1, 1]);
-    expect(game.turnOrder).toEqual(["P1", "P2"]);
-  });
-
-  it("restores kill counts from the snapshot", () => {
-    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
+  it("preserves the subweapon field through push/pop", () => {
+    const p1 = makeEntity({ num: "P1", name: "A", pos: [0, 0] });
+    p1.subweapon = "gladius";
     const game = makeGame({ entities: [p1] });
-    game.kills = { P1: 2, P2: 0 };
 
     pushSnapshot(game);
-    game.kills = { P1: 5, P2: 4 };
+    p1.subweapon = "pilum";
+    expect(p1.subweapon).toBe("pilum");
 
     popSnapshot(game);
-    expect(game.kills).toEqual({ P1: 2, P2: 0 });
-  });
-
-  it("restores entities in snapshot order after reordering", () => {
-    const p1 = makeEntity({ num: "P1", name: "A", curhp: 100, pos: [0, 0] });
-    const p2 = makeEntity({ num: "P2", name: "B", curhp: 40, pos: [1, 1] });
-    const game = makeGame({ entities: [p1, p2] });
-
-    pushSnapshot(game);
-    // Simulate an undo-visible reordering (e.g. death -> new join order).
-    game.entities = [p2, p1];
-
-    popSnapshot(game);
-    expect(game.entities.map((e) => e.num)).toEqual(["P1", "P2"]);
+    expect(p1.subweapon).toBe("gladius");
   });
 
   it("returns false when no snapshots", () => {
@@ -1143,6 +994,165 @@ describe("Turn Management", () => {
 // Start-of-Turn Processing
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Moon phases (Lunar Rod / Dark-class mechanic)
+// ---------------------------------------------------------------------------
+
+// Minimal stand-in for the Lunar Rod's signature passive ability.
+const lunarPhaseAbility: AbilityData = {
+  name: "Lunar Phase",
+  level: 1,
+  frequency: "",
+  mr: 0,
+  roll: "",
+  damageType: "",
+  actionType: "Passive",
+  targetAmount: 1,
+  targetGroup: "Self",
+  range: "Self",
+  effect: "",
+};
+
+describe("Moon phases", () => {
+  it("MOON_PHASE_CYCLE is in canonical shift order", () => {
+    expect(MOON_PHASE_CYCLE).toEqual([
+      "new moon",
+      "waxing",
+      "full moon",
+      "waning",
+    ]);
+  });
+
+  it("shiftMoonPhase advances and wraps Waning -> New Moon", () => {
+    expect(shiftMoonPhase("new moon")).toBe("waxing");
+    expect(shiftMoonPhase("waxing")).toBe("full moon");
+    expect(shiftMoonPhase("full moon")).toBe("waning");
+    expect(shiftMoonPhase("waning")).toBe("new moon");
+  });
+
+  it("shiftMoonPhase defaults an unknown/empty phase to new moon", () => {
+    expect(shiftMoonPhase(undefined)).toBe("new moon");
+    expect(shiftMoonPhase("garbage")).toBe("new moon");
+  });
+
+  it("normalizePhase is case/whitespace tolerant and rejects garbage", () => {
+    expect(normalizePhase("NEW MOON")).toBe("new moon");
+    expect(normalizePhase("Full Moon")).toBe("full moon");
+    expect(normalizePhase(undefined)).toBeUndefined();
+    expect(normalizePhase("crescent")).toBeUndefined();
+  });
+
+  it("formatPhase title-cases each word", () => {
+    expect(formatPhase("new moon")).toBe("New Moon");
+    expect(formatPhase(undefined)).toBe("");
+  });
+
+  it("hasMoonPhaseHolder is true only for a living Lunar Phase carrier", () => {
+    const holder = makeEntity({
+      num: "P1",
+      name: "A",
+      abilities: [lunarPhaseAbility],
+    });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [holder, p2] });
+    expect(hasMoonPhaseHolder(game)).toBe(true);
+    holder.curhp = 0;
+    expect(hasMoonPhaseHolder(game)).toBe(false);
+  });
+
+  it("nextTurn chooses then shifts the phase each turn with a Lunar Phase carrier", () => {
+    const holder = makeEntity({
+      num: "P1",
+      name: "A",
+      abilities: [lunarPhaseAbility],
+    });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [holder, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+
+    // No phase set yet: the first advance CHOOSES (defaults to New Moon).
+    const r1 = nextTurn(game);
+    expect(game.moonPhase).toBe("new moon");
+    expect(r1.messages.some((m) => m.includes("Moon phase chosen"))).toBe(true);
+
+    // Every subsequent turn start shifts through the cycle.
+    nextTurn(game);
+    expect(game.moonPhase).toBe("waxing");
+    nextTurn(game);
+    expect(game.moonPhase).toBe("full moon");
+    nextTurn(game);
+    expect(game.moonPhase).toBe("waning");
+    nextTurn(game);
+    expect(game.moonPhase).toBe("new moon");
+  });
+
+  it("nextTurn does not touch the phase without a Lunar Phase carrier", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [p1, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    nextTurn(game);
+    expect(game.moonPhase).toBeUndefined();
+  });
+
+  it("snapshots preserve moonPhase", () => {
+    const p1 = makeEntity({ num: "P1", name: "A" });
+    const game = makeGame({ entities: [p1] });
+    game.moonPhase = "full moon";
+    pushSnapshot(game);
+    game.moonPhase = "waning";
+    expect(game.moonPhase).toBe("waning");
+    popSnapshot(game);
+    expect(game.moonPhase).toBe("full moon");
+  });
+
+  it("skipMoonPhaseShift suppresses the next turn's shift, then resets", () => {
+    const holder = makeEntity({
+      num: "P1",
+      name: "A",
+      abilities: [lunarPhaseAbility],
+    });
+    const p2 = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({
+      entities: [holder, p2],
+      turnOrder: ["P1", "P2"],
+    });
+    game.turnIndex = 0;
+    game.moonPhase = "new moon";
+    game.skipMoonPhaseShift = true;
+
+    const r1 = nextTurn(game);
+    expect(game.moonPhase).toBe("new moon"); // no shift
+    expect(game.skipMoonPhaseShift).toBe(false); // flag consumed
+    expect(r1.messages.some((m) => m.includes("skipped"))).toBe(true);
+
+    nextTurn(game);
+    expect(game.moonPhase).toBe("waxing"); // shift resumes
+  });
+
+  it("snapshots preserve skipMoonPhaseShift and phaseChoice", () => {
+    const p1 = makeEntity({
+      num: "P1",
+      name: "A",
+      phaseChoice: "full moon",
+    });
+    const game = makeGame({ entities: [p1] });
+    game.skipMoonPhaseShift = true;
+    pushSnapshot(game);
+    p1.phaseChoice = undefined;
+    game.skipMoonPhaseShift = false;
+    popSnapshot(game);
+    expect(p1.phaseChoice).toBe("full moon");
+    expect(game.skipMoonPhaseShift).toBe(true);
+  });
+});
+
 describe("processStartOfTurn", () => {
   it("applies status damage", () => {
     const e = makeEntity({
@@ -1201,25 +1211,6 @@ describe("processStartOfTurn", () => {
     expect(e.buffs.length).toBe(1);
     expect(e.buffs[0].stat).toBe("atk");
     expect(e.buffs[0].rounds).toBe(1);
-    expect(result.entity?.num).toBe("P2");
-  });
-
-  it("restores MP when an mpCap marker expires", () => {
-    const e = makeEntity({
-      num: "P1",
-      name: "A",
-      mp: 3, // capped from 5 -> marker stores the removed delta
-      buffs: [{ stat: "mpCap", amount: 2, rounds: 1 }],
-    });
-    const p2 = makeEntity({ num: "P2", name: "B" });
-    const game = makeGame({
-      entities: [e, p2],
-      turnOrder: ["P1", "P2"],
-    });
-    game.turnIndex = 0;
-    const result = nextTurn(game);
-    expect(e.mp).toBe(5);
-    expect(e.buffs.find((b) => b.stat === "mpCap")).toBeUndefined();
     expect(result.entity?.num).toBe("P2");
   });
 

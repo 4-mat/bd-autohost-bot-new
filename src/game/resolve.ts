@@ -36,8 +36,6 @@ import {
   getDirectionCandidates,
   DIRECTION_LABELS,
   placeTerrain,
-  isObstruction,
-  Terrain,
   TERRAIN_NAMES,
 } from "./state.js";
 import { modeIdFor } from "../data/gamemodes.js";
@@ -47,15 +45,50 @@ import {
   applyEffects,
   applyEffectStream,
   extractCombatMetadata,
-  getCombatMetadataForEffect,
+  getPassiveRangeBonus,
+  getDefenderDiceMods,
+  normalizeSubweapon,
+  formatSubweapon,
+  requiredSubweapons,
   type CombatMetadata,
-  type Effect,
   type EffectChoosePrompt,
+  type Effect,
   type PhaseTiming,
-  type TileEffect,
-  parseTilePlacement,
 } from "./effects.js";
-import { rollDice, toId, posToStr } from "../utils.js";
+import { rollDice, toId, posToStr, capitalize } from "../utils.js";
+
+// Merge two CombatMetadata results (passive standing mods + the ability's
+// own effects) into one. Numeric fields add; multi-hit and crit threshold
+// keep the walker's max / most-generous semantics; ignore flags OR.
+function combineCombatMetadata(
+  a: CombatMetadata,
+  b: CombatMetadata,
+): CombatMetadata {
+  return {
+    damagePercent: a.damagePercent + b.damagePercent,
+    flatDamage: a.flatDamage + b.flatDamage,
+    additionalHits: Math.max(a.additionalHits, b.additionalHits),
+    ignore: {
+      atkMag: a.ignore.atkMag || b.ignore.atkMag,
+      def: a.ignore.def || b.ignore.def,
+      halfDef: a.ignore.halfDef || b.ignore.halfDef,
+      quarterDef: a.ignore.quarterDef || b.ignore.quarterDef,
+      defReduction: a.ignore.defReduction + b.ignore.defReduction,
+      outsideFactors: a.ignore.outsideFactors || b.ignore.outsideFactors,
+      other: [...new Set([...a.ignore.other, ...b.ignore.other])],
+    },
+    critThreshold:
+      a.critThreshold === null
+        ? b.critThreshold
+        : b.critThreshold === null
+          ? a.critThreshold
+          : Math.min(a.critThreshold, b.critThreshold),
+    extraDice: a.extraDice + b.extraDice,
+    extraDiceFaces: a.extraDiceFaces + b.extraDiceFaces,
+    extraBaseDice: a.extraBaseDice + b.extraBaseDice,
+    mrMod: a.mrMod + b.mrMod,
+  };
+}
 
 export interface ResolutionResult {
   messages: string[];
@@ -77,18 +110,13 @@ function defensiveStat(entity: Entity, damageType: string): number {
 }
 
 // BD 4.3 evasion: physical uses PE (PD/10), magical uses ME (MD/10), max 9.
-// EVA buffs raise PE/ME; poison applies -2 on top.
 export function eva43(entity: Entity, damageType: string): number {
   const base =
     damageType === "Physical"
       ? getEffectiveStat(entity, "pd")
       : getEffectiveStat(entity, "md");
-  const bonus = entity.buffs
-    .filter((b) => b.stat === "eva")
-    .reduce((sum, b) => sum + b.amount, 0);
   const pen = hasStatus(entity, "poison") ? -2 : 0;
-  const capped = Math.min(9, Math.floor(base / 10) + bonus);
-  return Math.max(0, capped + pen);
+  return Math.max(0, Math.min(9, Math.floor(base / 10) + pen));
 }
 
 export function getEffectiveStat(entity: Entity, stat: string): number {
@@ -133,8 +161,6 @@ export type AttackPrompt =
       kind: "selection";
       message: string;
       options: SelectionOption[];
-      /** Replacing an obstruction tile: only the host may answer this. */
-      confirmObstruction?: boolean;
     }
   | {
       kind: "target";
@@ -303,78 +329,8 @@ function* resolveDirection(
   return yield {
     kind: "direction",
     message: `Choose a direction for ${ability.name}`,
-    // Line/Pierce can fire diagonally (X/2 rounded up); Cone/Beam cardinal-only.
-    candidates: getDirectionCandidates(active),
+    candidates: getDirectionCandidates(),
   };
-}
-
-/**
- * Tile-targeting flow for terrain-placement abilities (Whittle, etc.):
- * prompt for a map tile within range, require host confirmation before
- * replacing an obstruction tile (Stop/Bone/Ice/Stone/Hearth), then write
- * the chosen terrain. Returns false (message already pushed) when the
- * placement is cancelled or invalid.
- */
-function* resolveTilePlacement(
-  game: Game,
-  user: Entity,
-  ability: AbilityData,
-  placement: TileEffect,
-  result: ResolutionResult,
-): Generator<AttackPrompt, boolean, PromptResponse> {
-  const tileRef = (yield {
-    kind: "tile",
-    message: `Choose a tile for ${ability.name}.`,
-    candidates: getTileCandidates(game, user, ability),
-  }) as string;
-
-  const parsed = parseTileRef(tileRef);
-  if (!parsed) {
-    result.messages.push(
-      `${user.num} cancels ${ability.name}: invalid tile ${tileRef}.`,
-    );
-    return false;
-  }
-  const [r, c] = parsed;
-  if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length) {
-    result.messages.push(
-      `${user.num} cancels ${ability.name}: ${tileRef} is off the map.`,
-    );
-    return false;
-  }
-
-  const current = game.map[r][c];
-  if (isObstruction(current)) {
-    const tileName = TERRAIN_NAMES[current] ?? "obstruction";
-    const approve = (yield {
-      kind: "selection",
-      message: `Replace the ${tileName} obstruction at ${posToStr(
-        r,
-        c,
-      )}? Only the host may approve.`,
-      options: [
-        { id: "yes", label: "Yes, replace it" },
-        { id: "no", label: "No, cancel" },
-      ],
-      confirmObstruction: true,
-    }) as string;
-    if (approve !== "yes") {
-      result.messages.push(
-        `${user.num} cancels replacing the ${tileName} obstruction at ${posToStr(
-          r,
-          c,
-        )}.`,
-      );
-      return false;
-    }
-  }
-
-  const tileName = TERRAIN_NAMES[placement.terrain] ?? "Normal";
-  placeTerrain(game.map, [r, c], placement.terrain);
-  result.messages.push(
-    `  ${user.num} creates a ${tileName} tile at ${posToStr(r, c)}.`,
-  );
-  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -383,67 +339,24 @@ function* resolveTilePlacement(
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
 
-/** Roll a damage/heal formula applying the attacker's dice-count and
- * dice-faces buffs (e.g. Kinetic Impact's "+1 dice", Final Hour's "+4 dice
- * faces"). rollDice takes the dice-count modifier before the die-face
- * modifier, so the count bonus must be passed first. */
-function rollWithUserBuffs(user: Entity, formula: string) {
-  return rollDice(
-    formula,
-    getStatBonus(user, "dice"),
-    getStatBonus(user, "dice faces"),
-  );
+/**
+ * "Requires Pilum" abilities may only be used while that subweapon is
+ * equipped. Returns a failure message when the gate blocks the ability,
+ * or null when the user may proceed.
+ */
+function subweaponGateMessage(user: Entity, ability: AbilityData): string | null {
+  const requires = requiredSubweapons(ability.effect);
+  if (requires.length === 0) return null;
+  const equippedId = normalizeSubweapon(user.subweapon);
+  if (equippedId && requires.includes(equippedId)) return null;
+  return `${user.num} could not use ${ability.name}: requires the ${requires.map(capitalize).join(" or ")} subweapon${equippedId ? ` (equipped: ${formatSubweapon(user.subweapon)})` : ""}.`;
 }
 
-/**
- * Flips subject "self" -> "target" on every stat mod in the subtree,
- * recursing through wrapper effects (conditional/thirst/apex/choose).
- * Used for exclusively-friendly groups so gated ally buffs ("If origin
- * has more MAG: gain +4 MAG/1") land on each ally, not the user.
- */
-function rerouteSelfToTarget(effects: Effect[]): void {
-  for (const e of effects) {
-    if (e.type === "buff" || e.type === "debuff") {
-      if (e.subject === "self") e.subject = "target";
-      continue;
-    }
-    if (e.type === "conditional") {
-      rerouteSelfToTarget(e.thenEffects);
-      if (e.elseEffects) rerouteSelfToTarget(e.elseEffects);
-    } else if (e.type === "thirst" || e.type === "apex") {
-      rerouteSelfToTarget(e.effects);
-    } else if (e.type === "choose") {
-      for (const opts of e.options) rerouteSelfToTarget(opts);
-    }
-  }
-}
-
-/**
- * True when the ability targets an exclusively-friendly group (allies/ally
- * but never foe). Only such groups get "gain +N STAT" clauses rerouted
- * from the user onto each target.
- */
-function isFriendlyOnlyGroup(targetGroup: string): boolean {
-  return (
-    !/(^| )foe/i.test(targetGroup) &&
-    /(^| )(allies|ally)/i.test(targetGroup)
-  );
-}
-
-/**
- * Fold the attacker's persistent outgoing-damage buffs/debuffs (a "-25%
- * damage" debuff from Sandstorm, a "gain +50% damage/2" self-buff from a
- * previous turn) into this attack's combat metadata. The ability's own
- * text clauses are already folded by extractCombatMetadata; entity.buffs
- * carry the round-limited persistent ones. Percent-marked dmg buffs are
- * percentages; plain "dmg" buffs are flat amounts (CodeRabbit L1435).
- */
-function foldDamageBuffs(user: Entity, combat: CombatMetadata): void {
-  for (const b of user.buffs) {
-    if (b.stat !== "dmg") continue;
-    if (b.percent) combat.damagePercent += b.amount;
-    else combat.flatDamage += b.amount;
-  }
+/** Returns a failure message when an unprompted cost could not be paid. */
+function autoCostMessage(user: Entity, ability: AbilityData): string | null {
+  if (!ability.cost || ability.cost.prompt) return null;
+  if (autoDeductCost(user, ability.cost)) return null;
+  return `${user.num} could not pay the cost for ${ability.name}.`;
 }
 
 function* resolveAttackFlow(
@@ -457,15 +370,20 @@ function* resolveAttackFlow(
   // --- Declare Attack ---
   // result.messages.push(`/me declares ${ability.name}`);
 
+  // --- Subweapon requirement gate ---
+  // "Requires Pilum" abilities may only be used while that subweapon is
+  // equipped. Fail early (before costs/targeting) so the user sees the
+  // requirement instead of a half-resolved action.
+  const gateMsg = subweaponGateMessage(user, ability);
+  if (gateMsg) {
+    result.messages.push(gateMsg);
+    return result;
+  }
+
   // --- Auto-deduct non-prompted costs ---
-  if (
-    ability.cost &&
-    !ability.cost.prompt &&
-    !autoDeductCost(user, ability.cost)
-  ) {
-    result.messages.push(
-      `${user.num} could not pay the cost for ${ability.name}.`,
-    );
+  const costMsg = autoCostMessage(user, ability);
+  if (costMsg) {
+    result.messages.push(costMsg);
     return result;
   }
 
@@ -478,41 +396,14 @@ function* resolveAttackFlow(
   if (!active) return result;
 
   // --- Direction prompt for AoE abilities ---
-
   const dir = yield* resolveDirection(user, ability, active);
-
-  // --- Tile-targeting abilities (place terrain on a chosen map tile) ---
-  // Restored from the pre-refactor flow (PR #301 / #237): abilities whose
-  // effect places terrain (e.g. Whittle's "create ... tile on target")
-  // prompt for a map tile instead of an entity, ask for host confirmation
-  // before replacing an obstruction tile (Stop/Bone/Ice/Stone/Hearth), then
-  // write the tile. Pure tile placement has no entity targets, so the
-  // placement result is the whole resolution.
-  const tilePlacement = parseTilePlacement(active.effect ?? "");
-  if (tilePlacement) {
-    const placed = yield* resolveTilePlacement(
-      game,
-      user,
-      active,
-      tilePlacement,
-      result,
-    );
-    // Rare hybrid abilities may still select entities after placing; only
-    // fall through when a valid entity target exists for the group.
-    if (
-      !game.entities.some((e) => isValidTarget(user, e, active.targetGroup))
-    ) {
-      return result;
-    }
-    void placed;
-  }
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   const {
     hits: hitCount,
     isAoE,
     targets: autoTargets,
-  } = prepareTargeting(game, user, active, dir);
+  } = prepareTargeting(game, user, active);
   let targets = autoTargets;
   if (targets.length === 0) {
     const chosen = yield* chooseTargets(
@@ -544,26 +435,35 @@ function* resolveAttackFlow(
   // parseMultiHit(); meta.additionalHits adds the effect-driven extra hits
   // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
   // effect still rolls the highest of the two.
-  // parseEffects / getCombatMetadataForEffect are memoised by effect text, so
-  // this is a cache hit after the first use of the ability — no re-parse and
-  // no repeated tree walk per attack.
   const effects = parseEffects(active.effect);
-  const combat = getCombatMetadataForEffect(active.effect);
-
-  foldDamageBuffs(user, combat);
-  const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
-
-  // Ally-targeted abilities (Rising Hope, Primadonna, Crusade, Flower
-  // Crown, Windmill, ...): a "gain +N STAT" clause is a buff FOR EACH
-  // TARGET, not a self-buff for the user -- parseStatMods defaults "gain"
-  // to subject "self" because it has no ability context, so re-route it
-  // here. Foe-targeted abilities keep the user as the "gain" recipient
-  // (Blitz, Point-in-Line, ...). Only exclusively-friendly groups reroute:
-  // "Any" / "Foe or Ally" / "Self, Foes, Allies" can select a foe, and a
-  // foe would then receive the buff instead of the user.
-  if (isFriendlyOnlyGroup(ability.targetGroup)) {
-    rerouteSelfToTarget(effects);
+  // Fold the user's Passive abilities (e.g. Lunar Phase) into the metadata:
+  // passives grant standing dice / crit / MR / damage modifiers that apply to
+  // every attack while equipped. Their phase-gated branches ("Waxing: +2 dice
+  // faces") resolve against the current moon phase.
+  const passiveEffects: Effect[] = [];
+  for (const a of user.abilities) {
+    if (a.actionType === "Passive") passiveEffects.push(...parseEffects(a.effect));
   }
+  // Passive standing mods stay single-phase: their phase-gated branches
+  // resolve against the active moon phase only (CodeRabbit: keep passive
+  // metadata single-phase). The ability's OWN effects additionally fold in
+  // the user's chosen 2nd phase (Far Side of the Moon / Fatal Moonlight)
+  // -- evaluateCondition fires a "phase is X" branch when EITHER the
+  // active phase or the chosen phase matches, so the damage math must
+  // match what applyEffectStream actually applies.
+  const passiveCombat = extractCombatMetadata(
+    passiveEffects,
+    normalizeSubweapon(user.subweapon),
+    game.moonPhase,
+  );
+  const abilityCombat = extractCombatMetadata(
+    effects,
+    normalizeSubweapon(user.subweapon),
+    game.moonPhase,
+    user.phaseChoice,
+  );
+  const combat = combineCombatMetadata(passiveCombat, abilityCombat);
+  const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
 
   for (const target of targets) {
     const userDefeated = yield* resolveTargetAction(
@@ -572,7 +472,6 @@ function* resolveAttackFlow(
       active,
       target,
       combat,
-      effects,
       effectiveHitCount,
       isAttack,
       isHeal,
@@ -625,7 +524,6 @@ function* resolveTargetAction(
   active: AbilityData,
   target: Entity,
   combat: CombatMetadata,
-  effects: Effect[],
   effectiveHitCount: number,
   isAttack: boolean,
   isHeal: boolean,
@@ -633,6 +531,20 @@ function* resolveTargetAction(
   result: ResolutionResult,
 ): Generator<AttackPrompt, boolean, PromptResponse> {
   if (isAttack) {
+    // Lunar Phase "Full Moon: -N dice on attacks targeting user": the
+    // defender's passive reduces the attacker's dice pool for THIS target
+    // only, so the shared `combat` gets a per-target clone.
+    const defenderDiceMod = getDefenderDiceMods(target, game.moonPhase);
+    const targetCombat: CombatMetadata =
+      defenderDiceMod !== 0
+        ? {
+            ...combat,
+            extraDice: combat.extraDice + defenderDiceMod,
+            // Clone the nested ignore object too so per-target adjustments
+            // can never leak back into the shared `combat`.
+            ignore: { ...combat.ignore },
+          }
+        : combat;
     let confusionApplied = false;
     for (let h = 0; h < effectiveHitCount; h++) {
       const label =
@@ -642,8 +554,7 @@ function* resolveTargetAction(
         user,
         active,
         target,
-        combat,
-        effects,
+        targetCombat,
         label,
         confusionApplied,
       );
@@ -653,12 +564,6 @@ function* resolveTargetAction(
       // If the attacker was defeated by recoil or confusion, stop remaining hits
       if (singleResult.deaths.some((d) => d.num === user.num)) {
         return true;
-      }
-
-      // The target died on this hit: stop swinging at the corpse. Later
-      // hits only re-roll against a dead entity and re-announce the defeat.
-      if (target.curhp <= 0 || !game.entities.includes(target)) {
-        break;
       }
 
       if (!confusionApplied && singleResult.confusionTriggered) {
@@ -681,7 +586,6 @@ function* resolveTargetAction(
       user,
       active,
       target,
-      effects,
     );
     result.messages.push(...statusResult.messages);
     result.deaths.push(...statusResult.deaths);
@@ -746,9 +650,9 @@ export function respondToDir(user: Entity, dir: string): AttackStep {
   return respondToPromptOfKind(user, "direction", dir, "%dir");
 }
 
-// %picktile <tileRef> -- only valid while a "tile" prompt is pending.
+// %tile <tileRef> -- only valid while a "tile" prompt is pending.
 export function respondToTile(user: Entity, tileRef: string): AttackStep {
-  return respondToPromptOfKind(user, "tile", tileRef, "%picktile");
+  return respondToPromptOfKind(user, "tile", tileRef, "%tile");
 }
 
 function respondToPromptOfKind(
@@ -768,7 +672,7 @@ function respondToPromptOfKind(
       selection: "%choose",
       target: "%target",
       direction: "%dir",
-      tile: "%picktile",
+      tile: "%tile",
     };
     const wants = kindMap[user.pendingPromptKind ?? ""] ?? "%target";
     throw new Error(
@@ -892,7 +796,16 @@ function getTargetCandidates(
       return false;
     if (!isValidTarget(user, e, group)) return false;
     for (const rp of rangeParts) {
-      if (inRange(game, user.pos, e.pos, rp.trim())) return true;
+      if (
+        inRange(
+          game,
+          user.pos,
+          e.pos,
+          rp.trim(),
+          getPassiveRangeBonus(user, game.moonPhase),
+        )
+      )
+        return true;
     }
     return false;
   });
@@ -906,7 +819,9 @@ function getTileCandidates(
   const tiles: string[] = [];
   const rangeStr = ability.range.toLowerCase().trim();
   const rangeMatch = rangeStr.match(/(?:range|homing)\s*(\d+)/);
-  const range = rangeMatch ? parseInt(rangeMatch[1]) : 3;
+  const range =
+    (rangeMatch ? parseInt(rangeMatch[1]) : 3) +
+    getPassiveRangeBonus(user, game.moonPhase);
 
   for (let r = 0; r < game.map.length; r++) {
     for (let c = 0; c < game.map[0].length; c++) {
@@ -926,9 +841,8 @@ function parseTileRef(ref: string): [number, number] | null {
     const c = parseInt(parts[1]);
     if (!isNaN(r) && !isNaN(c)) return [r, c];
   }
-  // Letter-number format: A1, B3, a,4 etc. (the comma form is what the map
-  // UI emits via posToStr).
-  const match = ref.match(/^([a-zA-Z])\s*,?\s*(\d+)$/);
+  // Letter-number format: A1, B3, etc.
+  const match = ref.match(/^([a-zA-Z])\s*(\d+)$/);
   if (match) {
     const r = match[1].toUpperCase().charCodeAt(0) - 65;
     const c = parseInt(match[2]) - 1;
@@ -945,7 +859,6 @@ function prepareTargeting(
   game: Game,
   user: Entity,
   ability: AbilityData,
-  dir?: string,
 ): { hits: number; isAoE: boolean; targets: Entity[] } {
   const hits = parseMultiHit(ability);
   const range = ability.range.toLowerCase().trim();
@@ -960,13 +873,7 @@ function prepareTargeting(
 
   let targets: Entity[] = [];
   if (isAoE) {
-    targets = getAoETargets(
-      game,
-      user,
-      ability.range,
-      ability.targetGroup,
-      dir,
-    );
+    targets = getAoETargets(game, user, ability.range, ability.targetGroup);
   }
   return { hits, isAoE, targets };
 }
@@ -990,7 +897,15 @@ function findTargets(
     );
     if (target && isValidTarget(user, target, group)) {
       for (const rp of rangeParts) {
-        if (inRange(game, user.pos, target.pos, rp.trim())) {
+        if (
+          inRange(
+            game,
+            user.pos,
+            target.pos,
+            rp.trim(),
+            getPassiveRangeBonus(user, game.moonPhase),
+          )
+        ) {
           return [target];
         }
       }
@@ -1003,7 +918,16 @@ function findTargets(
       return false;
     if (!isValidTarget(user, e, group)) return false;
     for (const rp of rangeParts) {
-      if (inRange(game, user.pos, e.pos, rp.trim())) return true;
+      if (
+        inRange(
+          game,
+          user.pos,
+          e.pos,
+          rp.trim(),
+          getPassiveRangeBonus(user, game.moonPhase),
+        )
+      )
+        return true;
     }
     return false;
   });
@@ -1028,44 +952,12 @@ function filterNonPhase(effects: Effect[]): Effect[] {
   return effects.filter((e) => e.type !== "phaseEffect");
 }
 
-/**
- * Defensive terrain modifiers for a defender standing on a map tile (PR
- * #301): Forest hardens vs Physical (+5 PD, -1 EVA); Water hardens vs
- * Magical (+5 MD, -1 EVA). Other terrain grants nothing. The evasion part
- * is applied on top of the normal evasion floor so a penalty can actually
- * make the defender easier to hit.
- */
-function terrainStatBonus(
-  game: Game,
-  entity: Entity,
-  damageType: string,
-): { def: number; eva: number } {
-  const [r, c] = entity.pos;
-  if (
-    r < 0 ||
-    r >= game.map.length ||
-    c < 0 ||
-    c >= game.map[0].length
-  ) {
-    return { def: 0, eva: 0 };
-  }
-  const tile = game.map[r][c];
-  if (damageType === "Physical" && tile === Terrain.Forest) {
-    return { def: 5, eva: -1 };
-  }
-  if (damageType === "Magical" && tile === Terrain.Water) {
-    return { def: 5, eva: -1 };
-  }
-  return { def: 0, eva: 0 };
-}
-
 function* resolveSingleTarget(
   game: Game,
   user: Entity,
   ability: AbilityData,
   target: Entity,
   combat: CombatMetadata,
-  effects: Effect[],
   hitLabel = "",
   confusionAlreadyApplied = false,
 ): Generator<AttackPrompt, ResolutionResult, string> {
@@ -1084,25 +976,21 @@ function* resolveSingleTarget(
   }
 
   const userAccBonus = getStatBonus(user, "acc");
-  const terrain = terrainStatBonus(game, target, ability.damageType);
   const targetEva =
-    (game.version === "4.3"
-      ? eva43(target, ability.damageType)
-      : getEffectiveStat(target, "eva")) + terrain.eva;
-  const evaLabel =
     game.version === "4.3"
-      ? ability.damageType === "Physical"
-        ? "PE"
-        : "ME"
-      : "EVA";
+      ? eva43(target, ability.damageType)
+      : getEffectiveStat(target, "eva");
+  const effectiveMr = ability.mr + combat.mrMod;
+  const critThreshold = combat.critThreshold ?? 20;
   const {
     hit,
     roll: accRoll,
     crit,
-  } = rollAccuracy(ability.mr, targetEva, userAccBonus);
+  } = rollAccuracy(effectiveMr, targetEva, userAccBonus, critThreshold);
 
+  const critNote = critThreshold !== 20 ? ` (crit on ${critThreshold}+)` : "";
   result.messages.push(
-    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + ${evaLabel} ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
+    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${effectiveMr} + EVA ${targetEva} = ${effectiveMr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}${critNote}`,
   );
 
   // --- Hit resolves first (damage to target first) ---
@@ -1119,20 +1007,16 @@ function* resolveSingleTarget(
     );
     if (resolved === "user-defeated") return result;
   } else {
-    // --- On Miss: apply miss-only effects to the attacker ---
-    const allEffects = parseEffects(ability.effect);
-    const onMiss = allEffects.filter((e) => e.type === "onMiss");
-    if (onMiss.length > 0) {
-      result.messages.push(`  [On Miss]`);
-      for (const om of onMiss) {
-        if (om.type !== "onMiss") continue;
-        const missMsgs: string[] = yield* runEffectStream(
-          applyEffectStream(game, user, user, om.effects, ability),
-        );
-        result.messages.push(...missMsgs);
-      }
-    }
+    yield* applyOnMissEffects(game, user, target, ability, allEffects, result);
+  }
 
+  // --- Regard of Hit ---
+  const regardlessEffects = filterByPhase(allEffects, "regardless");
+  if (regardlessEffects.length > 0) {
+    const regMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, regardlessEffects, ability),
+    );
+    result.messages.push(...regMsgs);
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
@@ -1145,6 +1029,41 @@ function* resolveSingleTarget(
   );
 
   return result;
+}
+
+/**
+ * Apply miss-only effects on a failed accuracy roll: the legacy
+ * `onMiss` effects route to the attacker, while phase-tagged
+ * "On Miss:" clauses route to the target like the other phases.
+ */
+function* applyOnMissEffects(
+  game: Game,
+  user: Entity,
+  target: Entity,
+  ability: AbilityData,
+  allEffects: Effect[],
+  result: ResolutionResult,
+): Generator<AttackPrompt, void, PromptResponse> {
+  // On Miss: apply miss-only effects to the attacker
+  const onMiss = parseEffects(ability.effect).filter((e) => e.type === "onMiss");
+  if (onMiss.length > 0) {
+    result.messages.push(`  [On Miss]`);
+    for (const om of onMiss) {
+      const missMsgs = yield* runEffectStream(
+        applyEffectStream(game, user, user, om.effects, ability),
+      );
+      result.messages.push(...missMsgs);
+    }
+  }
+
+  // On Miss (phase-tagged)
+  const onMissEffects = filterByPhase(allEffects, "on-miss");
+  if (onMissEffects.length > 0) {
+    const missMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, onMissEffects, ability),
+    );
+    result.messages.push(...missMsgs);
+  }
 }
 
 /**
@@ -1161,23 +1080,37 @@ function* resolveHitDamage(
   hitLabel: string,
   result: ResolutionResult,
 ): Generator<AttackPrompt, "user-defeated" | "done", string> {
-  const damageRoll = rollDice(ability.roll);
+  const allEffects = parseEffects(ability.effect);
+
+  // --- Before Damage ---
+  const beforeDmgEffects = filterByPhase(allEffects, "before-damage");
+  if (beforeDmgEffects.length > 0) {
+    const dmgMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, beforeDmgEffects, ability),
+    );
+    result.messages.push(...dmgMsgs);
+  }
+
+  const effectiveRoll = effectiveRollFormula(ability.roll, combat);
+  const damageRoll = rollDice(effectiveRoll);
   const userOff = combat.ignore.atkMag
     ? 0
     : offensiveStat(user, ability.damageType);
   const targetDef = applyIgnoreToDefense(
-    defensiveStat(target, ability.damageType) +
-      terrainStatBonus(game, target, ability.damageType).def,
+    defensiveStat(target, ability.damageType),
     combat.ignore,
   );
 
   let baseDamage = damageRoll.total + userOff - targetDef;
 
   if (crit) {
-    const critRoll = rollDice(ability.roll);
+    // Crit re-rolls only the base dice (+ base-dice extras); plain
+    // "+N dice" are not doubled.
+    const critFormula = effectiveRollFormula(ability.roll, combat, true);
+    const critRoll = rollDice(critFormula);
     baseDamage += critRoll.total;
     result.messages.push(
-      `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}`,
+      `  **Critical Hit!** Extra dice: ${critRoll.rolls.join("+")} = ${critRoll.total}${critFormula !== effectiveRoll ? ` (${critFormula})` : ""}`,
     );
   }
 
@@ -1194,9 +1127,9 @@ function* resolveHitDamage(
   const dmgResult = dealDamage(target, finalDamage);
   const bleedLabel = bleed > 0 ? ` - Bleed(${bleed})` : "";
   result.messages.push(
-    `  **Damage${hitLabel}**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
+    `  **Damage${hitLabel}**: ${effectiveRoll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - ${ability.damageType === "Physical" ? "PD" : "MD"}(${targetDef})${formatDamageModsLine(combat, ability.roll)}${bleedLabel} = **${finalDamage}** -> ${target.num} (${target.curhp}/${target.maxhp} HP)`,
   );
-  emitDamageModTrail(result.messages, combat, finalDamage);
+  emitDamageModTrail(result.messages, combat, finalDamage, ability.roll);
 
   if (dmgResult.shieldAbsorbed > 0) {
     result.messages.push(
@@ -1204,17 +1137,18 @@ function* resolveHitDamage(
     );
   }
 
-  const effects = parseEffects(ability.effect);
+  // --- On Hit effects (non-phase-tagged effects fire here) ---
+  const onHitEffects = filterNonPhase(allEffects);
   const effectMsgs = yield* runEffectStream(
-    applyEffectStream(game, user, target, effects, ability),
+    applyEffectStream(game, user, target, onHitEffects, ability),
   );
   result.messages.push(...effectMsgs);
 
-  // Apply recoil damage after hit damage (reuse the parsed `effects`
+  // Apply recoil damage after hit damage (reuse the parsed `allEffects`
   // array rather than re-running the regex-based clause splitter).
   // Recoil scales off the post-mod `finalDamage` so a "+30% damage /
   // Recoil 25%" combo reflects the boosted total.
-  for (const e of effects) {
+  for (const e of allEffects) {
     if (e.type === "recoil") {
       const recoilDmg = Math.ceil(finalDamage * (e.percent / 100));
       dealDamage(user, recoilDmg);
@@ -1278,6 +1212,44 @@ function resolveConfusionSelfDamage(
 // ---------------------------------------------------------------------------
 
 /**
+ * Build the effective dice formula for an ability's roll given parsed
+ * dice modifiers ("+N dice" / "+N dice faces" / "+N base dice").
+ * Extra dice increase the die count, extra faces increase each die's
+ * sides, and base dice are ordinary dice that happen to double on crit
+ * via the normal crit re-roll. Falls back to the raw formula when the
+ * roll can't be parsed or no modifiers apply.
+ *
+ * When `forCrit` is set, only base dice (plus "+N base dice" extras) are
+ * re-rolled -- plain "+N dice" do NOT double on crit, per the standard
+ * Battle Dome convention.
+ */
+function effectiveRollFormula(
+  roll: string,
+  combat: CombatMetadata,
+  forCrit = false,
+): string {
+  if (combat.extraDice === 0 && combat.extraDiceFaces === 0 && combat.extraBaseDice === 0) {
+    return roll;
+  }
+  const m = roll.match(/^(\d+)d(\d+)([+-]\d+)?$/);
+  if (!m) return roll;
+  // The parser accepts fractional dice mods ("+1.5 dice faces"), so round to
+  // whole dice/sides before building the NdM string -- otherwise rollDice
+  // can't parse e.g. "1d7.5" and the roll silently zeroes.
+  const count = Math.max(
+    1,
+    Math.round(
+      parseInt(m[1]) +
+        (forCrit
+          ? combat.extraBaseDice
+          : combat.extraDice + combat.extraBaseDice),
+    ),
+  );
+  const sides = Math.max(1, Math.round(parseInt(m[2]) + combat.extraDiceFaces));
+  return `${count}d${sides}${m[3] ?? ""}`;
+}
+
+/**
  * Apply ignore-clause semantics to a target's defensive stat (PD or MD).
  *
  * Order of precedence (deepest reduction wins):
@@ -1309,7 +1281,7 @@ function applyIgnoreToDefense(
  * base = dice + OFF - DEF equation, so the player can see adjustments.
  * Returns "" when no modifier changed the math.
  */
-function formatDamageModsLine(combat: CombatMetadata): string {
+function formatDamageModsLine(combat: CombatMetadata, roll: string): string {
   const parts: string[] = [];
   if (combat.ignore.atkMag) parts.push("no OFF (Ignores ATK/MAG)");
   if (combat.ignore.def) parts.push("no DEF (Ignores DEF)");
@@ -1325,6 +1297,7 @@ function formatDamageModsLine(combat: CombatMetadata): string {
     const sign = combat.flatDamage > 0 ? "+" : "";
     parts.push(`${sign}${combat.flatDamage} flat`);
   }
+  parts.push(...diceModTags(combat, roll));
   if (parts.length === 0) return "";
   return ` [${parts.join(", ")}]`;
 }
@@ -1339,10 +1312,11 @@ function emitDamageModTrail(
   log: string[],
   combat: CombatMetadata,
   finalDamage: number,
+  roll: string,
 ): void {
   if (!hasDamageMods(combat)) return;
   log.push(
-    `  *Damage Modifiers applied:* ${buildModTags(combat).join(", ")} -> **${finalDamage}**`,
+    `  *Damage Modifiers applied:* ${buildModTags(combat, roll).join(", ")} -> **${finalDamage}**`,
   );
 }
 
@@ -1358,12 +1332,17 @@ function hasDamageMods(combat: CombatMetadata): boolean {
     ignore.quarterDef ||
     ignore.defReduction > 0 ||
     ignore.other.length > 0 ||
-    ignore.outsideFactors
+    ignore.outsideFactors ||
+    combat.critThreshold !== null ||
+    combat.extraDice !== 0 ||
+    combat.extraDiceFaces !== 0 ||
+    combat.extraBaseDice !== 0 ||
+    combat.mrMod !== 0
   );
 }
 
 /** Human-readable tags describing the applied damage modifiers. */
-function buildModTags(combat: CombatMetadata): string[] {
+function buildModTags(combat: CombatMetadata, roll?: string): string[] {
   const tags: string[] = [];
   if (combat.damagePercent !== 0) {
     const sign = combat.damagePercent > 0 ? "+" : "";
@@ -1381,6 +1360,25 @@ function buildModTags(combat: CombatMetadata): string[] {
     tags.push(`Ignores ${combat.ignore.defReduction} DEF`);
   if (combat.ignore.outsideFactors) tags.push("Ignores outside damage factors");
   for (const o of combat.ignore.other) tags.push(`Ignores ${o}`);
+  if (roll) tags.push(...diceModTags(combat, roll));
+  return tags;
+}
+
+/**
+ * Tag strings for active dice modifiers ("+2 dice" / "+1 base dice" /
+ * "+3 dice faces"). Returns [] when the roll formula can't be parsed --
+ * the modifiers can't be applied to an unparseable roll, so showing them
+ * next to the raw formula would be misleading.
+ */
+function diceModTags(combat: CombatMetadata, roll: string): string[] {
+  if (!/^\d+d\d+([+-]\d+)?$/.test(roll.trim())) return [];
+  const tags: string[] = [];
+  if (combat.extraDice !== 0)
+    tags.push(`${combat.extraDice > 0 ? "+" : ""}${combat.extraDice} dice`);
+  if (combat.extraBaseDice !== 0)
+    tags.push(`${combat.extraBaseDice > 0 ? "+" : ""}${combat.extraBaseDice} base dice`);
+  if (combat.extraDiceFaces !== 0)
+    tags.push(`${combat.extraDiceFaces > 0 ? "+" : ""}${combat.extraDiceFaces} dice faces`);
   return tags;
 }
 
@@ -1471,7 +1469,7 @@ function resolveHeal(
   const result = newResult();
 
   if (ability.roll) {
-    const healRoll = rollWithUserBuffs(user, ability.roll);
+    const healRoll = rollDice(ability.roll);
     let healAmount = healRoll.total;
 
     const effect = ability.effect.toLowerCase();
@@ -1503,9 +1501,9 @@ function* resolveNonDamaging(
   user: Entity,
   ability: AbilityData,
   target: Entity,
-  effects: Effect[],
 ): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
+  const effects = parseEffects(ability.effect);
   const effectMsgs: string[] = yield* runEffectStream(
     applyEffectStream(game, user, target, effects, ability),
   );
@@ -1551,15 +1549,12 @@ function resolveSplash(
   result.messages.push(`  **Splash ${radius}**: hits ${names}`);
 
   for (const target of splashTargets) {
-    const damageRoll = rollWithUserBuffs(user, ability.roll);
+    const damageRoll = rollDice(ability.roll);
     const half = (v: number) => Math.floor(v / 2);
     // Splash halves defense by default per the home page ("half target
     // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores
     // DEF" on the parent ability should still wipe the remaining half.
-    const rawDef = half(
-      defensiveStat(target, ability.damageType) +
-        terrainStatBonus(game, target, ability.damageType).def,
-    );
+    const rawDef = half(defensiveStat(target, ability.damageType));
     const targetDef = applyIgnoreToDefense(rawDef, combat.ignore);
     const userOff = combat.ignore.atkMag
       ? 0
@@ -1575,9 +1570,9 @@ function resolveSplash(
     finalDamage = Math.max(0, finalDamage - bleed);
     const dmgResult = dealDamage(target, finalDamage);
     result.messages.push(
-      `  **Splash Damage**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - half DEF(${targetDef})${formatDamageModsLine(combat)} -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**${bleed > 0 ? ` (Bleed -${bleed})` : ""}`,
+      `  **Splash Damage**: ${ability.roll}(${damageRoll.rolls.join("+")}) + ${ability.damageType === "Physical" ? "ATK" : "MAG"}(${userOff}) - half DEF(${targetDef})${formatDamageModsLine(combat, ability.roll)} -> ${target.num} (${target.curhp}/${target.maxhp} HP) = **${finalDamage}**${bleed > 0 ? ` (Bleed -${bleed})` : ""}`,
     );
-    emitDamageModTrail(result.messages, combat, finalDamage);
+    emitDamageModTrail(result.messages, combat, finalDamage, ability.roll);
 
     if (dmgResult.shieldAbsorbed > 0) {
       result.messages.push(

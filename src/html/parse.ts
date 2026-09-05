@@ -1,4 +1,11 @@
-import { Terrain, games, findGameForRoom, type Game, type Entity } from "../game/state.js";
+import {
+  Terrain,
+  games,
+  startingSubweapon,
+  findGameForRoom,
+  type Game,
+  type Entity,
+} from "../game/state.js";
 import { classes, weapons } from "../data/index.js";
 import { toId } from "../utils.js";
 import { broadcastPages } from "../commands/game.js";
@@ -267,6 +274,7 @@ export function handleKyubsInfo(roomid: string, html: string) {
         team: 0,
         className: p.className,
         weaponName: p.weaponName,
+        subweapon: startingSubweapon(p.weaponName),
         classLevel: p.classLevel,
         weaponLevel: p.weaponLevel,
         abilities: getAbilities(p.className, p.weaponName),
@@ -295,6 +303,16 @@ export function handleKyubsInfo(roomid: string, html: string) {
       entity.pos = pos;
       entity.className = p.className;
       entity.weaponName = p.weaponName;
+      // Subweapons are a Gladius-only mechanic. Re-imports must drop stale
+      // subweapon state when the imported weapon isn't Gladius (a former
+      // Gladius user re-imported as another weapon would otherwise keep an
+      // unequippable stance). For Gladius users, preserve an in-game swapped
+      // stance and only backfill when missing.
+      if (toId(p.weaponName) !== "gladius") {
+        entity.subweapon = undefined;
+      } else if (!entity.subweapon) {
+        entity.subweapon = startingSubweapon(p.weaponName);
+      }
       entity.classLevel = p.classLevel;
       entity.weaponLevel = p.weaponLevel;
       entity.abilities = getAbilities(p.className, p.weaponName);
