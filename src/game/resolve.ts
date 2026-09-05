@@ -14,6 +14,7 @@ import {
   getSplashTargets,
   isConfused,
   hasStatus,
+  isObstruction,
   parseFrequency,
   needsDirection,
   getDirectionCandidates,
@@ -138,6 +139,8 @@ export type AttackPrompt =
       kind: "selection";
       message: string;
       options: SelectionOption[];
+      /** Obstruction-replacement confirmations: only the host may answer. */
+      confirmObstruction?: boolean;
     }
   | {
       kind: "target";
@@ -340,8 +343,32 @@ function* resolveAttackFlow(
     ) {
       result.messages.push(
         `${user.num} uses ${active.name} but the chosen tile is invalid.`,
+
       );
       return result;
+    }
+
+    // Obstruction tiles (Stop/Bone/Ice/Stone/Hearth) are replaceable, but
+    // only with explicit confirmation.
+    if (isObstruction(game.map[tilePos[0]][tilePos[1]])) {
+      const tileName =
+        TERRAIN_NAMES[game.map[tilePos[0]][tilePos[1]]] ?? "obstruction";
+      const decision = yield {
+        kind: "selection",
+        message: `Replace the ${tileName} obstruction at ${posToStr(
+          tilePos[0],
+          tilePos[1],
+        )}?`,
+        options: [
+          { id: "yes", label: "Yes, replace it" },
+          { id: "no", label: "Cancel" },
+        ],
+        confirmObstruction: true,
+      };
+      if (decision !== "yes") {
+        result.messages.push(`${user.num} cancels ${ability.name}.`);
+        return result;
+      }
     }
   } else {
     const prepared = prepareTargeting(game, user, ability);

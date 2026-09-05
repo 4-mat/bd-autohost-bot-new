@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import {
   Terrain,
+  placeTerrain,
   isObstruction,
   isStandable,
   moveCost,
@@ -133,6 +134,23 @@ describe("Terrain", () => {
     expect(isObstruction(Terrain.Ice)).toBe(true);
     expect(isObstruction(Terrain.Stone)).toBe(true);
     expect(isObstruction(Terrain.Hearth)).toBe(true);
+  });
+
+  it("placeTerrain replaces any in-bounds tile (obstructions too)", () => {
+    const map = [
+      [Terrain.Normal, Terrain.Stone],
+      [Terrain.Lava, Terrain.Normal],
+    ];
+    // The engine places unconditionally; the confirm-before-replacing rule
+    // lives in the targeting flow (resolve.ts).
+    expect(placeTerrain(map, [0, 1], Terrain.Water)).toBe(true);
+    expect(map[0][1]).toBe(Terrain.Water);
+    expect(placeTerrain(map, [0, 0], Terrain.Water)).toBe(true);
+    expect(map[0][0]).toBe(Terrain.Water);
+    expect(placeTerrain(map, [1, 0], Terrain.Water)).toBe(true);
+    expect(map[1][0]).toBe(Terrain.Water);
+    // Out of bounds is a no-op that reports failure.
+    expect(placeTerrain(map, [9, 9], Terrain.Water)).toBe(false);
   });
 
   it("isObstruction returns false for Broken and passable tiles", () => {
