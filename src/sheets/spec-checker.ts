@@ -62,20 +62,52 @@ type RuleFn = (
 
 // Rule 1: Status application must use "inflict X Status/Y" (not "applies", "causes", "gives", etc.)
 const ruleStatusApplication: RuleFn = (e) => {
+  const v: Violation[] = [];
   const badStatus = new RegExp(
     `(apply|applies|applied|causes?|gives?|applied with|deals?)\\s+(\\d+\\s+)?(${STATUS_PATTERN})`,
     "gi",
   );
   const m = e.match(badStatus);
-  if (!m) return [];
-  return [
-    {
+  if (m) {
+    v.push({
       rule: "Status Application",
       found: m[0],
       suggestion: `Use "inflict X ${STATUSSES.find((s) => new RegExp(s, "i").test(m[0]))}/Y" instead`,
       severity: "error",
-    },
-  ];
+    });
+  }
+
+  // Rule 16: Status application must be active ("Inflict X [Status]/Y on
+  // [target]"), not passive ("target is inflicted with X Status") or
+  // object-first ("inflict the target with X Status"). Negated forms
+  // ("cannot be inflicted with...") are immunity wording, not application.
+  const passiveStatus = new RegExp(
+    `(?:(cannot|can't|won't|never|not|no)\\s+)?\\b(is|are|was|were|be|being|been)\\s+inflicted with\\b[^.]{0,50}?\\b(${STATUS_PATTERN})\\b`,
+    "gi",
+  );
+  for (const pm of e.matchAll(passiveStatus)) {
+    if (pm[1]) continue;
+    v.push({
+      rule: "Status Application",
+      found: pm[0],
+      suggestion: 'Use the active form "Inflict X [Status]/Y on [target]"',
+      severity: "error",
+    });
+  }
+  const inflictWith = new RegExp(
+    `\\b(inflicts?)\\s+(the\\s+)?(targets?|foes?|foe|them|allies?|ally)\\s+with\\s+(\\d+\\s*)?(${STATUS_PATTERN})\\b`,
+    "gi",
+  );
+  const m16b = e.match(inflictWith);
+  if (m16b) {
+    v.push({
+      rule: "Status Application",
+      found: m16b[0],
+      suggestion: 'Use "Inflict X [Status]/Y on [target]"',
+      severity: "error",
+    });
+  }
+  return v;
 };
 
 // Rule 2: Buffs/debuffs must use "gain" or "inflict"
@@ -137,18 +169,19 @@ const ruleChoiceAbilities: RuleFn = (e) => {
 // Rule 5: Conditional effects must start with "If" (not "On"/"When" for non-passives)
 const ruleConditionalEffects: RuleFn = (e, _abilityName, action) => {
   const isPassive = action === "Passive";
-  if (isPassive) return [];
   const v: Violation[] = [];
-  for (const cs of CONDITIONAL_STARTS) {
-    const re = new RegExp(`^${cs}`, "gi");
-    if (re.test(e) && !e.toLowerCase().startsWith("if ")) {
-      const word = cs.trim();
-      v.push({
-        rule: "Conditional Effects",
-        found: `${word}...`,
-        suggestion: 'Start with "If" instead (e.g., "If condition, effect.")',
-        severity: "warning",
-      });
+  if (!isPassive) {
+    for (const cs of CONDITIONAL_STARTS) {
+      const re = new RegExp(`^${cs}`, "gi");
+      if (re.test(e) && !e.toLowerCase().startsWith("if ")) {
+        const word = cs.trim();
+        v.push({
+          rule: "Conditional Effects",
+          found: `${word}...`,
+          suggestion: 'Start with "If" instead (e.g., "If condition, effect.")',
+          severity: "warning",
+        });
+      }
     }
   }
   return v;
@@ -173,15 +206,19 @@ const ruleIgnoreImmunity: RuleFn = (e) => {
 
 // Rule 8: "Until next turn" should be used for non-numeric durations
 const ruleDurationNotation: RuleFn = (e) => {
+  // Flag the "the" article and "their" pronoun variants, not the canonical
+  // "until start of user's next turn" / "until end of target's next turn"
+  // forms (§4.1).
   const badUntil =
-    /\buntil\s+(the\s+)?(start of |end of )?(their|the target's|the user's)\s+next\s+turn\b/gi;
+    /\buntil\s+(?:the\s+)?(?:start of |end of )?(?:their\s+|the\s+(?:target|user)'s\s+)next\s+turn\b/gi;
   const m = e.match(badUntil);
   if (!m) return [];
   return [
     {
       rule: "Duration Notation",
       found: m[0],
-      suggestion: 'Use "until next turn" (standardized form)',
+      suggestion:
+        'Use "until start of user\'s next turn" or "until end of target\'s next turn"',
       severity: "warning",
     },
   ];

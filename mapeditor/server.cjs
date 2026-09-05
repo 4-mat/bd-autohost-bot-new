@@ -24,6 +24,13 @@ const PORT = Number(process.env.PORT) || 4777;
 const ROOT = path.join(__dirname, '..');
 const MAPS_DIR = path.join(ROOT, 'maps');
 
+// Keep mapcore's mode rules in lockstep with the bot's generated data
+// (aliases + per-mode min sizes from src/data/gamemodes.ts via seed.cjs).
+try {
+	const md = JSON.parse(fs.readFileSync(path.join(MAPS_DIR, 'modes.json'), 'utf8'));
+	MapCore.setModeData({ aliases: md.aliases || {}, minSizes: md.minSizes || {} });
+} catch (e) { /* modes.json missing — fall back to mapcore defaults */ }
+
 const MIME = {
 	'.html': 'text/html; charset=utf-8',
 	'.js': 'text/javascript; charset=utf-8',
@@ -64,11 +71,30 @@ function readBody(req) {
 }
 // A browser mutation (Save/Delete) is only accepted when its Origin
 // matches this local server; requests without an Origin pass through.
-function localOrigin(origin) {
+// Mutations are only allowed from loopback, or from an explicit allowlist
+// when the server is bound to a non-loopback interface (HOST=0.0.0.0, e.g.
+// for LAN editing). ALLOWED_ORIGINS is a comma-separated list of exact
+// origins (scheme://host[:port]) — anything else is rejected. Loopback stays
+// open by default so the normal local workflow is unaffected.
+function allowOrigin(origin) {
 	if (!origin) return true;
 	try {
 		const o = new URL(origin);
-		return (o.hostname === 'localhost' || o.hostname === '127.0.0.1') && (!o.port || o.port === String(PORT));
+		const loop =
+			o.hostname === 'localhost' ||
+			o.hostname === '127.0.0.1' ||
+			o.hostname === '::1' ||
+			o.hostname === '[::1]';
+		// An origin with no explicit port means the protocol default (80/443);
+		// resolve it so a default-port origin can't bypass the PORT check.
+		const effectivePort = o.port || (o.protocol === 'https:' ? '443' : '80');
+		const portOk = effectivePort === String(PORT);
+		if (loop && portOk) return true;
+		const allowed = (process.env.ALLOWED_ORIGINS || '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+		return allowed.includes(origin);
 	} catch (e) { return false; }
 }
 
@@ -134,7 +160,7 @@ async function handle(req, res) {
 				return map ? send(res, 200, map) : send(res, 404, { error: 'map not found' });
 			}
 			if (req.method === 'PUT') {
-				if (!localOrigin(req.headers.origin)) return send(res, 403, { error: 'forbidden origin' });
+				if (!allowOrigin(req.headers.origin)) return send(res, 403, { error: 'forbidden origin' });
 				const body = await readBody(req);
 				let raw;
 				try { raw = JSON.parse(body); } catch (e) { return send(res, 400, { error: 'invalid JSON body' }); }
@@ -145,7 +171,7 @@ async function handle(req, res) {
 				return send(res, 200, { ok: true, name: map.name, file: sanitizeFile(map.name) });
 			}
 			if (req.method === 'DELETE') {
-				if (!localOrigin(req.headers.origin)) return send(res, 403, { error: 'forbidden origin' });
+				if (!allowOrigin(req.headers.origin)) return send(res, 403, { error: 'forbidden origin' });
 				const file = path.join(MAPS_DIR, sanitizeFile(name));
 				if (fs.existsSync(file)) fs.unlinkSync(file);
 				return send(res, 200, { ok: true });

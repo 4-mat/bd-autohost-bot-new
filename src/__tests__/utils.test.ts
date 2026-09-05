@@ -2,9 +2,12 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import {
   send,
   setWs,
+  pauseSending,
   resumeSending,
   resetSendQueueForTests,
   getSendQueueForTests,
+  sendImmediate,
+  splitPmChunks,
 } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -177,5 +180,114 @@ describe("send queue", () => {
     sock.failPending(new Error("socket dropped mid-flight"));
     await new Promise((r) => setTimeout(r, 500));
     expect(sock.sent).toEqual(["|hello"]);
+  });
+
+  it("holds messages while the pre-auth pause is on, then flushes on resume", async () => {
+    const sock = makeFakeSocket();
+    pauseSending();
+    sock.open();
+
+    send("battledome", "hello");
+    // Socket is open but auth hasn't completed: nothing may transmit.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(sock.sent).toEqual([]);
+    expect(getSendQueueForTests().length).toBe(1);
+
+    resumeSending(); // the updateuser handler calls this after /trn
+    await new Promise((r) => setTimeout(r, 500));
+    expect(sock.sent).toEqual(["|hello"]);
+  });
+
+  it("queues an immediate send whose callback reports an async error", async () => {
+    // A ws whose send invokes the callback with an error (async failure).
+    let cbResult: ((err?: Error) => void) | undefined;
+    setWs({
+      send: (msg: string, cb?: (err?: Error) => void) => {
+        cbResult = cb;
+      },
+    });
+
+    sendImmediate("/trn user,0,abc");
+    expect(getSendQueueForTests().length).toBe(0);
+
+    // The send fails asynchronously: /trn must be retained in the queue.
+    cbResult?.(new Error("socket dropped mid-flight"));
+    expect(getSendQueueForTests().length).toBe(1);
+    expect(getSendQueueForTests()[0].msg).toBe("/trn user,0,abc");
+  });
+});
+
+describe("splitPmChunks", () => {
+  it("returns the message unchanged when under the limit", () => {
+    expect(splitPmChunks("short", 100)).toEqual(["short"]);
+  });
+
+  it("returns the message unchanged when exactly at the limit", () => {
+    expect(splitPmChunks("abcde", 5)).toEqual(["abcde"]);
+  });
+
+  it("breaks at newlines when present", () => {
+    expect(splitPmChunks("aaaaa\nbbbbb\nccccc", 10)).toEqual([
+      "aaaaa",
+      "bbbbb",
+      "ccccc",
+    ]);
+  });
+
+  it("breaks at spaces to avoid mid-word splits", () => {
+    expect(splitPmChunks("aaaaa bbbbb ccccc", 10)).toEqual([
+      "aaaaa",
+      "bbbbb",
+      "ccccc",
+    ]);
+  });
+
+  it("prefers newlines over spaces", () => {
+    expect(splitPmChunks("abcde\nfghij klmnop", 10)).toEqual([
+      "abcde",
+      "fghij",
+      "klmnop",
+    ]);
+  });
+
+  it("hard-cuts unbroken long runs", () => {
+    expect(splitPmChunks("abcdefghij", 5)).toEqual(["abcde", "fghij"]);
+  });
+
+  it("never emits empty chunks or chunks over the limit", () => {
+    const msg = "x ".repeat(500) + "y".repeat(1200) + " z ".repeat(300);
+    for (const chunk of splitPmChunks(msg, 950)) {
+      expect(chunk.length).toBeGreaterThan(0);
+      expect(chunk.length).toBeLessThanOrEqual(950);
+    }
+  });
+
+  it("honors the limit argument", () => {
+    const chunks = splitPmChunks("a ".repeat(200) + "word", 50);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(50);
+    }
+  });
+
+  it("returns no chunks for an empty message", () => {
+    expect(splitPmChunks("")).toEqual([]);
+    expect(splitPmChunks("", 5)).toEqual([]);
+  });
+
+  it("rejects invalid limit arguments by falling back to the module limit", () => {
+    const msg = "x".repeat(2000);
+    // Non-finite / non-positive limits must not disable chunking.
+    for (const bad of [0, -5, NaN, Infinity, -Infinity]) {
+      const chunks = splitPmChunks(msg, bad as number);
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(chunk.length).toBeLessThanOrEqual(950);
+      }
+    }
+  });
+
+  it("truncates fractional limit arguments", () => {
+    const chunks = splitPmChunks("x".repeat(60), 10.9);
+    expect(chunks.every((c) => c.length <= 10)).toBe(true);
   });
 });

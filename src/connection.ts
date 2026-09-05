@@ -2,12 +2,17 @@ import WebSocket from "ws";
 import { EventEmitter } from "events";
 import config from "./config.js";
 import { login } from "./login.js";
-import { setWs, resumeSending } from "./utils.js";
+import { pauseSending, setGenerationChecker, setWs } from "./utils.js";
 
 export const bot = new EventEmitter();
 
 const RECONNECT_DELAY_MS = 5000;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+// Monotonic id handed to login() so a challstr/assertion pair is bound to
+// the socket generation that received the challstr. If the socket was
+// superseded (reconnect) before the HTTP assertion returns, the stale
+// assertion is discarded instead of being sent over the new connection.
+let connectionGeneration = 0;
 // The socket that owns the active connection. Handlers compare against it so
 // a superseded socket (one that errored and was reconnected, or a late event
 // from an older socket) can never schedule an overlapping reconnect or flush
@@ -33,11 +38,18 @@ export function connect() {
   const url = `${proto}://${config.server}:${config.port}/showdown/websocket`;
   const ws = new WebSocket(url);
   currentWs = ws;
+  const generation = ++connectionGeneration;
+  setGenerationChecker((gen) => gen === generation && ws === currentWs);
 
-  // Install the wrapper before any event handler runs so the open handler's
-  // resumeSending() (and any concurrent drain) can never reach a stale socket
-  // from a previous reconnect or an unset wrapper on first connect.
+  // Install the wrapper before any event handler runs so any drain or queued
+  // message can never reach a stale socket from a previous reconnect or an unset
+  // wrapper on first connect.
   setWs({ send: (msg: string, cb) => ws.send(msg, cb) });
+  // Pause the outbound queue until this connection authenticates (the
+  // updateuser handler calls resumeSending after /trn). Messages sent in the
+  // window between socket-open and login-confirm would otherwise be
+  // transmitted to an unauthenticated session.
+  pauseSending();
 
   ws.on("open", () => {
     if (ws !== currentWs) return;
@@ -48,8 +60,7 @@ export function connect() {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
-    // Flush anything queued while the previous socket was down.
-    resumeSending();
+
   });
 
   ws.on("message", (data) => {
@@ -62,7 +73,9 @@ export function connect() {
 
     if (event === "challstr") {
       const challstr = parts.slice(2).join("|");
-      login(challstr);
+      // Bind this login attempt to the socket that received the challstr so
+      // its assertion is only sent while that connection is still current.
+      login(challstr, generation);
     }
 
     bot.emit(event, parts);
