@@ -85,6 +85,7 @@ function makeGame(
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
@@ -347,6 +348,45 @@ describe("confirm", () => {
 
     expect(user.pendingAction).toBeNull();
     expect(game.entities.some((e) => e.num === "P2")).toBe(false);
+    expect(game.kills.P1).toBe(1);
+  });
+
+  it("does not credit the attacker's own recoil death as a kill", () => {
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+      atk: 999,
+      pd: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [2, 3],
+      team: 1,
+      curhp: 1,
+      maxhp: 100,
+      pd: 0,
+      md: 0,
+      eva: 0,
+    });
+    const game = makeGame({ entities: [user, target] });
+    games.set(game.id, game);
+
+    const ability = makeAbility({
+      name: "Kamikaze",
+      mr: 0,
+      roll: "1d1+0",
+      effect: "recoil 100%",
+    });
+    user.pendingAction = { type: "attack", ability, target: "P2" };
+
+    gameCommand(room, alice, "confirm", "", "");
+
+    expect(game.entities.some((e) => e.num === "P2")).toBe(false);
+    expect(game.entities.some((e) => e.num === "P1")).toBe(false);
+    expect(game.kills.P1).toBe(1);
   });
 });
 
@@ -582,6 +622,73 @@ describe("choose and target prompts", () => {
     expect(caster.pendingAction).toBeNull();
     expect(caster.pendingPromptKind).toBeUndefined();
     expect(target.curhp).toBeLessThan(100);
+  });
+
+  it("blocks a player from approving an obstruction replacement", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game = makeGame({ entities: [caster] });
+    game.map[2][3] = Terrain.Stone;
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Whittle", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.pendingPromptKind).toBe("tile");
+
+    gameCommand(room, alice, "tile", "c,4", "");
+    expect(caster.pendingPromptKind).toBe("selection");
+    expect(caster.pendingPrompt?.confirmObstruction).toBe(true);
+
+    // A player answering is refused; the confirmation stays pending.
+    gameCommand(room, alice, "choose", "yes", "");
+    expect(caster.pendingPromptKind).toBe("selection");
+    expect(game.map[2][3]).toBe(Terrain.Stone);
+  });
+
+  it("lets the host approve an obstruction replacement", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game = makeGame({ entities: [caster] });
+    game.map[2][3] = Terrain.Stone;
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Whittle", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.pendingPromptKind).toBe("tile");
+
+    gameCommand(room, alice, "tile", "c,4", "");
+    expect(caster.pendingPromptKind).toBe("selection");
+
+    gameCommand(room, host, "choose", "yes", "");
+    expect(caster.pendingAction).toBeNull();
+    expect(caster.pendingPromptKind).toBeUndefined();
+    expect(game.map[2][3]).toBe(Terrain.Normal);
   });
 
   it("responds to a target prompt with %target", () => {

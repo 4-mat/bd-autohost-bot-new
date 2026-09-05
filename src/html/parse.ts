@@ -238,6 +238,7 @@ export function handleKyubsInfo(roomid: string, html: string) {
       votes: {},
       voteOpen: false,
       voteRunoff: null,
+      playersIdle: false,
     };
     games.set(game.id, game);
   } else {

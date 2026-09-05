@@ -256,12 +256,12 @@ gameplay:
 | -------- | ------------- | --------- | -------------------------------------------------------------------------- |
 | `Normal` | 1 MP          | yes       |                                                                            |
 | `Stop`   | —             | no        | Impassable wall                                                            |
-| `Water`  | 1 MP          | yes       |                                                                            |
-| `Forest` | 1 MP          | yes       |                                                                            |
+| `Water`  | 1 MP          | yes       | Entities on Water have **+5 MD, -1 EVA vs Magical attacks**               |
+| `Forest` | 1 MP          | yes       | Entities on Forest have **+5 PD, -1 EVA vs Physical attacks**             |
 | `Ice`    | —             | no        | Impassable                                                                 |
 | `Air`    | 1 MP          | yes       |                                                                            |
 | `Sticky` | 2 MP          | yes       | Costs 1 extra MP                                                           |
-| `Lava`   | —             | no (path) | Deals 30 damage when an entity ends its turn on it; BFS won't path through |
+| `Lava`   | —             | no (path) | Deals 30 when ending a turn on it; BFS won't path through (20-on-enter not implemented) |
 | `Broken` | —             | no        | Impassable                                                                 |
 | `Bone`   | —             | no        | Impassable                                                                 |
 | `Stone`  | —             | no        | Impassable                                                                 |
