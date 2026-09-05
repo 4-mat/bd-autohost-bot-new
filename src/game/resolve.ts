@@ -36,6 +36,8 @@ import {
   getDirectionCandidates,
   DIRECTION_LABELS,
   placeTerrain,
+  isObstruction,
+  Terrain,
   TERRAIN_NAMES,
 } from "./state.js";
 import { modeIdFor } from "../data/gamemodes.js";
@@ -50,6 +52,8 @@ import {
   type Effect,
   type EffectChoosePrompt,
   type PhaseTiming,
+  type TileEffect,
+  parseTilePlacement,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
@@ -129,6 +133,8 @@ export type AttackPrompt =
       kind: "selection";
       message: string;
       options: SelectionOption[];
+      /** Replacing an obstruction tile: only the host may answer this. */
+      confirmObstruction?: boolean;
     }
   | {
       kind: "target";
@@ -302,6 +308,75 @@ function* resolveDirection(
   };
 }
 
+/**
+ * Tile-targeting flow for terrain-placement abilities (Whittle, etc.):
+ * prompt for a map tile within range, require host confirmation before
+ * replacing an obstruction tile (Stop/Bone/Ice/Stone/Hearth), then write
+ * the chosen terrain. Returns false (message already pushed) when the
+ * placement is cancelled or invalid.
+ */
+function* resolveTilePlacement(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  placement: TileEffect,
+  result: ResolutionResult,
+): Generator<AttackPrompt, boolean, PromptResponse> {
+  const tileRef = (yield {
+    kind: "tile",
+    message: `Choose a tile for ${ability.name}.`,
+    candidates: getTileCandidates(game, user, ability),
+  }) as string;
+
+  const parsed = parseTileRef(tileRef);
+  if (!parsed) {
+    result.messages.push(
+      `${user.num} cancels ${ability.name}: invalid tile ${tileRef}.`,
+    );
+    return false;
+  }
+  const [r, c] = parsed;
+  if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length) {
+    result.messages.push(
+      `${user.num} cancels ${ability.name}: ${tileRef} is off the map.`,
+    );
+    return false;
+  }
+
+  const current = game.map[r][c];
+  if (isObstruction(current)) {
+    const tileName = TERRAIN_NAMES[current] ?? "obstruction";
+    const approve = (yield {
+      kind: "selection",
+      message: `Replace the ${tileName} obstruction at ${posToStr(
+        r,
+        c,
+      )}? Only the host may approve.`,
+      options: [
+        { id: "yes", label: "Yes, replace it" },
+        { id: "no", label: "No, cancel" },
+      ],
+      confirmObstruction: true,
+    }) as string;
+    if (approve !== "yes") {
+      result.messages.push(
+        `${user.num} cancels replacing the ${tileName} obstruction at ${posToStr(
+          r,
+          c,
+        )}.`,
+      );
+      return false;
+    }
+  }
+
+  const tileName = TERRAIN_NAMES[placement.terrain] ?? "Normal";
+  placeTerrain(game.map, [r, c], placement.terrain);
+  result.messages.push(
+    `  ${user.num} creates a ${tileName} tile at ${posToStr(r, c)}.`,
+  );
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // The pipeline itself:
 // Declare -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
@@ -406,6 +481,31 @@ function* resolveAttackFlow(
 
   const dir = yield* resolveDirection(user, ability, active);
 
+  // --- Tile-targeting abilities (place terrain on a chosen map tile) ---
+  // Restored from the pre-refactor flow (PR #301 / #237): abilities whose
+  // effect places terrain (e.g. Whittle's "create ... tile on target")
+  // prompt for a map tile instead of an entity, ask for host confirmation
+  // before replacing an obstruction tile (Stop/Bone/Ice/Stone/Hearth), then
+  // write the tile. Pure tile placement has no entity targets, so the
+  // placement result is the whole resolution.
+  const tilePlacement = parseTilePlacement(active.effect ?? "");
+  if (tilePlacement) {
+    const placed = yield* resolveTilePlacement(
+      game,
+      user,
+      active,
+      tilePlacement,
+      result,
+    );
+    // Rare hybrid abilities may still select entities after placing; only
+    // fall through when a valid entity target exists for the group.
+    if (
+      !game.entities.some((e) => isValidTarget(user, e, active.targetGroup))
+    ) {
+      return result;
+    }
+    void placed;
+  }
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   const {
@@ -826,8 +926,9 @@ function parseTileRef(ref: string): [number, number] | null {
     const c = parseInt(parts[1]);
     if (!isNaN(r) && !isNaN(c)) return [r, c];
   }
-  // Letter-number format: A1, B3, etc.
-  const match = ref.match(/^([a-zA-Z])\s*(\d+)$/);
+  // Letter-number format: A1, B3, a,4 etc. (the comma form is what the map
+  // UI emits via posToStr).
+  const match = ref.match(/^([a-zA-Z])\s*,?\s*(\d+)$/);
   if (match) {
     const r = match[1].toUpperCase().charCodeAt(0) - 65;
     const c = parseInt(match[2]) - 1;
@@ -927,6 +1028,37 @@ function filterNonPhase(effects: Effect[]): Effect[] {
   return effects.filter((e) => e.type !== "phaseEffect");
 }
 
+/**
+ * Defensive terrain modifiers for a defender standing on a map tile (PR
+ * #301): Forest hardens vs Physical (+5 PD, -1 EVA); Water hardens vs
+ * Magical (+5 MD, -1 EVA). Other terrain grants nothing. The evasion part
+ * is applied on top of the normal evasion floor so a penalty can actually
+ * make the defender easier to hit.
+ */
+function terrainStatBonus(
+  game: Game,
+  entity: Entity,
+  damageType: string,
+): { def: number; eva: number } {
+  const [r, c] = entity.pos;
+  if (
+    r < 0 ||
+    r >= game.map.length ||
+    c < 0 ||
+    c >= game.map[0].length
+  ) {
+    return { def: 0, eva: 0 };
+  }
+  const tile = game.map[r][c];
+  if (damageType === "Physical" && tile === Terrain.Forest) {
+    return { def: 5, eva: -1 };
+  }
+  if (damageType === "Magical" && tile === Terrain.Water) {
+    return { def: 5, eva: -1 };
+  }
+  return { def: 0, eva: 0 };
+}
+
 function* resolveSingleTarget(
   game: Game,
   user: Entity,
@@ -952,10 +1084,11 @@ function* resolveSingleTarget(
   }
 
   const userAccBonus = getStatBonus(user, "acc");
+  const terrain = terrainStatBonus(game, target, ability.damageType);
   const targetEva =
-    game.version === "4.3"
+    (game.version === "4.3"
       ? eva43(target, ability.damageType)
-      : getEffectiveStat(target, "eva");
+      : getEffectiveStat(target, "eva")) + terrain.eva;
   const evaLabel =
     game.version === "4.3"
       ? ability.damageType === "Physical"
@@ -1033,7 +1166,8 @@ function* resolveHitDamage(
     ? 0
     : offensiveStat(user, ability.damageType);
   const targetDef = applyIgnoreToDefense(
-    defensiveStat(target, ability.damageType),
+    defensiveStat(target, ability.damageType) +
+      terrainStatBonus(game, target, ability.damageType).def,
     combat.ignore,
   );
 
@@ -1422,7 +1556,10 @@ function resolveSplash(
     // Splash halves defense by default per the home page ("half target
     // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores
     // DEF" on the parent ability should still wipe the remaining half.
-    const rawDef = half(defensiveStat(target, ability.damageType));
+    const rawDef = half(
+      defensiveStat(target, ability.damageType) +
+        terrainStatBonus(game, target, ability.damageType).def,
+    );
     const targetDef = applyIgnoreToDefense(rawDef, combat.ignore);
     const userOff = combat.ignore.atkMag
       ? 0

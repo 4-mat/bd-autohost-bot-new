@@ -7,7 +7,7 @@ import {
   Terrain,
 } from "../game/state.js";
 import { parseEffects, extractCombatMetadata } from "../game/effects.js";
-import { startAttack, isValidTarget, eva43 } from "../game/resolve.js";
+import { startAttack, isValidTarget, eva43, respondToTile } from "../game/resolve.js";
 import type { GameVersion } from "../data/index.js";
 
 setWs({ send() {} });
@@ -907,5 +907,168 @@ describe("eva43", () => {
     const e = makeEntity({ num: "P1", name: "Alice", pd: 25 });
     e.buffs.push({ stat: "def", amount: 20, rounds: 1 });
     expect(eva43(e, "Physical")).toBe(4);
+  });
+});
+
+
+// ===========================================================================
+// Ported from PR #301 (obstruction-guard-tests): terrain stat bonuses and
+// tile-targeting with obstruction-replacement confirmation.
+// ===========================================================================
+
+/** Like driveResolveAgainst, but stands the target on `tile` first. */
+function driveResolveOnTerrain(
+  user: Entity,
+  ability: AbilityData,
+  target: Entity,
+  tile: Terrain,
+): string {
+  const game = makeGame({ entities: [user, target] });
+  game.map[target.pos[0]][target.pos[1]] = tile;
+  user.abilities = [ability];
+  const step = startAttack(game, user, ability, target.num);
+  let safety = 0;
+  const out: string[] = [];
+  if (step.done) out.push(...step.result.messages);
+  while (user.pendingResolution && safety++ < 50) {
+    const flow = user.pendingResolution;
+    const step2 = flow.next("0");
+    if (step2.done) {
+      user.pendingResolution = undefined;
+      user.pendingPromptKind = undefined;
+      out.push(...step2.value.messages);
+      break;
+    }
+  }
+  return out.join("\n");
+}
+
+describe("resolveAttackFlow: terrain stat bonuses", () => {
+  it("Forest grants +5 PD and -1 EVA vs a Physical attack", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 5, eva: 0 });
+    const ability = makeAbility({ name: "Sword Swing", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Physical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Forest);
+    expect(log).toMatch(/EVA -1 =/);
+    expect(log).toMatch(/PD\(10\)/);
+  });
+
+  it("Forest does NOT grant EVA penalty vs a Magical attack (only PD applies)", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 5, md: 5, eva: 0 });
+    const ability = makeAbility({ name: "Fireball", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Magical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Forest);
+    expect(log).toMatch(/EVA 0 =/);
+    expect(log).toMatch(/MD\(5\)/);
+  });
+
+  it("Water grants +5 MD and -1 EVA vs a Magical attack", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, md: 5, eva: 0 });
+    const ability = makeAbility({ name: "Fireball", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Magical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Water);
+    expect(log).toMatch(/EVA -1 =/);
+    expect(log).toMatch(/MD\(10\)/);
+  });
+
+  it("Water does NOT grant EVA penalty vs a Physical attack", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 5, eva: 0 });
+    const ability = makeAbility({ name: "Sword Swing", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Physical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Water);
+    expect(log).toMatch(/EVA 0 =/);
+    expect(log).toMatch(/PD\(5\)/);
+  });
+
+  it("Normal terrain grants no bonus", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 5, eva: 0 });
+    const ability = makeAbility({ name: "Sword Swing", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Physical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Normal);
+    expect(log).toMatch(/EVA 0 =/);
+    expect(log).toMatch(/PD\(5\)/);
+  });
+});
+
+describe("tile-targeting abilities", () => {
+  const whittle = () =>
+    makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+
+  it("prompts for a tile and places the terrain on the chosen tile (Whittle)", () => {
+    const caster = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+    const ability = whittle();
+    caster.abilities = [ability];
+    const game = makeGame({ entities: [caster] });
+    game.map[2][3] = Terrain.Lava;
+
+    const step = startAttack(game, caster, ability);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+
+    const step2 = respondToTile(caster, "c,4");
+    expect(step2.done).toBe(true);
+    if (!step2.done) return;
+    expect(game.map[2][3]).toBe(Terrain.Normal);
+    expect(step2.result.messages.join("\n")).toContain("creates a Normal tile at c,4");
+  });
+
+  const obstructionTypes = [
+    { terrain: Terrain.Stop, name: "Stop" },
+    { terrain: Terrain.Bone, name: "Bone" },
+    { terrain: Terrain.Ice, name: "Ice" },
+    { terrain: Terrain.Stone, name: "Stone" },
+    { terrain: Terrain.Hearth, name: "Hearth" },
+  ];
+
+  for (const obs of obstructionTypes) {
+    it(`requires confirmation to replace a ${obs.name} obstruction`, () => {
+      const caster = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+      const ability = whittle();
+      caster.abilities = [ability];
+      const game = makeGame({ entities: [caster] });
+      game.map[2][3] = obs.terrain;
+
+      const step = startAttack(game, caster, ability);
+      if (step.done) throw new Error("expected tile prompt");
+      if (step.prompt.kind !== "tile") throw new Error("expected tile prompt");
+      const step2 = respondToTile(caster, "c,4");
+      if (step2.done) throw new Error("expected confirmation");
+      if (step2.prompt.kind !== "selection") throw new Error("expected selection");
+      if (!("confirmObstruction" in step2.prompt) || !(step2.prompt as { confirmObstruction?: boolean }).confirmObstruction)
+        throw new Error("expected confirmObstruction");
+    });
+  }
+
+  it("offers obstruction tiles but requires confirmation to replace them", () => {
+    const caster = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+    const ability = whittle();
+    caster.abilities = [ability];
+    const game = makeGame({ entities: [caster] });
+    game.map[2][3] = Terrain.Stone;
+    game.map[2][4] = Terrain.Lava;
+
+    const step = startAttack(game, caster, ability);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+    if (step.prompt.kind !== "tile") return;
+    expect(step.prompt.candidates).toContain("c,4");
+    expect(step.prompt.candidates).toContain("c,5");
+
+    const step2 = respondToTile(caster, "c,4");
+    expect(step2.done).toBe(false);
+    if (step2.done) return;
+    expect(step2.prompt.kind).toBe("selection");
+    if (step2.prompt.kind !== "selection") return;
+    expect(step2.prompt.message).toContain("Stone");
+    expect(step2.prompt.message).toContain("c,4");
   });
 });

@@ -171,6 +171,14 @@ const GAME_CMDS: Record<string, GameCmd> = {
       (game) => handleTileChoice(game, u, full),
       "No active game.",
     ),
+  // Legacy alias: pre-refactor tile-targeting used %tile.
+  tile: (g, u, _a, full) =>
+    withGame(
+      g,
+      u,
+      (game) => handleTileChoice(game, u, full),
+      "No active game.",
+    ),
 };
 
 export function gameCommand(
@@ -599,6 +607,19 @@ function handleChoose(game: Game, user: User, args: string) {
   }
   if (!args) return sendPm(user.name, "Usage: %choose <option>");
 
+  // Replacing an obstruction tile requires host approval: players must
+  // ask the host rather than answer the confirmation themselves.
+  if (
+    !isHost &&
+    entity.pendingPrompt?.kind === "selection" &&
+    entity.pendingPrompt.confirmObstruction
+  ) {
+    return sendPm(
+      user.name,
+      "Only the host can approve replacing an obstruction.",
+    );
+  }
+
   pushSnapshot(game);
   try {
     const step = respondToChoice(entity, args);
@@ -775,9 +796,14 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
         `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
       );
     } else if (step.prompt.kind === "selection") {
+      const hostOnly = step.prompt.confirmObstruction
+        ? "Only the host may approve. "
+        : "";
       send(
         game.room,
-        `Use %choose <option>. Options: ${step.prompt.options.map((o) => o.id).join(", ")}`,
+        `${hostOnly}Use %choose <option>. Options: ${step.prompt.options
+          .map((o) => o.id)
+          .join(", ")}`,
       );
     } else if (step.prompt.kind === "direction") {
       send(
