@@ -201,6 +201,9 @@
 		const modes = Array.isArray(map.modes)
 			? map.modes.map(modeIdFor).filter(Boolean).filter((m, i, a) => a.indexOf(m) === i)
 			: [];
+
+
+
 		return {
 			name,
 			// CR/LF are stripped like parseTxt does; cap at the same 60 chars.
@@ -597,6 +600,131 @@ function esc(s) {
 		return normalizeMap({ name: m.name, displayName: m.displayName, rows: m.rows, cols: m.cols, tiles, tokens });
 	}
 
+
+  function sliceBlock(map, sel) {
+    const s = normalizeSel(sel);
+    const hgt = s.r1 - s.r0 + 1,
+      wid = s.c1 - s.c0 + 1;
+    const tiles = [];
+    for (let r = s.r0; r <= s.r1; r++)
+      tiles.push(map.tiles[r].slice(s.c0, s.c1 + 1));
+    const tokens = {};
+    for (const name in map.tokens) {
+      const t = map.tokens[name];
+      if (t.row >= s.r0 && t.row <= s.r1 && t.col >= s.c0 && t.col <= s.c1) {
+        tokens[name] = { row: t.row - s.r0, col: t.col - s.c0, color: t.color };
+      }
+    }
+    return { rows: hgt, cols: wid, tiles, tokens };
+  }
+
+
+  function pasteBlock(map, block, r0, c0) {
+    if (!block || !block.tiles || !block.tiles.length) return null;
+    // Clamp to non-negative integers — a negative r0/c0 would index
+    // map.tiles[-1] and throw. Math.max also replaces NaN with 0.
+    r0 = Math.max(0, Math.round(Number(r0) || 0));
+    c0 = Math.max(0, Math.round(Number(c0) || 0));
+    const hgt = block.rows,
+      wid = block.cols;
+    const nr1 = Math.min(map.rows, r0 + hgt) - 1;
+    const nc1 = Math.min(map.cols, c0 + wid) - 1;
+    if (r0 >= map.rows || c0 >= map.cols || nr1 < r0 || nc1 < c0) return null;
+    for (let r = 0; r < hgt; r++) {
+      for (let c = 0; c < wid; c++) {
+        const pr = r0 + r,
+          pc = c0 + c;
+        if (pr >= map.rows || pc >= map.cols) continue;
+        map.tiles[pr][pc] = TERRAINS[block.tiles[r] && block.tiles[r][c]]
+          ? block.tiles[r][c]
+          : "normal";
+      }
+    }
+    // Paste tokens: displace any token already on a destination cell.
+    for (const name in block.tokens || {}) {
+      const t = block.tokens[name];
+      const pr = r0 + t.row,
+        pc = c0 + t.col;
+      if (pr >= map.rows || pc >= map.cols) continue;
+      for (const on in map.tokens) {
+        const o = map.tokens[on];
+        if (o.row === pr && o.col === pc) delete map.tokens[on];
+      }
+      map.tokens[name] = { row: pr, col: pc, color: t.color };
+    }
+    return { r0, c0, r1: nr1, c1: nc1 };
+  }
+
+
+  function normalizeSel(sel) {
+    return {
+      r0: Math.min(sel.r0, sel.r1),
+      c0: Math.min(sel.c0, sel.c1),
+      r1: Math.max(sel.r0, sel.r1),
+      c1: Math.max(sel.c0, sel.c1),
+    };
+  }
+
+
+  function selectionToTileCmds(map, sel, prefix) {
+    const s = normalizeSel(
+      sel || { r0: 0, c0: 0, r1: map.rows - 1, c1: map.cols - 1 },
+    );
+    prefix = prefix == null ? "%tile" : String(prefix);
+    const byTerrain = {};
+    const order = [];
+    for (let r = s.r0; r <= s.r1; r++) {
+      for (let c = s.c0; c <= s.c1; c++) {
+        const t =
+          map.tiles[r] && TERRAINS[map.tiles[r][c]]
+            ? map.tiles[r][c]
+            : "normal";
+        if (t === "normal") continue;
+        const ref = String.fromCharCode(97 + r) + (c + 1);
+        if (byTerrain[t] === undefined) {
+          byTerrain[t] = [];
+          order.push(t);
+        }
+        byTerrain[t].push(ref);
+      }
+    }
+    return order.map((t) => prefix + " " + t + "," + byTerrain[t].join(""));
+  }
+
+
+  function applyTileCmds(map, text, prefix) {
+    prefix = prefix == null ? "%tile" : String(prefix).toLowerCase();
+    let total = 0;
+    const lines = String(text).split(/\r?\n/);
+    lines.forEach((raw, i) => {
+      const line = raw.trim();
+      if (!line) return;
+      const m = line.match(/^%(?:tile|settile)\s+([a-z]+)\s*,\s*(.+)$/i);
+      if (!m)
+        throw new Error(
+          "line " + (i + 1) + ": expected %tile <terrain>,<coords>",
+        );
+      const terrain = m[1].toLowerCase();
+      if (!TERRAINS[terrain])
+        throw new Error(
+          "line " + (i + 1) + ': unknown terrain "' + terrain + '"',
+        );
+      const coords = m[2];
+      const refs = coords.match(/[a-z]\d+/gi) || [];
+      if (!refs.length)
+        throw new Error("line " + (i + 1) + ": no tile coordinates found");
+      for (const ref of refs) {
+        const rm = ref.match(/^([a-z])(\d+)$/i);
+        if (!rm) continue;
+        const r = rm[1].toLowerCase().charCodeAt(0) - 97;
+        const c = parseInt(rm[2], 10) - 1;
+        if (r < 0 || r >= map.rows || c < 0 || c >= map.cols) continue;
+        map.tiles[r][c] = terrain;
+        total++;
+      }
+    });
+    return total;
+  }
 	return {
 		TERRAINS,
 		DEFAULT_TOKEN_COLORS,
@@ -625,6 +753,13 @@ function esc(s) {
 		tileCounts,
 		tokenAt,
 		translateBlock,
+		sliceBlock,
+
+		pasteBlock,
+
+		selectionToTileCmds,
+
+		applyTileCmds,
 		rotateMap,
 		flipMap
 	};

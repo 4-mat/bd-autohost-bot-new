@@ -8,6 +8,7 @@ import {
   hasLineOfSight,
   inRange,
   dist,
+  moveCost,
   DIRECTION_LABELS,
   parseFrequency,
   formatChatTime,
@@ -30,6 +31,60 @@ import {
 // -- Premove Mode Tracking -----------------------------------------------------
 
 export const premoveSet = new Set<string>();
+
+// -- Movement Path / Reach Preview / Dash Mode Tracking ------------------------
+// Keyed by `${game.id}:${entity.id}` so concurrent games can't collide. Server-
+// side state, same pattern as premoveSet -- it survives across page re-renders
+// since this module stays loaded.
+
+// The path a player is building this movement phase, as an ordered list of
+// tiles clicked so far (not including their starting position).
+export const pathState = new Map<string, Array<[number, number]>>();
+
+// viewer entity key -> the entity.num whose reachable tiles they're currently
+// previewing in red (set by clicking another character on the map).
+export const reachPreview = new Map<string, string>();
+
+// entity key -> currently in dash mode (map shows dash-reachable tiles).
+export const dashMode = new Set<string>();
+
+// viewer key -> the map grid (tile/table borders) is hidden for this viewer.
+// A per-viewer display preference, so it deliberately persists across turns
+// (unlike path/dash state) and is only scoped to one game.
+export const gridHidden = new Set<string>();
+
+// Composite key scoping movement UI state to one entity in one game.
+export function movementKey(game: Game, entity: Entity): string {
+  return `${game.id}:${entity.id}`;
+}
+
+// Key scoping per-viewer display state (e.g. the grid toggle). Players are
+// keyed by their entity; the host page (no entity) gets a game-scoped key.
+export function viewerKey(game: Game, entity: Entity | null): string {
+  return entity ? movementKey(game, entity) : `${game.id}:host`;
+}
+
+export function clearMovementState(game: Game, entity: Entity) {
+  const key = movementKey(game, entity);
+  pathState.delete(key);
+  reachPreview.delete(key);
+  dashMode.delete(key);
+}
+
+// Clear path/reach/dash for every entity of a game, including ones removed
+// during resolution (iterate store keys, not game.entities).
+export function clearGameMovementState(game: Game) {
+  const prefix = `${game.id}:`;
+  for (const k of [...pathState.keys()]) {
+    if (k.startsWith(prefix)) pathState.delete(k);
+  }
+  for (const k of [...reachPreview.keys()]) {
+    if (k.startsWith(prefix)) reachPreview.delete(k);
+  }
+  for (const k of [...dashMode]) {
+    if (k.startsWith(prefix)) dashMode.delete(k);
+  }
+}
 
 // -- Toast CSS -----------------------------------------------------------------
 
@@ -55,14 +110,13 @@ const R = `<style>
 }
 </style>`;
 
-const TILE =
-  "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
+const CELL_SIZE = 34; // was 22 -- bumped up per request
 
-const HEADER_CELL =
-  "width:22px;min-width:22px;padding:0;text-align:center;vertical-align:middle";
+const TILE = `width:${CELL_SIZE}px;height:${CELL_SIZE}px;padding:0;text-align:center;vertical-align:middle;border:1px solid #888`;
 
-const MAP_CELL =
-  "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
+const HEADER_CELL = `width:${CELL_SIZE}px;min-width:${CELL_SIZE}px;padding:0;text-align:center;vertical-align:middle;border:1px solid #888`;
+
+const MAP_CELL = `width:${CELL_SIZE}px;height:${CELL_SIZE}px;padding:0;text-align:center;vertical-align:middle;border:1px solid #888`;
 
 const TABLE_STYLE =
   "border-spacing:0px;border-collapse:collapse;border:1px solid #888;background:rgba(120,120,225,0.10)";
@@ -70,7 +124,13 @@ const TABLE_STYLE =
 const TABLE_BORDER = `style="${TABLE_STYLE}"`;
 
 const PLAYER_LABEL =
-  "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
+  "font-size:12px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
+
+// Overlay colors for the interactive map
+const OVERLAY_REACHABLE = "rgba(110,190,255,0.55)"; // light blue: in range, unpressed
+const OVERLAY_PATH = "rgba(20,70,190,0.80)"; // darker blue: already pressed into the path
+const OVERLAY_DASH = "rgba(255,140,0,0.50)"; // orange: dash-reachable (1.5x MP)
+const OVERLAY_ENEMY_REACH = "rgba(230,60,60,0.45)"; // red: another character's reach preview
 
 // -- Gamemode Vote Panel ------------------------------------------------------
 // Shown while game.voteOpen is true (between %close and %endvote). Players get
@@ -129,8 +189,8 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
     const tallySummary =
       tally.size > 0
         ? [...tally.entries()]
-            .map(([m, c]) => `${esc(m)}: ${c}`)
-            .join(" &nbsp;|")
+          .map(([m, c]) => `${esc(m)}: ${c}`)
+          .join(" &nbsp;|")
         : "no votes yet";
     html += `<div style="margin:4px 0"><b>Tally:</b> ${tallySummary}</div>`;
 
@@ -186,6 +246,31 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// A button meant to fill an entire map cell edge-to-edge (movement tiles,
+// clickable entity portraits) rather than sit inline like a normal control.
+function cellBtn(value: string, label: string, extra = ""): string {
+  return `<button
+name="send"
+value="${esc(value)}"
+style="width:100%;height:100%;padding:0;margin:0;border:none;background:transparent;cursor:pointer;${extra}">
+${esc(label)}
+</button>`;
+}
+
+// Stable key for a [row, col] tile, matching getReachableTiles' keys
+// (posToStr format, e.g. "a,1").
+function posKey(pos: [number, number]): string {
+  return posToStr(pos[0], pos[1]);
+}
+
+// Total movement cost of a path (each tile's entry cost, terrain-aware).
+export function pathCost(game: Game, path: Array<[number, number]>): number {
+  let sum = 0;
+  for (const [r, c] of path)
+    sum += moveCost(game.map[r]?.[c] ?? Terrain.Normal);
+  return sum;
+}
+
 // -- Host Page ----------------------------------------------------------------
 
 export function buildHostPage(game: Game): string {
@@ -213,7 +298,13 @@ export function buildHostPage(game: Game): string {
 export function buildPlayerPage(game: Game, entity: Entity): string {
   const isTurn = game.turnOrder[game.turnIndex] === entity.num;
 
-  const map = buildMiniMap(game, entity);
+  // The map is interactive only during this entity's movement phase.
+  const interactive =
+    isTurn &&
+    !entity.movementUsed &&
+    !premoveSet.has(movementKey(game, entity));
+
+  const map = buildMiniMap(game, entity, interactive);
   const stats = buildEntityStats(entity, game.version);
   const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game, true);
@@ -238,16 +329,16 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   }
 
   if (isTurn) {
-    const inPremove = premoveSet.has(entity.num);
+    const inPremove = premoveSet.has(movementKey(game, entity));
 
     if (!entity.movementUsed && inPremove) {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #00cc00;background:rgba(0,204,0,0.10)"><b style="color:#00cc00">PRE-MOVE ABILITIES</b> <span style="color:#888">Free / Swift / Trigger before movement</span></div>`;
       actions = buildPreMoveAbilities(game, entity);
       actions += `<div style="margin-top:6px">${btn("%premove", "Back to Movement")}</div>`;
     } else if (!entity.movementUsed) {
-      phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move</span></div>`;
-      actions = buildMoveButtons(game, entity);
-      actions += buildDashButtons(game, entity);
+      phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a highlighted tile to move, or click a character to preview their reach</span></div>`;
+      actions = buildMovementControls(game, entity);
+      actions += buildDashModeButton(game, entity);
       actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")} ${btn("%passmove", "Pass Movement")}</div>`;
     } else {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
@@ -334,14 +425,18 @@ function buildLoadoutControl(game: Game, entity: Entity): string {
 // -- Map (Host + Player shared logic) -----------------------------------------
 
 function buildMap(game: Game): string {
-  return buildMapTable(game, null);
+  return buildMapTable(game, null, false);
 }
 
-function buildMiniMap(game: Game, self: Entity): string {
-  return buildMapTable(game, self);
+function buildMiniMap(game: Game, self: Entity, interactive: boolean): string {
+  return buildMapTable(game, self, interactive);
 }
 
-function buildMapTable(game: Game, self: Entity | null): string {
+function buildMapTable(
+  game: Game,
+  self: Entity | null,
+  interactive: boolean,
+): string {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
   const curNum = game.turnOrder[game.turnIndex];
@@ -354,68 +449,149 @@ function buildMapTable(game: Game, self: Entity | null): string {
     return html;
   }
 
+  // Per-viewer grid toggle: strips the tile/table borders when the viewer
+  // prefers a clean map. The button re-renders this page via %grid.
+  const hideGrid = gridHidden.has(viewerKey(game, self));
+  const gridLabel = hideGrid ? "Grid: off" : "Grid: on";
+  const gridValue = self ? `%grid ${self.name}` : "%grid";
+  html += ` <span style="font-size:11px;color:#888">${btn(gridValue, gridLabel)}</span>`;
+
+  // Borderless variants of the cell/table styles when the grid is hidden.
+  const noBorder = ";border:1px solid #888";
+  const hcell = hideGrid ? HEADER_CELL.replace(noBorder, "") : HEADER_CELL;
+  const mcell = hideGrid ? MAP_CELL.replace(noBorder, "") : MAP_CELL;
+  const tableStyle = hideGrid ? TABLE_STYLE.replace(noBorder, "") : TABLE_STYLE;
+
+  // -- Compute reachable/path/dash/preview tile sets for self, if interactive --
+  const reachableSet = new Set<string>();
+  const pathSet = new Set<string>();
+  const dashSet = new Set<string>();
+  const previewSet = new Set<string>();
+
+  if (interactive && self) {
+    const key = movementKey(game, self);
+    const path = pathState.get(key) ?? [];
+    for (const p of path) pathSet.add(posKey(p));
+
+    if (dashMode.has(key)) {
+      const dashMp = Math.floor(getEffectiveMp(self) * 1.5);
+      const reachable = getReachableTiles(game, self.pos, dashMp);
+      for (const tile of reachable.keys()) dashSet.add(tile);
+    } else {
+      const remaining = getEffectiveMp(self) - pathCost(game, path);
+      if (remaining > 0) {
+        const tip = path.length > 0 ? path[path.length - 1] : self.pos;
+        // getReachableTiles returns Map<string, number> keyed by posToStr
+        // tiles -- we only need the keys.
+        const reachable = getReachableTiles(game, tip, remaining, self);
+        for (const tile of reachable.keys()) reachableSet.add(tile);
+      }
+    }
+
+    const previewNum = reachPreview.get(key);
+    if (previewNum) {
+      const target = game.entities.find((e) => e.num === previewNum);
+      if (target) {
+        const reach = getReachableTiles(game, target.pos, target.mp, target);
+        for (const tile of reach.keys()) previewSet.add(tile);
+      }
+    }
+  }
+
   html += `<div style="overflow-x:auto">`;
-  html += `<table align="center" ${TABLE_BORDER}>`;
+  html += `<table align="center" style="${tableStyle}">`;
 
   // Column header row -- numbers
-  html += `<tr><td class="hcell" style="${HEADER_CELL}"></td>`;
+  html += `<tr><td class="hcell" style="${hcell}"></td>`;
   for (let c = 0; c < cols; c++) {
-    html += `<td class="hcell" style="${HEADER_CELL}"><b>${c + 1}</b></td>`;
+    html += `<td class="hcell" style="${hcell}"><b>${c + 1}</b></td>`;
   }
   html += "</tr>";
 
   // Data rows -- letter labels
   for (let r = 0; r < rows; r++) {
     html += `<tr>`;
-    html += `<td style="${HEADER_CELL}"><b>${String.fromCharCode(65 + r)}</b></td>`;
+    html += `<td style="${hcell}"><b>${String.fromCharCode(65 + r)}</b></td>`;
 
     for (let c = 0; c < cols; c++) {
-      html += renderMapCell(game, self, curNum, r, c);
+      const terrain = game.map[r][c];
+      const color = TERRAIN_COLORS[terrain] ?? "#99E599";
+      const entity = game.entities.find(
+        (e) => e.curhp > 0 && e.pos[0] === r && e.pos[1] === c,
+      );
+      const key = posKey([r, c]);
+      const tileStr = posToStr(r, c);
+
+      let title = TERRAIN_NAMES[terrain] ?? "Normal";
+      let highlight = "";
+      let isCur = false;
+
+      if (entity) {
+        title = entity.name;
+        isCur = entity.num === curNum;
+      }
+
+      if (self && entity) {
+        const isSelf = entity.num === self.num;
+        const isAlly = !isSelf && entity.team === self.team && self.team !== 0;
+        if (isSelf) highlight = "outline:2px solid #0a0;";
+        else if (isAlly) highlight = "outline:2px solid #08c;";
+      } else if (isCur && entity) {
+        highlight = "outline:2px solid #cc0;";
+      }
+
+      // Overlay priority: dash > path > reachable > enemy reach preview.
+      // Occupied tiles never get a movement overlay -- you can't move onto
+      // an occupied tile, so only the reach-preview overlay (for clicking a
+      // character) can show there.
+      let overlay = "";
+      if (!entity && dashSet.has(key)) overlay = OVERLAY_DASH;
+      else if (!entity && pathSet.has(key)) overlay = OVERLAY_PATH;
+      else if (!entity && reachableSet.has(key)) overlay = OVERLAY_REACHABLE;
+      else if (previewSet.has(key)) overlay = OVERLAY_ENEMY_REACH;
+
+      const overlayDiv = overlay
+        ? `<div style="position:absolute;inset:0;background:${overlay};pointer-events:none"></div>`
+        : "";
+
+      let inner: string;
+      if (entity) {
+        if (interactive && self && entity.num !== self.num) {
+          // Clicking another character previews their reach in red.
+          inner = cellBtn(
+            `%viewreach ${entity.num},${self.name}`,
+            entity.num,
+            `${PLAYER_LABEL};position:relative;z-index:1`,
+          );
+        } else {
+          inner = `<b style="${PLAYER_LABEL};position:relative;z-index:1">${entity.num}</b>`;
+        }
+      } else if (
+        interactive &&
+        self &&
+        dashMode.has(movementKey(game, self)) &&
+        dashSet.has(key)
+      ) {
+        inner = cellBtn(`%dash ${tileStr},${self.name}`, "", "z-index:1");
+      } else if (
+        interactive &&
+        self &&
+        !dashMode.has(movementKey(game, self)) &&
+        reachableSet.has(key)
+      ) {
+        // Empty, in range, not yet pressed into the path -- clickable.
+        inner = cellBtn(`%pathstep ${tileStr},${self.name}`, "", "z-index:1");
+      } else {
+        inner = "";
+      }
+
+      html += `<td class="mcell" style="position:relative;background:${color};${highlight}${mcell}" title="${esc(title)}">${overlayDiv}${inner}</td>`;
     }
     html += "</tr>";
   }
 
   html += "</table></div>";
   return html;
-}
-
-/** Render one map cell: terrain color, entity label, and highlight. */
-function renderMapCell(
-  game: Game,
-  self: Entity | null,
-  curNum: string,
-  r: number,
-  c: number,
-): string {
-  const terrain = game.map[r][c];
-  // Unknown terrain falls back to Normal's color from the shared palette.
-  const color = TERRAIN_COLORS[terrain] ?? TERRAIN_COLORS[0];
-  const entity = game.entities.find((e) => e.pos[0] === r && e.pos[1] === c);
-
-  let label = "";
-  let title = TERRAIN_NAMES[terrain] ?? "Normal";
-  let highlight = "";
-  let isCur = false;
-
-  if (entity) {
-    label = entity.num;
-    title = entity.name;
-    isCur = entity.num === curNum;
-  }
-
-  if (self && entity) {
-    const isSelf = entity.num === self.num;
-    const isAlly = !isSelf && entity.team === self.team && self.team !== 0;
-    if (isSelf) highlight = "outline:2px solid #0a0;";
-    else if (isAlly) highlight = "outline:2px solid #08c;";
-  } else if (isCur && entity) {
-    highlight = "outline:2px solid #cc0;";
-  }
-
-  const inner = entity
-    ? `><b style="${PLAYER_LABEL}">${label}</b></td>`
-    : "></td>";
-  return `<td class="mcell" style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"${inner}`;
 }
 
 // -- Buff/Shield Display Helpers ----------------------------------------------
@@ -534,8 +710,8 @@ function buildPlayerDataTable(game: Game): string {
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
-          .map((n) => game.entities.find((e) => e.num === n))
-          .filter((e): e is Entity => !!e)
+        .map((n) => game.entities.find((e) => e.num === n))
+        .filter((e): e is Entity => !!e)
       : game.entities;
   for (const e of ordered) {
     html += `<tr style="height:22px">`;
@@ -608,14 +784,14 @@ function buildActionLog(game: Game, collapsed = false): string {
     game.log.length === 0
       ? `<div style="color:#888"><i>(empty)</i></div>`
       : `<table class="log" align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">` +
-        game.log
-          .slice(-15)
-          .map(
-            (entry) =>
-              `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
-          )
-          .join("") +
-        `</table>`;
+      game.log
+        .slice(-15)
+        .map(
+          (entry) =>
+            `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
+        )
+        .join("") +
+      `</table>`;
 
   if (collapsed) {
     return `<details style="margin:4px 0"><summary style="cursor:pointer"><b>Action Log</b></summary>${body}</details>`;
@@ -668,10 +844,13 @@ function buildSetupPanel(game: Game): string {
   return `<div style="margin-top:4px"><b>Setup</b><div style="margin-top:4px">
   ${setBtn}
   ${btn("%setlevel all, 10", "Level All \u2192 10")}
+  ${btn("%toggleidle", "Toggle Player's Idle")}
   ${startBtn}
   ${ffaShortcut}
   <span style="color:#888;font-size:10px">${ffaToggle}</span>
 </div></div>`;
+
+
 }
 // -- Controls (Host) ----------------------------------------------------------
 
@@ -723,38 +902,38 @@ function buildEntityStats(entity: Entity, version: GameVersion): string {
   return html;
 }
 
-// -- Move Buttons (Player) ----------------------------------------------------
+// -- Movement Controls (Player, movement phase) --------------------------------
 
-function buildMoveButtons(game: Game, entity: Entity): string {
-  const reachable = getReachableTiles(game, entity.pos, entity.mp);
-  const tiles: string[] = [];
+function buildMovementControls(game: Game, entity: Entity): string {
+  const key = movementKey(game, entity);
+  const path = pathState.get(key) ?? [];
 
-  for (const [key] of reachable) {
-    tiles.push(btn(`%move ${key},${entity.name}`, key));
+  if (dashMode.has(key)) {
+    return `<div style="margin:4px 0;color:#c60"><b>DASH MODE</b> <span style="color:#888">Click an orange-highlighted tile to dash (1.5x MP, Full action)</span></div>`;
   }
 
-  if (tiles.length === 0) {
-    return `<div style="margin:4px 0;color:#888"><i>No valid moves.</i></div>`;
+  if (path.length === 0) {
+    return `<div style="margin:4px 0;color:#888"><i>Click a highlighted tile to start moving.</i></div>`;
   }
-  return `<div style="margin:4px 0">${tiles.join(" ")}</div>`;
+
+  const cost = pathCost(game, path);
+  const remaining = getEffectiveMp(entity) - cost;
+  let html = `<div style="margin:4px 0">Path: ${path.length} tile${path.length > 1 ? "s" : ""} (${remaining} MP left)</div>`;
+  html += `<div style="margin-top:4px">${btn(`%confirmmove ${entity.name}`, "Confirm Move")} ${btn(`%cancelpath ${entity.name}`, "Cancel Path")}</div>`;
+  return html;
 }
 
-function buildDashButtons(game: Game, entity: Entity): string {
-  if (entity.dashUsed) return "";
+function buildDashModeButton(game: Game, entity: Entity): string {
+  if (entity.dashUsed || entity.standardUsed) return "";
 
   // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
   const dashMp = Math.floor(getEffectiveMp(entity) * 1.5);
   const reachable = getReachableTiles(game, entity.pos, dashMp);
-  const tiles: string[] = [];
+  if (reachable.size === 0) return "";
 
-  for (const [key] of reachable) {
-    tiles.push(btn(`%dash ${key},${entity.name}`, key));
-  }
-
-  if (tiles.length === 0) {
-    return `<div style="margin:4px 0;color:#888"><i>No dash targets.</i></div>`;
-  }
-  return `<div style="margin:2px 0;padding:3px 6px;border-left:2px solid #c60;background:rgba(204,102,0,0.08)"><span style="color:#c60;font-size:10px;font-weight:bold">DASH (1.5x MP, Full)</span><br>${tiles.join(" ")}</div>`;
+  const inDash = dashMode.has(movementKey(game, entity));
+  const label = inDash ? "Back to Move" : "Dash (1.5x MP)";
+  return `<div style="margin:2px 0">${btn(`%dashmode ${entity.name}`, label)}</div>`;
 }
 
 // -- Pre-Move Ability Buttons (Player) ----------------------------------------

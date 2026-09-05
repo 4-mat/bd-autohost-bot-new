@@ -67,6 +67,7 @@ function makeGame(host = "Host"): Game {
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 

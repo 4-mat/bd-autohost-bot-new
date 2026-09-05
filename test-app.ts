@@ -147,19 +147,31 @@ const userGui = new Map<
 >();
 
 const MAX_LOG = 100;
-const CHAT_LOG: Array<Record<string, string>> = [];
+// Entries carry a monotonic `seq` so clients can reconcile re-sent
+// history after a reconnect (dedupe by identity, not a one-shot flag).
+// The counter restarts at 0 on every server boot, so history payloads also
+// carry a per-run epoch; clients reset their seq watermark when it changes.
+const serverEpoch = Date.now();
+let chatSeq = 0;
+const CHAT_LOG: Array<Record<string, string | number>> = [];
 
 function broadcast(msg: string) {
+  let outbound = msg;
   try {
     const m = JSON.parse(msg);
     if (["chat", "action", "quote", "react"].includes(m.type)) {
-      CHAT_LOG.push(m);
+      const stamped = { ...m, seq: ++chatSeq };
+      CHAT_LOG.push(stamped);
       if (CHAT_LOG.length > MAX_LOG) CHAT_LOG.shift();
+      // Send the stamped payload so live frames also carry seq and the
+      // client advances lastChatSeq; otherwise reconnect history re-renders
+      // messages that were already shown live.
+      outbound = JSON.stringify(stamped);
     }
   } catch {}
   for (const client of browserClients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(msg);
+      client.send(outbound);
     }
   }
 }
@@ -660,7 +672,9 @@ wss.on("connection", (ws) => {
     });
   }
 
-  ws.send(JSON.stringify({ type: "history", lines: CHAT_LOG.slice() }));
+  ws.send(
+    JSON.stringify({ type: "history", epoch: serverEpoch, lines: CHAT_LOG.slice() }),
+  );
   broadcast(
     JSON.stringify({
       type: "system",
@@ -1344,6 +1358,45 @@ function showToast(text, tone) {
   setTimeout(() => t.remove(), 4000);
 }
 
+let audioCtx = null;
+
+function unlockAudio() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      return;
+    }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+}
+// Listeners stay attached for the whole session: if the context gets suspended
+// again (tab backgrounding, system sleep, audio device change), the next
+// gesture resumes it so turn beeps never go permanently silent.
+window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('keydown', unlockAudio);
+
+function beep() {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  try {
+    const t = audioCtx.currentTime;
+    [660, 880].forEach((f, i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.type = 'sine';
+      o.frequency.value = f;
+      const s = t + i * 0.18;
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(0.25, s + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.15);
+      o.start(s);
+      o.stop(s + 0.18);
+    });
+  } catch (e) {}
+}
+
 function handleTurn(msg) {
   const e = msg.entity;
   const el = document.getElementById('turn-indicator');
@@ -1359,11 +1412,12 @@ function handleTurn(msg) {
     return;
   }
   lastTurn = key;
-  if (msg.yours && isMobile()) {
-    showToast('Your turn: ' + label, true);
-    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
-  }
   if (msg.yours) {
+    beep();
+    if (isMobile()) {
+      showToast('Your turn: ' + label, true);
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    }
     addLine('action', tabLink('player', 'Open your tab'), 'Your turn');
   }
 }
@@ -1528,6 +1582,14 @@ guiContent.innerHTML = guiPages[tab] || '<div style="color:var(--text-dim);paddi
 let ws;
 const nickKey = 'bdUser';
 let nick = '';
+// Highest chat 'seq' already rendered. The server re-sends the full
+// CHAT_LOG on every (re)connect; entries carry a monotonic seq so we can
+// render only the ones we haven't seen — no duplicates on reconnect, and
+// messages sent during a disconnect still come through.
+let lastChatSeq = 0;
+// Server-run identifier from the history payload; when it changes the
+// chatSeq counter restarted, so the stale seq watermark must be dropped.
+let lastServerEpoch: number | null = null;
 
 function loadNick() {
   try { return localStorage.getItem(nickKey) || ''; } catch (e) { return ''; }
@@ -1583,8 +1645,19 @@ function connect() {
   const msg = JSON.parse(e.data);
 
   if (msg.type === 'history') {
-    if (msg.lines.length > 0) {
-      msg.lines.forEach((line) => {
+    // A new server run restarts chatSeq at 0 while the browser keeps its
+    // own lastChatSeq, which would filter out the fresh log. Drop the old
+    // watermark when the server's epoch changes.
+    if (typeof msg.epoch === 'number' && msg.epoch !== lastServerEpoch) {
+      lastServerEpoch = msg.epoch;
+      lastChatSeq = 0;
+    }
+    // Render only entries we haven't seen: seq is monotonic on the server,
+    // so filtering by the last rendered seq prevents reconnect duplicates
+    // while still surfacing messages that arrived while disconnected.
+    const fresh = (msg.lines || []).filter((line) => (line.seq || 0) > lastChatSeq);
+    if (fresh.length > 0) {
+      fresh.forEach((line) => {
         if (line.type === 'chat' || line.type === 'quote') addLine(line.type, withSignupLink(line.text));
         else if (line.type === 'action') addLine('action', line.text, line.name);
         else if (line.type === 'react') addLine('react', line.user + ' ' + line.emote);
@@ -1592,6 +1665,7 @@ function connect() {
         else if (line.type === 'leave') addLine('system', line.user + ' left.');
       });
       addLine('divider', '');
+      lastChatSeq = fresh.reduce((m, l) => Math.max(m, l.seq || 0), lastChatSeq);
     }
     return;
   }
@@ -1625,6 +1699,7 @@ function connect() {
     } else if (msg.type === 'chat' || msg.type === 'quote') {
       const text = withSignupLink(msg.text);
       addLine(msg.type, text);
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
       if (isMobile() && mobileView === 'game') {
         showToast(text);
         unread++;
@@ -1638,6 +1713,7 @@ function connect() {
       handleTurn(msg);
     } else if (msg.type === 'action') {
       addLine('action', msg.text, msg.name);
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
     } else if (msg.type === 'pm') {
       addLine('pm', msg.text);
     } else if (msg.type === 'playerlist') {
@@ -1649,6 +1725,7 @@ function connect() {
       addLine('system', '[TEAM] ' + msg.text);
       renderTeamChat();
     } else if (msg.type === 'react') {
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
       addLine('react', msg.user + ' ' + msg.emote);
     } else {
       addLine('system', msg.text);

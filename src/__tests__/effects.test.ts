@@ -8,6 +8,7 @@ import {
 } from "../game/state.js";
 import {
   parseEffects,
+  getCombatMetadataForEffect,
   applyEffects,
   applyEffectStream,
   evaluateCondition,
@@ -54,11 +55,13 @@ function makeEntity(
   };
 }
 
-function makeGame(opts: {
-  size?: number;
-  terrain?: Terrain[][];
-  entities?: Entity[];
-} = {}): Game {
+function makeGame(
+  opts: {
+    size?: number;
+    terrain?: Terrain[][];
+    entities?: Entity[];
+  } = {},
+): Game {
   const size = opts.size ?? 10;
   const map =
     opts.terrain ??
@@ -71,6 +74,7 @@ function makeGame(opts: {
     id: "test",
     room: "battledome",
     host: "Host",
+    version: "4.4",
     entities,
     map,
     mapName: "test",
@@ -90,6 +94,7 @@ function makeGame(opts: {
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
@@ -428,7 +433,8 @@ describe("applyEffects: apex gate", () => {
     const ability = makeAbility({
       name: "Razor Rust",
       range: "Pierce 4",
-      effect: "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
+      effect:
+        "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
     });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 9], team: 1 });
@@ -451,7 +457,8 @@ describe("applyEffects: apex gate", () => {
     const ability = makeAbility({
       name: "Razor Rust",
       range: "Pierce 4",
-      effect: "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
+      effect:
+        "For one round, the target only has 3 MP. Apex: inflict 5 Cripple/1.",
     });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 7], team: 1 });
@@ -465,7 +472,9 @@ describe("applyEffects: apex gate", () => {
     expect(target.statuses.length).toBe(beforeStatuses);
 
     // Messages mention "inactive" and NOT "[Apex]" prefix on the sub-effect
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
+      true,
+    );
     expect(messages.some((m) => m.startsWith("    [Apex]"))).toBe(false);
   });
 
@@ -488,7 +497,9 @@ describe("applyEffects: apex gate", () => {
 
     // Pull 3 should NOT have moved anyone
     expect(target.pos).toEqual([5, 9]);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
+      true,
+    );
   });
 
   it("non-apex effects still apply when target is below max range", () => {
@@ -526,9 +537,45 @@ describe("applyEffects: apex gate", () => {
     const effects = parseEffects(ability.effect);
     const messages = applyEffects(game, user, target, effects); // no ability arg
 
-    expect(messages.some((m) => m.toLowerCase().includes("cannot evaluate"))).toBe(
-      true,
-    );
+    expect(
+      messages.some((m) => m.toLowerCase().includes("cannot evaluate")),
+    ).toBe(true);
+  });
+
+  it("MP cap clamps the target's MP budget and records a marker", () => {
+    const ability = makeAbility({
+      name: "Razor Rust",
+      range: "Pierce 4",
+      effect: "Target: 3 MP/1",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 7], team: 1, mp: 5 });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    const messages = applyEffects(game, user, target, effects, ability);
+
+    expect(target.mp).toBe(3);
+    const marker = target.buffs.find((b) => b.stat === "mpCap");
+    expect(marker).toBeDefined();
+    expect(marker?.amount).toBe(2); // delta removed, restored on expiry
+    expect(messages.some((m) => m.includes("capped at 3"))).toBe(true);
+  });
+
+  it("MP cap does nothing when target is already below the cap", () => {
+    const ability = makeAbility({
+      name: "Razor Rust",
+      range: "Pierce 4",
+      effect: "Target: 3 MP/1",
+    });
+    const user = makeEntity({ num: "P1", name: "A", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "B", pos: [5, 7], team: 1, mp: 2 });
+    const game = makeGame({ entities: [user, target] });
+
+    applyEffects(game, user, target, parseEffects(ability.effect), ability);
+
+    expect(target.mp).toBe(2);
+    expect(target.buffs.find((b) => b.stat === "mpCap")).toBeUndefined();
   });
 
   it("works with nested apex inside a conditional (then-branch)", () => {
@@ -548,7 +595,9 @@ describe("applyEffects: apex gate", () => {
 
     // Not at max range -> nested apex should also be inactive
     expect(target.pos).toEqual([5, 7]);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
+      true,
+    );
   });
 });
 
@@ -767,8 +816,12 @@ describe("applyEffects: thirst gate", () => {
     expect(target.statuses).toHaveLength(0);
 
     // Inactive message names both the threshold and the actual Blood value.
-    expect(messages.some((m) => m.toLowerCase().includes("thirst 4"))).toBe(true);
-    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(true);
+    expect(messages.some((m) => m.toLowerCase().includes("thirst 4"))).toBe(
+      true,
+    );
+    expect(messages.some((m) => m.toLowerCase().includes("inactive"))).toBe(
+      true,
+    );
     expect(messages.some((m) => m.startsWith("    [Thirst 4]"))).toBe(false);
   });
 
@@ -803,8 +856,7 @@ describe("applyEffects: thirst gate", () => {
     const ability = makeAbility({
       name: "Dual Clause",
       range: "Melee",
-      effect:
-        "Thirst 5: Pull 2. Always: target -2 ATK/1.",
+      effect: "Thirst 5: Pull 2. Always: target -2 ATK/1.",
     });
     const user = makeEntity({
       num: "P1",
@@ -859,9 +911,7 @@ describe("applyEffects: thirst gate", () => {
     applyEffects(game, user, target, effects, ability);
 
     // Melee apex at chebyshev 1 -> nested apex should fire its +2 ATK buff.
-    const atkBuff = target.buffs.find(
-      (b) => b.stat === "atk",
-    );
+    const atkBuff = target.buffs.find((b) => b.stat === "atk");
     expect(atkBuff?.amount).toBe(2);
   });
 });
@@ -1071,7 +1121,9 @@ describe("applyEffectStream: choose prompt", () => {
 
 describe("parseEffects: conditional clause", () => {
   it("recognises 'If CONDITION, EFFECT [Otherwise EFFECT]'", () => {
-    const effects = parseEffects("If user ATK > 5, +3 ATK/1. Otherwise, +1 DEF/1.");
+    const effects = parseEffects(
+      "If user ATK > 5, +3 ATK/1. Otherwise, +1 DEF/1.",
+    );
     expect(effects).toHaveLength(1);
     expect(effects[0].type).toBe("conditional");
     if (effects[0].type !== "conditional") return;
@@ -1087,6 +1139,84 @@ describe("parseEffects: conditional clause", () => {
     expect(effects[0].condition).toBe("target is alive");
     expect(effects[0].thenEffects.length).toBeGreaterThan(0);
     expect(effects[0].elseEffects).toBeUndefined();
+  });
+
+  it("colon-form conditionals keep their condition in multi-sentence input", () => {
+    const effects = parseEffects(
+      "If target is at Range 7+: crit on 14+. If target is under Range 3: gain +1 MP/2.",
+    );
+    expect(effects).toHaveLength(2);
+    for (const e of effects) {
+      expect(e.type).toBe("conditional");
+      if (e.type !== "conditional") continue;
+      expect(e.thenEffects.length).toBeGreaterThan(0);
+      expect(e.condition).not.toContain("gain");
+      expect(e.condition).not.toContain("crit");
+    }
+    if (effects[0].type !== "conditional" || effects[1].type !== "conditional")
+      return;
+    expect(effects[0].condition).toBe("target is at range 7+");
+    expect(effects[1].condition).toBe("target is under range 3");
+  });
+
+  it("colon-form conditional survives next to a plain sentence", () => {
+    const effects = parseEffects(
+      "If user ATK > 5: +3 ATK/1. Push 2.",
+    );
+    expect(effects).toHaveLength(2);
+    expect(effects[0].type).toBe("conditional");
+    if (effects[0].type !== "conditional") return;
+    expect(effects[0].condition).toBe("user atk > 5");
+    expect(effects[0].thenEffects.length).toBeGreaterThan(0);
+    expect(effects[1].type).toBe("push");
+  });
+
+  it("multi-sentence conditional with otherwise keeps the whole conditional together", () => {
+    const effects = parseEffects(
+      "If target has Cripple: +5 ATK/1. Otherwise: +3 DEF/1. Then push 1.",
+    );
+    expect(effects).toHaveLength(2);
+    expect(effects[0].type).toBe("conditional");
+    if (effects[0].type !== "conditional") return;
+    expect(effects[0].elseEffects?.length).toBeGreaterThan(0);
+    expect(effects[1].type).toBe("push");
+  });
+
+  it("parses unsigned 'Target: N MP/R' as an MP cap, not a buff", () => {
+    const effects = parseEffects("Target: 3 MP/1");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("mpCap");
+    if (effects[0].type !== "mpCap") return;
+    expect(effects[0].amount).toBe(3);
+    expect(effects[0].rounds).toBe(1);
+  });
+
+  it("parses 'Targets: 2 MP/2' with plural prefix and defaults rounds", () => {
+    expect(parseEffects("Targets: 2 MP/2")[0]).toMatchObject({
+      type: "mpCap",
+      amount: 2,
+      rounds: 2,
+    });
+    expect(parseEffects("Target: 4 MP")[0]).toMatchObject({
+      type: "mpCap",
+      amount: 4,
+      rounds: 1,
+    });
+  });
+
+  it("keeps signed target MP clauses as debuffs/buffs", () => {
+    const debuff = parseEffects("Target: -3 MP/1");
+    expect(debuff[0].type).toBe("debuff");
+    expect(parseEffects("gain +3 MP")[0].type).toBe("buff");
+  });
+
+  it("mp cap survives next to other clauses (Razor Rust full text)", () => {
+    const effects = parseEffects(
+      "Target: 3 MP/1. Apex: inflict 5 Cripple/1.",
+    );
+    expect(effects).toHaveLength(2);
+    expect(effects[0].type).toBe("mpCap");
+    expect(effects[1].type).toBe("apex");
   });
 });
 
@@ -1202,9 +1332,9 @@ describe("evaluateCondition: supported patterns", () => {
     const user = makeEntity({ num: "P1", name: "A" });
     const target = makeEntity({ num: "P2", name: "B" });
 
-    expect(evaluateCondition("target Dashes before user's next turn", user, target)).toBe(
-      "unknown",
-    );
+    expect(
+      evaluateCondition("target Dashes before user's next turn", user, target),
+    ).toBe("unknown");
     expect(
       evaluateCondition(
         "the player this ability originates from has more MAG than ATK",
@@ -1269,8 +1399,13 @@ describe("applyEffectStream / applyEffects: conditional gate end-to-end", () => 
     const effects = parseEffects(
       "If target Dashes before user's next turn, +5 ATK/1.",
     );
-    const messages = applyEffectStream(game, user, target, effects, ability)
-      .next(undefined).value as string[];
+    const messages = applyEffectStream(
+      game,
+      user,
+      target,
+      effects,
+      ability,
+    ).next(undefined).value as string[];
     expect(target.buffs.some((b) => b.stat === "atk" && b.amount === 5)).toBe(
       true,
     );
@@ -1314,7 +1449,11 @@ describe("applyEffects: regressions for non-apex effects", () => {
   beforeEach(() => {});
 
   it("applies buff effects unchanged", () => {
-    const ability = makeAbility({ name: "Boost", range: "Melee", effect: "+3 ATK/2" });
+    const ability = makeAbility({
+      name: "Boost",
+      range: "Melee",
+      effect: "+3 ATK/2",
+    });
     const user = makeEntity({ num: "P1", name: "A", pos: [5, 5] });
     const target = makeEntity({ num: "P2", name: "B", pos: [5, 6] });
     const game = makeGame({ entities: [user, target] });
@@ -1326,7 +1465,11 @@ describe("applyEffects: regressions for non-apex effects", () => {
   });
 
   it("applies status effects unchanged", () => {
-    const ability = makeAbility({ name: "Bleed", range: "Melee", effect: "inflict 5 Bleed/3" });
+    const ability = makeAbility({
+      name: "Bleed",
+      range: "Melee",
+      effect: "inflict 5 Bleed/3",
+    });
     const user = makeEntity({ num: "P1", name: "A" });
     const target = makeEntity({ num: "P2", name: "B" });
     const game = makeGame({ entities: [user, target] });
@@ -1336,5 +1479,173 @@ describe("applyEffects: regressions for non-apex effects", () => {
     const bleed = target.statuses.find((s) => s.name === "Bleed");
     expect(bleed?.damage).toBe(5);
     expect(bleed?.rounds).toBe(3);
+  });
+});
+
+describe("parse-once caching", () => {
+  it("parseEffects returns the same instance for the same text", () => {
+    const txt = "inflict 3 Bleed/1. +2 ATK/1. Multi-Hit: 2. Ignores half DEF.";
+    const a = parseEffects(txt);
+    const b = parseEffects(txt);
+    expect(a).toBe(b);
+  });
+
+  it("getCombatMetadataForEffect is cached per effect text", () => {
+    const txt = "Multi-Hit: 3. +50% damage. Ignores half DEF.";
+    const a = getCombatMetadataForEffect(txt);
+    const b = getCombatMetadataForEffect(txt);
+    expect(a).toBe(b);
+    expect(a.additionalHits).toBe(2);
+    expect(a.damagePercent).toBe(50);
+  });
+
+  it("different effect text produces a different (correct) parse", () => {
+    const a = parseEffects("inflict 3 Bleed/1");
+    const b = parseEffects("inflict 5 Cripple/1");
+    expect(a).not.toBe(b);
+    expect(a[0]).toMatchObject({ type: "status", name: "Bleed", damage: 3 });
+    expect(b[0]).toMatchObject({ type: "status", name: "Cripple", damage: 5 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Moon-phase conditions and phase effects
+// ---------------------------------------------------------------------------
+
+describe("evaluateCondition: moon phase", () => {
+  it("evaluates 'phase is X' against the active phase", () => {
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+
+    // Default phase is new moon when none is set.
+    expect(evaluateCondition("phase is new moon", user, target)).toBe("then");
+    expect(evaluateCondition("phase is full moon", user, target)).toBe("else");
+
+    // Explicit phase argument.
+    expect(evaluateCondition("phase is full moon", user, target, "full moon")).toBe("then");
+    expect(evaluateCondition("phase is waning", user, target, "full moon")).toBe("else");
+  });
+
+  it("parses 'New Moon: EFFECT' as a phase-conditional effect", () => {
+    const effects = parseEffects("New Moon: inflict 5 Bleed/3");
+    expect(effects).toHaveLength(1);
+    expect(effects[0].type).toBe("conditional");
+    if (effects[0].type !== "conditional") return;
+    expect(effects[0].condition).toBe("phase is new moon");
+  });
+
+  it("applies a moon-phase conditional when the phase matches", () => {
+    const ability = makeAbility({ name: "Moonlit", range: "Melee", effect: "New Moon: inflict 5 Bleed/3" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed?.damage).toBe(5);
+  });
+
+  it("skips a moon-phase conditional when the phase mismatches", () => {
+    const ability = makeAbility({ name: "Moonlit", range: "Melee", effect: "Full Moon: inflict 5 Bleed/3" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+    game.moonPhase = "new moon";
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed).toBeUndefined();
+  });
+
+  it("'Phase: X' effect updates the game's moon phase", () => {
+    const ability = makeAbility({ name: "Mooncall", range: "Melee", effect: "Phase: full moon" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    expect(game.moonPhase).toBe("full moon");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per / When triggers dispatch their sub-effects on hit
+// ---------------------------------------------------------------------------
+
+describe("per / when triggers", () => {
+  it("'Per hit: EFFECT' dispatches its sub-effects", () => {
+    const ability = makeAbility({ name: "Siphon", range: "Melee", effect: "Per hit: inflict 5 Bleed/3" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed?.damage).toBe(5);
+    expect(bleed?.rounds).toBe(3);
+  });
+
+  it("'When user damages a foe: EFFECT' dispatches its sub-effects", () => {
+    const ability = makeAbility({ name: "Brand", range: "Melee", effect: "When user damages a foe: inflict 3 Stun/1" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const stun = target.statuses.find((s) => s.name === "Stun");
+    expect(stun).toBeDefined();
+  });
+
+  it("'Per 5 CP: EFFECT' dispatches when the resource pool meets the count", () => {
+    const ability = makeAbility({ name: "Combo", range: "Melee", effect: "Per 5 CP: inflict 2 Bleed/2" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+    user.resources = { cp: 7 }; // meets the 5-count
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed).toBeDefined();
+  });
+
+  it("'Per 5 CP: EFFECT' stays summarized when the pool is below the count", () => {
+    const ability = makeAbility({ name: "Combo", range: "Melee", effect: "Per 5 CP: inflict 2 Bleed/2" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const target = makeEntity({ num: "P2", name: "B" });
+    const game = makeGame({ entities: [user, target] });
+    user.resources = { cp: 2 }; // below the 5-count
+
+    const effects = parseEffects(ability.effect);
+    const messages = applyEffects(game, user, target, effects, ability);
+
+    const bleed = target.statuses.find((s) => s.name === "Bleed");
+    expect(bleed).toBeUndefined();
+    // The trigger stays as a summarized log line.
+    expect(messages.some((m) => m.includes("[Per 5 cp]"))).toBe(true);
+  });
+
+  it("'When user kills a foe: EFFECT' dispatches only when the target is dead", () => {
+    const ability = makeAbility({ name: "Execution", range: "Melee", effect: "When user kills a foe: inflict 5 Cripple/1" });
+    const user = makeEntity({ num: "P1", name: "A" });
+    const dead = makeEntity({ num: "P2", name: "B", curhp: 0 });
+    const game = makeGame({ entities: [user, dead] });
+
+    const effects = parseEffects(ability.effect);
+    applyEffects(game, user, dead, effects, ability);
+
+    const cripple = dead.statuses.find((s) => s.name === "Cripple");
+    expect(cripple).toBeDefined();
   });
 });
