@@ -86,6 +86,13 @@ import {
   tallyVotes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
+import {
+  MSG_NO_GAME,
+  MSG_GAME_STARTED,
+  MSG_NO_ACTIVE_TURN,
+  MSG_NOT_YOUR_TURN,
+  MSG_NOT_IN_GAME,
+} from "../messages.js";
 
 type GameCmd = (
   game: Game | null,
@@ -99,7 +106,7 @@ function withGame(
   game: Game | null,
   user: User,
   fn: (g: Game) => void,
-  msg = "No active game in this room.",
+  msg = MSG_NO_GAME,
 ) {
   if (!game) return sendPm(user.name, msg);
   fn(game);
@@ -372,11 +379,11 @@ function resolveActor(
     entity = getCurrentEntity(game);
   }
   if (!entity) {
-    sendPm(user.name, "No active turn.");
+    sendPm(user.name, MSG_NO_ACTIVE_TURN);
     return null;
   }
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    sendPm(user.name, "It's not your turn.");
+    sendPm(user.name, MSG_NOT_YOUR_TURN);
     return null;
   }
 
@@ -567,9 +574,9 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 function handleConfirm(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!entity.pendingAction) {
     return sendPm(user.name, "No action pending. Select an ability first.");
@@ -583,9 +590,9 @@ function handleConfirm(game: Game, user: User) {
 function handleTarget(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %target <target>");
 
@@ -601,9 +608,9 @@ function handleTarget(game: Game, user: User, args: string) {
 function handleChoose(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %choose <option>");
 
@@ -630,7 +637,7 @@ function handleChoose(game: Game, user: User, args: string) {
 }
 
 function handleVote(game: Game, user: User, args: string) {
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.voteOpen) {
     return sendPm(
       user.name,
@@ -643,7 +650,7 @@ function handleVote(game: Game, user: User, args: string) {
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
   if (!entity) {
-    return sendPm(user.name, "You're not in this game. Join first (%join).");
+    return sendPm(user.name, MSG_NOT_IN_GAME);
   }
 
   const arg = args.trim();
@@ -695,7 +702,7 @@ function handleVote(game: Game, user: User, args: string) {
 }
 
 function handleUnvote(game: Game, user: User) {
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.voteOpen) {
     return sendPm(user.name, "No gamemode vote is open right now.");
   }
@@ -704,7 +711,7 @@ function handleUnvote(game: Game, user: User) {
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
   if (!entity) {
-    return sendPm(user.name, "You're not in this game. Join first (%join).");
+    return sendPm(user.name, MSG_NOT_IN_GAME);
   }
 
   if (game.votes[entity.id] === undefined) {
@@ -732,7 +739,7 @@ function handleLeave(game: Game, user: User) {
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
   if (!entity) {
-    return sendPm(user.name, "You're not in this game. Join first (%join).");
+    return sendPm(user.name, MSG_NOT_IN_GAME);
   }
   removeEntity(game, entity);
   send(game.room, `**${entity.num} (${entity.name})** has left the game.`);
@@ -842,9 +849,9 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
 function handleCancel(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!entity.pendingAction) {
     return sendPm(user.name, "No action pending.");
@@ -869,7 +876,7 @@ function handleAdvanceTurn(game: Game, user: User) {
   const entity = getCurrentEntity(game);
   const phase = game.phase;
   if (!entity || phase !== "playing")
-    return sendPm(user.name, "No active turn.");
+    return sendPm(user.name, MSG_NO_ACTIVE_TURN);
 
   const guard = advanceTurnGuard(game, user, entity);
   if (guard) return sendPm(user.name, guard);
@@ -924,7 +931,7 @@ function advanceTurnGuard(game: Game, user: User, entity: Entity): string | null
   const isSelf = toId(entity.name) === toId(user.name);
 
   if (isHost) return null;
-  if (!isSelf) return "It's not your turn.";
+  if (!isSelf) return MSG_NOT_YOUR_TURN;
   if (!game.playersIdle) return "The host hasn't enabled this option";
   return null;
 }
@@ -1131,9 +1138,9 @@ function handlePremove(game: Game, user: User) {
 
   const entity = getCurrentEntity(game);
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, "You already moved this turn.");
@@ -1155,9 +1162,9 @@ function handlePremove(game: Game, user: User) {
 function handleDirChoice(game: Game, user: User, dir: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!dir) return sendPm(user.name, "Usage: %dir <direction>");
 
@@ -1174,9 +1181,9 @@ function handleDirChoice(game: Game, user: User, dir: string) {
 function handleTileChoice(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %picktile <tile>");
 
@@ -1194,9 +1201,9 @@ function handlePassMove(game: Game, user: User) {
 
   const entity = getCurrentEntity(game);
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, "You already moved this turn.");
@@ -1237,9 +1244,9 @@ function handlePathStep(game: Game, user: User, args: string) {
     entity = getCurrentEntity(game);
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (isStunned(entity)) {
     return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
@@ -1313,9 +1320,9 @@ function handleConfirmMove(game: Game, user: User, args: string) {
     entity = named;
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (isStunned(entity)) {
     return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
@@ -1390,9 +1397,9 @@ function handleCancelPath(game: Game, user: User, args: string) {
     entity = named;
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
 
   const key = movementKey(game, entity);
@@ -1414,7 +1421,7 @@ function handleViewReach(game: Game, user: User, args: string) {
     viewer = getCurrentEntity(game);
   }
 
-  if (!viewer) return sendPm(user.name, "No active turn.");
+  if (!viewer) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (
     toId(viewer.name) !== toId(user.name) &&
     toId(user.name) !== toId(game.host)
@@ -1453,9 +1460,9 @@ function handleDashMode(game: Game, user: User, args: string) {
     entity = named;
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, `${entity.num} already moved this turn.`);
