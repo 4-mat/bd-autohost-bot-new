@@ -11,7 +11,7 @@ import sys
 
 
 def parse(raw: str):
-    """Pair each complexity diagnostic with its file location.
+    """Parse oxlint complexity diagnostics into a sorted report.
 
     oxlint can emit complexity diagnostics in two layouts:
 

@@ -71,6 +71,7 @@ const GAME_COMMANDS = new Set([
   "endturn",
   "next",
   "back",
+  "undo",
   "r",
   "roll",
   "dice",
@@ -82,11 +83,17 @@ const GAME_COMMANDS = new Set([
   "premove",
   "passmove",
   "pass",
+  "pathstep",
+  "confirmmove",
+  "cancelpath",
+  "viewreach",
+  "dashmode",
+  "grid",
   "status",
   "regp",
   "log",
   "dir",
-  "tile",
+  "picktile",
 ]);
 
 /** Character/loot commands handled by the player module. */
@@ -156,12 +163,14 @@ export function handleCommand(
     handler(room, user, id, args, val, pm);
     return;
   }
+
   if (id === "h") return HANDLERS.help(room, user, id, args, val, pm);
   if (HOST_COMMANDS.has(id)) {
     hostCommand(room, user, id, args, val, pm);
     return;
   }
   if (GAME_COMMANDS.has(id)) {
+
     gameCommand(room, user, id, args, val, pm);
     return;
   }

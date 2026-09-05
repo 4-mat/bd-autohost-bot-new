@@ -5,6 +5,9 @@ import {
   normalizeMap,
   minDimFor,
   modeIdFor,
+  translateBlock,
+  pasteBlock,
+  sliceBlock,
 } from "../../mapeditor/mapcore.cjs";
 
 // The bot's volunteer .txt format: name/display/modes headers followed by a
@@ -13,14 +16,15 @@ import {
 const NTR_GRID = ["nsssn", "snnns", "snhns", "snnns", "nsssn"];
 const FFA_7 = Array.from({ length: 7 }, () => ".......");
 
-function mapTxt(opts: {
-  name?: string;
-  modes?: string;
-  rows?: string[];
-} = {}): string {
+function mapTxt(
+  opts: {
+    name?: string;
+    modes?: string;
+    rows?: string[];
+  } = {},
+): string {
   const name = opts.name ?? "test-map";
-  const modes =
-    opts.modes !== undefined ? `modes: ${opts.modes}\n` : "";
+  const modes = opts.modes !== undefined ? `modes: ${opts.modes}\n` : "";
   const rows = opts.rows ?? NTR_GRID;
   return `name: ${name}\ndisplay: Test Map\n${modes}${rows.join("\n")}\n`;
 }
@@ -44,16 +48,13 @@ describe("mapcore modes support", () => {
   });
 
   test("rejects a 5x5 map with mixed ntr+ffa (max-min rule)", () => {
-    expect(() =>
-      parseTxt(mapTxt({ modes: "ntr, ffa" }), "mix.txt"),
-    ).toThrow(/need 7-60/);
+    expect(() => parseTxt(mapTxt({ modes: "ntr, ffa" }), "mix.txt")).toThrow(
+      /need 7-60/,
+    );
   });
 
   test("parses a 7x7 ffa map", () => {
-    const map = parseTxt(
-      mapTxt({ modes: "ffa", rows: FFA_7 }),
-      "big.txt",
-    );
+    const map = parseTxt(mapTxt({ modes: "ffa", rows: FFA_7 }), "big.txt");
     expect(map.rows).toBe(7);
     expect(map.modes).toEqual(["ffa"]);
   });
@@ -65,22 +66,22 @@ describe("mapcore modes support", () => {
   });
 
   test("rejects an unknown mode in the header", () => {
-    expect(() =>
-      parseTxt(mapTxt({ modes: "banana" }), "bad.txt"),
-    ).toThrow(/unknown game mode/);
+    expect(() => parseTxt(mapTxt({ modes: "banana" }), "bad.txt")).toThrow(
+      /unknown game mode/,
+    );
   });
 
   test("rejects a missing name line", () => {
     const txt = "modes: ntr\n" + NTR_GRID.join("\n") + "\n";
-    expect(() => parseTxt(txt, "noname.txt")).toThrow(/missing a `name: <id>` line/);
+    expect(() => parseTxt(txt, "noname.txt")).toThrow(
+      /missing a `name: <id>` line/,
+    );
   });
 
   test("toTxt emits the modes line and round-trips the grid", () => {
     const map = parseTxt(mapTxt({ modes: "ntr" }), "example-ntr.txt");
     const out = toTxt(map);
-    expect(out.split("\n").some((l) => l.startsWith("modes: ntr"))).toBe(
-      true,
-    );
+    expect(out.split("\n").some((l) => l.startsWith("modes: ntr"))).toBe(true);
     // 'n' (normal) is canonically re-emitted as '.'; the grid round-trips.
     expect(out.trim().split("\n").pop()).toBe(".sss.");
   });
@@ -105,6 +106,46 @@ describe("mapcore modes support", () => {
       modes: ["ntr", "ffa", "2v2", "duel"],
     });
     expect(map.modes).toEqual(["ntr", "ffa", "pvp", "1v1"]);
+  });
+
+  test("translateBlock moves tiles and tokens together", () => {
+    const map = normalizeMap({
+      name: "x", rows: 7, cols: 7, tiles: tiles(7),
+      tokens: { P1: { row: 2, col: 2, color: "#abc" } },
+    });
+    // normalizeMap expands #abc -> #aabbcc.
+    translateBlock(map, { r0: 1, c0: 1, r1: 3, c1: 3 }, 1, 0);
+    expect(map.tokens.P1).toEqual({ row: 3, col: 2, color: "#aabbcc" });
+  });
+
+  test("translateBlock displaces a foreign token on the destination", () => {
+    const map = normalizeMap({
+      rows: 5, cols: 5, tiles: tiles(5),
+      tokens: {
+        P1: { row: 0, col: 0, color: "#a00" },
+        P2: { row: 1, col: 0, color: "#00a" },
+      },
+    });
+    // Move the 1x1 block holding P1 down 1: it lands on P2's cell.
+    translateBlock(map, { r0: 0, c0: 0, r1: 0, c1: 0 }, 1, 0);
+    expect(map.tokens.P1).toEqual({ row: 1, col: 0, color: "#aa0000" });
+    expect(map.tokens.P2).toBeUndefined(); // displaced
+  });
+
+  test("translateBlock returns null when moving out of bounds", () => {
+    const map = normalizeMap({ rows: 5, cols: 5, tiles: tiles(5) });
+    expect(translateBlock(map, { r0: 3, c0: 3, r1: 4, c1: 4 }, 1, 0)).toBeNull();
+  });
+
+  test("translateBlock leaves the map unchanged when out of bounds", () => {
+    const map = normalizeMap({
+      rows: 5, cols: 5,
+      tiles: tiles(5),
+      tokens: { P1: { row: 4, col: 4, color: "#abc" } },
+    });
+    const before = JSON.stringify(map);
+    expect(translateBlock(map, { r0: 4, c0: 4, r1: 4, c1: 4 }, 1, 0)).toBeNull();
+    expect(JSON.stringify(map)).toBe(before);
   });
 
   test("minDimFor uses per-mode minimums", () => {
@@ -169,5 +210,61 @@ describe("mapcore modes support", () => {
     expect(map.displayName).not.toMatch(/[\r\n]/);
     expect(map.displayName).toMatch(/^Line1 Line2/);
     expect(map.displayName.length).toBeLessThanOrEqual(60);
+  });
+});
+
+describe("pasteBlock", () => {
+  const makeMap = (rows = 5, cols = 5) => ({
+    rows,
+    cols,
+    tiles: Array.from({ length: rows }, () => Array(cols).fill("normal")),
+    tokens: {},
+  });
+
+  test("clamps negative r0/c0 to 0 without throwing", () => {
+    const map = makeMap();
+    // A valid 1x1 block; negative coords should be clamped to (0,0).
+    const block = { rows: 1, cols: 1, tiles: [["forest"]] };
+    expect(() => pasteBlock(map, block, -5, -10)).not.toThrow();
+    expect(() => pasteBlock(map, block, -0.5, -1.2)).not.toThrow();
+  });
+
+  test("clamps NaN r0/c0 to 0 without throwing", () => {
+    const map = makeMap();
+    const block = { rows: 1, cols: 1, tiles: [["water"]] };
+    expect(() => pasteBlock(map, block, NaN, undefined)).not.toThrow();
+    expect(() => pasteBlock(map, block, null, "bad")).not.toThrow();
+  });
+
+  test("returns null when destination is entirely out of bounds (positive side)", () => {
+    const map = makeMap(3, 3);
+    const block = { rows: 2, cols: 2, tiles: [["forest"], ["forest"]] };
+    expect(pasteBlock(map, block, 10, 10)).toBeNull();
+  });
+
+  test("clamps negative coords and pastes at (0,0)", () => {
+    // Negative r0/c0 clamps to 0 — the paste succeeds at the top-left
+    // rather than throwing. A 2x2 block on a 3x3 map fits at (0,0).
+    const map = makeMap(3, 3);
+    const block = { rows: 2, cols: 2, tiles: [["forest"], ["water"]] };
+    const result = pasteBlock(map, block, -100, -100)!;
+    expect(result).not.toBeNull();
+    expect(result.r0).toBe(0);
+    expect(result.c0).toBe(0);
+    expect(map.tiles[0][0]).toBe("forest");
+  });
+
+  test("pastes tiles and tokens correctly at a valid anchor", () => {
+    const map = makeMap(5, 5);
+    const block = {
+      rows: 2,
+      cols: 2,
+      tiles: [["forest"], ["water"]],
+      tokens: { P1: { row: 0, col: 0, color: "#f00" } },
+    };
+    pasteBlock(map, block, 1, 1);
+    expect(map.tiles[1][1]).toBe("forest");
+    expect(map.tiles[2][1]).toBe("water");
+    expect((map.tokens as any).P1).toEqual({ row: 1, col: 1, color: "#f00" });
   });
 });
