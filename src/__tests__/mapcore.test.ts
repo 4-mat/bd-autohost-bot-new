@@ -5,6 +5,7 @@ import {
   normalizeMap,
   minDimFor,
   modeIdFor,
+  translateBlock,
 } from "../../mapeditor/mapcore.cjs";
 
 // The bot's volunteer .txt format: name/display/modes headers followed by a
@@ -105,6 +106,46 @@ describe("mapcore modes support", () => {
       modes: ["ntr", "ffa", "2v2", "duel"],
     });
     expect(map.modes).toEqual(["ntr", "ffa", "pvp", "1v1"]);
+  });
+
+  test("translateBlock moves tiles and tokens together", () => {
+    const map = normalizeMap({
+      name: "x", rows: 7, cols: 7, tiles: tiles(7),
+      tokens: { P1: { row: 2, col: 2, color: "#abc" } },
+    });
+    // normalizeMap expands #abc -> #aabbcc.
+    translateBlock(map, { r0: 1, c0: 1, r1: 3, c1: 3 }, 1, 0);
+    expect(map.tokens.P1).toEqual({ row: 3, col: 2, color: "#aabbcc" });
+  });
+
+  test("translateBlock displaces a foreign token on the destination", () => {
+    const map = normalizeMap({
+      rows: 5, cols: 5, tiles: tiles(5),
+      tokens: {
+        P1: { row: 0, col: 0, color: "#a00" },
+        P2: { row: 1, col: 0, color: "#00a" },
+      },
+    });
+    // Move the 1x1 block holding P1 down 1: it lands on P2's cell.
+    translateBlock(map, { r0: 0, c0: 0, r1: 0, c1: 0 }, 1, 0);
+    expect(map.tokens.P1).toEqual({ row: 1, col: 0, color: "#aa0000" });
+    expect(map.tokens.P2).toBeUndefined(); // displaced
+  });
+
+  test("translateBlock returns null when moving out of bounds", () => {
+    const map = normalizeMap({ rows: 5, cols: 5, tiles: tiles(5) });
+    expect(translateBlock(map, { r0: 3, c0: 3, r1: 4, c1: 4 }, 1, 0)).toBeNull();
+  });
+
+  test("translateBlock leaves the map unchanged when out of bounds", () => {
+    const map = normalizeMap({
+      rows: 5, cols: 5,
+      tiles: tiles(5),
+      tokens: { P1: { row: 4, col: 4, color: "#abc" } },
+    });
+    const before = JSON.stringify(map);
+    expect(translateBlock(map, { r0: 4, c0: 4, r1: 4, c1: 4 }, 1, 0)).toBeNull();
+    expect(JSON.stringify(map)).toBe(before);
   });
 
   test("minDimFor uses per-mode minimums", () => {

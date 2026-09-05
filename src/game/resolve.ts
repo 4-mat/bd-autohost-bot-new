@@ -1017,10 +1017,15 @@ function* resolveSingleTarget(
 
   const userAccBonus = getStatBonus(user, "acc");
   const targetEva =
-    (game.version === "4.3"
+    game.version === "4.3"
       ? eva43(target, ability.damageType)
-      : getEffectiveStat(target, "eva")) +
-    terrainStatBonus(game, target, "eva", ability.damageType);
+      : getEffectiveStat(target, "eva") + terrainStatBonus(game, target, "eva", ability.damageType);
+  const evaLabel =
+    game.version === "4.3"
+      ? ability.damageType === "Physical"
+        ? "PE"
+        : "ME"
+      : "EVA";
   const {
     hit,
     roll: accRoll,
@@ -1028,7 +1033,7 @@ function* resolveSingleTarget(
   } = rollAccuracy(ability.mr, targetEva, userAccBonus);
 
   result.messages.push(
-    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
+    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + ${evaLabel} ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
   // --- Hit resolves first (damage to target first) ---
