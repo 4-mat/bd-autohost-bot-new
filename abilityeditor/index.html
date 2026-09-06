@@ -500,10 +500,8 @@
       <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
       <button id="btn-redo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)" disabled>↷ Redo</button>
       <button id="btn-bdref" title="Open the BD Lang reference (ability effect notation)">BD Lang</button>
-=
       <button id="btn-import" title="Import a saved .json export of the editor data">Import</button>
       <button id="btn-export" title="Download the current editor data (classes, weapons, abilities) as a .json file">Export</button>
->>>>>>> origin/master
       <button id="btn-revert" title="Discard all unsaved edits (reload data from src/data/index.ts)">Revert</button>
       <button id="btn-save" class="primary" title="Regenerate src/data/index.ts with the current edits (customs are excluded)">Save to Bot</button>
     </header>
@@ -1044,7 +1042,7 @@
 
     $("#btn-undo").addEventListener("click", undo);
     $("#btn-redo").addEventListener("click", redo);
-    $("#btn-bdref").addEventListener("click", openBdLangRef);
+    (.addEventListener("click", openBdLangRef);
     document.addEventListener("keydown", (e) => {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
