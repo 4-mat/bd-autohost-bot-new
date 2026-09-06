@@ -70,6 +70,7 @@ abilityeditor/
 | `/api/custom/remove` | POST   | remove a custom class/weapon                            |
 | `/api/regenerate`    | POST   | rewrite `src/data/index.ts` (minimal diff)              |
 | `/api/reset`         | POST   | reload data from `src/data/index.ts` (keeps customs)    |
+| `/api/replace`       | POST   | restore a full snapshot (undo/redo in server mode)      |
 
 Mutations are only accepted from a `localhost` origin matching the server port.
 
