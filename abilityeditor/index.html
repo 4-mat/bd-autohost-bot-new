@@ -497,13 +497,11 @@
       <div id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></div>
       <span class="spacer"></span>
       <span id="dirty-chip">● unsaved edits</span>
-      <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+<button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
       <button id="btn-redo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)" disabled>↷ Redo</button>
       <button id="btn-bdref" title="Open the BD Lang reference (ability effect notation)">BD Lang</button>
-=
       <button id="btn-import" title="Import a saved .json export of the editor data">Import</button>
       <button id="btn-export" title="Download the current editor data (classes, weapons, abilities) as a .json file">Export</button>
->>>>>>> origin/master
       <button id="btn-revert" title="Discard all unsaved edits (reload data from src/data/index.ts)">Revert</button>
       <button id="btn-save" class="primary" title="Regenerate src/data/index.ts with the current edits (customs are excluded)">Save to Bot</button>
     </header>
@@ -865,6 +863,30 @@
     function importData(raw) {
       const data = JSON.parse(raw);
       if (!data || typeof data !== "object") throw new Error("Not a valid JSON object.");
+<<<<<<< HEAD
+      const classes = Array.isArray(data.classes) ? data.classes : [];
+      const weapons = Array.isArray(data.weapons) ? data.weapons : [];
+      if (classes.length + weapons.length === 0)
+        throw new Error("No classes or weapons found in that file.");
+      // Accept both the editor's own format and a bare { classes, weapons }.
+      // Only mark an entry as custom if it's not already a built-in — otherwise a
+      // bare { classes, weapons } export would tag every loaded entry custom
+      // and 'Save to Bot' would silently drop them all.
+      const validClasses = classes.filter((c) => c && c.name);
+      const validWeapons = weapons.filter((w) => w && w.name);
+      const customClasses = Array.isArray(data.customClasses)
+        ? data.customClasses.map((s) => String(s))
+        : validClasses
+            .filter((c) => !state.data.classes.some((x) => x.name === c.name))
+            .map((c) => toId(c.name));
+      const customWeapons = Array.isArray(data.customWeapons)
+        ? data.customWeapons.map((s) => String(s))
+        : validWeapons
+            .filter((w) => !state.data.weapons.some((x) => x.name === w.name))
+            .map((w) => toId(w.name));
+      state.data = {
+        classes: JSON.parse(JSON.stringify(validClasses)),
+        weapons: JSON.parse(JSON.stringify(validWeapons)),
       // Filter invalid entries (missing a name) FIRST so the custom-id lists
       // below can never reference a dropped entry.
       const classes = Array.isArray(data.classes)
@@ -889,6 +911,7 @@
       state.data = {
         classes,
         weapons,
+>>>>>>> origin/master
         customClasses,
         customWeapons,
       };
