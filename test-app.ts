@@ -19,6 +19,11 @@ import {
   type Game,
 } from "./src/game/state.js";
 import { broadcastPages } from "./src/commands/game.js";
+import {
+  DARK_PASTEL_BACKGROUNDS,
+  backgroundForVersion,
+  type BackgroundRotationState,
+} from "./src/theme/background-rotation.js";
 
 loadGameData();
 loadGameData43();
@@ -30,7 +35,10 @@ loadGameData43();
 
 function snapshotHash(snap: ReturnType<typeof readEditorSnapshot>): string {
   return snap
-    ? createHash("sha256").update(JSON.stringify(snap)).digest("hex").slice(0, 16)
+    ? createHash("sha256")
+        .update(JSON.stringify(snap))
+        .digest("hex")
+        .slice(0, 16)
     : "";
 }
 
@@ -139,25 +147,37 @@ const userGui = new Map<
 >();
 
 const MAX_LOG = 100;
-const CHAT_LOG: Array<Record<string, string>> = [];
+// Entries carry a monotonic `seq` so clients can reconcile re-sent
+// history after a reconnect (dedupe by identity, not a one-shot flag).
+// The counter restarts at 0 on every server boot, so history payloads also
+// carry a per-run epoch; clients reset their seq watermark when it changes.
+const serverEpoch = Date.now();
+let chatSeq = 0;
+const CHAT_LOG: Array<Record<string, string | number>> = [];
 
 function broadcast(msg: string) {
+  let outbound = msg;
   try {
     const m = JSON.parse(msg);
     if (["chat", "action", "quote", "react"].includes(m.type)) {
-      CHAT_LOG.push(m);
+      const stamped = { ...m, seq: ++chatSeq };
+      CHAT_LOG.push(stamped);
       if (CHAT_LOG.length > MAX_LOG) CHAT_LOG.shift();
+      // Send the stamped payload so live frames also carry seq and the
+      // client advances lastChatSeq; otherwise reconnect history re-renders
+      // messages that were already shown live.
+      outbound = JSON.stringify(stamped);
     }
   } catch {}
   for (const client of browserClients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(msg);
+      client.send(outbound);
     }
   }
 }
 
 const BTN_STYLE =
-  "padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif";
+  "padding:2px 8px;margin:2px;background:var(--bg-3);color:var(--text);border:1px solid var(--border-strong);cursor:pointer;font-size:12px;font-family:Verdana,sans-serif";
 
 function findSession(username: string): Session | null {
   const id = toId(username);
@@ -207,8 +227,8 @@ function spectatorWidget(team: number): string {
     )
     .join(" ");
 
-  return `<div style="margin-top:8px;padding:8px;background:#16213e;border:1px solid #333;border-radius:4px">
-<b style="color:#00aaff">Spectator</b> <span style="color:#888">(cheering: ${teamLabel})</span><br>
+  return `<div style="margin-top:8px;padding:8px;background:var(--bg-2);border:1px solid var(--border);border-radius:4px">
+<b style="color:var(--accent)">Spectator</b> <span style="color:var(--text-dim)">(cheering: ${teamLabel})</span><br>
 ${teamBtns}<br>
 ${cheerTeamBtns} ${cheerPlayerBtns}<br>
 ${reactBtns}
@@ -221,9 +241,9 @@ function sendSpectatorGui(username: string) {
   const html =
     (saved?.spectator ||
       `
-<div style="color:#888;padding:40px;text-align:center">
+<div style="color:var(--text-dim);padding:40px;text-align:center">
   No GUI data yet.<br><br>
-  <span style="color:#00aaff">Quick start:</span><br>
+  <span style="color:var(--accent)">Quick start:</span><br>
   %host<br>
   %addp Player1, Bard, Crossbow<br>
   %addp Player2, Cleric, Longbow<br>
@@ -259,8 +279,8 @@ function sendToUser(username: string, msg: object) {
 function buildSigninPage(game: Game): string {
   const open = !!game.signupsOpen;
   const status = open
-    ? `<b style="color:#0f0">OPEN</b>`
-    : `<b style="color:#f66">CLOSED</b>`;
+    ? `<b style="color:var(--ok)">OPEN</b>`
+    : `<b style="color:var(--err)">CLOSED</b>`;
 
   const data = getVersionData(game.version);
   const classOpts = [...data.classes.values()]
@@ -286,13 +306,13 @@ function buildSigninPage(game: Game): string {
     )
     .join(", ");
 
-  return `<div style="padding:12px;background:#16213e;border:1px solid #333;border-radius:4px">
-<b style="color:#00aaff">Battle Sign-up (BD ${escHtml(game.version)})</b> <span style="color:#888">(signups: ${status})</span><br>
-<span style="color:#888">Signed in:</span> ${signedIn || `<span style="color:#888">none yet</span>`}<br><br>
+  return `<div style="padding:12px;background:var(--bg-2);border:1px solid var(--border);border-radius:4px">
+<b style="color:var(--accent)">Battle Sign-up (BD ${escHtml(game.version)})</b> <span style="color:var(--text-dim)">(signups: ${status})</span><br>
+<span style="color:var(--text-dim)">Signed in:</span> ${signedIn || `<span style="color:var(--text-dim)">none yet</span>`}<br><br>
 Class:<br>
-<select id="signin-class" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${classOpts}</select><br><br>
+<select id="signin-class" style="padding:4px;background:var(--bg-3);color:var(--text);border:1px solid var(--border);font-family:inherit;font-size:13px">${classOpts}</select><br><br>
 Weapon:<br>
-<select id="signin-weapon" style="padding:4px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:13px">${weaponOpts}</select><br><br>
+<select id="signin-weapon" style="padding:4px;background:var(--bg-3);color:var(--text);border:1px solid var(--border);font-family:inherit;font-size:13px">${weaponOpts}</select><br><br>
 ${joinBtn}
 </div>`;
 }
@@ -584,25 +604,28 @@ function ensureUser(name: string) {
   return uid;
 }
 
+const IS_RENDER = !!process.env.RENDER;
+const CLIENT_VERSION = process.env.RENDER_GIT_COMMIT ?? process.env.COMMIT_SHA ?? "development";
+const backgroundState = backgroundForVersion(CLIENT_VERSION, undefined);
+const CLIENT_BACKGROUND = DARK_PASTEL_BACKGROUNDS[backgroundState.index];
+const DEPLOYED_AT = new Date().toLocaleString("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 const ICON =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%230f3460'/%3E%3Ctext x='96' y='124' font-size='76' font-family='monospace' font-weight='bold' text-anchor='middle' fill='%2300aaff'%3EBD%3C/text%3E%3C/svg%3E";
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%232e2e38'/%3E%3Ctext x='96' y='124' font-size='76' font-family='monospace' font-weight='bold' text-anchor='middle' fill='%239db8d8'%3EBD%3C/text%3E%3C/svg%3E";
 
 const MANIFEST = JSON.stringify({
   name: "BD Autohost Test Client",
   short_name: "BD Autohost",
   start_url: "/",
   display: "standalone",
-  background_color: "#1a1a2e",
-  theme_color: "#0f3460",
+  background_color: CLIENT_BACKGROUND,
+  theme_color: CLIENT_BACKGROUND,
   icons: [
     { src: ICON, sizes: "192x192", type: "image/svg+xml", purpose: "any" },
   ],
-});
-
-const IS_RENDER = !!process.env.RENDER;
-const DEPLOYED_AT = new Date().toLocaleString("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
 });
 
 const server = http.createServer((req, res) => {
@@ -649,7 +672,9 @@ wss.on("connection", (ws) => {
     });
   }
 
-  ws.send(JSON.stringify({ type: "history", lines: CHAT_LOG.slice() }));
+  ws.send(
+    JSON.stringify({ type: "history", epoch: serverEpoch, lines: CHAT_LOG.slice() }),
+  );
   broadcast(
     JSON.stringify({
       type: "system",
@@ -694,9 +719,9 @@ wss.on("connection", (ws) => {
           const specHtml =
             savedSpec?.spectator ||
             `
-<div style="color:#888;padding:40px;text-align:center">
+<div style="color:var(--text-dim);padding:40px;text-align:center">
   No GUI data yet.<br><br>
-  <span style="color:#00aaff">Quick start:</span><br>
+  <span style="color:var(--accent)">Quick start:</span><br>
   %host<br>
   %addp Player1, Bard, Crossbow<br>
   %addp Player2, Cleric, Longbow<br>
@@ -1029,7 +1054,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f3460">
+<meta name="theme-color" content="${CLIENT_BACKGROUND}">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1037,70 +1062,107 @@ const HTML_PAGE = `<!DOCTYPE html>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="${ICON}">
 <title>BD Autohost - Test Client</title>
-<style>
+ <style>
+  /* ------------------------------------------------------------------ */
+  /* Dark + pastel theme (non-neon). Centralized color tokens so future  */
+  /* major updates can restyle the whole client by editing :root only.   */
+  /* ------------------------------------------------------------------ */
+  :root {
+    /* surfaces */
+    --bg: ${CLIENT_BACKGROUND};  /* deterministic per-deploy dark pastel */
+    --bg-2: #26262e;          /* panels, input rows, gui content  */
+    --bg-3: #2e2e38;          /* raised cards, tabs, indicator box*/
+    --panel: #2b2b34;         /* cards, toasts, login box         */
+    --border: #3b3b46;
+    --border-strong: #4a4a57;
+
+    /* text */
+    --text: #e9e6e1;          /* warm off-white                   */
+    --text-dim: #a9a5b3;      /* muted lavender-grey              */
+    --text-soft: #8b8798;
+
+    /* pastel accents - desaturated, NO neon */
+    --accent: #9db8d8;        /* dusty blue (links, focus, hover) */
+    --accent-strong: #82a2c8; /* filled buttons / active tabs     */
+    --on-accent: #15151a;     /* text on accent-strong            */
+    --action: #a3cdd6;        /* pastel sky (general action)      */
+
+    /* semantic - pastel */
+    --ok: #9cc9a0;            /* sage green (success)             */
+    --warn: #e8c39a;          /* peach (warning)                  */
+    --err: #e39a9a;           /* rose (error / danger)            */
+    --name: #e8d39a;          /* gold (player names)              */
+    --pm: #d6c98f;            /* gold (PMs)                       */
+    --quote: #a8cba8;         /* green (quotes)                   */
+    --react: #c5a8d8;         /* lavender (reactions)             */
+    --info: #c7cfe0;          /* blue-grey (system)               */
+    --violet: #b08ac4;        /* violet (action names)            */
+    --turn: #e8d39a;          /* gold (turn indicator)            */
+    --timer: #e0b98a;         /* orange (timer)                   */
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'DejaVu Sans Mono', 'Courier New', monospace; background: #1a1a2e; color: #e0e0e0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
-  #header { background: #0f3460; padding: 6px 12px; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 12px; font-size: 12px; }
-  #header .title { color: #00aaff; font-weight: bold; font-size: 14px; }
-  #header .room { color: #ffcc00; }
-  .sep { color: #333; }
+  body { font-family: 'DejaVu Sans Mono', 'Courier New', monospace; background: var(--bg); color: var(--text); height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+  #header { background: var(--bg-3); padding: 6px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; font-size: 12px; }
+  #header .title { color: var(--accent); font-weight: bold; font-size: 14px; }
+  #header .room { color: var(--name); }
+  .sep { color: var(--text-soft); }
   #container { flex: 1; display: flex; overflow: hidden; }
   #chat-panel { width: 420px; min-width: 250px; min-height: 0; display: flex; flex-direction: column; }
-  #resize-handle { width: 4px; background: #333; cursor: col-resize; flex-shrink: 0; }
-  #resize-handle:hover { background: #00aaff; }
+  #resize-handle { width: 4px; background: var(--border); cursor: col-resize; flex-shrink: 0; }
+  #resize-handle:hover { background: var(--accent); }
   #gui-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  #gui-header { background: #16213e; padding: 4px 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-  #gui-header span { color: #8888aa; font-size: 11px; }
+  #gui-header { background: var(--bg-2); padding: 4px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  #gui-header span { color: var(--text-dim); font-size: 11px; }
   #gui-tabs { display: flex; gap: 4px; }
   #gui-pinned { display: flex; align-items: center; }
-  .gui-tab { padding: 2px 10px; background: #0f3460; border: 1px solid #333; border-radius: 3px; cursor: pointer; font-size: 10px; color: #8888aa; font-family: inherit; }
-  .gui-tab.active { background: #00aaff; color: #fff; border-color: #00aaff; }
-  #gui-content { flex: 1; overflow: auto; padding: 8px; background: #1a1a2e; }
+  .gui-tab { padding: 2px 10px; background: var(--bg-3); border: 1px solid var(--border); border-radius: 3px; cursor: pointer; font-size: 10px; color: var(--text-dim); font-family: inherit; }
+  .gui-tab.active { background: var(--accent-strong); color: var(--on-accent); border-color: var(--accent-strong); }
+  #gui-content { flex: 1; overflow: auto; padding: 8px; background: var(--bg); }
   #chat-messages { flex: 1; overflow-y: auto; padding: 8px; font-size: 12px; line-height: 1.6; }
-  #chat-input-area { padding: 6px 8px; background: #16213e; border-top: 1px solid #333; display: flex; gap: 6px; }
-  #chat-input { flex: 1; background: #0f3460; border: 1px solid #333; color: #e0e0e0; padding: 5px 8px; font-family: inherit; font-size: 12px; border-radius: 3px; outline: none; }
-  #chat-input:focus { border-color: #00aaff; }
-  #send-btn { background: #00aaff; color: #fff; border: none; padding: 5px 14px; font-family: inherit; font-size: 12px; border-radius: 3px; cursor: pointer; }
-  #send-btn:hover { background: #0088cc; }
-  .msg-system { color: #8888aa; font-style: italic; }
-  .msg-divider { border-top: 1px solid #555; margin: 6px 0; }
-  .msg-chat { color: #e0e0e0; }
-  .msg-chat .name { color: #ffcc00; font-weight: bold; }
-  .msg-pm { color: #cccc00; }
+  #chat-input-area { padding: 6px 8px; background: var(--bg-2); border-top: 1px solid var(--border); display: flex; gap: 6px; }
+  #chat-input { flex: 1; background: var(--bg-3); border: 1px solid var(--border); color: var(--text); padding: 5px 8px; font-family: inherit; font-size: 12px; border-radius: 3px; outline: none; }
+  #chat-input:focus { border-color: var(--accent); }
+  #send-btn { background: var(--accent-strong); color: var(--on-accent); border: none; padding: 5px 14px; font-family: inherit; font-size: 12px; border-radius: 3px; cursor: pointer; }
+  #send-btn:hover { background: var(--accent); }
+  .msg-system { color: var(--text-dim); font-style: italic; }
+  .msg-divider { border-top: 1px solid var(--border-strong); margin: 6px 0; }
+  .msg-chat { color: var(--text); }
+  .msg-chat .name { color: var(--name); font-weight: bold; }
+  .msg-pm { color: var(--pm); }
   .msg-action { font-style: italic; }
-  .msg-action .name { color: #9635d7; font-weight: bold; }
-  .msg-action .time { color: #666666; font-style: normal; font-size: 11px; }
-  .msg-quote { color: #00cc00; border-left: 3px solid #00cc00; padding-left: 6px; }
+  .msg-action .name { color: var(--violet); font-weight: bold; }
+  .msg-action .time { color: var(--text-soft); font-style: normal; font-size: 11px; }
+  .msg-quote { color: var(--quote); border-left: 3px solid var(--quote); padding-left: 6px; }
   .msg-quote .name { font-weight: bold; }
-  .msg-react { color: #cc66ff; }
-  #turn-indicator { display:none; color:#00aaff; font-size:11px; font-weight:bold; background:#0f3460; border:1px solid #333; border-radius:3px; padding:2px 8px; }
-  #turn-indicator.yours { color:#ffcc00; border-color:#ffcc00; animation:tp 1s ease infinite; }
-  #timer-indicator { display:none; color:#ffaa33; font-size:11px; font-weight:bold; background:#16213e; border:1px solid #666; border-radius:3px; padding:2px 8px; }
-  #timer-indicator.warn { color:#ff0000; border-color:#ff0000; animation:tp 1s ease infinite; }
+  .msg-react { color: var(--react); }
+  #turn-indicator { display:none; color:var(--accent); font-size:11px; font-weight:bold; background:var(--bg-3); border:1px solid var(--border); border-radius:3px; padding:2px 8px; }
+  #turn-indicator.yours { color:var(--turn); border-color:var(--turn); animation:tp 1s ease infinite; }
+  #timer-indicator { display:none; color:var(--timer); font-size:11px; font-weight:bold; background:var(--bg-2); border:1px solid var(--border-strong); border-radius:3px; padding:2px 8px; }
+  #timer-indicator.warn { color:var(--err); border-color:var(--err); animation:tp 1s ease infinite; }
   @keyframes tp { 0%,100% { opacity:1 } 50% { opacity:.4 } }
   #quick-actions { display:none; gap:6px; padding:6px 8px 0; flex-wrap:wrap; }
-  .qbtn { background:#0f3460; border:1px solid #333; color:#00aaff; padding:8px 16px; font-size:14px; border-radius:6px; font-family:inherit; cursor:pointer; }
-  .qbtn:active { background:#00aaff; color:#fff; }
+  .qbtn { background:var(--bg-3); border:1px solid var(--border); color:var(--accent); padding:8px 16px; font-size:14px; border-radius:6px; font-family:inherit; cursor:pointer; }
+  .qbtn:active { background:var(--accent-strong); color:var(--on-accent); }
   #header-tabs { display:none; align-items:center; gap:6px; }
   #mobile-tabs { display:none; gap:4px; }
-  .mtab { display:none; padding:6px 18px; background:#0f3460; border:1px solid #333; border-radius:4px; cursor:pointer; font-size:12px; color:#8888aa; font-family:inherit; }
-  .mtab.on { background:#00aaff; color:#fff; border-color:#00aaff; }
-  .chat-badge { display:none; background:#cc0000; color:#fff; border-radius:9px; padding:1px 7px; font-size:13px; font-weight:bold; margin-left:6px; }
+  .mtab { display:none; padding:6px 18px; background:var(--bg-3); border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:12px; color:var(--text-dim); font-family:inherit; }
+  .mtab.on { background:var(--accent-strong); color:var(--on-accent); border-color:var(--accent-strong); }
+  .chat-badge { display:none; background:var(--err); color:var(--on-accent); border-radius:9px; padding:1px 7px; font-size:13px; font-weight:bold; margin-left:6px; }
   .chat-badge.show { display:inline-block; }
   .toast-wrap { position:fixed; bottom:70px; left:0; right:0; padding:8px; pointer-events:none; z-index:9999; }
-  .toast-msg { background:rgba(0,0,0,.88); color:#fff; padding:10px 14px; border-radius:8px; margin:4px 8px; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,.4); animation:ti .3s ease,to .3s ease 3.7s forwards; }
-  .toast-turn { border:2px solid #ffcc00; background:rgba(0,40,20,.94); font-size:16px; font-weight:bold; text-align:center; }
+  .toast-msg { background:rgba(46,46,56,.96); color:var(--text); padding:10px 14px; border-radius:8px; margin:4px 8px; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,.4); animation:ti .3s ease,to .3s ease 3.7s forwards; border:1px solid var(--border); }
+  .toast-turn { border:2px solid var(--turn); background:rgba(46,46,56,.98); font-size:16px; font-weight:bold; text-align:center; }
   @keyframes ti{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
   @keyframes to{from{opacity:1}to{opacity:0;transform:translateY(20px)}}
   #login-overlay { position:fixed; inset:0; background:rgba(0,0,0,.75); display:none; align-items:center; justify-content:center; z-index:10000; }
   #login-overlay.show { display:flex; }
-  #login-card { background:#16213e; border:1px solid #333; border-radius:8px; padding:24px; text-align:center; min-width:280px; max-width:90vw; }
-  #login-card h2 { color:#00aaff; font-size:16px; margin-bottom:16px; font-weight:bold; }
-  #login-err { color:#ff6b6b; font-size:12px; min-height:16px; margin-bottom:8px; }
-  #login-input { width:100%; background:#0f3460; border:1px solid #333; color:#e0e0e0; padding:10px 12px; font-family:inherit; font-size:14px; border-radius:3px; outline:none; margin-bottom:12px; }
-  #login-input:focus { border-color:#00aaff; }
-  #login-btn { width:100%; background:#00aaff; color:#fff; border:none; padding:10px 14px; font-family:inherit; font-size:14px; border-radius:3px; cursor:pointer; }
-  #login-btn:hover { background:#0088cc; }
+  #login-card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:24px; text-align:center; min-width:280px; max-width:90vw; }
+  #login-card h2 { color:var(--accent); font-size:16px; margin-bottom:16px; font-weight:bold; }
+  #login-err { color:var(--err); font-size:12px; min-height:16px; margin-bottom:8px; }
+  #login-input { width:100%; background:var(--bg-3); border:1px solid var(--border); color:var(--text); padding:10px 12px; font-family:inherit; font-size:14px; border-radius:3px; outline:none; margin-bottom:12px; }
+  #login-input:focus { border-color:var(--accent); }
+  #login-btn { width:100%; background:var(--accent-strong); color:var(--on-accent); border:none; padding:10px 14px; font-family:inherit; font-size:14px; border-radius:3px; cursor:pointer; }
+  #login-btn:hover { background:var(--accent); }
   @media (max-width:600px) {
     #header { padding:10px 12px; font-size:16px; flex-wrap:wrap; gap:8px; }
     #header .title { font-size:18px; }
@@ -1136,8 +1198,8 @@ const HTML_PAGE = `<!DOCTYPE html>
   <span class="sep">|</span>
   <span class="room">#battledome</span>
   <span class="sep">|</span>
-  <span style="color:#8888aa" id="current-user">HostUser</span>
-  ${IS_RENDER ? `<span style="color:#8888aa;font-size:10px" title="Deployed at">Last Updated: ${DEPLOYED_AT} EST</span>` : ""}
+  <span style="color:var(--text-dim)" id="current-user">HostUser</span>
+  ${IS_RENDER ? `<span style="color:var(--text-dim);font-size:10px" title="Deployed at">Last Updated: ${DEPLOYED_AT} EST</span>` : ""}
   <div id="header-tabs"></div>
   <div id="mobile-tabs">
     <button class="mtab" data-view="game">Game</button>
@@ -1146,7 +1208,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   <span style="flex:1"></span>
   <span id="turn-indicator"></span>
   <span id="timer-indicator"></span>
-  <span style="color:#8888aa;font-size:10px" id="status">connecting...</span>
+  <span style="color:var(--text-dim);font-size:10px" id="status">connecting...</span>
 </div>
 <div id="container">
   <div id="chat-panel">
@@ -1188,9 +1250,9 @@ const HTML_PAGE = `<!DOCTYPE html>
       <div id="gui-tabs"></div>
     </div>
     <div id="gui-content">
-      <div style="color:#8888aa;padding:40px;text-align:center">
+      <div style="color:var(--text-dim);padding:40px;text-align:center">
         No GUI data yet.<br><br>
-        <span style="color:#00aaff">Quick start:</span><br>
+        <span style="color:var(--accent)">Quick start:</span><br>
         %host<br>
         %addp Player1, Bard, Crossbow<br>
         %addp Player2, Cleric, Longbow<br>
@@ -1238,19 +1300,19 @@ const container = document.getElementById('container');
 
 function renderPlayerList() {
   const rows = connectedPlayers.map(p =>
-    '<div style="padding:3px 0">' + p.name + ' <span style="color:#888">(' + p.role + ')</span></div>'
+    '<div style="padding:3px 0">' + p.name + ' <span style="color:var(--text-dim)">(' + p.role + ')</span></div>'
   ).join('');
-  guiPages.players = '<div style="padding:10px"><h3 style="color:#00aaff">Connected users</h3>' +
-    (rows || '<div style="color:#888">No players connected.</div>') + '</div>';
+  guiPages.players = '<div style="padding:10px"><h3 style="color:var(--accent)">Connected users</h3>' +
+    (rows || '<div style="color:var(--text-dim)">No players connected.</div>') + '</div>';
   if (activeTab === "players") guiContent.innerHTML = guiPages.players;
 }
 
 function renderTeamChat() {
   const lines = teamChatLines.map(l =>
-    '<div style="padding:3px 0"><span style="color:#00cc00">[TEAM]</span> ' + l + '</div>'
+    '<div style="padding:3px 0"><span style="color:var(--quote)">[TEAM]</span> ' + l + '</div>'
   ).join('');
-  guiPages.teamchat = '<div style="padding:10px"><h3 style="color:#00aaff">Team Chat</h3>' +
-    (lines || '<div style="color:#888">No team messages yet.</div>') + '</div>';
+  guiPages.teamchat = '<div style="padding:10px"><h3 style="color:var(--accent)">Team Chat</h3>' +
+    (lines || '<div style="color:var(--text-dim)">No team messages yet.</div>') + '</div>';
   if (activeTab === "teamchat") guiContent.innerHTML = guiPages.teamchat;
 }
 
@@ -1296,6 +1358,45 @@ function showToast(text, tone) {
   setTimeout(() => t.remove(), 4000);
 }
 
+let audioCtx = null;
+
+function unlockAudio() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      return;
+    }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+}
+// Listeners stay attached for the whole session: if the context gets suspended
+// again (tab backgrounding, system sleep, audio device change), the next
+// gesture resumes it so turn beeps never go permanently silent.
+window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('keydown', unlockAudio);
+
+function beep() {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  try {
+    const t = audioCtx.currentTime;
+    [660, 880].forEach((f, i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.type = 'sine';
+      o.frequency.value = f;
+      const s = t + i * 0.18;
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(0.25, s + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.15);
+      o.start(s);
+      o.stop(s + 0.18);
+    });
+  } catch (e) {}
+}
+
 function handleTurn(msg) {
   const e = msg.entity;
   const el = document.getElementById('turn-indicator');
@@ -1311,11 +1412,12 @@ function handleTurn(msg) {
     return;
   }
   lastTurn = key;
-  if (msg.yours && isMobile()) {
-    showToast('Your turn: ' + label, true);
-    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
-  }
   if (msg.yours) {
+    beep();
+    if (isMobile()) {
+      showToast('Your turn: ' + label, true);
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    }
     addLine('action', tabLink('player', 'Open your tab'), 'Your turn');
   }
 }
@@ -1357,13 +1459,13 @@ function addLine(type, raw, name) {
     div.className = 'msg-action';
     div.innerHTML = timeTag + ' \u2022 <span class="name">' + (name || '') + '</span> ' + raw;
   }
-  else if (type === 'quote') { div.className = 'msg-quote'; div.innerHTML = timeTag + raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:#00cc00">$1</b>'); }
+  else if (type === 'quote') { div.className = 'msg-quote'; div.innerHTML = timeTag + raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:var(--quote)">$1</b>'); }
   else if (type === 'pm') { div.className = 'msg-pm'; div.textContent = timeText + raw; }
   else if (type === 'react') { div.className = 'msg-react'; div.textContent = timeText + '\u2606 ' + raw; }
   else if (type === 'gui') { return; }
   else {
     div.className = 'msg-chat';
-    div.innerHTML = timeTag + raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:#ffcc00">$1</b>');
+    div.innerHTML = timeTag + raw.replace(/\\*\\*(.+?)\\*\\*/g, '<b style="color:var(--name)">$1</b>');
   }
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1372,7 +1474,7 @@ function addLine(type, raw, name) {
 let switchToTab = null;
 let lastSignupsOpen = false;
 // Clickable chat link that jumps to a GUI tab (see the chatMessages listener).
-const tabLink = (tab, label) => '<a href="#" data-tab="' + tab + '" style="color:#00aaff;text-decoration:underline;cursor:pointer">' + label + '</a>';
+const tabLink = (tab, label) => '<a href="#" data-tab="' + tab + '" style="color:var(--accent);text-decoration:underline;cursor:pointer">' + label + '</a>';
 // The [[SIGNUP]] token is only produced by the %open room message (a chat/quote
 // line); other message types render via textContent and would show it raw.
 const withSignupLink = (s) => String(s).split('[[SIGNUP]]').join(tabLink('signin', 'Sign Up Here'));
@@ -1436,7 +1538,7 @@ function createTabs(tabs) {
     document.querySelectorAll(".gui-tab").forEach(t => t.classList.remove("active"));
     document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
     activeTab = tab;
-    guiContent.innerHTML = guiPages[tab] || '<div style="color:#888;padding:40px;text-align:center">No GUI yet.</div>';
+guiContent.innerHTML = guiPages[tab] || '<div style="color:var(--text-dim);padding:40px;text-align:center">No GUI yet.</div>';
     if (tab === 'signin') restoreSigninSelects();
     if (isMobile() && mobileView === 'chat' && fromUser) setView('game');
   }
@@ -1480,6 +1582,14 @@ function createTabs(tabs) {
 let ws;
 const nickKey = 'bdUser';
 let nick = '';
+// Highest chat 'seq' already rendered. The server re-sends the full
+// CHAT_LOG on every (re)connect; entries carry a monotonic seq so we can
+// render only the ones we haven't seen — no duplicates on reconnect, and
+// messages sent during a disconnect still come through.
+let lastChatSeq = 0;
+// Server-run identifier from the history payload; when it changes the
+// chatSeq counter restarted, so the stale seq watermark must be dropped.
+let lastServerEpoch: number | null = null;
 
 function loadNick() {
   try { return localStorage.getItem(nickKey) || ''; } catch (e) { return ''; }
@@ -1518,7 +1628,7 @@ function connect() {
   ws = new WebSocket(proto + location.host);
   ws.onopen = () => {
     statusEl.textContent = 'connected';
-    statusEl.style.color = '#00cc00';
+    statusEl.style.color = 'var(--ok)';
     const saved = loadNick();
     if (saved) loginInput.value = saved;
     loginErr.textContent = '';
@@ -1527,7 +1637,7 @@ function connect() {
   };
   ws.onclose = () => {
     statusEl.textContent = 'disconnected';
-    statusEl.style.color = '#cc0000';
+    statusEl.style.color = 'var(--err)';
     addLine('system', 'Disconnected. Reconnecting...');
     setTimeout(connect, 2000);
   };
@@ -1535,8 +1645,19 @@ function connect() {
   const msg = JSON.parse(e.data);
 
   if (msg.type === 'history') {
-    if (msg.lines.length > 0) {
-      msg.lines.forEach((line) => {
+    // A new server run restarts chatSeq at 0 while the browser keeps its
+    // own lastChatSeq, which would filter out the fresh log. Drop the old
+    // watermark when the server's epoch changes.
+    if (typeof msg.epoch === 'number' && msg.epoch !== lastServerEpoch) {
+      lastServerEpoch = msg.epoch;
+      lastChatSeq = 0;
+    }
+    // Render only entries we haven't seen: seq is monotonic on the server,
+    // so filtering by the last rendered seq prevents reconnect duplicates
+    // while still surfacing messages that arrived while disconnected.
+    const fresh = (msg.lines || []).filter((line) => (line.seq || 0) > lastChatSeq);
+    if (fresh.length > 0) {
+      fresh.forEach((line) => {
         if (line.type === 'chat' || line.type === 'quote') addLine(line.type, withSignupLink(line.text));
         else if (line.type === 'action') addLine('action', line.text, line.name);
         else if (line.type === 'react') addLine('react', line.user + ' ' + line.emote);
@@ -1544,6 +1665,7 @@ function connect() {
         else if (line.type === 'leave') addLine('system', line.user + ' left.');
       });
       addLine('divider', '');
+      lastChatSeq = fresh.reduce((m, l) => Math.max(m, l.seq || 0), lastChatSeq);
     }
     return;
   }
@@ -1577,6 +1699,7 @@ function connect() {
     } else if (msg.type === 'chat' || msg.type === 'quote') {
       const text = withSignupLink(msg.text);
       addLine(msg.type, text);
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
       if (isMobile() && mobileView === 'game') {
         showToast(text);
         unread++;
@@ -1590,6 +1713,7 @@ function connect() {
       handleTurn(msg);
     } else if (msg.type === 'action') {
       addLine('action', msg.text, msg.name);
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
     } else if (msg.type === 'pm') {
       addLine('pm', msg.text);
     } else if (msg.type === 'playerlist') {
@@ -1601,6 +1725,7 @@ function connect() {
       addLine('system', '[TEAM] ' + msg.text);
       renderTeamChat();
     } else if (msg.type === 'react') {
+      if (typeof msg.seq === 'number') lastChatSeq = Math.max(lastChatSeq, msg.seq);
       addLine('react', msg.user + ' ' + msg.emote);
     } else {
       addLine('system', msg.text);
