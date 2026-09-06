@@ -71,7 +71,6 @@ const GAME_COMMANDS = new Set([
   "endturn",
   "next",
   "back",
-  "undo",
   "r",
   "roll",
   "dice",
@@ -88,12 +87,11 @@ const GAME_COMMANDS = new Set([
   "cancelpath",
   "viewreach",
   "dashmode",
-  "grid",
   "status",
   "regp",
   "log",
   "dir",
-  "picktile",
+  "tile",
 ]);
 
 /** Character/loot commands handled by the player module. */
@@ -170,7 +168,6 @@ export function handleCommand(
     return;
   }
   if (GAME_COMMANDS.has(id)) {
-
     gameCommand(room, user, id, args, val, pm);
     return;
   }
