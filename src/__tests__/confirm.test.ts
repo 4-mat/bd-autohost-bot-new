@@ -624,6 +624,73 @@ describe("choose and target prompts", () => {
     expect(target.curhp).toBeLessThan(100);
   });
 
+  it("blocks a player from approving an obstruction replacement", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game = makeGame({ entities: [caster] });
+    game.map[2][3] = Terrain.Stone;
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Whittle", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.pendingPromptKind).toBe("tile");
+
+    gameCommand(room, alice, "tile", "c,4", "");
+    expect(caster.pendingPromptKind).toBe("selection");
+    expect(caster.pendingPrompt?.confirmObstruction).toBe(true);
+
+    // A player answering is refused; the confirmation stays pending.
+    gameCommand(room, alice, "choose", "yes", "");
+    expect(caster.pendingPromptKind).toBe("selection");
+    expect(game.map[2][3]).toBe(Terrain.Stone);
+  });
+
+  it("lets the host approve an obstruction replacement", () => {
+    const caster = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [2, 2],
+      team: 0,
+    });
+    const whittle = makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+    caster.abilities = [whittle];
+    const game = makeGame({ entities: [caster] });
+    game.map[2][3] = Terrain.Stone;
+    games.set(game.id, game);
+
+    gameCommand(room, alice, "use", "Whittle", "");
+    gameCommand(room, alice, "confirm", "", "");
+    expect(caster.pendingPromptKind).toBe("tile");
+
+    gameCommand(room, alice, "tile", "c,4", "");
+    expect(caster.pendingPromptKind).toBe("selection");
+
+    gameCommand(room, host, "choose", "yes", "");
+    expect(caster.pendingAction).toBeNull();
+    expect(caster.pendingPromptKind).toBeUndefined();
+    expect(game.map[2][3]).toBe(Terrain.Normal);
+  });
+
   it("responds to a target prompt with %target", () => {
     const caster = makeEntity({
       num: "P1",

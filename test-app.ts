@@ -1291,6 +1291,8 @@ let connectedPlayers = [];
 let teamChatLines = [];
 let unread = 0;
 let lastTurn = '';
+let signinClass = '';
+let signinWeapon = '';
 let timerEndAt = null;
 let timerEntity = null;
 const timerEl = document.getElementById('timer-indicator');
@@ -1477,6 +1479,20 @@ const tabLink = (tab, label) => '<a href="#" data-tab="' + tab + '" style="color
 // line); other message types render via textContent and would show it raw.
 const withSignupLink = (s) => String(s).split('[[SIGNUP]]').join(tabLink('signin', 'Sign Up Here'));
 
+function restoreSigninSelects() {
+  const cls = document.getElementById('signin-class');
+  const wpn = document.getElementById('signin-weapon');
+  if (cls && signinClass && Array.prototype.some.call(cls.options, o => o.value === signinClass)) cls.value = signinClass;
+  if (wpn && signinWeapon && Array.prototype.some.call(wpn.options, o => o.value === signinWeapon)) wpn.value = signinWeapon;
+}
+
+guiContent.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!el || !el.id) return;
+  if (el.id === 'signin-class') signinClass = el.value;
+  if (el.id === 'signin-weapon') signinWeapon = el.value;
+});
+
 guiContent.addEventListener('click', (e) => {
   const join = e.target.closest('button[name="join"]');
   if (join) {
@@ -1522,7 +1538,8 @@ function createTabs(tabs) {
     document.querySelectorAll(".gui-tab").forEach(t => t.classList.remove("active"));
     document.querySelectorAll('.gui-tab[data-role="' + tab + '"]').forEach(t => t.classList.add("active"));
     activeTab = tab;
-    guiContent.innerHTML = guiPages[tab] || '<div style="color:var(--text-dim);padding:40px;text-align:center">No GUI yet.</div>';
+guiContent.innerHTML = guiPages[tab] || '<div style="color:var(--text-dim);padding:40px;text-align:center">No GUI yet.</div>';
+    if (tab === 'signin') restoreSigninSelects();
     if (isMobile() && mobileView === 'chat' && fromUser) setView('game');
   }
     switchToTab = activateTab;
@@ -1666,8 +1683,12 @@ function connect() {
     guiPages[msg.role] = msg.html;
     if (activeTab === msg.role) {
       guiContent.innerHTML = msg.html;
+      if (msg.role === 'signin') restoreSigninSelects();
     }
     } else if (msg.type === 'nick') {
+      // Account switch: don't carry the previous account's signin picks.
+      signinClass = '';
+      signinWeapon = '';
       currentNick = msg.user;
       if (userEl) userEl.textContent = msg.user;
       saveNick(msg.user);

@@ -276,11 +276,13 @@ export function placeTerrain(
   map: number[][],
   pos: [number, number],
   terrain: number,
-): void {
+): boolean {
   const [r, c] = pos;
   if (r >= 0 && r < map.length && c >= 0 && c < map[0].length) {
     map[r][c] = terrain;
+    return true;
   }
+  return false;
 }
 
 export function entityOnTile(
