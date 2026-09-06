@@ -33,4 +33,18 @@ export const volunteerMaps: MapDef[] = [
       [0, 1, 1, 1, 0]
     ],
   },
+  {
+    name: "sprint",
+    displayName: "Sprint",
+    modes: ["ntr"],
+    rows: 5,
+    cols: 5,
+    grid: [
+      [0, 0, 8, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 2, 12, 2, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 8, 0, 0]
+    ],
+  },
 ];
