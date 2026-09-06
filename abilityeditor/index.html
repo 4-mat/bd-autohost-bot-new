@@ -441,6 +441,39 @@
         gap: 6px;
         margin-top: 8px;
       }
+      .modal.bdref {
+        width: 640px;
+        max-width: 94vw;
+        max-height: 86vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .modal.bdref .bdref-body {
+        overflow-y: auto;
+        padding-right: 4px;
+        margin-top: 6px;
+      }
+      .modal.bdref .bdref-body .bdsec {
+        margin-bottom: 10px;
+      }
+      .modal.bdref .bdref-body .bdsec-title {
+        font-weight: 700;
+        font-size: 12px;
+        color: var(--accent-2);
+        margin-bottom: 3px;
+      }
+      .modal.bdref pre {
+        background: #f2f3f5;
+        border: 1px solid var(--border-soft);
+        border-radius: 4px;
+        padding: 7px 9px;
+        font-family: Consolas, Menlo, monospace;
+        font-size: 11px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+      }
       @media (max-width: 760px) {
         main {
           flex-direction: column;
@@ -464,6 +497,13 @@
       <div id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></div>
       <span class="spacer"></span>
       <span id="dirty-chip">● unsaved edits</span>
+      <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+      <button id="btn-redo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)" disabled>↷ Redo</button>
+      <button id="btn-bdref" title="Open the BD Lang reference (ability effect notation)">BD Lang</button>
+=
+      <button id="btn-import" title="Import a saved .json export of the editor data">Import</button>
+      <button id="btn-export" title="Download the current editor data (classes, weapons, abilities) as a .json file">Export</button>
+>>>>>>> origin/master
       <button id="btn-revert" title="Discard all unsaved edits (reload data from src/data/index.ts)">Revert</button>
       <button id="btn-save" class="primary" title="Regenerate src/data/index.ts with the current edits (customs are excluded)">Save to Bot</button>
     </header>
@@ -472,7 +512,6 @@
         <div id="tabs">
           <button data-kind="class" class="active">Classes</button>
           <button data-kind="weapon">Weapons</button>
-          <button data-kind="item">Items (beta)</button>
         </div>
         <input id="search" type="text" placeholder="Search…" spellcheck="false" />
         <div id="item-list"></div>
@@ -502,9 +541,11 @@
       kind: "class",
       selected: null,
       filter: "",
-      data: { classes: [], weapons: [], customs: [] },
+      data: { classes: [], weapons: [], customClasses: [], customWeapons: [] },
       pending: false,
       dirty: false,
+      undoStack: [],
+      redoStack: [],
     };
 
     // ---- public demo (static) mode ----
@@ -521,16 +562,14 @@
     const STATS = ["hp", "atk", "mag", "pd", "md", "eva", "mp"];
 
     function list() {
-      return state.data[
-        state.kind === "class"
-          ? "classes"
-          : state.kind === "weapon"
-            ? "weapons"
-            : "items"
-      ];
+      return state.data[state.kind === "class" ? "classes" : "weapons"];
+    }
+    function customListFor(kind) {
+      return kind === "class" ? state.data.customClasses : state.data.customWeapons;
     }
     function isCustomName(name) {
-      return state.data.customs.includes(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
+      const list = customListFor(state.kind);
+      return list.includes(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
     }
     function getItem(name) {
       return list().find((x) => x.name === name) || null;
@@ -569,8 +608,8 @@
       const data = {
         classes: (base.classes || []).map((c) => JSON.parse(JSON.stringify(c))),
         weapons: (base.weapons || []).map((w) => JSON.parse(JSON.stringify(w))),
-        items: (base.items || []).map((c) => JSON.parse(JSON.stringify(c))),
-        customs: [],
+        customClasses: [],
+        customWeapons: [],
       };
       try {
         const saved = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
@@ -580,9 +619,13 @@
           // (e.g. the demo was rebuilt and it became a real class).
           if (c.kind === "class" && data.classes.some((x) => x.name === c.entry.name)) continue;
           if (c.kind === "weapon" && data.weapons.some((x) => x.name === c.entry.name)) continue;
-          if (c.kind === "class") data.classes.push(c.entry);
-          else if (c.kind === "weapon") data.weapons.push(c.entry);
-          data.customs.push(toId(c.entry.name));
+          if (c.kind === "class") {
+            data.classes.push(c.entry);
+            data.customClasses.push(toId(c.entry.name));
+          } else if (c.kind === "weapon") {
+            data.weapons.push(c.entry);
+            data.customWeapons.push(toId(c.entry.name));
+          }
         }
       } catch (e) {
         /* corrupt storage — start fresh */
@@ -595,8 +638,9 @@
         const out = [];
         for (const kind of ["class", "weapon"]) {
           const arr = state.data[kind === "class" ? "classes" : "weapons"];
+          const list = customListFor(kind);
           for (const item of arr) {
-            if (state.data.customs.includes(toId(item.name))) {
+            if (list.includes(toId(item.name))) {
               out.push({ kind, entry: item });
             }
           }
@@ -612,7 +656,10 @@
         case "/api/data":
           return Promise.resolve(state.data);
         case "/api/status":
-          return Promise.resolve({ pendingRegen: false, customCount: state.data.customs.length });
+          return Promise.resolve({
+            pendingRegen: false,
+            customCount: state.data.customClasses.length + state.data.customWeapons.length,
+          });
         case "/api/update":
           return Promise.resolve({ ok: true }); // GUI applies the patch locally
         case "/api/ability":
@@ -636,6 +683,17 @@
       const abilities = item.abilities || (item.abilities = []);
       if (body.action === "save") {
         const i = abilities.findIndex((x) => x.name === body.name);
+        // Renaming into an id another ability already uses must be rejected
+        // (mirrors the server-side guard in abilityeditor/server.ts).
+        const rawName = body.ability?.name;
+        if (typeof rawName !== "string" || !rawName.trim()) {
+          return Promise.reject(new Error("ability needs a name"));
+        }
+        body.ability.name = rawName.trim();
+        const newId = toId(body.ability.name);
+        if (i >= 0 && newId !== toId(String(body.name)) && abilities.some((x) => toId(String(x.name)) === newId)) {
+          return Promise.reject(new Error("An ability with that name already exists"));
+        }
         if (i >= 0) abilities[i] = body.ability;
         else abilities.push(body.ability);
       } else if (body.action === "add") {
@@ -645,32 +703,18 @@
         if (i >= 0) abilities.splice(i, 1);
       }
       // Persist custom entries so their edits survive a reload in demo mode.
-      if (state.data.customs.includes(toId(item.name))) persistCustoms();
+      const kindList = customListFor(body.kind);
+      if (kindList.includes(toId(item.name))) persistCustoms();
       return Promise.resolve({ ok: true });
     }
 
     function staticAddCustom(body) {
-      const kind = body.kind === "item" ? "item" : body.kind === "weapon" ? "weapon" : "class";
-      const arr = state.data[kind === "class" ? "classes" : kind === "weapon" ? "weapons" : "items"];
+      const kind = body.kind === "weapon" ? "weapon" : "class";
+      const arr = state.data[kind === "class" ? "classes" : "weapons"];
       const name = String((body.item && body.item.name) || "").trim();
       if (!name) return Promise.reject(new Error("Name is required."));
       if (arr.some((x) => x.name === name)) {
         return Promise.reject(new Error('An entry named "' + name + '" already exists.'));
-      }
-      if (kind === "item") {
-        arr.push({
-          name,
-          slots: 1,
-          rank: "",
-          gold: 0,
-          materials: "",
-          statBoosts: "",
-          statNerfs: "",
-          frequency: "",
-          actionType: "",
-          effect: "",
-        });
-        return Promise.resolve({ ok: true });
       }
       const entry = { name };
       if (kind === "weapon") entry.branch = "Bow";
@@ -680,20 +724,22 @@
       entry.abilities = [];
       arr.push(entry);
       const id = toId(name);
-      if (!state.data.customs.includes(id)) state.data.customs.push(id);
+      const kindList = customListFor(kind);
+      if (!kindList.includes(id)) kindList.push(id);
       persistCustoms();
       return Promise.resolve({ ok: true });
     }
 
     function staticRemoveCustom(body) {
-      const kind = body.kind === "item" ? "item" : body.kind === "weapon" ? "weapon" : "class";
-      const arr = state.data[kind === "class" ? "classes" : kind === "weapon" ? "weapons" : "items"];
+      const kind = body.kind === "weapon" ? "weapon" : "class";
+      const arr = state.data[kind === "class" ? "classes" : "weapons"];
       const i = arr.findIndex((x) => x.name === body.name);
       if (i >= 0) arr.splice(i, 1);
-      if (kind !== "item") {
-        state.data.customs = state.data.customs.filter((id) => id !== toId(body.name));
-        persistCustoms();
-      }
+      const kindList = customListFor(kind);
+      state.data[kind === "class" ? "customClasses" : "customWeapons"] = kindList.filter(
+        (id) => id !== toId(body.name),
+      );
+      persistCustoms();
       return Promise.resolve({ ok: true });
     }
 
@@ -780,6 +826,114 @@
       toast("Proposal drafted — a GitHub issue should open in a new tab.", "ok");
     }
 
+    // ---------- export / import ----------
+
+    // The full working dataset (classes, weapons, customs + custom id lists).
+    // Custom test entries are included so a shared file round-trips exactly.
+    function exportedData() {
+      return {
+        format: "bd-ability-editor",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        classes: JSON.parse(JSON.stringify(state.data.classes || [])),
+        weapons: JSON.parse(JSON.stringify(state.data.weapons || [])),
+        customClasses: (state.data.customClasses || []).slice(),
+        customWeapons: (state.data.customWeapons || []).slice(),
+      };
+    }
+
+    async function exportData() {
+      const data = exportedData();
+      try {
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "bd-ability-editor-" + new Date().toISOString().slice(0, 10) + ".json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        toast("Exported " + data.classes.length + " classes and " + data.weapons.length + " weapons.", "ok");
+      } catch (e) {
+        toast("Export failed: " + e.message, "err");
+      }
+    }
+
+    function importData(raw) {
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== "object") throw new Error("Not a valid JSON object.");
+      // Filter invalid entries (missing a name) FIRST so the custom-id lists
+      // below can never reference a dropped entry.
+      const classes = Array.isArray(data.classes)
+        ? data.classes.filter((c) => c && c.name)
+        : [];
+      const weapons = Array.isArray(data.weapons)
+        ? data.weapons.filter((w) => w && w.name)
+        : [];
+      if (classes.length + weapons.length === 0)
+        throw new Error("No classes or weapons found in that file.");
+      // Accept both the editor's own format and a bare { classes, weapons }.
+      // Only entries the payload EXPLICITLY lists as custom are custom: a
+      // bare payload carries no custom lists, so its entries are treated as
+      // regular data (marking every imported entry as custom would silently
+      // exclude all of them from "Save to Bot", which skips customs).
+      const customClasses = Array.isArray(data.customClasses)
+        ? data.customClasses.map((s) => String(s))
+        : [];
+      const customWeapons = Array.isArray(data.customWeapons)
+        ? data.customWeapons.map((s) => String(s))
+        : [];
+      state.data = {
+        classes,
+        weapons,
+        customClasses,
+        customWeapons,
+      };
+      state.pending = true;
+      state.dirty = true;
+      state.selected = null;
+      state.openAbility = null;
+    }
+
+    function importViaFile() {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "application/json,.json";
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        // Import replaces the whole working set: warn before discarding
+        // unsaved edits (the reviewer flagged silent data loss here).
+        if (
+          state.dirty &&
+          !confirm(
+            "Importing will discard your unsaved edits and replace the whole dataset. Continue?",
+          )
+        )
+          return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            importData(String(reader.result));
+            renderList();
+            $("#empty-state").style.display = "";
+            $("#detail").style.display = "none";
+            // In demo mode, persist the imported customs so they survive reloads.
+            if (STATIC) persistCustoms();
+            refreshStatus();
+            toast("Imported editor data.", "ok");
+          } catch (e) {
+            toast("Import failed: " + e.message, "err");
+          }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    }
+
     async function fetchData() {
       const d = STATIC ? state.data : await api("/api/data");
       state.data = d;
@@ -793,6 +947,116 @@
         $("#detail").style.display = "none";
       }
     }
+
+    // ---------- undo / redo ----------
+    // History entries are deep clones of the full snapshot shape
+    // ({classes, weapons, customClasses, customWeapons}), taken BEFORE each
+    // mutation so undo always restores the exact prior state.
+
+    function cloneData(d) {
+      return JSON.parse(JSON.stringify(d));
+    }
+
+    function pushHistory() {
+      state.undoStack.push(cloneData(state.data));
+      // Cap memory: 50 entries is plenty for an editing session and each
+      // entry is a full clone of the data set.
+      if (state.undoStack.length > 50) state.undoStack.shift();
+      state.redoStack.length = 0;
+      updateHistoryButtons();
+    }
+
+    function updateHistoryButtons() {
+      const u = $("#btn-undo");
+      const r = $("#btn-redo");
+      if (u) u.disabled = state.undoStack.length === 0;
+      if (r) r.disabled = state.redoStack.length === 0;
+    }
+
+    async function applySnapshot(snap) {
+      // Cancel any pending debounced writes first: they captured the OLD state
+      // and would re-apply onto the restored one, silently redoing the edit
+      // we just undid.
+      if (itemTimer2) {
+        clearTimeout(itemTimer2);
+        itemTimer2 = null;
+      }
+      pendingPatches.clear();
+      for (const [, t] of abilityTimers) clearTimeout(t);
+      abilityTimers.clear();
+      if (STATIC) {
+        // Demo mode: state lives entirely in the page; the API layer is a
+        // passthrough, so just swap the data in place.
+        state.data = cloneData(snap);
+      } else {
+        // Server mode: the Maps on the server are authoritative. Push the
+        // restored snapshot back so a subsequent fetchData (or the test
+        // client mirror) never clobbers the undo/redo target.
+        await api("/api/replace", snap);
+        state.data = cloneData(snap);
+      }
+      if (state.selected && !getItem(state.selected)) state.selected = null;
+      renderList();
+      if (state.selected) renderDetail();
+      else {
+        $("#empty-state").style.display = "";
+        $("#detail").style.display = "none";
+      }
+      refreshStatus();
+    }
+
+    async function undo() {
+      const snap = state.undoStack.pop();
+      if (!snap) {
+        toast("Nothing to undo.", "warn");
+        return;
+      }
+      state.redoStack.push(cloneData(state.data));
+      try {
+        await applySnapshot(snap);
+        updateHistoryButtons();
+        toast("Undone.", "ok");
+      } catch (e) {
+        // Restore the stack if the server rejected the restore.
+        state.redoStack.pop();
+        state.undoStack.push(snap);
+        toast("Undo failed: " + e.message, "err");
+      }
+    }
+
+    async function redo() {
+      const snap = state.redoStack.pop();
+      if (!snap) {
+        toast("Nothing to redo.", "warn");
+        return;
+      }
+      state.undoStack.push(cloneData(state.data));
+      try {
+        await applySnapshot(snap);
+        updateHistoryButtons();
+        toast("Redone.", "ok");
+      } catch (e) {
+        state.undoStack.pop();
+        state.redoStack.push(snap);
+        toast("Redo failed: " + e.message, "err");
+      }
+    }
+
+    $("#btn-undo").addEventListener("click", undo);
+    $("#btn-redo").addEventListener("click", redo);
+    $("#btn-bdref").addEventListener("click", openBdLangRef);
+    document.addEventListener("keydown", (e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((k === "z" && e.shiftKey) || k === "y") {
+        e.preventDefault();
+        redo();
+      }
+    });
 
     // ---------- sidebar ----------
     function renderList() {
@@ -826,7 +1090,7 @@
       document.querySelectorAll("#tabs button").forEach((b) =>
         b.classList.toggle("active", b.dataset.kind === state.kind),
       );
-      $("#btn-new").textContent = "＋ New " + (state.kind === "class" ? "Class" : state.kind === "weapon" ? "Weapon" : "Item");
+      $("#btn-new").textContent = "＋ New " + (state.kind === "class" ? "Class" : "Weapon");
     }
 
     // ---------- status ----------
@@ -835,13 +1099,14 @@
         state.pending = false;
         $("#dirty-chip").classList.toggle("show", state.pending || state.dirty);
         $("#dot").className = "dot on";
+        const nCustom = state.data.customClasses.length + state.data.customWeapons.length;
         $("#status-text").textContent =
           "demo mode · " +
           list().length +
           " " +
           state.kind +
           (state.kind === "class" ? "es" : "s") +
-          (state.data.customs.length ? " · " + state.data.customs.length + " custom" : "");
+          (nCustom ? " · " + nCustom + " custom" : "");
         return;
       }
       try {
@@ -856,6 +1121,60 @@
         $("#dot").className = "dot err";
         $("#status-text").textContent = "offline — is the editor server running? (npm run editor)";
       }
+    }
+
+    // ---------- BD Lang reference ----------
+    function openBdLangRef() {
+      const back = document.createElement("div");
+      back.className = "modal-backdrop";
+      back.innerHTML =
+        '<div class="modal bdref"><h3>BD Lang Reference</h3>' +
+        '<div class="bdref-body">' +
+        bdLangRefHtml() +
+        "</div>" +
+        '<div class="actions"><button data-act="cancel" class="primary">Close</button></div></div>';
+      document.body.appendChild(back);
+      back.addEventListener("click", (e) => {
+        if (e.target === back || e.target.closest("button")?.dataset.act === "cancel") back.remove();
+      });
+      back.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") back.remove();
+      });
+      const first = back.querySelector("button");
+      if (first) first.focus();
+    }
+
+    // Condensed, in-app copy of BD_LANG_SPEC.md (full spec lives in the repo
+    // root). Kept deliberately terse so authors can check a clause mid-edit.
+    function bdLangRefHtml() {
+      return (
+        '<div class="bdsec"><div class="bdsec-title">Ability statement</div>' +
+        '<pre>[MOVE NAME] (Level N)\nFrequency: Every Turn.\nMiss Rate: 2.\nDamage: 2d8+4 Magical.\nAction: Standard.\nTarget: 1 Foe.\nRange: 4.\nEffect: When used at maximum range, gain +5 damage and +1 MP for 1 round.</pre></div>' +
+        '<div class="bdsec"><div class="bdsec-title">Stat modifiers</div>' +
+        "<pre>Buff: +ATK 3 for 1 round.\nDebuff: -DEF 4 for 2 rounds.\nBuff: +DMG 5 until start of user's next turn.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Damaging statuses (tick before target\'s turn; don\'t stack)</div>' +
+        "<pre>Inflict Bleed 5 for 1 round.\nInflict Burn 3 for 2 rounds.\nInflict Curse 4 for 1 round.\nInflict Poison 2 for 1 round.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Non-damaging statuses</div>' +
+        "<pre>Inflict Confusion for 1 round.\n  -> On accuracy 16+, self-damage = higher of ATK/MAG.\nInflict Cripple 6 for 2 rounds.\n  -> Lose 6 HP per tile willingly moved.\nInflict Root for 1 round. -> Cannot use Movement.\nInflict Seal for 1 round. -> Only Basic abilities.\nInflict Slow for 1 round. -> Movement halved (up).\nInflict Stun for 1 round. -> No actions, incl. Reactions.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Displacement</div>' +
+        "<pre>Pull 3 toward user.\nPush 2 away from user.\nUser teleports to target tile.\nUser and target swap positions.\nUser moves up to their Movement Points.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Resources</div>' +
+        "<pre>Gain 2 Rage. / Spend 3 Qi. / Lose 1 Campaign.\nGain 1 Focus. / Spend 2 Mana (only on hit).\nTarget gains 1 Mark.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Thresholds</div>' +
+        "<pre>If Rage >= 2, gain +1 dice on this attack.\nThirst 5: This move becomes Double Hit.\nWhen Rage is spent, each point gives +1 damage.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Conditionals</div>' +
+        "<pre>If at maximum range, inflict Slow for 1 round.\nOtherwise, gain +1 MP for 1 round.\nOn critical hit, the user gains Moonblast's effect.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Delay / Shield / Apex</div>' +
+        "<pre>Delay 1 round. -> Damage and effects land at start of user's turn.\nShield 10 for 1 round. -> Absorbs 10 damage; blocks non-damaging statuses.\nApex: This attack has Pull 3 and inflicts Slow for 1 round.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Choices</div>' +
+        "<pre>Choose one:\n  - Push 2 tiles.\n  - Inflict Bleed 6 for 1 round.\n  - User gains Shield 5 for 1 round.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Action economy</div>' +
+        "<pre>Movement: 1/turn, before Standard.\nStandard: 1/turn. Turn ends when none remain.\nFull: replaces Movement + Standard.\nSwift: 1/turn, not with Free.\nFree: multiple, each once/turn, not with Swift.\nTrigger: 1/turn, with Free or Swift.\nReaction: 1 per action, 30s window.</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Tile notation</div>' +
+        "<pre>. = Normal   A = Air      F = Forest   W = Water\nS = Stop     B = Bone     K = Broken   I = Ice\nL = Lava     O = Boost    H = Hearth</pre></div>" +
+        '<div class="bdsec"><div class="bdsec-title">Rules of thumb</div>' +
+        "<pre>One mechanic, one term — no synonyms.\nClauses joined with commas or \"and\".\nDamage is rolled when the move is used (Delay keeps that).\nFull spec: BD_LANG_SPEC.md in the repo root.</pre></div>"
+      );
     }
 
     // ---------- modal ----------
@@ -886,6 +1205,101 @@
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") done(input.value.trim() || null);
         if (e.key === "Escape") done(null);
+      });
+    }
+
+    // ---------- cross-branch copy ----------
+
+    // Flush a card's pending edits (same deferred-save path as flushAbility)
+    // so the copy uses the latest typed values. Returns the collected ability
+    // record, or null if the current item is gone.
+    async function abilityFromCard(card) {
+      const item = currentItem();
+      if (!item) return null;
+      const ability = collectAbility(card);
+      if (!ability.name || !String(ability.name).trim()) return null;
+      return ability;
+    }
+
+    function copyAbilityModal(idx) {
+      const source = currentItem();
+      if (!source) return;
+      const sourceName = source.name;
+
+      const back = document.createElement("div");
+      back.className = "modal-backdrop";
+      const kinds = ["class", "weapon"];
+      const kindOpts = kinds
+        .map(
+          (k) =>
+            '<option value="' +
+            k +
+            '">' +
+            (k === "class" ? "Classes" : "Weapons") +
+            "</option>",
+        )
+        .join("");
+      const renderItems = (kind) =>
+        state.data[kind === "class" ? "classes" : "weapons"]
+          .filter((x) => x.name !== sourceName || kind !== state.kind)
+          .map(
+            (x) =>
+              '<option value="' +
+              esc(x.name) +
+              '">' +
+              esc(x.name) +
+              "</option>",
+          )
+          .join("");
+      back.innerHTML =
+        '<div class="modal"><h3>Copy ability to…</h3><div class="field"><label>Item type</label><select id="copy-kind">' +
+        kindOpts +
+        '</select></div><div class="field"><label id="copy-dest-label"></label><select id="copy-item"></select></div><div class="actions"><button data-act="cancel">Cancel</button><button data-act="copy" class="primary">Copy</button></div></div>';
+      document.body.appendChild(back);
+      const kindSel = back.querySelector("#copy-kind");
+      const itemSel = back.querySelector("#copy-item");
+      const destLabel = back.querySelector("#copy-dest-label");
+      function refresh(kind) {
+        // The destination label must follow the dropdown, not the source
+        // item's kind (the reviewer flagged it showing "class" while
+        // targeting a weapon).
+        destLabel.textContent = "Destination (" + kind + ")";
+        itemSel.innerHTML = renderItems(kind);
+      }
+      refresh(kindSel.value);
+      kindSel.addEventListener("change", () => refresh(kindSel.value));
+
+      const close = () => back.remove();
+      back.addEventListener("click", async (e) => {
+        if (e.target === back) return close();
+        const act = e.target.closest("button")?.dataset.act;
+        if (act === "cancel") return close();
+        if (act !== "copy") return;
+        const destKind = kindSel.value;
+        const destName = itemSel.value;
+        if (!destName) {
+          toast("Pick a destination item to copy into.", "warn");
+          return;
+        }
+        const card = document.querySelector("#detail .ability-card[data-idx='" + idx + "']");
+        const ability = card ? await abilityFromCard(card) : null;
+        if (!ability) {
+          toast("That ability is missing a name.", "err");
+          return;
+        }
+        const copy = JSON.parse(JSON.stringify(ability));
+        try {
+          await api("/api/ability", {
+            kind: destKind,
+            owner: destName,
+            action: "add",
+            ability: copy,
+          });
+          close();
+          toast('Copied "' + copy.name + '" to ' + destName + ".", "ok");
+        } catch (err) {
+          toast(err.message, "err");
+        }
       });
     }
 
@@ -985,43 +1399,17 @@
           choices,
           { textarea: true, full: true },
         ) +
-        '<div class="card-actions"><button class="mini danger" data-act="del-ability" data-idx="' +
+        '<div class="card-actions"><button class="mini" data-act="copy-ability" data-idx="' +
+        idx +
+        '">Copy to…</button><button class="mini danger" data-act="del-ability" data-idx="' +
         idx +
         '">Delete ability</button></div>'
       );
     }
 
-    function renderItemDetail(item) {
-      const detail =
-        '<div class="detail-head"><h2>' +
-        esc(item.name) +
-        '</h2><span class="sub">Item (beta)</span><span class="spacer"></span>' +
-        '<button class="danger mini" data-act="del-item">Delete item</button>' +
-        "</div>" +
-        field("name", "Name", item.name) +
-        '<div class="grid stats">' +
-        field("slots", "Slots", item.slots) +
-        field("rank", "Rank (C/B/A/S)", item.rank) +
-        field("gold", "Gold", item.gold) +
-        "</div>" +
-        field("materials", "Materials (e.g. 1 Ruby, 1 Topaz)", item.materials) +
-        field("statBoosts", "Stat Boosts (e.g. +2 ATK)", item.statBoosts) +
-        field("statNerfs", "Stat Nerfs", item.statNerfs) +
-        field("frequency", "Frequency", item.frequency) +
-        field("actionType", "Action Type", item.actionType) +
-        field("effect", "Effect (BD Lang)", item.effect, { textarea: true, full: true });
-      $("#detail").innerHTML = detail;
-      $("#detail").style.display = "";
-      $("#empty-state").style.display = "none";
-    }
-
     function renderDetail() {
       const item = getItem(state.selected);
       if (!item) return;
-      if (state.kind === "item") {
-        renderItemDetail(item);
-        return;
-      }
       const custom = isCustomName(item.name);
       const stats = item.stats || {};
       const statsHtml =
@@ -1135,6 +1523,10 @@
 
     function onAbilityEdit(card) {
       markDirty();
+      // Mark the card so the next flush pushes exactly one history entry (the
+      // saveToBot sweep also flushes untouched cards — those must not pollute
+      // the undo stack with no-op snapshots).
+      card.dataset.dirty = "1";
       clearTimeout(abilityTimers.get(card));
       abilityTimers.set(card, setTimeout(() => flushAbility(card), 500));
     }
@@ -1146,6 +1538,10 @@
       const ability = collectAbility(card);
       const lookupName = card.dataset.lastname || ability.name;
       try {
+        if (card.dataset.dirty) {
+          pushHistory();
+          delete card.dataset.dirty;
+        }
         await api("/api/ability", {
           kind: state.kind,
           owner: item.name,
@@ -1168,6 +1564,7 @@
       const item = currentItem();
       if (!item) return;
       const baseName = "New Ability";
+      pushHistory();
       let name = baseName;
       for (let n = 2; (item.abilities || []).some((x) => x.name === name); n++) {
         name = baseName + " " + n;
@@ -1206,6 +1603,7 @@
       const ab = item.abilities[idx];
       if (!ab) return;
       if (!confirm('Delete ability "' + ab.name + '"?')) return;
+      pushHistory();
       try {
         await api("/api/ability", {
           kind: state.kind,
@@ -1237,6 +1635,7 @@
     async function flushItems() {
       const items = [...pendingPatches.entries()];
       pendingPatches.clear();
+      if (items.length) pushHistory();
       for (const [item, patch] of items) {
         const prevName = item.name;
         try {
@@ -1251,7 +1650,8 @@
             renderList();
           }
           // Keep custom edits persisted in demo mode (they live in localStorage).
-          if (STATIC && state.data.customs.includes(toId(newName))) persistCustoms();
+          const renameList = customListFor(state.kind);
+          if (STATIC && renameList.includes(toId(newName))) persistCustoms();
         } catch (e) {
           toast(e.message, "err");
         }
@@ -1353,8 +1753,7 @@
       }
       const f = t.dataset.f;
       if (f === "name") onItemEdit({ name: t.value });
-      else if (f === "slots" || f === "gold") onItemEdit({ [f]: Number(t.value) || 0 });
-      else if (f === "description" || f === "branch" || f === "rank" || f === "materials" || f === "statBoosts" || f === "statNerfs" || f === "frequency" || f === "actionType" || f === "effect") onItemEdit({ [f]: t.value });
+      else if (f === "description" || f === "branch") onItemEdit({ [f]: t.value });
     }
     $("#editor").addEventListener("input", onEditEvent);
     $("#editor").addEventListener("change", onEditEvent);
@@ -1374,8 +1773,8 @@
       const act = actEl.dataset.act;
       if (act === "add-ability") addAbility();
       else if (act === "del-ability") deleteAbility(Number(actEl.dataset.idx));
+      else if (act === "copy-ability") copyAbilityModal(Number(actEl.dataset.idx));
       else if (act === "del-custom") deleteCustom();
-      else if (act === "del-item") deleteItem();
     });
 
     // ---------- global actions ----------
@@ -1450,11 +1849,12 @@
 
     function newCustom() {
       promptModal(
-        "New " + (state.kind === "class" ? "Class" : state.kind === "weapon" ? "Weapon" : "Item"),
+        "New " + (state.kind === "class" ? "Class" : "Weapon"),
         "Name",
-        "e.g. Test " + (state.kind === "class" ? "Class" : state.kind === "weapon" ? "Weapon" : "Item"),
+        "e.g. Test " + (state.kind === "class" ? "Class" : "Weapon"),
         async (name) => {
           try {
+            pushHistory();
             await api("/api/custom", { kind: state.kind, item: { name } });
             state.selected = name;
             state.openAbility = null;
@@ -1477,29 +1877,6 @@
       );
     }
 
-    async function deleteItem() {
-      const item = currentItem();
-      if (!item) return;
-      if (
-        !confirm(
-          'Delete item "' +
-            item.name +
-            '"? After Save to Bot it will be removed from src/data/index.ts.',
-        )
-      )
-        return;
-      try {
-        await api("/api/custom/remove", { kind: "item", name: item.name });
-        state.selected = null;
-        await fetchData();
-        $("#empty-state").style.display = "";
-        $("#detail").style.display = "none";
-        toast("Item removed.", "ok");
-      } catch (e) {
-        toast(e.message, "err");
-      }
-    }
-
     async function deleteCustom() {
       const item = currentItem();
       if (!item) return;
@@ -1511,6 +1888,7 @@
         )
       )
         return;
+      pushHistory();
       try {
         await api("/api/custom/remove", { kind: state.kind, name: item.name });
         state.selected = null;
@@ -1526,6 +1904,8 @@
     $("#btn-save").addEventListener("click", saveToBot);
     $("#btn-revert").addEventListener("click", revertAll);
     $("#btn-new").addEventListener("click", newCustom);
+    $("#btn-export").addEventListener("click", exportData);
+    $("#btn-import").addEventListener("click", importViaFile);
 
     // ---------- init ----------
     (async function init() {

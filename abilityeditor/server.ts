@@ -27,11 +27,9 @@ import {
   loadGameData,
   classes,
   weapons,
-  items,
   branches,
   type ClassData,
   type WeaponData,
-  type ItemData,
 } from "../src/data/index.js";
 import { writeEditorSnapshot } from "../src/data/overrides.js";
 import {
@@ -77,15 +75,20 @@ function loadCustoms() {
   try {
     const data = JSON.parse(fs.readFileSync(CUSTOMS_PATH, "utf8"));
     for (const c of data.classes ?? []) {
-      if (c?.name) {
-        classes.set(toId(c.name), c);
-        customClassIds.add(toId(c.name));
+      const name = typeof c?.name === "string" ? c.name.trim() : "";
+      if (name) {
+        // Rebuild through defaultClass so abilities pass cleanNamedAbility:
+        // legacy entries with blank or non-string ability names must not
+        // bypass sanitization and re-persist via saveCustoms.
+        classes.set(toId(name), defaultClass(name, c));
+        customClassIds.add(toId(name));
       }
     }
     for (const w of data.weapons ?? []) {
-      if (w?.name) {
-        weapons.set(toId(w.name), w);
-        customWeaponIds.add(toId(w.name));
+      const name = typeof w?.name === "string" ? w.name.trim() : "";
+      if (name) {
+        weapons.set(toId(name), defaultWeapon(name, w));
+        customWeaponIds.add(toId(name));
       }
     }
   } catch (e) {
@@ -123,9 +126,6 @@ function regenerateSource(): { changed: string[]; inserted: string[]; out: strin
       entries.push({ name: w.name, sourceName: sourceNames.get(toId(w.name)), type: "WeaponData", entry: w as unknown as Record<string, unknown> });
     }
   }
-  for (const it of items.values()) {
-    entries.push({ name: it.name, type: "ItemData", entry: it as unknown as Record<string, unknown> });
-  }
   return regenerateSourceText(text, entries);
 }
 
@@ -138,10 +138,9 @@ function touch() {
   writeEditorSnapshot();
 }
 
-function entryMap(kind: string): Map<string, ClassData | WeaponData | ItemData> | null {
+function entryMap(kind: string): Map<string, ClassData | WeaponData> | null {
   if (kind === "class") return classes;
   if (kind === "weapon") return weapons;
-  if (kind === "item") return items;
   return null;
 }
 
@@ -152,7 +151,16 @@ function defaultClass(name: string, item: Record<string, unknown>): ClassData {
   return {
     name,
     stats,
-    abilities: (Array.isArray(item.abilities) ? item.abilities : []) as ClassData["abilities"],
+    // Sanitize abilities the same way the update/proposal paths do, and drop
+    // entries that come back without a valid name so customs never persist
+    // malformed AbilityData.
+    abilities: (
+      Array.isArray(item.abilities)
+        ? (item.abilities
+            .map((a) => cleanNamedAbility(a))
+            .filter((a): a is Record<string, unknown> => a !== null) as unknown as ClassData["abilities"])
+        : []
+    ),
     description: String(item.description ?? ""),
   };
 }
@@ -165,21 +173,6 @@ function defaultWeapon(name: string, item: Record<string, unknown>): WeaponData 
     stats: w.stats,
     abilities: w.abilities,
     description: String(item.description ?? ""),
-  };
-}
-
-function defaultItem(name: string, item: Record<string, unknown>): ItemData {
-  return {
-    name,
-    slots: Number(item.slots) || 1,
-    rank: String(item.rank ?? ""),
-    gold: Number(item.gold) || 0,
-    materials: String(item.materials ?? ""),
-    statBoosts: String(item.statBoosts ?? ""),
-    statNerfs: String(item.statNerfs ?? ""),
-    frequency: String(item.frequency ?? ""),
-    actionType: String(item.actionType ?? ""),
-    effect: String(item.effect ?? ""),
   };
 }
 
@@ -231,9 +224,22 @@ function snapshot() {
   return {
     classes: [...classes.values()],
     weapons: [...weapons.values()],
-    items: [...items.values()],
-    customs: [...customClassIds, ...customWeaponIds],
+    // Per-kind custom id lists: a custom class and custom weapon may share an
+    // id, and each entry's custom status must be judged against the list that
+    // matches its own kind (the combined `customs` array would let a shared id
+    // mark — or un-mark — both kinds at once).
+    customClasses: [...customClassIds],
+    customWeapons: [...customWeaponIds],
   };
+}
+
+function cleanNamedAbility(raw: unknown): Record<string, unknown> | null {
+  const a = sanitizeAbility(raw);
+  // Only string names are valid: String() would coerce 123 / false / objects
+  // into non-empty names and smuggle malformed abilities past the guard.
+  if (typeof a.name !== "string") return null;
+  a.name = a.name.trim();
+  return a.name ? a : null;
 }
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -315,18 +321,17 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
           if (k === "name") continue;
           if (k === "stats" && isPlainObject(v)) {
             for (const sk of STAT_KEYS) {
-              if (v[sk] !== undefined) (entry as ClassData | WeaponData).stats[sk] = String(v[sk]);
+              if (v[sk] !== undefined) entry.stats[sk] = String(v[sk]);
             }
           } else if (k === "description" || k === "branch") {
             (entry as unknown as Record<string, unknown>)[k] = String(v);
           } else if (k === "abilities" && Array.isArray(v)) {
-            (entry as ClassData | WeaponData).abilities = v.map(sanitizeAbility) as unknown as ClassData["abilities"];
-          } else if (k === "slots" || k === "gold") {
-            (entry as unknown as Record<string, unknown>)[k] = Number(v) || 0;
-          } else if (
-            ["rank", "materials", "statBoosts", "statNerfs", "frequency", "actionType", "effect"].includes(k)
-          ) {
-            (entry as unknown as Record<string, unknown>)[k] = String(v);
+            // Same strict validation as every other write path: non-string,
+            // blank, and whitespace-only names are dropped rather than
+            // coerced into valid-looking entries (CodeRabbit L324).
+            entry.abilities = v
+              .map(cleanNamedAbility)
+              .filter((a): a is Record<string, unknown> => a !== null) as unknown as ClassData["abilities"];
           }
         }
       }
@@ -343,12 +348,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         send(res, 404, { error: `${kind ?? "?"} '${owner ?? "?"}' not found` });
         return;
       }
-      const abilities =
-        (entry as ClassData | WeaponData).abilities ??
-        ((entry as ClassData | WeaponData).abilities = []);
+      const abilities = entry.abilities ?? (entry.abilities = []);
       if (action === "add") {
-        const a = sanitizeAbility(ability ?? {});
-        if (!a.name) {
+        const a = cleanNamedAbility(ability ?? {});
+        if (!a) {
           send(res, 400, { error: "ability needs a name" });
           return;
         }
@@ -365,7 +368,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         }
         abilities.splice(idx, 1);
       } else if (action === "save") {
-        const clean = sanitizeAbility(ability ?? {});
+        const clean = cleanNamedAbility(ability ?? {});
+        if (!clean) {
+          send(res, 400, { error: "ability needs a name" });
+          return;
+        }
         const idx = abilities.findIndex((x) => toId(String(x.name)) === toId(String(name)));
         if (idx === -1) {
           send(res, 404, { error: `ability '${name ?? "?"}' not found` });
@@ -404,18 +411,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         send(res, 400, { error: `A ${kind} named '${nm}' already exists` });
         return;
       }
-      const built =
-        kind === "class"
-          ? defaultClass(nm, item)
-          : kind === "weapon"
-            ? defaultWeapon(nm, item)
-            : defaultItem(nm, item);
+      const built = kind === "class" ? defaultClass(nm, item) : defaultWeapon(nm, item);
       map.set(toId(nm), built);
-      const cs = customSetFor(kind);
-      if (cs) {
-        cs.add(toId(nm));
-        saveCustoms();
-      }
+      customSetFor(kind)!.add(toId(nm));
+      saveCustoms();
       touch();
       send(res, 200, { ok: true, name: nm });
       return;
@@ -425,18 +424,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       const { kind, name } = body;
       const map = entryMap(kind);
       const key = toId(name);
-      if (!map) {
-        send(res, 400, { error: `'${name ?? "?"}' not found` });
-        return;
-      }
-      if (kind === "item") {
-        map.delete(key);
-        touch();
-        send(res, 200, { ok: true });
-        return;
-      }
       const cs = customSetFor(kind);
-      if (!cs || !cs.has(key)) {
+      if (!map || !cs || !cs.has(key)) {
         send(res, 400, { error: `'${name ?? "?"}' is not a custom ${kind ?? "item"}` });
         return;
       }
@@ -466,7 +455,6 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       // loadGameData would otherwise leave behind are dropped too.
       classes.clear();
       weapons.clear();
-      items.clear();
       branches.clear();
       sourceNames.clear();
       loadGameData();
@@ -475,6 +463,46 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       loadCustoms();
       pendingRegen = false;
       writeEditorSnapshot();
+      send(res, 200, { ok: true });
+      return;
+    }
+
+    if (p === "/api/replace") {
+      // Full state restore (undo/redo in server mode): rebuild every Map from
+      // a snapshot() payload so the client can push a restored history state
+      // back without fetchData clobbering it.
+      const { classes: cls, weapons: wpn, customClasses: cc, customWeapons: cw } = body;
+      classes.clear();
+      weapons.clear();
+      branches.clear();
+      sourceNames.clear();
+      customClassIds.clear();
+      customWeaponIds.clear();
+      if (Array.isArray(cls)) {
+        for (const c of cls) {
+          if (c && typeof c.name === "string" && c.name.trim()) {
+            classes.set(toId(c.name), defaultClass(c.name, c));
+          }
+        }
+      }
+      if (Array.isArray(wpn)) {
+        for (const w of wpn) {
+          if (w && typeof w.name === "string" && w.name.trim()) {
+            weapons.set(toId(w.name), defaultWeapon(w.name, w));
+          }
+        }
+      }
+      // Rebuild the branch index from the restored weapons, mirroring
+      // loadBasicWeapons() so the client's branch list stays consistent.
+      for (const [, w] of weapons) {
+        const list = branches.get(toId(w.branch)) ?? [];
+        list.push(w.name);
+        branches.set(toId(w.branch), list);
+      }
+      for (const id of Array.isArray(cc) ? cc : []) customClassIds.add(String(id));
+      for (const id of Array.isArray(cw) ? cw : []) customWeaponIds.add(String(id));
+      touch();
+      saveCustoms();
       send(res, 200, { ok: true });
       return;
     }

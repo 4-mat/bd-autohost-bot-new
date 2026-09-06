@@ -1,11 +1,14 @@
 import {
   TERRAIN_COLORS,
   TERRAIN_NAMES,
+  Terrain,
+  getCurrentEntity,
   getReachableTiles,
   getEffectiveMp,
   hasLineOfSight,
   inRange,
   dist,
+  moveCost,
   DIRECTION_LABELS,
   parseFrequency,
   formatChatTime,
@@ -16,6 +19,8 @@ import {
 import { posToStr } from "../utils.js";
 import { eva43 } from "../game/resolve.js";
 import { getVersionData } from "../data/version43.js";
+import { classes, weapons } from "../data/index.js";
+import type { GameVersion } from "../data/index.js";
 import {
   runoffOptions,
   tallyVotes,
@@ -26,6 +31,60 @@ import {
 // -- Premove Mode Tracking -----------------------------------------------------
 
 export const premoveSet = new Set<string>();
+
+// -- Movement Path / Reach Preview / Dash Mode Tracking ------------------------
+// Keyed by `${game.id}:${entity.id}` so concurrent games can't collide. Server-
+// side state, same pattern as premoveSet -- it survives across page re-renders
+// since this module stays loaded.
+
+// The path a player is building this movement phase, as an ordered list of
+// tiles clicked so far (not including their starting position).
+export const pathState = new Map<string, Array<[number, number]>>();
+
+// viewer entity key -> the entity.num whose reachable tiles they're currently
+// previewing in red (set by clicking another character on the map).
+export const reachPreview = new Map<string, string>();
+
+// entity key -> currently in dash mode (map shows dash-reachable tiles).
+export const dashMode = new Set<string>();
+
+// viewer key -> the map grid (tile/table borders) is hidden for this viewer.
+// A per-viewer display preference, so it deliberately persists across turns
+// (unlike path/dash state) and is only scoped to one game.
+export const gridHidden = new Set<string>();
+
+// Composite key scoping movement UI state to one entity in one game.
+export function movementKey(game: Game, entity: Entity): string {
+  return `${game.id}:${entity.id}`;
+}
+
+// Key scoping per-viewer display state (e.g. the grid toggle). Players are
+// keyed by their entity; the host page (no entity) gets a game-scoped key.
+export function viewerKey(game: Game, entity: Entity | null): string {
+  return entity ? movementKey(game, entity) : `${game.id}:host`;
+}
+
+export function clearMovementState(game: Game, entity: Entity) {
+  const key = movementKey(game, entity);
+  pathState.delete(key);
+  reachPreview.delete(key);
+  dashMode.delete(key);
+}
+
+// Clear path/reach/dash for every entity of a game, including ones removed
+// during resolution (iterate store keys, not game.entities).
+export function clearGameMovementState(game: Game) {
+  const prefix = `${game.id}:`;
+  for (const k of [...pathState.keys()]) {
+    if (k.startsWith(prefix)) pathState.delete(k);
+  }
+  for (const k of [...reachPreview.keys()]) {
+    if (k.startsWith(prefix)) reachPreview.delete(k);
+  }
+  for (const k of [...dashMode]) {
+    if (k.startsWith(prefix)) dashMode.delete(k);
+  }
+}
 
 // -- Toast CSS -----------------------------------------------------------------
 
@@ -51,14 +110,13 @@ const R = `<style>
 }
 </style>`;
 
-const TILE =
-  "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
+const CELL_SIZE = 34; // was 22 -- bumped up per request
 
-const HEADER_CELL =
-  "width:22px;min-width:22px;padding:0;text-align:center;vertical-align:middle";
+const TILE = `width:${CELL_SIZE}px;height:${CELL_SIZE}px;padding:0;text-align:center;vertical-align:middle;border:1px solid #888`;
 
-const MAP_CELL =
-  "width:22px;height:22px;padding:0;text-align:center;vertical-align:middle";
+const HEADER_CELL = `width:${CELL_SIZE}px;min-width:${CELL_SIZE}px;padding:0;text-align:center;vertical-align:middle;border:1px solid #888`;
+
+const MAP_CELL = `width:${CELL_SIZE}px;height:${CELL_SIZE}px;padding:0;text-align:center;vertical-align:middle;border:1px solid #888`;
 
 const TABLE_STYLE =
   "border-spacing:0px;border-collapse:collapse;border:1px solid #888;background:rgba(120,120,225,0.10)";
@@ -66,7 +124,13 @@ const TABLE_STYLE =
 const TABLE_BORDER = `style="${TABLE_STYLE}"`;
 
 const PLAYER_LABEL =
-  "font-size:10px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
+  "font-size:12px;font-weight:bold;color:black;text-shadow:-1px -1px 0 #BBB,1px -1px 0 #BBB,-1px 1px 0 #BBB,1px 1px 0 #BBB";
+
+// Overlay colors for the interactive map
+const OVERLAY_REACHABLE = "rgba(110,190,255,0.55)"; // light blue: in range, unpressed
+const OVERLAY_PATH = "rgba(20,70,190,0.80)"; // darker blue: already pressed into the path
+const OVERLAY_DASH = "rgba(255,140,0,0.50)"; // orange: dash-reachable (1.5x MP)
+const OVERLAY_ENEMY_REACH = "rgba(230,60,60,0.45)"; // red: another character's reach preview
 
 // -- Gamemode Vote Panel ------------------------------------------------------
 // Shown while game.voteOpen is true (between %close and %endvote). Players get
@@ -125,8 +189,8 @@ function buildVotePanel(game: Game, entity: Entity | null): string {
     const tallySummary =
       tally.size > 0
         ? [...tally.entries()]
-            .map(([m, c]) => `${esc(m)}: ${c}`)
-            .join(" &nbsp;|")
+          .map(([m, c]) => `${esc(m)}: ${c}`)
+          .join(" &nbsp;|")
         : "no votes yet";
     html += `<div style="margin:4px 0"><b>Tally:</b> ${tallySummary}</div>`;
 
@@ -182,6 +246,31 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// A button meant to fill an entire map cell edge-to-edge (movement tiles,
+// clickable entity portraits) rather than sit inline like a normal control.
+function cellBtn(value: string, label: string, extra = ""): string {
+  return `<button
+name="send"
+value="${esc(value)}"
+style="width:100%;height:100%;padding:0;margin:0;border:none;background:transparent;cursor:pointer;${extra}">
+${esc(label)}
+</button>`;
+}
+
+// Stable key for a [row, col] tile, matching getReachableTiles' keys
+// (posToStr format, e.g. "a,1").
+function posKey(pos: [number, number]): string {
+  return posToStr(pos[0], pos[1]);
+}
+
+// Total movement cost of a path (each tile's entry cost, terrain-aware).
+export function pathCost(game: Game, path: Array<[number, number]>): number {
+  let sum = 0;
+  for (const [r, c] of path)
+    sum += moveCost(game.map[r]?.[c] ?? Terrain.Normal);
+  return sum;
+}
+
 // -- Host Page ----------------------------------------------------------------
 
 export function buildHostPage(game: Game): string {
@@ -209,8 +298,14 @@ export function buildHostPage(game: Game): string {
 export function buildPlayerPage(game: Game, entity: Entity): string {
   const isTurn = game.turnOrder[game.turnIndex] === entity.num;
 
-  const map = buildMiniMap(game, entity);
-  const stats = buildEntityStats(entity);
+  // The map is interactive only during this entity's movement phase.
+  const interactive =
+    isTurn &&
+    !entity.movementUsed &&
+    !premoveSet.has(movementKey(game, entity));
+
+  const map = buildMiniMap(game, entity, interactive);
+  const stats = buildEntityStats(entity, game.version);
   const pl = buildPlayerDataTable(game);
   const log = buildActionLog(game, true);
 
@@ -234,16 +329,16 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
   }
 
   if (isTurn) {
-    const inPremove = premoveSet.has(entity.num);
+    const inPremove = premoveSet.has(movementKey(game, entity));
 
     if (!entity.movementUsed && inPremove) {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #00cc00;background:rgba(0,204,0,0.10)"><b style="color:#00cc00">PRE-MOVE ABILITIES</b> <span style="color:#888">Free / Swift / Trigger before movement</span></div>`;
       actions = buildPreMoveAbilities(game, entity);
       actions += `<div style="margin-top:6px">${btn("%premove", "Back to Movement")}</div>`;
     } else if (!entity.movementUsed) {
-      phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a tile to move</span></div>`;
-      actions = buildMoveButtons(game, entity);
-      actions += buildDashButtons(game, entity);
+      phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #cc0;background:rgba(204,204,0,0.10)"><b style="color:#cc0">MOVEMENT PHASE</b> <span style="color:#888">Click a highlighted tile to move, or click a character to preview their reach</span></div>`;
+      actions = buildMovementControls(game, entity);
+      actions += buildDashModeButton(game, entity);
       actions += `<div style="margin-top:4px">${btn("%premove", "Abilities Before Move")} ${btn("%passmove", "Pass Movement")}</div>`;
     } else {
       phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #08c;background:rgba(0,136,204,0.10)"><b style="color:#08c">ACTION PHASE</b> <span style="color:#888">Choose an ability</span></div>`;
@@ -262,7 +357,7 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
 
     // Tile prompt buttons
     if (entity.pendingPromptKind === "tile") {
-      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #80f;background:rgba(136,0,255,0.10)"><b style="color:#80f">CHOOSE TILE</b><br><span style="color:#888;font-size:10px">Use %tile &lt;ref&gt; to pick a tile</span></div>`;
+      actions += `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #80f;background:rgba(136,0,255,0.10)"><b style="color:#80f">CHOOSE TILE</b><br><span style="color:#888;font-size:10px">Use %picktile &lt;ref&gt; to pick a tile</span></div>`;
     }
 
     if (entity.pendingAction) {
@@ -273,15 +368,36 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
     }
     actions += `<div style="margin-top:6px">${btn("%endturn", "End Turn")}</div>`;
   } else {
-    const cur = getCurrentTurnEntity(game);
+    const cur = getCurrentEntity(game);
     const curLabel = cur ? `${cur.num} (${cur.name})` : "...";
     phase = `<div style="margin:6px 0;padding:4px 8px;border-left:3px solid #888"><i style="color:#888">Waiting for your turn...</i> <b>${esc(curLabel)}</b></div>`;
   }
 
-  // Until the game starts, players can change their own class/weapon
-  // (e.g. after the gamemode vote decides the mode, before the map is set).
-  let loadout = "";
-  if (!game.started) {
+  // Until the game STARTS, players can change their own class/weapon — but only
+  // while the game is NOT yet set. %setgame (and the %endvote winner / %genpos)
+  // lock the setup by setting game.modeChosen, so the loadout control must go
+  // away as soon as the mode is chosen.
+  const loadout = buildLoadoutControl(game, entity);
+
+  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
+  ${map}${pl}
+  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
+  ${buildVotePanel(game, entity)}
+  ${loadout}
+  <hr>${phase}${prompt}${actions}
+  ${log}
+  ${buildToasts(game)}
+</div>`;
+}
+
+// Build the class/weapon loadout control, or a "locked" notice once the mode
+// is chosen (%setgame / %endvote winner / %genpos). Extracted from
+// buildPlayerPage to keep its cyclomatic complexity under the limit.
+function buildLoadoutControl(game: Game, entity: Entity): string {
+  if (game.started) return "";
+
+  // The game is NOT set yet — players may change their own class/weapon.
+  if (!game.modeChosen) {
     const data = getVersionData(game.version);
     const classOpts = [...data.classes.values()]
       .map(
@@ -295,35 +411,32 @@ export function buildPlayerPage(game: Game, entity: Entity): string {
           `<option value="${esc(w.name)}"${w.name === entity.weaponName ? " selected" : ""}>${esc(w.name)}</option>`,
       )
       .join("");
-    loadout = `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #57a;border-radius:4px"><b style="color:#8af">Change Loadout</b> <span style="color:#888">(until the game starts)</span><br>
+    return `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #57a;border-radius:4px"><b style="color:#8af">Change Loadout</b> <span style="color:#888">(until the game is set)</span><br>
 <select id="loadout-class" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${classOpts}</select>
 <select id="loadout-weapon" style="padding:3px;background:#0f3460;color:#e0e0e0;border:1px solid #333;font-family:inherit;font-size:12px">${weaponOpts}</select>
 <button name="loadout" style="padding:2px 8px;margin:2px;background:#333;color:white;border:1px solid #888;cursor:pointer;font-size:12px;font-family:Verdana,sans-serif">Apply</button>
 </div>`;
   }
 
-  return `${R}<style>${TCSS}</style><div class="bdg wrap" style="margin:35px;font-size:12px;font-family:Verdana,sans-serif;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 60px)">
-  ${map}${pl}
-  <b>${esc(entity.num)} ${esc(entity.name)}</b> -- ${esc(entity.className)}/${esc(entity.weaponName)} (${entity.classLevel}/${entity.weaponLevel})${stats}
-  ${buildVotePanel(game, entity)}
-  ${loadout}
-  <hr>${phase}${prompt}${actions}
-  ${log}
-  ${buildToasts(game)}
-</div>`;
+  // The game is set but not started: show why the control is gone.
+  return `<div style="margin:6px 0;padding:6px 8px;border:1px dashed #555;border-radius:4px"><b style="color:#888">Loadout locked</b> <span style="color:#888">(the game is set)</span></div>`;
 }
 
 // -- Map (Host + Player shared logic) -----------------------------------------
 
 function buildMap(game: Game): string {
-  return buildMapTable(game, null);
+  return buildMapTable(game, null, false);
 }
 
-function buildMiniMap(game: Game, self: Entity): string {
-  return buildMapTable(game, self);
+function buildMiniMap(game: Game, self: Entity, interactive: boolean): string {
+  return buildMapTable(game, self, interactive);
 }
 
-function buildMapTable(game: Game, self: Entity | null): string {
+function buildMapTable(
+  game: Game,
+  self: Entity | null,
+  interactive: boolean,
+): string {
   const rows = game.map.length;
   const cols = game.map[0]?.length ?? 0;
   const curNum = game.turnOrder[game.turnIndex];
@@ -336,35 +449,84 @@ function buildMapTable(game: Game, self: Entity | null): string {
     return html;
   }
 
+  // Per-viewer grid toggle: strips the tile/table borders when the viewer
+  // prefers a clean map. The button re-renders this page via %grid.
+  const hideGrid = gridHidden.has(viewerKey(game, self));
+  const gridLabel = hideGrid ? "Grid: off" : "Grid: on";
+  const gridValue = self ? `%grid ${self.name}` : "%grid";
+  html += ` <span style="font-size:11px;color:#888">${btn(gridValue, gridLabel)}</span>`;
+
+  // Borderless variants of the cell/table styles when the grid is hidden.
+  const noBorder = ";border:1px solid #888";
+  const hcell = hideGrid ? HEADER_CELL.replace(noBorder, "") : HEADER_CELL;
+  const mcell = hideGrid ? MAP_CELL.replace(noBorder, "") : MAP_CELL;
+  const tableStyle = hideGrid ? TABLE_STYLE.replace(noBorder, "") : TABLE_STYLE;
+
+  // -- Compute reachable/path/dash/preview tile sets for self, if interactive --
+  const reachableSet = new Set<string>();
+  const pathSet = new Set<string>();
+  const dashSet = new Set<string>();
+  const previewSet = new Set<string>();
+
+  if (interactive && self) {
+    const key = movementKey(game, self);
+    const path = pathState.get(key) ?? [];
+    for (const p of path) pathSet.add(posKey(p));
+
+    if (dashMode.has(key)) {
+      const dashMp = Math.floor(getEffectiveMp(self) * 1.5);
+      const reachable = getReachableTiles(game, self.pos, dashMp);
+      for (const tile of reachable.keys()) dashSet.add(tile);
+    } else {
+      const remaining = getEffectiveMp(self) - pathCost(game, path);
+      if (remaining > 0) {
+        const tip = path.length > 0 ? path[path.length - 1] : self.pos;
+        // getReachableTiles returns Map<string, number> keyed by posToStr
+        // tiles -- we only need the keys.
+        const reachable = getReachableTiles(game, tip, remaining, self);
+        for (const tile of reachable.keys()) reachableSet.add(tile);
+      }
+    }
+
+    const previewNum = reachPreview.get(key);
+    if (previewNum) {
+      const target = game.entities.find((e) => e.num === previewNum);
+      if (target) {
+        const reach = getReachableTiles(game, target.pos, target.mp, target);
+        for (const tile of reach.keys()) previewSet.add(tile);
+      }
+    }
+  }
+
   html += `<div style="overflow-x:auto">`;
-  html += `<table align="center" ${TABLE_BORDER}>`;
+  html += `<table align="center" style="${tableStyle}">`;
 
   // Column header row -- numbers
-  html += `<tr><td class="hcell" style="${HEADER_CELL}"></td>`;
+  html += `<tr><td class="hcell" style="${hcell}"></td>`;
   for (let c = 0; c < cols; c++) {
-    html += `<td class="hcell" style="${HEADER_CELL}"><b>${c + 1}</b></td>`;
+    html += `<td class="hcell" style="${hcell}"><b>${c + 1}</b></td>`;
   }
   html += "</tr>";
 
   // Data rows -- letter labels
   for (let r = 0; r < rows; r++) {
     html += `<tr>`;
-    html += `<td style="${HEADER_CELL}"><b>${String.fromCharCode(65 + r)}</b></td>`;
+    html += `<td style="${hcell}"><b>${String.fromCharCode(65 + r)}</b></td>`;
 
     for (let c = 0; c < cols; c++) {
       const terrain = game.map[r][c];
       const color = TERRAIN_COLORS[terrain] ?? "#99E599";
       const entity = game.entities.find(
-        (e) => e.pos[0] === r && e.pos[1] === c,
+        (e) => e.curhp > 0 && e.pos[0] === r && e.pos[1] === c,
       );
+      const key = posKey([r, c]);
+      const tileStr = posToStr(r, c);
 
-      let label = "";
       let title = TERRAIN_NAMES[terrain] ?? "Normal";
       let highlight = "";
       let isCur = false;
 
       if (entity) {
-        label = entity.num;
         title = entity.name;
         isCur = entity.num === curNum;
       }
@@ -378,12 +540,52 @@ function buildMapTable(game: Game, self: Entity | null): string {
         highlight = "outline:2px solid #cc0;";
       }
 
-      html += `<td class="mcell" style="background:${color};${MAP_CELL};${highlight}" title="${esc(title)}"`;
+      // Overlay priority: dash > path > reachable > enemy reach preview.
+      // Occupied tiles never get a movement overlay -- you can't move onto
+      // an occupied tile, so only the reach-preview overlay (for clicking a
+      // character) can show there.
+      let overlay = "";
+      if (!entity && dashSet.has(key)) overlay = OVERLAY_DASH;
+      else if (!entity && pathSet.has(key)) overlay = OVERLAY_PATH;
+      else if (!entity && reachableSet.has(key)) overlay = OVERLAY_REACHABLE;
+      else if (previewSet.has(key)) overlay = OVERLAY_ENEMY_REACH;
+
+      const overlayDiv = overlay
+        ? `<div style="position:absolute;inset:0;background:${overlay};pointer-events:none"></div>`
+        : "";
+
+      let inner: string;
       if (entity) {
-        html += `><b style="${PLAYER_LABEL}">${label}</b></td>`;
+        if (interactive && self && entity.num !== self.num) {
+          // Clicking another character previews their reach in red.
+          inner = cellBtn(
+            `%viewreach ${entity.num},${self.name}`,
+            entity.num,
+            `${PLAYER_LABEL};position:relative;z-index:1`,
+          );
+        } else {
+          inner = `<b style="${PLAYER_LABEL};position:relative;z-index:1">${entity.num}</b>`;
+        }
+      } else if (
+        interactive &&
+        self &&
+        dashMode.has(movementKey(game, self)) &&
+        dashSet.has(key)
+      ) {
+        inner = cellBtn(`%dash ${tileStr},${self.name}`, "", "z-index:1");
+      } else if (
+        interactive &&
+        self &&
+        !dashMode.has(movementKey(game, self)) &&
+        reachableSet.has(key)
+      ) {
+        // Empty, in range, not yet pressed into the path -- clickable.
+        inner = cellBtn(`%pathstep ${tileStr},${self.name}`, "", "z-index:1");
       } else {
-        html += `></td>`;
+        inner = "";
       }
+
+      html += `<td class="mcell" style="position:relative;background:${color};${highlight}${mcell}" title="${esc(title)}">${overlayDiv}${inner}</td>`;
     }
     html += "</tr>";
   }
@@ -411,6 +613,30 @@ function buildStatCell(entity: Entity, stat: string, base: number): string {
   if (bonus === 0) return `<td style="padding:0px 8px">${value}</td>`;
   const color = bonus > 0 ? "#c90" : "#c00";
   return `<td style="padding:0px 8px"><i style="color:${color}">${value}</i></td>`;
+}
+
+// Tile column: name + terrain stat bonus summary (BD 4.4 Map glossary).
+function buildTileCell(game: Game, entity: Entity): string {
+  const tile = game.map[entity.pos[0]]?.[entity.pos[1]];
+  const name = TERRAIN_NAMES[tile] ?? "Normal";
+  let note = "";
+  if (tile === Terrain.Forest) note = " +5 PD / -1 EVA vs Phys";
+  else if (tile === Terrain.Water) note = " +5 MD / -1 EVA vs Mag";
+  else if (tile === Terrain.Lava) note = " 30 dmg end turn";
+  else if (tile === Terrain.Air) note = " -1 range through";
+  else if (tile === Terrain.Sticky) note = " +1 MP to enter";
+  else if (tile === Terrain.Boost) note = " -1 MP to enter";
+  const color = TERRAIN_COLORS[tile];
+  // Forest (#226622) and Water (#454FDF) backgrounds are dark; use light
+  // text there so the bonus note stays readable.
+  const fg =
+    tile === Terrain.Forest || tile === Terrain.Water ? "color:#fff" : "";
+  const style = color
+    ? `style="background:${color};${fg};padding:0px 8px"`
+    : "padding:0px 8px";
+  const title = note.trim();
+  const noteStyle = fg ? "color:#ccc" : "color:#888";
+  return `<td ${style} title="${esc(title)}">${esc(name)}${note ? ` <i style="color:${noteStyle};font-size:10px">${esc(note)}</i>` : ""}</td>`;
 }
 
 function buildBuffSuffix(entity: Entity): string {
@@ -450,6 +676,8 @@ function buildPlayerDataTable(game: Game): string {
 <col width="22">
 <col width="22">
 <col width="22">
+<col width="22">
+<col width="22">
 </colgroup>
 <tbody>
 `;
@@ -469,6 +697,7 @@ function buildPlayerDataTable(game: Game): string {
     "MD",
     is43 ? "PE/ME" : "EVA",
     "MP",
+    "Tile",
   ];
 
   for (const h of headers) {
@@ -481,8 +710,8 @@ function buildPlayerDataTable(game: Game): string {
   const ordered =
     game.turnOrder.length > 0
       ? game.turnOrder
-          .map((n) => game.entities.find((e) => e.num === n))
-          .filter((e): e is Entity => !!e)
+        .map((n) => game.entities.find((e) => e.num === n))
+        .filter((e): e is Entity => !!e)
       : game.entities;
   for (const e of ordered) {
     html += `<tr style="height:22px">`;
@@ -515,6 +744,7 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
       html += buildStatCell(e, "eva", e.eva);
     }
     html += buildStatCell(e, "mp", e.mp);
+    html += buildTileCell(game, e);
 
     html += `</tr>`;
   }
@@ -530,7 +760,7 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
 
   html += `
 <tr style="min-height:22px">
-<td colspan="10" style="text-align:center">
+<td colspan="11" style="text-align:center">
 <b>
 Turn Order: ${turnParts.map(esc).join(", ")}
 </b>
@@ -554,14 +784,14 @@ function buildActionLog(game: Game, collapsed = false): string {
     game.log.length === 0
       ? `<div style="color:#888"><i>(empty)</i></div>`
       : `<table class="log" align="center" ${TABLE_BORDER} cellpadding="3" style="max-width:600px">` +
-        game.log
-          .slice(-15)
-          .map(
-            (entry) =>
-              `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
-          )
-          .join("") +
-        `</table>`;
+      game.log
+        .slice(-15)
+        .map(
+          (entry) =>
+            `<tr style="height:22px"><td style="padding:2px 8px"><b>[R${entry.turn}]</b> ${esc(entry.description)}</td></tr>`,
+        )
+        .join("") +
+      `</table>`;
 
   if (collapsed) {
     return `<details style="margin:4px 0"><summary style="cursor:pointer"><b>Action Log</b></summary>${body}</details>`;
@@ -614,10 +844,13 @@ function buildSetupPanel(game: Game): string {
   return `<div style="margin-top:4px"><b>Setup</b><div style="margin-top:4px">
   ${setBtn}
   ${btn("%setlevel all, 10", "Level All \u2192 10")}
+  ${btn("%toggleidle", "Toggle Player's Idle")}
   ${startBtn}
   ${ffaShortcut}
   <span style="color:#888;font-size:10px">${ffaToggle}</span>
 </div></div>`;
+
+
 }
 // -- Controls (Host) ----------------------------------------------------------
 
@@ -634,7 +867,7 @@ function buildControls(game: Game): string {
 
 // -- Entity Stats (Player) ----------------------------------------------------
 
-function buildEntityStats(entity: Entity): string {
+function buildEntityStats(entity: Entity, version: GameVersion): string {
   const hpPct = Math.max(0, (entity.curhp / entity.maxhp) * 100);
   const hpColor = hpPct > 50 ? "#0c0" : hpPct > 25 ? "#cc0" : "#c00";
 
@@ -644,7 +877,12 @@ function buildEntityStats(entity: Entity): string {
   html += ` <b>MAG:</b> ${entity.mag}`;
   html += ` <b>PD:</b> ${entity.pd}`;
   html += ` <b>MD:</b> ${entity.md}`;
-  html += ` <b>EVA:</b> ${entity.eva}`;
+  if (version === "4.3") {
+    html += ` <b>PE:</b> ${eva43(entity, "Physical")}`;
+    html += ` <b>ME:</b> ${eva43(entity, "Magical")}`;
+  } else {
+    html += ` <b>EVA:</b> ${entity.eva}`;
+  }
   html += ` <b>MP:</b> <b style="color:#08c">${entity.mp}</b>`;
 
   if (entity.statuses.length > 0 || entity.buffs.length > 0) {
@@ -664,38 +902,38 @@ function buildEntityStats(entity: Entity): string {
   return html;
 }
 
-// -- Move Buttons (Player) ----------------------------------------------------
+// -- Movement Controls (Player, movement phase) --------------------------------
 
-function buildMoveButtons(game: Game, entity: Entity): string {
-  const reachable = getReachableTiles(game, entity.pos, entity.mp);
-  const tiles: string[] = [];
+function buildMovementControls(game: Game, entity: Entity): string {
+  const key = movementKey(game, entity);
+  const path = pathState.get(key) ?? [];
 
-  for (const [key] of reachable) {
-    tiles.push(btn(`%move ${key},${entity.name}`, key));
+  if (dashMode.has(key)) {
+    return `<div style="margin:4px 0;color:#c60"><b>DASH MODE</b> <span style="color:#888">Click an orange-highlighted tile to dash (1.5x MP, Full action)</span></div>`;
   }
 
-  if (tiles.length === 0) {
-    return `<div style="margin:4px 0;color:#888"><i>No valid moves.</i></div>`;
+  if (path.length === 0) {
+    return `<div style="margin:4px 0;color:#888"><i>Click a highlighted tile to start moving.</i></div>`;
   }
-  return `<div style="margin:4px 0">${tiles.join(" ")}</div>`;
+
+  const cost = pathCost(game, path);
+  const remaining = getEffectiveMp(entity) - cost;
+  let html = `<div style="margin:4px 0">Path: ${path.length} tile${path.length > 1 ? "s" : ""} (${remaining} MP left)</div>`;
+  html += `<div style="margin-top:4px">${btn(`%confirmmove ${entity.name}`, "Confirm Move")} ${btn(`%cancelpath ${entity.name}`, "Cancel Path")}</div>`;
+  return html;
 }
 
-function buildDashButtons(game: Game, entity: Entity): string {
-  if (entity.dashUsed) return "";
+function buildDashModeButton(game: Game, entity: Entity): string {
+  if (entity.dashUsed || entity.standardUsed) return "";
 
   // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
   const dashMp = Math.floor(getEffectiveMp(entity) * 1.5);
   const reachable = getReachableTiles(game, entity.pos, dashMp);
-  const tiles: string[] = [];
+  if (reachable.size === 0) return "";
 
-  for (const [key] of reachable) {
-    tiles.push(btn(`%dash ${key},${entity.name}`, key));
-  }
-
-  if (tiles.length === 0) {
-    return `<div style="margin:4px 0;color:#888"><i>No dash targets.</i></div>`;
-  }
-  return `<div style="margin:2px 0;padding:3px 6px;border-left:2px solid #c60;background:rgba(204,102,0,0.08)"><span style="color:#c60;font-size:10px;font-weight:bold">DASH (1.5x MP, Full)</span><br>${tiles.join(" ")}</div>`;
+  const inDash = dashMode.has(movementKey(game, entity));
+  const label = inDash ? "Back to Move" : "Dash (1.5x MP)";
+  return `<div style="margin:2px 0">${btn(`%dashmode ${entity.name}`, label)}</div>`;
 }
 
 // -- Pre-Move Ability Buttons (Player) ----------------------------------------
@@ -805,14 +1043,7 @@ function buildAbilityButton(
 
   // Single target abilities: show ability + each target as separate buttons
   if (targets.length > 0 && ab.targetAmount !== "AoE") {
-    let html = "";
-    for (const t of targets) {
-      const label = `${ab.name} -> ${t.num}`;
-      const cmd = `%use ${ab.name} @ ${t.name}`;
-      html += btn(cmd, label, "font-size:11px;padding:2px 6px");
-    }
-    html += `<br>`;
-    return html;
+    return buildTargetButtons(ab, targets);
   }
 
   // AoE abilities
@@ -827,16 +1058,7 @@ function buildAbilityButton(
 
   // Tile targeting
   if (tiles.length > 0) {
-    let html = `<span style="color:#888;font-size:10px">${ab.name}:</span> `;
-    for (const t of tiles) {
-      html += btn(
-        `%use ${ab.name} @ ${t},${entity.name}`,
-        t,
-        "font-size:10px;padding:1px 4px",
-      );
-    }
-    html += "<br>";
-    return html;
+    return buildTileButtons(ab, entity, tiles);
   }
 
   // Fallback
@@ -847,81 +1069,127 @@ function buildAbilityButton(
   );
 }
 
+/** One button per valid target for a single-target ability. */
+function buildTargetButtons(ab: AbilityData, targets: Entity[]): string {
+  let html = "";
+  for (const t of targets) {
+    html += btn(
+      `%use ${ab.name} @ ${t.name}`,
+      `${ab.name} -> ${t.num}`,
+      "font-size:11px;padding:2px 6px",
+    );
+  }
+  return html + "<br>";
+}
+
+/** One small button per valid tile for a Tile-targeting ability. */
+function buildTileButtons(
+  ab: AbilityData,
+  entity: Entity,
+  tiles: string[],
+): string {
+  let html = `<span style="color:#888;font-size:10px">${ab.name}:</span> `;
+  for (const t of tiles) {
+    html += btn(
+      `%use ${ab.name} @ ${t},${entity.name}`,
+      t,
+      "font-size:10px;padding:1px 4px",
+    );
+  }
+  return html + "<br>";
+}
+
 // -- Target Resolution Helpers ------------------------------------------------
+
+/** Shared gate: the entity hasn't used up this ability's level/cooldown/uses. */
+function abilityReadyFor(entity: Entity, ab: AbilityData): boolean {
+  if (!entity.isJuggernaut && typeof ab.level === "string") return false;
+
+  if (typeof ab.level === "number" && ab.level > 0) {
+    if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
+      return false;
+  }
+
+  if (entity.cooldowns[ab.name]) return false;
+
+  const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
+  if (maxUses) {
+    const used = entity.usesUsed[ab.name] ?? 0;
+    if (used >= maxUses) return false;
+  }
+  return true;
+}
 
 function getAvailableAbilities(game: Game, entity: Entity): AbilityData[] {
   return entity.abilities.filter((ab) => {
-    if (
-      ab.actionType === "Passive" ||
-      ab.actionType === "Reaction" ||
-      ab.actionType === "Trigger"
-    )
-      return false;
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
-
-    if (typeof ab.level === "number" && ab.level > 0) {
-      if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
-        return false;
-    }
-
-    if (entity.cooldowns[ab.name]) return false;
-
-    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
-    if (maxUses) {
-      const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= maxUses) return false;
-    }
-
-    if (ab.actionType === "Standard" && entity.standardUsed) return false;
-    if (ab.actionType === "Swift" && entity.swiftUsed) return false;
-    // Issue #3: Free/Swift must be used before the Standard action.
-    if (
-      entity.standardUsed &&
-      (ab.actionType === "Free" || ab.actionType === "Swift")
-    )
-      return false;
-    if (ab.actionType === "Movement" && entity.movementUsed) return false;
-    if (
-      ab.actionType === "Full" &&
-      (entity.standardUsed || entity.movementUsed)
-    )
-      return false;
-
+    if (!abilityReadyFor(entity, ab)) return false;
+    if (!canUseActionType(ab, entity)) return false;
     return true;
   });
 }
 
+/** Whether the entity still has the action type this ability needs. */
+function canUseActionType(ab: AbilityData, entity: Entity): boolean {
+  const type = ab.actionType;
+  if (type === "Passive" || type === "Reaction" || type === "Trigger")
+    return false;
+  // Issue #3: Free/Swift must be used before the Standard action.
+  if (type === "Free") return !entity.standardUsed;
+  if (type === "Swift") return !entity.swiftUsed && !entity.standardUsed;
+  if (type === "Standard") return !entity.standardUsed;
+  if (type === "Movement") return !entity.movementUsed;
+  if (type === "Full") return !entity.standardUsed && !entity.movementUsed;
+  return true;
+}
+
+/** Can be used before the Standard action: Free/Swift/Trigger/Movement, or a triggered Reaction. */
+function isPreMoveAction(ab: AbilityData, entity: Entity): boolean {
+  const type = ab.actionType;
+  return (
+    type === "Free" ||
+    type === "Swift" ||
+    type === "Trigger" ||
+    type === "Movement" ||
+    (type === "Reaction" && entity.triggered)
+  );
+}
+
 function getPreMoveAbilities(game: Game, entity: Entity): AbilityData[] {
   return entity.abilities.filter((ab) => {
-    if (
-      ab.actionType !== "Free" &&
-      ab.actionType !== "Swift" &&
-      ab.actionType !== "Trigger" &&
-      ab.actionType !== "Movement" &&
-      !(ab.actionType === "Reaction" && entity.triggered)
-    )
-      return false;
-
-    if (!entity.isJuggernaut && typeof ab.level === "string") return false;
-
-    if (typeof ab.level === "number" && ab.level > 0) {
-      if (ab.level > entity.classLevel && ab.level > entity.weaponLevel)
-        return false;
-    }
-
-    if (entity.cooldowns[ab.name]) return false;
-
-    const maxUses = ab.maxUses ?? parseFrequency(ab.frequency).uses;
-    if (maxUses) {
-      const used = entity.usesUsed[ab.name] ?? 0;
-      if (used >= maxUses) return false;
-    }
-
+    if (!abilityReadyFor(entity, ab)) return false;
+    if (!isPreMoveAction(ab, entity)) return false;
     if (ab.actionType === "Swift" && entity.swiftUsed) return false;
-
     return true;
   });
+}
+
+/** Whether `e` fits the ability's target group (Foe/Ally/Self/Any/…) from `user`. */
+function matchesTargetGroup(
+  ab: AbilityData,
+  user: Entity,
+  e: Entity,
+): boolean {
+  switch (ab.targetGroup) {
+    case "Foe":
+      if (user.team === 0) return e.num !== user.num;
+      return e.team !== user.team;
+    case "Ally":
+      if (e.num === user.num) return false;
+      if (user.team === 0) return false;
+      return e.team === user.team;
+    case "Self":
+      return e.num === user.num;
+    case "Any":
+    case "Foe or Ally":
+      return true;
+    default:
+      if (ab.targetGroup.includes("Ally") && !ab.targetGroup.includes("Foe")) {
+        if (e.num === user.num) return true;
+        if (user.team === 0) return false;
+        return e.team === user.team;
+      }
+      return true;
+  }
 }
 
 function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
@@ -933,38 +1201,7 @@ function getValidTargets(game: Game, ab: AbilityData, user: Entity): Entity[] {
     )
       return false;
     if (e.curhp <= 0) return false;
-
-    switch (ab.targetGroup) {
-      case "Foe":
-        if (user.team === 0) {
-          if (e.num === user.num) return false;
-        } else {
-          if (e.team === user.team) return false;
-        }
-        break;
-      case "Ally":
-        if (e.num === user.num) return false;
-        if (user.team === 0) return false;
-        if (e.team !== user.team) return false;
-        break;
-      case "Self":
-        if (e.num !== user.num) return false;
-        break;
-      case "Any":
-        break;
-      case "Foe or Ally":
-        break;
-      default:
-        if (
-          ab.targetGroup.includes("Ally") &&
-          !ab.targetGroup.includes("Foe")
-        ) {
-          if (e.num === user.num) return true;
-          if (user.team === 0) return false;
-          if (e.team !== user.team) return false;
-        }
-        break;
-    }
+    if (!matchesTargetGroup(ab, user, e)) return false;
 
     if (ab.range !== "Global" && ab.range !== "Self") {
       if (!inRange(game, user.pos, e.pos, ab.range)) return false;
@@ -994,7 +1231,4 @@ function getValidTiles(game: Game, ab: AbilityData, user: Entity): string[] {
   return tiles;
 }
 
-function getCurrentTurnEntity(game: Game): Entity | null {
-  const num = game.turnOrder[game.turnIndex];
-  return game.entities.find((e) => e.num === num) ?? null;
-}
+

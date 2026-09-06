@@ -81,25 +81,161 @@ function isConnected(grid: number[][]): boolean {
 
   while (queue.length > 0) {
     const [r, c] = queue.shift()!;
-    for (const [dr, dc] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ]) {
-      const nr = r + dr;
-      const nc = c + dc;
-      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
-      const key = `${nr},${nc}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (!isPassable(grid[nr][nc])) continue;
-      reachable++;
-      queue.push([nr, nc]);
-    }
+    reachable += expandNeighbor(grid, rows, cols, r, c, seen, queue);
   }
   return reachable === total;
 }
+
+/** Visit up to 4 orthogonal neighbors of (r,c), returning how many were
+ * newly-reached passable tiles. */
+function expandNeighbor(
+  grid: number[][],
+  rows: number,
+  cols: number,
+  r: number,
+  c: number,
+  seen: Set<string>,
+  queue: [number, number][],
+): number {
+  let found = 0;
+  for (const [dr, dc] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ]) {
+    const nr = r + dr;
+    const nc = c + dc;
+    if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+    const key = `${nr},${nc}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!isPassable(grid[nr][nc])) continue;
+    found++;
+    queue.push([nr, nc]);
+  }
+  return found;
+}
+
+/** Inputs a themed cell generator needs to pick terrain for one tile. */
+type ThemeCell = (
+  seedName: string,
+  dr: number,
+  dc: number,
+  d: number,
+  m: number,
+  n: number,
+  inner: number,
+) => number;
+
+/** Concentric square rings (theme 0). */
+const concentricRings: ThemeCell = (seedName, _dr, _dc, d, _m, n, inner) => {
+  const ring = d - inner;
+  if (ring % 3 === 0) {
+    const v = cellRand(seedName, _dr, _dc, 1);
+    if (v < 0.45) return Water;
+    if (v < 0.7) return Forest;
+    if (v < 0.85) return Lava;
+    return Normal;
+  }
+  if (ring % 3 === 1) {
+    if (n < 0.15) return Sticky;
+    if (n < 0.3) return Forest;
+    if (n < 0.36) return Broken;
+    return Normal;
+  }
+  if (n < 0.12) return Stone;
+  if (n < 0.2) return Broken;
+  if (n < 0.35) return Water;
+  return Normal;
+};
+
+/** Diamond rings, Manhattan bands (theme 1). */
+const diamondRings: ThemeCell = (_seedName, _dr, _dc, _d, m, n, _inner) => {
+  const band = m % 4;
+  if (band === 0) {
+    if (n < 0.4) return Forest;
+    if (n < 0.55) return Water;
+    return Normal;
+  }
+  if (band === 1) {
+    if (n < 0.15) return Lava;
+    if (n < 0.3) return Water;
+    if (n < 0.36) return Ice;
+    return Normal;
+  }
+  if (band === 2) {
+    if (n < 0.2) return Stone;
+    if (n < 0.35) return Forest;
+    return Normal;
+  }
+  if (n < 0.15) return Ice;
+  if (n < 0.3) return Water;
+  return Normal;
+};
+
+/** Crossroads: open corridors, themed quadrants (theme 2). */
+const crossroads: ThemeCell = (_seedName, dr, dc, _d, _m, n, _inner) => {
+  if (dr <= 1 || dc <= 1) return Normal;
+  if (n < 0.28) return Water;
+  if (n < 0.4) return Forest;
+  if (n < 0.47) return Lava;
+  if (n < 0.53) return Sticky;
+  if (n < 0.58) return Stone;
+  return Normal;
+};
+
+/** Corner pools: quadrant blobs (theme 3). */
+const cornerPools: ThemeCell = (_seedName, dr, dc, _d, m, n, inner) => {
+  if (dr > inner && dc > inner) {
+    if (n < 0.25) return Water;
+    if (n < 0.32) return Lava;
+    if (n < 0.4) return Forest;
+    if (m % 5 === 0) return Stone;
+    if (n < 0.45) return Sticky;
+    return Normal;
+  }
+  if (n < 0.12) return Water;
+  return Normal;
+};
+
+/** Scattered symmetric clusters, quantised noise (theme 4). */
+const scatterClusters: ThemeCell = (seedName, dr, dc, _d, _m, _n, _inner) => {
+  const v = cellRand(seedName, Math.floor(dr / 2), Math.floor(dc / 2), 7);
+  if (v < 0.2) return Water;
+  if (v < 0.28) return Stone;
+  if (v < 0.34) return Forest;
+  if (v < 0.4) return Lava;
+  if (v < 0.46) return Sticky;
+  if (v < 0.5) return Broken;
+  return Normal;
+};
+
+/** Framed: layered rings around a wide plaza (theme 5, also default). */
+const framed: ThemeCell = (_seedName, _dr, _dc, d, _m, n, inner) => {
+  const ring = d - inner;
+  if (ring % 4 === 0) return n < 0.5 ? Forest : Water;
+  if (ring % 4 === 1) {
+    if (n < 0.15) return Lava;
+    return Normal;
+  }
+  if (ring % 4 === 2) {
+    if (n < 0.25) return Sticky;
+    return Normal;
+  }
+  if (n < 0.1) return Stone;
+  return Normal;
+};
+
+/** Theme id -> cell generator. */
+const THEME_CELLS: Record<number, ThemeCell> = {
+  0: concentricRings,
+  1: diamondRings,
+  2: crossroads,
+  3: cornerPools,
+  4: scatterClusters,
+  5: framed,
+};
 
 /**
  * Generate a D2-symmetric, varied, connected terrain grid.
@@ -123,6 +259,7 @@ export function generateSymmetricGrid(
   const centerC = (cols - 1) / 2;
   const rng = mulberry32(hashSeed(seedName));
   const theme = Math.floor(rng() * 6);
+  const themeCell = THEME_CELLS[theme] ?? THEME_CELLS[5];
 
   for (let r = 0; r < rows; r++) {
     const dr = Math.abs(r - centerR);
@@ -131,165 +268,100 @@ export function generateSymmetricGrid(
       const d = Math.max(dr, dc); // Chebyshev ring
       const m = dr + dc; // Manhattan distance
       const n = cellRand(seedName, dr, dc);
-      let t = Normal;
 
-      if (d <= inner) {
-        t = Normal; // open spawn plaza in the centre
-      } else {
-        switch (theme) {
-          case 0: {
-            // Concentric square rings
-            const ring = d - inner;
-            if (ring % 3 === 0) {
-              const v = cellRand(seedName, dr, dc, 1);
-              if (v < 0.45) t = Water;
-              else if (v < 0.7) t = Forest;
-              else if (v < 0.85) t = Lava;
-              else t = Normal;
-            } else if (ring % 3 === 1) {
-              if (n < 0.15) t = Sticky;
-              else if (n < 0.3) t = Forest;
-              else if (n < 0.36) t = Broken;
-            } else {
-              if (n < 0.12) t = Stone;
-              else if (n < 0.2) t = Broken;
-              else if (n < 0.35) t = Water;
-            }
-            break;
-          }
-          case 1: {
-            // Diamond rings (Manhattan bands)
-            const band = m % 4;
-            if (band === 0) {
-              if (n < 0.4) t = Forest;
-              else if (n < 0.55) t = Water;
-            } else if (band === 1) {
-              if (n < 0.15) t = Lava;
-              else if (n < 0.3) t = Water;
-              else if (n < 0.36) t = Ice;
-            } else if (band === 2) {
-              if (n < 0.2) t = Stone;
-              else if (n < 0.35) t = Forest;
-            } else if (n < 0.15) t = Ice;
-            else if (n < 0.3) t = Water;
-            break;
-          }
-          case 2: {
-            // Crossroads: open corridors, themed quadrants
-            if (dr <= 1 || dc <= 1) {
-              t = Normal;
-            } else if (n < 0.28) {
-              t = Water;
-            } else if (n < 0.4) {
-              t = Forest;
-            } else if (n < 0.47) {
-              t = Lava;
-            } else if (n < 0.53) {
-              t = Sticky;
-            } else if (n < 0.58) {
-              t = Stone;
-            }
-            break;
-          }
-          case 3: {
-            // Corner pools: quadrant blobs
-            if (dr > inner && dc > inner) {
-              if (n < 0.25) t = Water;
-              else if (n < 0.32) t = Lava;
-              else if (n < 0.4) t = Forest;
-              else if (m % 5 === 0) t = Stone;
-              else if (n < 0.45) t = Sticky;
-            } else if (n < 0.12) {
-              t = Water;
-            }
-            break;
-          }
-          case 4: {
-            // Scattered symmetric clusters (quantised noise)
-            const v = cellRand(seedName, Math.floor(dr / 2), Math.floor(dc / 2), 7);
-            if (v < 0.2) t = Water;
-            else if (v < 0.28) t = Stone;
-            else if (v < 0.34) t = Forest;
-            else if (v < 0.4) t = Lava;
-            else if (v < 0.46) t = Sticky;
-            else if (v < 0.5) t = Broken;
-            break;
-          }
-          default: {
-            // Framed: layered rings around a wide plaza
-            const ring = d - inner;
-            if (ring % 4 === 0) {
-              t = n < 0.5 ? Forest : Water;
-            } else if (ring % 4 === 1) {
-              if (n < 0.15) t = Lava;
-            } else if (ring % 4 === 2) {
-              if (n < 0.25) t = Sticky;
-            } else if (n < 0.1) t = Stone;
-            break;
-          }
-        }
-      }
-
-      grid[r][c] = t;
+      // Open spawn plaza in the centre, themed terrain beyond it.
+      grid[r][c] = d <= inner ? Normal : themeCell(seedName, dr, dc, d, m, n, inner);
     }
   }
 
-  // Guarantee a walkable centre plaza for spawns.
-  for (let r = 0; r < rows; r++) {
+  ensureWalkablePlaza(grid, centerR, centerC, inner);
+  ensureVariety(grid, seedName, centerR, centerC, inner);
+  ensureConnectivity(grid, seedName, centerR, centerC, inner);
+  ensureNotAllNormal(grid);
+
+  return grid;
+}
+
+/** Overwrite the centre plaza with walkable Normal tiles for spawns. */
+function ensureWalkablePlaza(
+  grid: number[][],
+  centerR: number,
+  centerC: number,
+  inner: number,
+): void {
+  const cols = grid[0]!.length;
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (Math.max(Math.abs(r - centerR), Math.abs(c - centerC)) <= inner)
+        grid[r][c] = Normal;
+    }
+  }
+}
+
+/** Sprinkle Water when a map is too uniform (matters for tiny maps). */
+function ensureVariety(
+  grid: number[][],
+  seedName: string,
+  centerR: number,
+  centerC: number,
+  inner: number,
+): void {
+  const total = grid.length * (grid[0]?.length ?? 0);
+  const nonNormal = grid.flat().filter((t) => t !== Normal).length;
+  if (nonNormal >= Math.max(1, Math.floor(total * 0.12))) return;
+
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < (grid[0]?.length ?? 0); c++) {
+      const dr = Math.abs(r - centerR);
+      const dc = Math.abs(c - centerC);
+      if (Math.max(dr, dc) <= inner) continue;
+      if (cellRand(seedName, dr, dc, 99) < 0.3) grid[r][c] = Water;
+    }
+  }
+  if (grid.flat().filter((t) => t !== Normal).length === 0) {
+    // Water in all four corners preserves D2 (both-axis mirror) symmetry.
+    waterCorners(grid);
+  }
+}
+
+/** Connectivity safety net: fall back to a simple always-connected, always
+ * varied stripe pattern if the themed layout ever seals anything off. Only
+ * Water + Normal are used, so the result is trivially connected, and the
+ * pattern is keyed on the symmetric coordinates so symmetry is preserved. */
+function ensureConnectivity(
+  grid: number[][],
+  seedName: string,
+  centerR: number,
+  centerC: number,
+  inner: number,
+): void {
+  if (isConnected(grid)) return;
+  const cols = grid[0]?.length ?? 0;
+  for (let r = 0; r < grid.length; r++) {
     for (let c = 0; c < cols; c++) {
       const dr = Math.abs(r - centerR);
       const dc = Math.abs(c - centerC);
-      if (Math.max(dr, dc) <= inner) grid[r][c] = Normal;
+      const d = Math.max(dr, dc);
+      grid[r][c] =
+        d > inner && (Math.round(dr) + Math.round(dc)) % 3 === 0
+          ? Water
+          : Normal;
     }
   }
+}
 
-  // Guarantee some variety (matters for tiny maps).
-  const total = rows * cols;
-  const nonNormal = grid.flat().filter((t) => t !== Normal).length;
-  if (nonNormal < Math.max(1, Math.floor(total * 0.12))) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const dr = Math.abs(r - centerR);
-        const dc = Math.abs(c - centerC);
-        if (Math.max(dr, dc) <= inner) continue;
-        if (cellRand(seedName, dr, dc, 99) < 0.3) grid[r][c] = Water;
-      }
-    }
-    if (grid.flat().filter((t) => t !== Normal).length === 0) {
-      // Water in all four corners preserves D2 (both-axis mirror) symmetry.
-      grid[0][0] = Water;
-      grid[0][cols - 1] = Water;
-      grid[rows - 1][0] = Water;
-      grid[rows - 1][cols - 1] = Water;
-    }
-  }
+/** Absolute safety net: never ship an all-Normal map. */
+function ensureNotAllNormal(grid: number[][]): void {
+  if (!grid.flat().every((t) => t === Normal)) return;
+  waterCorners(grid);
+}
 
-  // Connectivity safety net: fall back to a simple always-connected, always
-  // varied stripe pattern if the themed layout ever seals anything off. Only
-  // Water + Normal are used, so the result is trivially connected, and the
-  // pattern is keyed on the symmetric coordinates so symmetry is preserved.
-  if (!isConnected(grid)) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const dr = Math.abs(r - centerR);
-        const dc = Math.abs(c - centerC);
-        const d = Math.max(dr, dc);
-        grid[r][c] =
-          d > inner && (Math.round(dr) + Math.round(dc)) % 3 === 0
-            ? Water
-            : Normal;
-      }
-    }
-  }
-
-  // Absolute safety net: never ship an all-Normal map. Water is placed in
-  // all four corners so D2 (both-axis mirror) symmetry is preserved.
-  if (grid.flat().every((t) => t === Normal)) {
-    grid[0][0] = Water;
-    grid[0][cols - 1] = Water;
-    grid[rows - 1][0] = Water;
-    grid[rows - 1][cols - 1] = Water;
-  }
-
-  return grid;
+/** Put Water in all four corners (preserves D2 both-axis mirror symmetry). */
+function waterCorners(grid: number[][]): void {
+  const rows = grid.length;
+  const cols = grid[0]?.length ?? 0;
+  grid[0][0] = Water;
+  grid[0][cols - 1] = Water;
+  grid[rows - 1][0] = Water;
+  grid[rows - 1][cols - 1] = Water;
 }

@@ -1,14 +1,9 @@
 import { send, sendPm, toId } from "../utils.js";
 import type { User } from "../users.js";
-import {
-  classes,
-  weapons,
-  items,
-  branches,
-  type ClassData,
-  type WeaponData,
-} from "../data/index.js";
 import { WhatIs, Reference } from "../data/index.js";
+import type { GameVersion } from "../data/index.js";
+import { getVersionData } from "../data/version43.js";
+import { games } from "../game/state.js";
 import { modeDescription, describeModes } from "../data/gamemodes.js";
 
 export function infoCommand(user: User, cmd: string, args: string) {
@@ -16,7 +11,8 @@ export function infoCommand(user: User, cmd: string, args: string) {
 
   if (cmd === "wt") {
     const id = toId(args);
-    if (!id) return sendPm(target, "Usage: %wt [ability/item/status/tile/mode]");
+    if (!id)
+      return sendPm(target, "Usage: %wt [ability/item/status/tile/mode]");
 
     // List every game mode (the doc's "/rfaq modes").
     if (id === "modes" || id === "gamemodes") {
@@ -38,8 +34,17 @@ export function infoCommand(user: User, cmd: string, args: string) {
       return;
     }
 
+    let version: GameVersion = "4.4";
+    for (const game of games.values()) {
+      if (game.entities.some((e) => toId(e.name) === toId(user.name))) {
+        version = game.version;
+        break;
+      }
+    }
+    const data = getVersionData(version);
+
     // Check weapons
-    const weapon = weapons.get(id);
+    const weapon = data.weapons.get(id);
     if (weapon) {
       const lines = [`**${weapon.name}** (${weapon.branch})`];
       for (const ab of weapon.abilities) {
@@ -50,27 +55,12 @@ export function infoCommand(user: User, cmd: string, args: string) {
     }
 
     // Check classes
-    const cls = classes.get(id);
+    const cls = data.classes.get(id);
     if (cls) {
       const lines = [`**${cls.name}**`];
       for (const ab of cls.abilities) {
         lines.push(buildAbilityLine(ab));
       }
-      sendPm(target, lines.join("\n"));
-      return;
-    }
-
-    // Check items (beta)
-    const it = items.get(id);
-    if (it) {
-      const lines = [
-        `**${it.name}** (${it.rank || "-"}) — ${it.slots} slot${it.slots === 1 ? "" : "s"}, ${it.gold} gold`,
-        it.materials ? `Materials: ${it.materials}` : "",
-        it.statBoosts ? `Boosts: ${it.statBoosts}` : "",
-        it.statNerfs ? `Nerfs: ${it.statNerfs}` : "",
-        it.frequency || it.actionType ? `${it.frequency} ${it.actionType}`.trim() : "",
-        it.effect,
-      ].filter(Boolean);
       sendPm(target, lines.join("\n"));
       return;
     }
