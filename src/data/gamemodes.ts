@@ -42,6 +42,7 @@ export const GAMEMODE_MAPS: Record<GameModeId, string[]> = {
     "nyoom",
     "pond",
     "duelingground",
+    "sprint",
     "unabletorun",
     "minicrossroads",
     "vortex",

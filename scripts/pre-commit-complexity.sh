@@ -14,10 +14,8 @@ fi
 
 echo "🔍 Checking cyclomatic complexity..."
 
-# Run oxlint with complexity warn on staged .ts files, capturing output and
-# exit status separately. oxlint exits 0 when it only prints warnings; a
-# non-zero status means oxlint itself failed (bad config / missing files).
-RAW=$(printf '%s\n' "$STAGED_TS" | xargs -r bun x --no-install oxlint --config .oxlintrc.json 2>&1)
+# Run oxlint with complexity warn on staged .ts files
+RAW=$(echo "$STAGED_TS" | xargs bun x --no-install oxlint --config .oxlintrc.json 2>&1)
 SCAN_EXIT=$?
 
 # If oxlint itself failed (config, resolution, etc.), report the failure
@@ -30,17 +28,7 @@ if [ "$SCAN_EXIT" -ne 0 ]; then
   exit 0
 fi
 
-# Report only real over-threshold functions by running the same parser the
-# CI gate uses (_parse-complexity.py) instead of a crude grep on the raw
-# output, which would also match the literal "Maximum allowed is 15" text in
-# every warning line.
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TMP_FILE="$(mktemp)"
-trap 'rm -f "$TMP_FILE"' EXIT
-printf '%s' "$RAW" > "$TMP_FILE"
-
-REPORT="$(PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE" 2>&1)"
-PARSER_RC=$?
+ISSUES=$(printf '%s' "$RAW" | grep -i "complexity" || true)
 
 # Non-blocking: a parser failure warns and skips, but never blocks a commit.
 if [ "$PARSER_RC" -ne 0 ]; then

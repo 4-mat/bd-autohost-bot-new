@@ -1432,6 +1432,14 @@
       "cols": 6
     },
     {
+      "name": "sprint",
+      "display": "Sprint",
+      "format": "curated",
+      "file": "curated.json",
+      "rows": 5,
+      "cols": 5
+    },
+    {
       "name": "steamvent",
       "display": "Steamvent",
       "format": "curated",

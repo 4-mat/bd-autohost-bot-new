@@ -1132,7 +1132,6 @@ function* resolveSingleTarget(
         result.messages.push(...missMsgs);
       }
     }
-
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---

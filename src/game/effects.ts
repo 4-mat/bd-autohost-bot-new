@@ -155,26 +155,6 @@ export interface OnMissEffect {
   effects: Effect[];
 }
 
-export interface PerEffect {
-  type: "per";
-  trigger: string;
-  effects: Effect[];
-}
-
-export interface TriggerEffect {
-  type: "trigger";
-  event: string;
-  effects: Effect[];
-}
-
-export type PhaseTiming = "before-acc" | "before-damage" | "on-miss" | "regardless";
-
-export interface PhaseGateEffect {
-  type: "phaseEffect";
-  phase: PhaseTiming;
-  effects: Effect[];
-}
-
 export type Effect =
   | StatusInflict
   | MpCapEffect
@@ -197,9 +177,6 @@ export type Effect =
   | MultiHitMod
   | TileEffect
   | OnMissEffect
-  | PerEffect
-  | TriggerEffect
-  | PhaseGateEffect
   | UnknownEffect;
 
 // ---------------------------------------------------------------------------
@@ -307,15 +284,10 @@ export function parseEffects(text: string): Effect[] {
     .replace(/\s+/g, " ")
     .trim();
 
-  return cachedParseEffects(normalized);
-}
-
-function parseEffectsUncached(normalized: string): Effect[] {
-  const lowerFull = normalized.toLowerCase();
-
   // "On Miss: <effects>" wraps subsequent effects so they only fire
   // when the attack misses.  The prefix is case-insensitive and may
   // appear at the start of the entire ability text.
+  const lowerFull = normalized.toLowerCase();
   const onMissMatch = lowerFull.match(/^on\s+miss:\s*(.+)$/i);
   if (onMissMatch) {
     const inner = parseEffects(onMissMatch[1].trim());
@@ -327,8 +299,7 @@ function parseEffectsUncached(normalized: string): Effect[] {
   // input is an `If CONDITION, EFFECT [Otherwise, EFFECT]` statement, return
   // one effect rather than splitting on the inner period and losing context.
   // The regex tolerates either ", " or ". " before "Otherwise", and an
-  // optional trailing period at the end of the else-branch. Both comma and
-  // colon separators are accepted ("If X, Y" and "If X: Y").
+  // optional trailing period at the end of the else-branch.
   const fullIfMatch = lowerFull.match(
     /^if\s+(.+?)\s*[,:]\s*(.+?)(?:[.,]?\s+otherwise,?\s*(.+?))?[.,]?$/,
   );
