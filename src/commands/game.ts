@@ -1,3 +1,21 @@
+/**
+ * Chat command handlers (%move, %attack, %vote, %join, etc.) for bd-autohost-bot-new.
+ *
+ * Exports:
+ * - gameCommand() - main entry point for processing commands
+ * - GAME_CMDS - record of all supported game commands
+ * - Command handlers: handleMove, handleAttack, handleConfirm, handleVote, etc.
+ * - Turn management: handleAdvanceTurn, handleBack, handleCancel
+ * - Range checking: handleCheckRange, checkRangeBetween, checkRangeToTarget
+ * - Voting: handleVote, handleUnvote, handleVoteStatus, buildVoteStatus
+ * - HP/Status: handleHp, handleStatus, statusAdd/Remove
+ * - Timer: handleCut, handleTimer, setGameTimer, resolveEntityRef
+ * - Display: buildPlayerList, buildTurnOrder, announceGameOver, broadcastPages
+ * - Info: handleInfo, handleRegp
+ *
+ * Import: `import { gameCommand } from "./game.js"`
+ * or `import { handleMove, handleAttack } from "./game.js"`
+ */
 import {
   send,
   sendPm,
@@ -34,6 +52,7 @@ import {
   isStandable,
   type Game,
   type Entity,
+  type AbilityData,
 } from "../game/state.js";
 import { rollDice } from "../utils.js";
 import {
@@ -43,6 +62,7 @@ import {
   pathState,
   reachPreview,
   dashMode,
+  gridHidden,
   clearMovementState,
   clearGameMovementState,
   movementKey,
@@ -66,6 +86,107 @@ import {
   tallyVotes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
+import {
+  MSG_NO_GAME,
+  MSG_GAME_STARTED,
+  MSG_NO_ACTIVE_TURN,
+  MSG_NOT_YOUR_TURN,
+  MSG_NOT_IN_GAME,
+} from "../messages.js";
+
+type GameCmd = (
+  game: Game | null,
+  user: User,
+  args: string,
+  full: string,
+) => void;
+
+/** Run a handler only when a game is active; otherwise tell the user. */
+function withGame(
+  game: Game | null,
+  user: User,
+  fn: (g: Game) => void,
+  msg = MSG_NO_GAME,
+) {
+  if (!game) return sendPm(user.name, msg);
+  fn(game);
+}
+
+const GAME_CMDS: Record<string, GameCmd> = {
+  move: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleMove(game, u, "move", full)),
+  dash: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleMove(game, u, "dash", full)),
+  attack: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleAttack(game, u, "attack", full)),
+  use: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleAttack(game, u, "use", full)),
+  confirm: (g, u) => withGame(g, u, (game) => handleConfirm(game, u)),
+  cancel: (g, u) => withGame(g, u, (game) => handleCancel(game, u)),
+  target: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleTarget(game, u, full)),
+  choose: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleChoose(game, u, full)),
+  vote: (g, u, _a, full) => withGame(g, u, (game) => handleVote(game, u, full)),
+  votestatus: (g, u) => withGame(g, u, (game) => handleVoteStatus(game, u)),
+  unvote: (g, u) => withGame(g, u, (game) => handleUnvote(game, u)),
+  leave: (g, u) => withGame(g, u, (game) => handleLeave(game, u)),
+  endturn: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
+  next: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
+  back: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
+  undo: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
+  r: (_g, u, args) => handleRoll(u.name, args),
+  roll: (_g, u, args) => handleRoll(u.name, args),
+  dice: (_g, u, args) => handleRoll(u.name, args),
+  info: (g, u, args) => withGame(g, u, (game) => handleInfo(game, u, args)),
+  map: (g, u) => withGame(g, u, (game) => broadcastPages(game)),
+  premove: (g, u) => withGame(g, u, (game) => handlePremove(game, u)),
+  passmove: (g, u) => withGame(g, u, (game) => handlePassMove(game, u)),
+  pass: (g, u) => withGame(g, u, (game) => handlePassMove(game, u)),
+  pathstep: (g, u, _a, full) =>
+    withGame(g, u, (game) => handlePathStep(game, u, full)),
+  confirmmove: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleConfirmMove(game, u, full)),
+  cancelpath: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleCancelPath(game, u, full)),
+  viewreach: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleViewReach(game, u, full)),
+  dashmode: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleDashMode(game, u, full)),
+  grid: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleGridToggle(game, u, full)),
+  pl: (g, u) => withGame(g, u, (game) => sendPm(u.name, buildPlayerList(game))),
+  log: (g, u, args) => withGame(g, u, (game) => handleLog(game, u, args)),
+  to: (g, u) => withGame(g, u, (game) => sendPm(u.name, buildTurnOrder(game))),
+  hp: (g, u, _a, full) => withGame(g, u, (game) => handleHp(game, u, full)),
+  cut: (g, u, _a, full) => withGame(g, u, (game) => handleCut(game, u, full)),
+  timer: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleTimer(game, u, full)),
+  checkrange: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleCheckRange(game, u, full)),
+  cr: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleCheckRange(game, u, full)),
+  status: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleStatus(game, u, full)),
+  regp: (g, u, _a, full) => withGame(g, u, (game) => handleRegp(game, u, full)),
+  dir: (g, u, args) =>
+    withGame(g, u, (game) => handleDirChoice(game, u, args), "No active game."),
+  picktile: (g, u, _a, full) =>
+    withGame(
+      g,
+      u,
+      (game) => handleTileChoice(game, u, full),
+      "No active game.",
+    ),
+  // Legacy alias: pre-refactor tile-targeting used %tile.
+  tile: (g, u, _a, full) =>
+    withGame(
+      g,
+      u,
+      (game) => handleTileChoice(game, u, full),
+      "No active game.",
+    ),
+};
 
 export function gameCommand(
   room: Room | null,
@@ -84,181 +205,13 @@ export function gameCommand(
 
   const full = val ? `${args},${val}` : args;
 
-  switch (cmd) {
-    case "move":
-    case "dash":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleMove(game, user, cmd, full);
-      break;
+  const handler = GAME_CMDS[cmd];
+  if (handler) {
+    handler(game, user, args, full);
+    return;
 
-    case "attack":
-    case "use":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleAttack(game, user, cmd, full);
-      break;
-
-    case "confirm":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleConfirm(game, user);
-      break;
-
-    case "cancel":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCancel(game, user);
-      break;
-
-    case "target":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleTarget(game, user, full);
-      break;
-
-    case "choose":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleChoose(game, user, full);
-      break;
-
-    case "vote":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleVote(game, user, full);
-      break;
-
-    case "votestatus":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleVoteStatus(game, user);
-      break;
-
-    case "unvote":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleUnvote(game, user);
-      break;
-
-    case "leave":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleLeave(game, user);
-      break;
-
-    case "endturn":
-    case "next":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleAdvanceTurn(game, user);
-      break;
-
-    case "back":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleBack(game, user);
-      break;
-
-    case "r":
-    case "roll":
-    case "dice":
-      handleRoll(user.name, args);
-      break;
-
-    case "info":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleInfo(game, user, args);
-      break;
-
-    case "map":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      broadcastPages(game);
-      break;
-
-    case "premove":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handlePremove(game, user);
-      break;
-
-    case "passmove":
-    case "pass":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handlePassMove(game, user);
-      break;
-
-    case "pathstep":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handlePathStep(game, user, full);
-      break;
-
-    case "confirmmove":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleConfirmMove(game, user, full);
-      break;
-
-    case "cancelpath":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCancelPath(game, user, full);
-      break;
-
-    case "viewreach":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleViewReach(game, user, full);
-      break;
-
-    case "dashmode":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleDashMode(game, user);
-      break;
-
-    case "pl":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      sendPm(user.name, buildPlayerList(game));
-      break;
-
-    case "log":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleLog(game, user, args);
-      break;
-
-    case "to":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      sendPm(user.name, buildTurnOrder(game));
-      break;
-
-    case "hp":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleHp(game, user, full);
-      break;
-
-    case "cut":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCut(game, user, full);
-      break;
-    case "timer":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleTimer(game, user, full);
-      break;
-
-    case "checkrange":
-    case "cr":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleCheckRange(game, user, full);
-      break;
-
-    case "status":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleStatus(game, user, full);
-      break;
-
-    case "regp":
-      if (!game) return sendPm(user.name, "No active game in this room.");
-      handleRegp(game, user, full);
-      break;
-
-    case "dir":
-      if (!game) return sendPm(user.name, "No active game.");
-      handleDirChoice(game, user, args);
-      break;
-
-    case "tile":
-      if (!game) return sendPm(user.name, "No active game.");
-      handleTileChoice(game, user, full);
-      break;
-
-    default:
-      sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
-      break;
   }
+  sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
 }
 
 function findGameForRoom(roomid: string): Game | null {
@@ -293,36 +246,9 @@ function failAct(game: Game, entity: Entity, reason: string) {
 }
 
 function handleMove(game: Game, user: User, cmd: string, args: string) {
-  const isHost = toId(user.name) === toId(game.host);
+  const { entity, rest: posStr } = resolveActor(game, user, args);
+  if (!entity) return;
 
-  let entityName = "";
-  let posStr = args;
-
-  const parts = args.split(",").map((s) => s.trim());
-  if (parts.length >= 3) {
-    entityName = parts[parts.length - 1];
-    posStr = parts.slice(0, -1).join(",");
-  } else if (
-    parts.length === 2 &&
-    (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
-  ) {
-    entityName = parts[1];
-    posStr = parts[0];
-  }
-
-  let entity: Entity | null = null;
-  if (entityName && isHost) {
-    entity = getEntity(game, entityName);
-    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
-  } else {
-    entity = getCurrentEntity(game);
-  }
-
-  if (!entity) return sendPm(user.name, "No active turn.");
-
-  if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
-  }
   if (isStunned(entity)) {
     failAct(game, entity, "Stunned");
     return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
@@ -354,11 +280,15 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
   const dash = cmd === "dash";
   const mp = dash ? Math.floor(getEffectiveMp(entity) * 1.5) : entity.mp;
+  // Pass the mover for dash too so its own tile is never treated as an
+  // occupied foreign tile; the 1.5x dash budget avoids the effective-MP
+  // clamp by requesting clampToEffective=false.
   const reachable = getReachableTiles(
     game,
     entity.pos,
     mp,
-    dash ? undefined : entity,
+    entity,
+    !dash,
   );
   const key = posToStr(pos[0], pos[1]);
 
@@ -394,50 +324,90 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   broadcastPages(game);
 }
 
-function handleAttack(game: Game, user: User, cmd: string, args: string) {
+type ValidatedAttack = {
+  entity: Entity;
+  ability: AbilityData;
+  targetName: string;
+};
+
+/**
+ * Resolve who acts and which ability they want, running every guard:
+ * turn ownership, statuses, ability lookup, cooldowns, uses, and action
+ * type. Returns the validated target or sends the failure to the user
+ * and returns null.
+ */
+type ResolvedActor = {
+  entity: Entity;
+  /** Remaining argument text after any "..., entityName" suffix is stripped. */
+  rest: string;
+};
+
+/**
+ * Resolve who acts (host may name another entity) and run the turn-guard
+ * checks shared by move/attack. Sends the failure message and returns null
+ * when the actor can't act.
+ */
+function resolveActor(
+  game: Game,
+  user: User,
+  args: string,
+): ResolvedActor | null {
   const isHost = toId(user.name) === toId(game.host);
 
   let entityName = "";
-  let abilityTarget = args;
-
+  let rest = args;
   const parts = args.split(",").map((s) => s.trim());
   if (parts.length >= 3) {
     entityName = parts[parts.length - 1];
-    abilityTarget = parts.slice(0, -1).join(",");
+    rest = parts.slice(0, -1).join(",");
   } else if (
     parts.length === 2 &&
     (isNaN(parseInt(parts[1])) || getEntity(game, parts[1]))
   ) {
     entityName = parts[1];
-    abilityTarget = parts[0];
+    rest = parts[0];
   }
 
   let entity: Entity | null = null;
   if (entityName && isHost) {
     entity = getEntity(game, entityName);
-    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
+    if (!entity) {
+      sendPm(user.name, `Unknown entity: ${entityName}`);
+      return null;
+    }
   } else {
     entity = getCurrentEntity(game);
   }
-
-  if (!entity) return sendPm(user.name, "No active turn.");
-
-  if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+  if (!entity) {
+    sendPm(user.name, MSG_NO_ACTIVE_TURN);
+    return null;
   }
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    sendPm(user.name, MSG_NOT_YOUR_TURN);
+    return null;
+  }
+
+  return { entity, rest };
+}
+
+function validateAttack(
+  game: Game,
+  user: User,
+  args: string,
+): ValidatedAttack | null {
+  const resolved = resolveActor(game, user, args);
+  if (!resolved) return null;
+  const { entity, rest: abilityTarget } = resolved;
+
   if (isStunned(entity)) {
     failAct(game, entity, "Stunned");
-    return sendPm(
-      user.name,
-      `${entity.num} is Stunned and cannot use abilities.`,
-    );
+    sendPm(user.name, `${entity.num} is Stunned and cannot use abilities.`);
+    return null;
   }
   if (isSealed(entity)) {
     failAct(game, entity, "Sealed");
-    return sendPm(
-      user.name,
-      `${entity.num} is Sealed and cannot use abilities.`,
-    );
+    sendPm(user.name, `${entity.num} is Sealed and cannot use abilities.`);
+    return null;
   }
 
   // Parse: ability name @ target
@@ -447,51 +417,79 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
   ).trim();
   const targetName = atIdx >= 0 ? abilityTarget.slice(atIdx + 1).trim() : "";
 
-  if (!abilityName)
-    return sendPm(user.name, "Specify an ability. Use: %use Ability @ Target");
+  if (!abilityName) {
+    sendPm(user.name, "Specify an ability. Use: %use Ability @ Target");
+    return null;
+  }
 
   const ability = entity.abilities.find(
     (a) => toId(a.name) === toId(abilityName),
   );
-  if (!ability) return sendPm(user.name, `Unknown ability: ${abilityName}`);
+  if (!ability) {
+    sendPm(user.name, `Unknown ability: ${abilityName}`);
+    return null;
+  }
 
-  // Cooldown check
+  if (!checkAbilityAvailability(game, entity, ability, user)) return null;
+  if (!checkActionType(game, entity, ability, user)) return null;
+
+  return { entity, ability, targetName };
+}
+
+/** Cooldown + max-uses guards for an ability. */
+function checkAbilityAvailability(
+  game: Game,
+  entity: Entity,
+  ability: AbilityData,
+  user: User,
+): boolean {
   if (entity.cooldowns[ability.name]) {
     failAct(game, entity, `${ability.name} on cooldown`);
-    return sendPm(
+    sendPm(
       user.name,
       `${ability.name} is on cooldown (${entity.cooldowns[ability.name]} turns left).`,
     );
+    return false;
   }
-
-  // Max uses check
   const maxUses = ability.maxUses ?? parseFrequency(ability.frequency).uses;
   if (maxUses) {
     const used = entity.usesUsed[ability.name] ?? 0;
     if (used >= maxUses) {
       failAct(game, entity, `${ability.name} out of uses`);
-      return sendPm(user.name, `${ability.name} has no uses remaining.`);
+      sendPm(user.name, `${ability.name} has no uses remaining.`);
+      return false;
     }
   }
+  return true;
+}
 
-  // Action type enforcement
+/** Action-type slot and ordering guards. */
+function checkActionType(
+  game: Game,
+  entity: Entity,
+  ability: AbilityData,
+  user: User,
+): boolean {
   if (ability.actionType === "Standard" && entity.standardUsed) {
     failAct(game, entity, "Standard already used");
-    return sendPm(user.name, "You already used your Standard action.");
+    sendPm(user.name, "You already used your Standard action.");
+    return false;
   }
   if (ability.actionType === "Swift" && entity.swiftUsed) {
     failAct(game, entity, "Swift already used");
-    return sendPm(user.name, "You already used your Swift action this turn.");
+    sendPm(user.name, "You already used your Swift action this turn.");
+    return false;
   }
   if (
     ability.actionType === "Full" &&
     (entity.standardUsed || entity.movementUsed)
   ) {
     failAct(game, entity, "Full action needs Movement+Standard");
-    return sendPm(
+    sendPm(
       user.name,
       "Full action requires both Standard and Movement unused.",
     );
+    return false;
   }
   // Issue #3: Free/Swift/Trigger must be used before the Standard action.
   if (
@@ -501,26 +499,32 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
       ability.actionType === "Trigger")
   ) {
     failAct(game, entity, "Free/Swift must come before Standard");
-    return sendPm(
+    sendPm(
       user.name,
       `${ability.actionType} abilities must be used before your Standard action.`,
     );
+    return false;
   }
-  if (ability.actionType === "Trigger") {
-    // Trigger abilities are free-like: manual use, no slot consumed.
-    // Using a trigger lets the entity manually resolve Reactions this turn.
-  } else if (ability.actionType === "Reaction") {
-    if (!entity.triggered) {
-      failAct(game, entity, "no trigger active");
-      return sendPm(
-        user.name,
-        "No trigger active this turn — Reaction abilities cannot be used manually.",
-      );
-    }
-  } else if (ability.actionType === "Passive") {
+  if (ability.actionType === "Reaction" && !entity.triggered) {
+    failAct(game, entity, "no trigger active");
+    sendPm(
+      user.name,
+      "No trigger active this turn — Reaction abilities cannot be used manually.",
+    );
+    return false;
+  }
+  if (ability.actionType === "Passive") {
     failAct(game, entity, "Passive cannot be used manually");
-    return sendPm(user.name, "Passive abilities cannot be used manually.");
+    sendPm(user.name, "Passive abilities cannot be used manually.");
+    return false;
   }
+  return true;
+}
+
+function handleAttack(game: Game, user: User, cmd: string, args: string) {
+  const validated = validateAttack(game, user, args);
+  if (!validated) return;
+  const { entity, ability, targetName } = validated;
 
   pushSnapshot(game);
   if (ability.actionType === "Standard") entity.standardUsed = true;
@@ -570,9 +574,9 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 function handleConfirm(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!entity.pendingAction) {
     return sendPm(user.name, "No action pending. Select an ability first.");
@@ -586,9 +590,9 @@ function handleConfirm(game: Game, user: User) {
 function handleTarget(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %target <target>");
 
@@ -604,11 +608,24 @@ function handleTarget(game: Game, user: User, args: string) {
 function handleChoose(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %choose <option>");
+
+  // Replacing an obstruction tile requires host approval: players must
+  // ask the host rather than answer the confirmation themselves.
+  if (
+    !isHost &&
+    entity.pendingPrompt?.kind === "selection" &&
+    entity.pendingPrompt.confirmObstruction
+  ) {
+    return sendPm(
+      user.name,
+      "Only the host can approve replacing an obstruction.",
+    );
+  }
 
   pushSnapshot(game);
   try {
@@ -620,7 +637,7 @@ function handleChoose(game: Game, user: User, args: string) {
 }
 
 function handleVote(game: Game, user: User, args: string) {
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.voteOpen) {
     return sendPm(
       user.name,
@@ -633,7 +650,7 @@ function handleVote(game: Game, user: User, args: string) {
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
   if (!entity) {
-    return sendPm(user.name, "You're not in this game. Join first (%join).");
+    return sendPm(user.name, MSG_NOT_IN_GAME);
   }
 
   const arg = args.trim();
@@ -685,7 +702,7 @@ function handleVote(game: Game, user: User, args: string) {
 }
 
 function handleUnvote(game: Game, user: User) {
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.voteOpen) {
     return sendPm(user.name, "No gamemode vote is open right now.");
   }
@@ -694,7 +711,7 @@ function handleUnvote(game: Game, user: User) {
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
   if (!entity) {
-    return sendPm(user.name, "You're not in this game. Join first (%join).");
+    return sendPm(user.name, MSG_NOT_IN_GAME);
   }
 
   if (game.votes[entity.id] === undefined) {
@@ -722,7 +739,7 @@ function handleLeave(game: Game, user: User) {
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
   if (!entity) {
-    return sendPm(user.name, "You're not in this game. Join first (%join).");
+    return sendPm(user.name, MSG_NOT_IN_GAME);
   }
   removeEntity(game, entity);
   send(game.room, `**${entity.num} (${entity.name})** has left the game.`);
@@ -767,6 +784,15 @@ function handleVoteStatus(game: Game, user: User) {
   sendPm(user.name, buildVoteStatus(game));
 }
 
+function creditKills(game: Game, entity: Entity, step: AttackStep) {
+  if (step.done === false) return;
+  for (const death of step.result.deaths) {
+    if (death.num !== entity.num) {
+      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+    }
+  }
+}
+
 function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
@@ -777,20 +803,24 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
         `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
       );
     } else if (step.prompt.kind === "selection") {
+      const hostOnly = step.prompt.confirmObstruction
+        ? "Only the host may approve. "
+        : "";
       send(
         game.room,
-        `Use %choose <option>. Options: ${step.prompt.options.map((o) => o.id).join(", ")}`,
+        `${hostOnly}Use %choose <option>. Options: ${step.prompt.options
+          .map((o) => o.id)
+          .join(", ")}`,
       );
     } else if (step.prompt.kind === "direction") {
-      const labels = step.prompt.candidateTargets ?? [];
-      const opts = step.prompt.candidates
-        .map((c, i) => `${c}${labels[i] ? ` (${labels[i]})` : ""}`)
-        .join(", ");
-      send(game.room, `Use %dir <direction>. Options: ${opts}`);
+      send(
+        game.room,
+        `Use %dir <direction>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
     } else if (step.prompt.kind === "tile") {
       send(
         game.room,
-        `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
+        `Use %picktile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
       );
     }
     return;
@@ -799,6 +829,8 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
   for (const msg of step.result.messages) {
     send(game.room, msg);
   }
+
+  creditKills(game, entity, step);
 
   logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
 
@@ -817,9 +849,9 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
 function handleCancel(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!entity.pendingAction) {
     return sendPm(user.name, "No action pending.");
@@ -836,56 +868,25 @@ function handleCancel(game: Game, user: User) {
   entity.pendingAction = null;
   entity.pendingResolution = undefined;
   entity.pendingPromptKind = undefined;
-  clearMovementState(game, entity);
   send(game.room, `/me ${entity.num} cancels ${ability.name}`);
   broadcastPages(game);
 }
 
 function handleAdvanceTurn(game: Game, user: User) {
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can advance turns.");
-  }
-
   const entity = getCurrentEntity(game);
-  if (!entity) return;
+  const phase = game.phase;
+  if (!entity || phase !== "playing")
+    return sendPm(user.name, MSG_NO_ACTIVE_TURN);
+
+  const guard = advanceTurnGuard(game, user, entity);
+  if (guard) return sendPm(user.name, guard);
 
   pushSnapshot(game);
 
-  let acted = "";
 
-  // Stunned entities can't act — skip their action and clear pending
-  if (isStunned(entity)) {
-    if (entity.pendingAction) {
-      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
-      entity.pendingAction = null;
-    } else {
-      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
-    }
-  } else if (entity.pendingAction) {
-    const step = resolveAction(game, entity);
+  const acted = resolveTurnActions(game, user, entity);
+  if (acted === null) return; // prompt needs an answer — turn not advanced
 
-    if (step.done === false) {
-      sendPm(user.name, step.prompt.message);
-      return;
-    }
-
-    for (const msg of step.result.messages) {
-      send(game.room, msg);
-    }
-
-    acted = summarizeResult(game, entity, step.result.messages);
-
-    for (const _ of step.result.deaths) {
-      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
-    }
-
-    const winner = checkGameOver(game);
-    if (game.phase === "ended") {
-      clearGameMovementState(game);
-      announceGameOver(game, winner);
-      return;
-    }
-  }
 
   if (
     acted ||
@@ -903,38 +904,139 @@ function handleAdvanceTurn(game: Game, user: User) {
   // store keys so entities removed during resolution are cleared too.
   clearGameMovementState(game);
 
-  const result = nextTurn(game);
+  // If the actor died mid-turn (recoil/confusion), removeEntity already
+  // repositioned turnIndex onto the next entity; tell nextTurn so it does
+  // not advance past it a second time.
+  const actorDied = entity.curhp <= 0 || !game.entities.includes(entity);
+  const result = nextTurn(game, { actorDied });
   for (const msg of result.messages) {
     send(game.room, msg);
   }
 
   if (result.died || !result.entity) {
-    const winner = checkGameOver(game);
-    if (game.phase === "ended") {
-      clearGameMovementState(game);
-      announceGameOver(game, winner);
-      return;
-    }
-    // If entity died from DoT but game isn't over, advance again
-    if (!result.entity) {
-      const retry = nextTurn(game);
-      for (const msg of retry.messages) {
-        send(game.room, msg);
-      }
-      if (!retry.entity) {
-        const winner = checkGameOver(game);
-        clearGameMovementState(game);
-        announceGameOver(game, winner);
-        return;
-      }
-      send(game.room, `**${retry.entity.num}'s turn!** (${retry.entity.name})`);
-      broadcastPages(game);
-      return;
-    }
+    if (handleTurnDeath(game, result)) return;
   }
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+/**
+ * Authorization guard for advancing the turn. Returns an error message to
+ * send back to the user, or null when the advance is permitted. Extracted
+ * from handleAdvanceTurn to keep its cyclomatic complexity under the limit.
+ */
+function advanceTurnGuard(game: Game, user: User, entity: Entity): string | null {
+  const isHost = toId(user.name) === toId(game.host);
+  const isSelf = toId(entity.name) === toId(user.name);
+
+  if (isHost) return null;
+  if (!isSelf) return MSG_NOT_YOUR_TURN;
+  if (!game.playersIdle) return "The host hasn't enabled this option";
+  return null;
+}
+
+/**
+ * Advance a single entity's action: skip if stunned, resolve a pending
+ * action, or pass. Returns null when the turn must NOT advance (a prompt
+ * answer is needed), otherwise the acted-summary string (possibly empty when
+ * the entity passed its turn). Extracted from handleAdvanceTurn.
+ */
+function resolveTurnActions(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  // Stunned entities can't act — skip their action and clear pending
+  if (isStunned(entity)) {
+    if (entity.pendingAction) {
+      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
+      entity.pendingAction = null;
+    } else {
+      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
+    }
+    return "";
+  }
+
+  if (!entity.pendingAction) return "";
+  const done = resolvePendingAction(game, user, entity);
+  if (done === null) return null;
+  return done;
+}
+
+/** Handle a death at turn advance: game over, or skip to the next living
+ * entity. Returns true when the turn was fully handled. */
+function handleTurnDeath(
+  game: Game,
+  result: { died: boolean; entity: Entity | null },
+): boolean {
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    clearGameMovementState(game);
+    announceGameOver(game, winner);
+    return true;
+  }
+  // If entity died from DoT but game isn't over, advance again
+  if (!result.entity) {
+    const retry = nextTurn(game);
+    for (const msg of retry.messages) {
+      send(game.room, msg);
+    }
+    if (!retry.entity) {
+      const winner = checkGameOver(game);
+      clearGameMovementState(game);
+      announceGameOver(game, winner);
+      return true;
+    }
+    send(game.room, `**${retry.entity.num}'s turn!** (${retry.entity.name})`);
+    broadcastPages(game);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Resolve an entity's pending action when their turn advances. Returns the
+ * acted summary string, or null when the action needs a prompt answer
+ * (the turn is NOT advanced in that case).
+ */
+function resolvePendingAction(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  const step = resolveAction(game, entity);
+
+  if (step.done === false) {
+    sendPm(user.name, step.prompt.message);
+    return null;
+  }
+
+  for (const msg of step.result.messages) {
+    send(game.room, msg);
+  }
+
+  const acted = summarizeResult(game, entity, step.result.messages);
+
+  // Credit kills on the confirm path, excluding self-deaths (recoil /
+  // confusion kills are not kills the entity scored).
+  for (const death of step.result.deaths) {
+    if (death.num === entity.num) continue;
+    game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+  }
+
+  const winner = checkGameOver(game);
+  if (game.phase === "ended") {
+    clearGameMovementState(game);
+    announceGameOver(game, winner);
+    return null;
+  }
+
+  // The action resolved and the turn advanced — clear the pending action
+  // so it isn't re-run on a later turn.
+  entity.pendingAction = null;
+
+  return acted;
 }
 
 function summarizeResult(
@@ -1030,19 +1132,15 @@ function handleRoll(target: string, args: string) {
   sendPm(target, msg);
 }
 
+/** Toggle the current entity's pre-move ability view. */
 function handlePremove(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
 
-  let entity: Entity | null = null;
-  if (isHost) {
-    entity = getCurrentEntity(game);
-  } else {
-    entity = getCurrentEntity(game);
-  }
+  const entity = getCurrentEntity(game);
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, "You already moved this turn.");
@@ -1064,9 +1162,9 @@ function handlePremove(game: Game, user: User) {
 function handleDirChoice(game: Game, user: User, dir: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!dir) return sendPm(user.name, "Usage: %dir <direction>");
 
@@ -1079,14 +1177,15 @@ function handleDirChoice(game: Game, user: User, dir: string) {
   }
 }
 
+/** Handle a tile choice for tile-placement abilities. */
 function handleTileChoice(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
-  if (!args) return sendPm(user.name, "Usage: %tile <tile>");
+  if (!args) return sendPm(user.name, "Usage: %picktile <tile>");
 
   pushSnapshot(game);
   try {
@@ -1100,16 +1199,11 @@ function handleTileChoice(game: Game, user: User, args: string) {
 function handlePassMove(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
 
-  let entity: Entity | null = null;
-  if (isHost) {
-    entity = getCurrentEntity(game);
-  } else {
-    entity = getCurrentEntity(game);
-  }
+  const entity = getCurrentEntity(game);
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, "You already moved this turn.");
@@ -1150,9 +1244,9 @@ function handlePathStep(game: Game, user: User, args: string) {
     entity = getCurrentEntity(game);
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (isStunned(entity)) {
     return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
@@ -1180,7 +1274,7 @@ function handlePathStep(game: Game, user: User, args: string) {
     return sendPm(user.name, "That tile cannot be moved onto.");
   }
   const occupied = game.entities.some(
-    (e) => e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
+    (e) => e !== entity && e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
   );
   if (occupied) return sendPm(user.name, "That tile is occupied.");
 
@@ -1226,9 +1320,9 @@ function handleConfirmMove(game: Game, user: User, args: string) {
     entity = named;
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (isStunned(entity)) {
     return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
@@ -1303,9 +1397,9 @@ function handleCancelPath(game: Game, user: User, args: string) {
     entity = named;
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
 
   const key = movementKey(game, entity);
@@ -1327,7 +1421,7 @@ function handleViewReach(game: Game, user: User, args: string) {
     viewer = getCurrentEntity(game);
   }
 
-  if (!viewer) return sendPm(user.name, "No active turn.");
+  if (!viewer) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (
     toId(viewer.name) !== toId(user.name) &&
     toId(user.name) !== toId(game.host)
@@ -1353,13 +1447,22 @@ function handleViewReach(game: Game, user: User, args: string) {
   broadcastPages(game);
 }
 
-function handleDashMode(game: Game, user: User) {
+function handleDashMode(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
-  const entity = getCurrentEntity(game);
+  let entity = getCurrentEntity(game);
+  const name = args.trim();
+  // Host may toggle dash mode for a named entity (the GUI button emits
+  // %dashmode <name>); fall back to the current entity like other movement
+  // commands.
+  if (isHost && name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    entity = named;
+  }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, `${entity.num} already moved this turn.`);
@@ -1382,6 +1485,40 @@ function handleDashMode(game: Game, user: User) {
     pathState.delete(key);
     dashMode.add(key);
     send(game.room, `/me ${entity.num} entering dash mode`);
+  }
+  broadcastPages(game);
+}
+
+// %grid toggles the map gridlines (tile/table borders) for one viewer. It's a
+// display preference, not a gameplay action: no turn/movement checks. The GUI
+// button emits %grid <entity name>; the host may also pass a name to toggle
+// another player's view. Without a name, players toggle their own entity's
+// view and the host toggles the host-page view.
+function handleGridToggle(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const name = args.trim();
+  let entity: Entity | null = null;
+
+  if (name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    if (!isHost && toId(named.name) !== toId(user.name)) {
+      return sendPm(user.name, "You can only toggle your own map grid.");
+    }
+    entity = named;
+  } else if (!isHost) {
+    // No name: non-host players toggle their own view even outside their turn.
+    entity = getEntity(game, user.name);
+    if (!entity) return sendPm(user.name, "No entity found for you.");
+  }
+
+  const key = entity ? movementKey(game, entity) : `${game.id}:host`;
+  if (gridHidden.has(key)) {
+    gridHidden.delete(key);
+    sendPm(user.name, "Map grid: on");
+  } else {
+    gridHidden.add(key);
+    sendPm(user.name, "Map grid: off");
   }
   broadcastPages(game);
 }
@@ -1473,7 +1610,6 @@ function handleHp(game: Game, user: User, args: string) {
 
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
-      clearGameMovementState(game);
       announceGameOver(game, winner);
       return;
     }
@@ -1605,23 +1741,7 @@ function handleCheckRange(game: Game, user: User, args: string) {
     );
   }
 
-  // --- Original two-position form: %cr <from>, <to> ---
-  const commaParts = arg.split(",").map((s) => s.trim());
-  if (commaParts.length >= 2 && commaParts[0] && commaParts[1]) {
-    const fromEntity = getEntity(game, commaParts[0]);
-    const toEntity = getEntity(game, commaParts[1]);
-    const fromPos = fromEntity?.pos ?? parsePos(commaParts[0]);
-    const toPos = toEntity?.pos ?? parsePos(commaParts[1]);
-    if (fromPos && toPos) {
-      const d = dist(fromPos, toPos);
-      const fromLabel = fromEntity?.num ?? posToStr(fromPos[0], fromPos[1]);
-      const toLabel = toEntity?.num ?? posToStr(toPos[0], toPos[1]);
-      return sendPm(
-        user.name,
-        `Distance ${fromLabel} -> ${toLabel}: ${d} tiles (Manhattan)`,
-      );
-    }
-  }
+  if (checkRangeBetween(game, user, arg)) return;
 
   // Resolve the source entity. Deliberately prefer the caller's own entity
   // (mine) over the turn's entity even on someone else's turn: %checkrange is
@@ -1638,73 +1758,117 @@ function handleCheckRange(game: Game, user: User, args: string) {
     return sendPm(user.name, "No entity to check range from.");
   }
 
-  // --- Mode 1: target entity/tile ---
+  if (checkRangeToTarget(game, user, source, arg)) return;
+  if (checkRangeByAbility(game, user, source, arg)) return;
+  if (checkRangeByPattern(game, user, source, arg)) return;
+
+  return sendPm(
+    user.name,
+    `Could not resolve "${arg}". Usage: %checkrange <entity|tile|ability|range> (e.g. %checkrange P2, %checkrange Fireball, %checkrange range 5).`,
+  );
+}
+
+/** Two-position form: %cr <from>, <to> — raw Manhattan distance. */
+function checkRangeBetween(game: Game, user: User, arg: string): boolean {
+  const commaParts = arg.split(",").map((s) => s.trim());
+  if (commaParts.length < 2 || !commaParts[0] || !commaParts[1]) return false;
+  const fromEntity = getEntity(game, commaParts[0]);
+  const toEntity = getEntity(game, commaParts[1]);
+  const fromPos = fromEntity?.pos ?? parsePos(commaParts[0]);
+  const toPos = toEntity?.pos ?? parsePos(commaParts[1]);
+  if (!fromPos || !toPos) return false;
+  const d = dist(fromPos, toPos);
+  const fromLabel = fromEntity?.num ?? posToStr(fromPos[0], fromPos[1]);
+  const toLabel = toEntity?.num ?? posToStr(toPos[0], toPos[1]);
+  sendPm(
+    user.name,
+    `Distance ${fromLabel} -> ${toLabel}: ${d} tiles (Manhattan)`,
+  );
+  return true;
+}
+
+/** Mode 1: target entity/tile — distances, LOS, and abilities that reach. */
+function checkRangeToTarget(
+  game: Game,
+  user: User,
+  source: Entity,
+  arg: string,
+): boolean {
   const targetEntity = getEntity(game, arg);
   const tilePos = !targetEntity ? parsePos(arg) : null;
-  if (targetEntity || tilePos) {
-    const toPos = targetEntity ? targetEntity.pos : tilePos!;
-    const label = targetEntity
-      ? `${targetEntity.num} (${targetEntity.name})`
-      : posToStr(toPos[0], toPos[1]);
-    const md = manhattan(source.pos, toPos);
-    const cd = chebyshev(source.pos, toPos);
-    const los = hasLineOfSight(game, source.pos, toPos);
-    // Respect the ability's target group too: geometry alone isn't enough
-    // (a heal that reaches a foe is not "can hit" in any meaningful sense).
-    // Tile targets can't be group-filtered, so entity targets only.
-    const hitAbilities = source.abilities.filter(
-      (a) =>
-        inRangeInParts(game, source.pos, toPos, a.range) &&
-        (!targetEntity || isValidTarget(source, targetEntity, a.targetGroup)),
-    );
-    return sendPm(
-      user.name,
-      `${source.num} -> ${label}: ${md} tiles Manhattan / ${cd} Chebyshev, LOS ${los ? "clear" : "blocked"}. Abilities that can hit: ${hitAbilities.length ? hitAbilities.map((a) => a.name).join(", ") : "none"}.`,
-    );
-  }
+  if (!targetEntity && !tilePos) return false;
+  const toPos = targetEntity ? targetEntity.pos : tilePos!;
+  const label = targetEntity
+    ? `${targetEntity.num} (${targetEntity.name})`
+    : posToStr(toPos[0], toPos[1]);
+  const md = manhattan(source.pos, toPos);
+  const cd = chebyshev(source.pos, toPos);
+  const los = hasLineOfSight(game, source.pos, toPos);
+  // Respect the ability's target group too: geometry alone isn't enough
+  // (a heal that reaches a foe is not "can hit" in any meaningful sense).
+  // Tile targets can't be group-filtered, so entity targets only.
+  const hitAbilities = source.abilities.filter(
+    (a) =>
+      inRangeInParts(game, source.pos, toPos, a.range) &&
+      (!targetEntity || isValidTarget(source, targetEntity, a.targetGroup)),
+  );
+  sendPm(
+    user.name,
+    `${source.num} -> ${label}: ${md} tiles Manhattan / ${cd} Chebyshev, LOS ${los ? "clear" : "blocked"}. Abilities that can hit: ${hitAbilities.length ? hitAbilities.map((a) => a.name).join(", ") : "none"}.`,
+  );
+  return true;
+}
 
-  // --- Mode 2: ability name ---
+/** Mode 2: ability name — which entities it can currently reach. */
+function checkRangeByAbility(
+  game: Game,
+  user: User,
+  source: Entity,
+  arg: string,
+): boolean {
   const ability = source.abilities.find((a) => toId(a.name) === toId(arg));
-  if (ability) {
-    // isValidTarget already rejects dead entities (curhp <= 0).
-    const reachable = game.entities.filter(
-      (e) =>
-        e.num !== source.num &&
-        isValidTarget(source, e, ability.targetGroup) &&
-        inRangeInParts(game, source.pos, e.pos, ability.range),
-    );
-    const groupLabel = ability.targetGroup || "any";
-    return sendPm(
-      user.name,
-      `${source.num} ${ability.name} (${ability.range}, targets: ${groupLabel}): ${formatRangeList(reachable)}.`,
-    );
-  }
+  if (!ability) return false;
+  // isValidTarget already rejects dead entities (curhp <= 0).
+  const reachable = game.entities.filter(
+    (e) =>
+      e.num !== source.num &&
+      isValidTarget(source, e, ability.targetGroup) &&
+      inRangeInParts(game, source.pos, e.pos, ability.range),
+  );
+  const groupLabel = ability.targetGroup || "any";
+  sendPm(
+    user.name,
+    `${source.num} ${ability.name} (${ability.range}, targets: ${groupLabel}): ${formatRangeList(reachable)}.`,
+  );
+  return true;
+}
 
-  // --- Mode 3: raw range string (e.g. "range 5", "melee", "line 3",
-  // or "or" combos like "range 3 or melee", mirroring the engine) ---
+/** Mode 3: raw range string ("range 5", "melee", "line 3", "or" combos). */
+function checkRangeByPattern(
+  game: Game,
+  user: User,
+  source: Entity,
+  arg: string,
+): boolean {
   const rangeStr = arg.toLowerCase().trim();
   const rangeParts = rangeStr.split(/\s+or\s+/i).map((s) => s.trim());
   const validRangePart = (s: string) =>
     s === "melee" ||
     s === "global" ||
     /^(range|homing|line|pierce|burst|star|beam|cone)\s*\d+$/i.test(s);
-  if (rangeParts.length > 0 && rangeParts.every(validRangePart)) {
-    const reachable = game.entities.filter(
-      (e) =>
-        e.num !== source.num &&
-        e.curhp > 0 &&
-        rangeParts.some((rp) => inRange(game, source.pos, e.pos, rp)),
-    );
-    return sendPm(
-      user.name,
-      `${source.num} within ${rangeStr}: ${formatRangeList(reachable)}.`,
-    );
-  }
-
-  return sendPm(
-    user.name,
-    `Could not resolve "${arg}". Usage: %checkrange <entity|tile|ability|range> (e.g. %checkrange P2, %checkrange Fireball, %checkrange range 5).`,
+  if (rangeParts.length === 0 || !rangeParts.every(validRangePart))
+    return false;
+  const reachable = game.entities.filter(
+    (e) =>
+      e.num !== source.num &&
+      e.curhp > 0 &&
+      rangeParts.some((rp) => inRange(game, source.pos, e.pos, rp)),
   );
+  sendPm(
+    user.name,
+    `${source.num} within ${rangeStr}: ${formatRangeList(reachable)}.`,
+  );
+  return true;
 }
 
 function buildPlayerList(game: Game): string {
@@ -1746,80 +1910,84 @@ function handleStatus(game: Game, user: User, args: string) {
   if (!entity) return sendPm(user.name, `Unknown entity: ${parts[0]}`);
 
   const action = parts[1].toLowerCase();
-  if (action === "list") {
-    if (entity.statuses.length === 0) {
-      return sendPm(user.name, `${entity.num} has no statuses.`);
-    }
-    const list = entity.statuses
-      .map(
-        (s) =>
-          `${s.name} ${s.damage > 0 ? s.damage + "/" : ""}${s.rounds}${s.removable ? "" : " (permanent)"}`,
-      )
-      .join(", ");
-    return sendPm(user.name, `${entity.num} statuses: ${list}`);
-  }
-
-  if (action === "add") {
-    // %status P1, add Bleed, 3/2
-    const statusName = parts[2];
-    if (!statusName) {
-      return sendPm(
-        user.name,
-        "Usage: %status <entity>, add <name>, <dmg>/<rounds>",
-      );
-    }
-
-    let damage = 0;
-    let rounds = 1;
-
-    if (parts[3]) {
-      const slashParts = parts[3].split("/");
-      damage = parseInt(slashParts[0]) || 0;
-      rounds = parseInt(slashParts[1]) || 1;
-    }
-
-    pushSnapshot(game);
-    entity.statuses.push({
-      name: capitalize(statusName),
-      damage,
-      rounds,
-      maxRounds: rounds,
-      removable: true,
-    });
-    send(
-      game.room,
-      `${entity.num} afflicted with ${capitalize(statusName)}${damage > 0 ? ` (${damage}/${rounds})` : ` (${rounds} rounds)`}.`,
-    );
-    broadcastPages(game);
-    return;
-  }
-
-  if (action === "remove") {
-    const statusName = parts[2];
-    if (!statusName) {
-      return sendPm(user.name, "Usage: %status <entity>, remove <name>");
-    }
-
-    const id = toId(statusName);
-    const idx = entity.statuses.findIndex((s) => toId(s.name) === id);
-    if (idx === -1) {
-      return sendPm(
-        user.name,
-        `${entity.num} does not have status: ${statusName}`,
-      );
-    }
-
-    pushSnapshot(game);
-    entity.statuses.splice(idx, 1);
-    send(game.room, `${entity.num}'s ${capitalize(statusName)} removed.`);
-    broadcastPages(game);
-    return;
-  }
+  if (action === "list") return statusList(game, user, entity);
+  if (action === "add") return statusAdd(game, user, entity, parts);
+  if (action === "remove") return statusRemove(game, user, entity, parts);
 
   sendPm(
     user.name,
     `Unknown status action: ${action}. Use add, remove, or list.`,
   );
+}
+
+/** %status <entity>, list — show all statuses on an entity. */
+function statusList(game: Game, user: User, entity: Entity) {
+  if (entity.statuses.length === 0) {
+    return sendPm(user.name, `${entity.num} has no statuses.`);
+  }
+  const list = entity.statuses
+    .map(
+      (s) =>
+        `${s.name} ${s.damage > 0 ? s.damage + "/" : ""}${s.rounds}${s.removable ? "" : " (permanent)"}`,
+    )
+    .join(", ");
+  return sendPm(user.name, `${entity.num} statuses: ${list}`);
+}
+
+/** %status <entity>, add <name>, <dmg>/<rounds> — afflict an entity. */
+function statusAdd(game: Game, user: User, entity: Entity, parts: string[]) {
+  // %status P1, add Bleed, 3/2
+  const statusName = parts[2];
+  if (!statusName) {
+    return sendPm(
+      user.name,
+      "Usage: %status <entity>, add <name>, <dmg>/<rounds>",
+    );
+  }
+
+  let damage = 0;
+  let rounds = 1;
+  if (parts[3]) {
+    const slashParts = parts[3].split("/");
+    damage = parseInt(slashParts[0]) || 0;
+    rounds = parseInt(slashParts[1]) || 1;
+  }
+
+  pushSnapshot(game);
+  entity.statuses.push({
+    name: capitalize(statusName),
+    damage,
+    rounds,
+    maxRounds: rounds,
+    removable: true,
+  });
+  send(
+    game.room,
+    `${entity.num} afflicted with ${capitalize(statusName)}${damage > 0 ? ` (${damage}/${rounds})` : ` (${rounds} rounds)`}.`,
+  );
+  broadcastPages(game);
+}
+
+/** %status <entity>, remove <name> — clear a status from an entity. */
+function statusRemove(game: Game, user: User, entity: Entity, parts: string[]) {
+  const statusName = parts[2];
+  if (!statusName) {
+    return sendPm(user.name, "Usage: %status <entity>, remove <name>");
+  }
+
+  const id = toId(statusName);
+  const idx = entity.statuses.findIndex((s) => toId(s.name) === id);
+  if (idx === -1) {
+    return sendPm(
+      user.name,
+      `${entity.num} does not have status: ${statusName}`,
+    );
+  }
+
+  pushSnapshot(game);
+  entity.statuses.splice(idx, 1);
+  send(game.room, `${entity.num}'s ${capitalize(statusName)} removed.`);
+  broadcastPages(game);
 }
 
 function handleRegp(game: Game, user: User, args: string) {

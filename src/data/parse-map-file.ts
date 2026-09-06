@@ -52,6 +52,58 @@ export function displayFromName(name: string): string {
 
 export const displayNameFor = displayFromName;
 
+interface HeaderState {
+  name: (v: string) => void;
+  setDisp: (v: string) => void;
+  modes: GameModeId[];
+}
+
+/** Parse one `name:` / `display:` / `modes:` header line, mutating the state. */
+function parseHeaderLine(
+  head: RegExpMatchArray,
+  n: number,
+  file: string,
+  state: HeaderState,
+): void {
+  const val = head[2].trim();
+  if (head[1] === "name") {
+    const name = val.toLowerCase();
+    if (!NAME_RE.test(name))
+      throw new MapError(
+        file,
+        n,
+        `bad map name "${name}" — use lowercase letters, digits, - or _ (up to 40 chars, no spaces)`,
+      );
+    if (GEN_RE.test(name))
+      throw new MapError(
+        file,
+        n,
+        `"${name}" is reserved for %setmap gen (procedural maps)`,
+      );
+    state.name(name);
+    return;
+  }
+  if (head[1] === "display") {
+    const disp = val;
+    if (!disp || disp.length > 60)
+      throw new MapError(file, n, "display name must be 1-60 chars");
+    state.setDisp(disp);
+    return;
+  }
+  for (const rawMode of val.split(/[\s,]+/).filter(Boolean)) {
+    const id = modeIdFor(rawMode);
+    if (!id)
+      throw new MapError(
+        file,
+        n,
+        `unknown game mode "${rawMode}" — use ffa, ntr, jugg, pvp or 1v1`,
+      );
+    if (!state.modes.includes(id)) state.modes.push(id);
+  }
+  if (state.modes.length === 0)
+    throw new MapError(file, n, "modes list is empty");
+}
+
 export function parseMapFile(text: string, file = "map"): MapDef {
   let name = "";
   let disp: string | undefined;
@@ -66,39 +118,11 @@ export function parseMapFile(text: string, file = "map"): MapDef {
 
     const head = line.match(HEAD_RE);
     if (head) {
-      const val = head[2].trim();
-      if (head[1] === "name") {
-        name = val.toLowerCase();
-        if (!NAME_RE.test(name))
-          throw new MapError(
-            file,
-            n,
-            `bad map name "${name}" — use lowercase letters, digits, - or _ (up to 40 chars, no spaces)`,
-          );
-        if (GEN_RE.test(name))
-          throw new MapError(
-            file,
-            n,
-            `"${name}" is reserved for %setmap gen (procedural maps)`,
-          );
-      } else if (head[1] === "display") {
-        disp = val;
-        if (!disp || disp.length > 60)
-          throw new MapError(file, n, "display name must be 1-60 chars");
-      } else {
-        for (const rawMode of val.split(/[\s,]+/).filter(Boolean)) {
-          const id = modeIdFor(rawMode);
-          if (!id)
-            throw new MapError(
-              file,
-              n,
-              `unknown game mode "${rawMode}" — use ffa, ntr, jugg, pvp or 1v1`,
-            );
-          if (!modes.includes(id)) modes.push(id);
-        }
-        if (modes.length === 0)
-          throw new MapError(file, n, "modes list is empty");
-      }
+      parseHeaderLine(head, n, file, {
+        name: (v) => (name = v),
+        setDisp: (v) => (disp = v),
+        modes,
+      });
       continue;
     }
 

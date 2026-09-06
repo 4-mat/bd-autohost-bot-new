@@ -7,7 +7,7 @@ import {
   Terrain,
 } from "../game/state.js";
 import { parseEffects, extractCombatMetadata } from "../game/effects.js";
-import { startAttack, isValidTarget, eva43 } from "../game/resolve.js";
+import { startAttack, isValidTarget, eva43, respondToTile } from "../game/resolve.js";
 import type { GameVersion } from "../data/index.js";
 
 setWs({ send() {} });
@@ -88,6 +88,7 @@ function makeGame(
     votes: {},
     voteOpen: false,
     voteRunoff: null,
+    playersIdle: false,
   };
 }
 
@@ -110,6 +111,149 @@ function makeAbility(
 }
 
 beforeEach(() => {});
+
+// ===========================================================================
+// ===========================================================================
+// resolveAttackFlow: multi-hit stops once the target is defeated (#180)
+// ===========================================================================
+
+describe("resolveAttackFlow: multi-hit vs defeated target", () => {
+  it("does not roll later hits against a corpse and re-announce the defeat", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      curhp: 5, // dies on hit 1 (min roll 2 + ATK 10 - PD 5 = 7)
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Rapid Jab",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      effect: "Multi-Hit: 3.",
+    });
+    const log = driveResolveAgainst(user, ability, target);
+    // The defeat must be announced exactly once, and only Hit 1/3 may
+    // appear: hits 2 and 3 must not roll against the corpse.
+    const defeated = log.split("\n").filter((l) => l.includes("defeated"));
+    expect(defeated.length).toBe(1);
+    expect(log).not.toContain("(Hit 2/3");
+    expect(log).not.toContain("(Hit 3/3");
+  });
+});
+
+// ===========================================================================
+// isValidTarget — group matching (single-target path)
+// ===========================================================================
+
+describe("isValidTarget", () => {
+  // Team-mode fixtures: the FFA (team 0) behavior is covered by the
+  // dedicated "FFA targeting" describe below.
+  const user = () =>
+    makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 1 });
+  const foe = () =>
+    makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 2 });
+  const ally = () =>
+    makeEntity({ num: "P3", name: "Cara", pos: [5, 4], team: 1 });
+
+  it("'Self or Foe' accepts the user and foes but not allies", () => {
+    expect(isValidTarget(user(), user(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), foe(), "Self or Foe")).toBe(true);
+    expect(isValidTarget(user(), ally(), "Self or Foe")).toBe(false);
+  });
+
+  it("basic groups still behave", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Self")).toBe(true);
+    expect(isValidTarget(u, ally(), "Self")).toBe(false);
+    expect(isValidTarget(u, ally(), "Ally")).toBe(true);
+    expect(isValidTarget(u, foe(), "Ally")).toBe(false);
+    expect(isValidTarget(u, foe(), "Foe")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe")).toBe(false);
+    expect(isValidTarget(u, foe(), "Foe or Ally")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe or Ally")).toBe(true);
+    expect(isValidTarget(u, u, "Any")).toBe(true);
+  });
+
+  it("legacy 'Foe(s)' targets foes, not allies (matches AoE path)", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Foe(s)")).toBe(true);
+    expect(isValidTarget(u, ally(), "Foe(s)")).toBe(false);
+  });
+
+  it("'Allies and Self' targets allies and self", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Allies and Self")).toBe(true);
+    expect(isValidTarget(u, ally(), "Allies and Self")).toBe(true);
+    expect(isValidTarget(u, foe(), "Allies and Self")).toBe(false);
+  });
+
+  it("'Tile or Foe' targets foes, not the user or allies", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Tile or Foe")).toBe(true);
+    expect(isValidTarget(u, u, "Tile or Foe")).toBe(false);
+    expect(isValidTarget(u, ally(), "Tile or Foe")).toBe(false);
+  });
+
+  it("'Self, Foes, Allies' accepts the user, foes, and allies", () => {
+    const u = user();
+    expect(isValidTarget(u, u, "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(u, foe(), "Self, Foes, Allies")).toBe(true);
+    expect(isValidTarget(u, ally(), "Self, Foes, Allies")).toBe(true);
+  });
+
+  it("rejects dead targets", () => {
+    expect(
+      isValidTarget(
+        user(),
+        makeEntity({ num: "P2", name: "Bob", curhp: 0, team: 1 }),
+        "Foe",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects unrecognized target groups (matches the AoE path)", () => {
+    const u = user();
+    expect(isValidTarget(u, foe(), "Bogus")).toBe(false);
+    expect(isValidTarget(u, foe(), "Self, Allies")).toBe(false);
+    expect(isValidTarget(u, u, "Everyone")).toBe(false);
+  });
+});
+
+// ===========================================================================
+// resolveAttackFlow: multi-hit stops once the target is defeated (#180)
+// ===========================================================================
+
+describe("resolveAttackFlow: multi-hit vs defeated target", () => {
+  it("does not roll later hits against a corpse and re-announce the defeat", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      curhp: 5, // dies on hit 1 (min roll 2 + ATK 10 - PD 5 = 7)
+      eva: 0,
+    });
+    const ability = makeAbility({
+      name: "Rapid Jab",
+      range: "Melee",
+      mr: 0,
+      roll: "2d6+0",
+      effect: "Multi-Hit: 3.",
+    });
+    const log = driveResolveAgainst(user, ability, target);
+    // The defeat must be announced exactly once, and only Hit 1/3 may
+    // appear: hits 2 and 3 must not roll against the corpse.
+    const defeated = log.split("\n").filter((l) => l.includes("defeated"));
+    expect(defeated.length).toBe(1);
+    expect(log).not.toContain("(Hit 2/3");
+    expect(log).not.toContain("(Hit 3/3");
+  });
+});
 
 // ===========================================================================
 // extractCombatMetadata — direct unit tests
@@ -557,7 +701,8 @@ describe("eva43 — BD 4.3 evasion", () => {
       damageType: "Physical",
     });
     const log = driveResolveAgainst(user, ability, target, "4.3");
-    expect(log).toContain("EVA 4");
+    // 4.3 labels physical evasion as PE (derived from PD), never raw EVA.
+    expect(log).toContain("PE 4");
     expect(log).not.toContain("EVA 99");
   });
 });
@@ -587,5 +732,343 @@ describe("FFA targeting (team 0 = no teams)", () => {
     expect(isValidTarget(p1, p2, "Foe")).toBe(false);
     expect(isValidTarget(p1, p3, "Foe")).toBe(true);
     expect(isValidTarget(p1, p3, "Ally")).toBe(false);
+  });
+});
+
+describe("On Miss hook (#139)", () => {
+  it("fires only on miss, not on hit", () => {
+    const make = (mr: number) =>
+      makeAbility({
+        name: "Glancing Blow",
+        range: "Melee",
+        mr,
+        roll: "1d6+0",
+        effect: "On Miss: +2 EVA/1.",
+      });
+    const userHit = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const missLog = driveResolveAgainst(
+      makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 }),
+      make(30),
+      makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, eva: 0 }),
+    );
+    expect(missLog).toContain("[On Miss]");
+    expect(missLog).toContain("MISS");
+    const hitLog = driveResolveAgainst(
+      userHit,
+      make(0),
+      makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, eva: 0 }),
+    );
+    expect(hitLog).not.toContain("[On Miss]");
+    expect(hitLog).toContain("HIT");
+  });
+
+  it("applies every effect in a multi-effect On Miss clause (#139)", () => {
+    const ability = makeAbility({
+      name: "Stumble",
+      range: "Melee",
+      mr: 30,
+      roll: "1d6+0",
+      effect: "On Miss: +2 EVA/1. +3 ACC/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    const log = driveResolveAgainst(user, ability, target);
+    expect(log).toContain("[On Miss]");
+    // Both buffs from the clause must land (not just the first).
+    expect(log).toContain("+2 EVA");
+    expect(log).toContain("+3 ACC");
+    // Buffs are self-targeted, so they land on the attacker, not the defender.
+    const userBuffs = Object.fromEntries(
+      user.buffs.map((b) => [b.stat, b.amount]),
+    );
+    expect(userBuffs["eva"]).toBe(2);
+    expect(userBuffs["acc"]).toBe(3);
+  });
+
+  it("routes self-targeted On Miss buffs to the attacker, not the defender (#139)", () => {
+    const ability = makeAbility({
+      name: "Glancing Blow",
+      range: "Melee",
+      mr: 30,
+      roll: "1d6+0",
+      effect: "On Miss: +2 EVA/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    driveResolveAgainst(user, ability, target);
+    const userEva = user.buffs.filter((b) => b.stat === "eva").length;
+    const targetEva = target.buffs.filter((b) => b.stat === "eva").length;
+    expect(userEva).toBe(1);
+    expect(targetEva).toBe(0);
+  });
+
+  it("routes On Miss buffs nested inside a conditional to the attacker (#139)", () => {
+    const ability = makeAbility({
+      name: "Counter",
+      range: "Melee",
+      mr: 30,
+      roll: "1d6+0",
+      effect: "On Miss: If user mp >= 0, +2 EVA/1.",
+    });
+    const user = makeEntity({
+      num: "P1",
+      name: "Alice",
+      pos: [5, 5],
+      team: 0,
+    });
+    const target = makeEntity({
+      num: "P2",
+      name: "Bob",
+      pos: [5, 6],
+      team: 1,
+      eva: 0,
+    });
+    const log = driveResolveAgainst(user, ability, target);
+    expect(log).toContain("[On Miss]");
+    // The buff sits inside a conditional branch, so it must still route to
+    // the attacker through the recursion, never to the defender.
+    const userEva = user.buffs.filter((b) => b.stat === "eva").length;
+    const targetEva = target.buffs.filter((b) => b.stat === "eva").length;
+    expect(userEva).toBe(1);
+    expect(targetEva).toBe(0);
+  });
+});
+
+describe("eva43", () => {
+  it("computes PE from PD and ME from MD", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 25, md: 30 });
+    expect(eva43(e, "Physical")).toBe(2);
+    expect(eva43(e, "Magical")).toBe(3);
+  });
+
+  it("clamps to [0, 9] and applies poison -2", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 150, md: 0 });
+    expect(eva43(e, "Physical")).toBe(9);
+    expect(eva43(e, "Magical")).toBe(0);
+    e.statuses.push({
+      name: "Poison",
+      damage: 0,
+      rounds: 2,
+      maxRounds: 2,
+      removable: true,
+    });
+    expect(eva43(e, "Physical")).toBe(7);
+  });
+
+  it("applies +EVA buffs to both PE and ME", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 25, md: 30 });
+    e.buffs.push({ stat: "eva", amount: 3, rounds: 1 });
+    expect(eva43(e, "Physical")).toBe(5);
+    expect(eva43(e, "Magical")).toBe(6);
+  });
+
+  it("caps base + EVA buffs at 9 before poison", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 90 });
+    e.buffs.push({ stat: "eva", amount: 3, rounds: 1 });
+    expect(eva43(e, "Physical")).toBe(9);
+    e.statuses.push({
+      name: "Poison",
+      damage: 0,
+      rounds: 2,
+      maxRounds: 2,
+      removable: true,
+    });
+    expect(eva43(e, "Physical")).toBe(7);
+  });
+
+  it("applies DEF buffs to the underlying defense", () => {
+    const e = makeEntity({ num: "P1", name: "Alice", pd: 25 });
+    e.buffs.push({ stat: "def", amount: 20, rounds: 1 });
+    expect(eva43(e, "Physical")).toBe(4);
+  });
+});
+
+
+// ===========================================================================
+// Ported from PR #301 (obstruction-guard-tests): terrain stat bonuses and
+// tile-targeting with obstruction-replacement confirmation.
+// ===========================================================================
+
+/** Like driveResolveAgainst, but stands the target on `tile` first. */
+function driveResolveOnTerrain(
+  user: Entity,
+  ability: AbilityData,
+  target: Entity,
+  tile: Terrain,
+): string {
+  const game = makeGame({ entities: [user, target] });
+  game.map[target.pos[0]][target.pos[1]] = tile;
+  user.abilities = [ability];
+  const step = startAttack(game, user, ability, target.num);
+  let safety = 0;
+  const out: string[] = [];
+  if (step.done) out.push(...step.result.messages);
+  while (user.pendingResolution && safety++ < 50) {
+    const flow = user.pendingResolution;
+    const step2 = flow.next("0");
+    if (step2.done) {
+      user.pendingResolution = undefined;
+      user.pendingPromptKind = undefined;
+      out.push(...step2.value.messages);
+      break;
+    }
+  }
+  return out.join("\n");
+}
+
+describe("resolveAttackFlow: terrain stat bonuses", () => {
+  it("Forest grants +5 PD and -1 EVA vs a Physical attack", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 5, eva: 0 });
+    const ability = makeAbility({ name: "Sword Swing", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Physical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Forest);
+    expect(log).toMatch(/EVA -1 =/);
+    expect(log).toMatch(/PD\(10\)/);
+  });
+
+  it("Forest does NOT grant EVA penalty vs a Magical attack (only PD applies)", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 5, md: 5, eva: 0 });
+    const ability = makeAbility({ name: "Fireball", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Magical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Forest);
+    expect(log).toMatch(/EVA 0 =/);
+    expect(log).toMatch(/MD\(5\)/);
+  });
+
+  it("Water grants +5 MD and -1 EVA vs a Magical attack", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, md: 5, eva: 0 });
+    const ability = makeAbility({ name: "Fireball", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Magical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Water);
+    expect(log).toMatch(/EVA -1 =/);
+    expect(log).toMatch(/MD\(10\)/);
+  });
+
+  it("Water does NOT grant EVA penalty vs a Physical attack", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 5, eva: 0 });
+    const ability = makeAbility({ name: "Sword Swing", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Physical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Water);
+    expect(log).toMatch(/EVA 0 =/);
+    expect(log).toMatch(/PD\(5\)/);
+  });
+
+  it("Normal terrain grants no bonus", () => {
+    const user = makeEntity({ num: "P1", name: "Alice", pos: [5, 5], team: 0 });
+    const target = makeEntity({ num: "P2", name: "Bob", pos: [5, 6], team: 1, pd: 5, eva: 0 });
+    const ability = makeAbility({ name: "Sword Swing", range: "Melee", mr: 0, roll: "2d6+0", damageType: "Physical" });
+    const log = driveResolveOnTerrain(user, ability, target, Terrain.Normal);
+    expect(log).toMatch(/EVA 0 =/);
+    expect(log).toMatch(/PD\(5\)/);
+  });
+});
+
+describe("tile-targeting abilities", () => {
+  const whittle = () =>
+    makeAbility({
+      name: "Whittle",
+      damageType: "",
+      roll: "",
+      targetGroup: "Tile",
+      range: "Homing 2",
+      effect: "create Totem tile on target (removes existing).",
+    });
+
+  it("prompts for a tile and places the terrain on the chosen tile (Whittle)", () => {
+    const caster = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+    const ability = whittle();
+    caster.abilities = [ability];
+    const game = makeGame({ entities: [caster] });
+    game.map[2][3] = Terrain.Lava;
+
+    const step = startAttack(game, caster, ability);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+
+    const step2 = respondToTile(caster, "c,4");
+    expect(step2.done).toBe(true);
+    if (!step2.done) return;
+    expect(game.map[2][3]).toBe(Terrain.Normal);
+    expect(step2.result.messages.join("\n")).toContain("creates a Normal tile at c,4");
+  });
+
+  const obstructionTypes = [
+    { terrain: Terrain.Stop, name: "Stop" },
+    { terrain: Terrain.Bone, name: "Bone" },
+    { terrain: Terrain.Ice, name: "Ice" },
+    { terrain: Terrain.Stone, name: "Stone" },
+    { terrain: Terrain.Hearth, name: "Hearth" },
+  ];
+
+  for (const obs of obstructionTypes) {
+    it(`requires confirmation to replace a ${obs.name} obstruction`, () => {
+      const caster = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+      const ability = whittle();
+      caster.abilities = [ability];
+      const game = makeGame({ entities: [caster] });
+      game.map[2][3] = obs.terrain;
+
+      const step = startAttack(game, caster, ability);
+      if (step.done) throw new Error("expected tile prompt");
+      if (step.prompt.kind !== "tile") throw new Error("expected tile prompt");
+      const step2 = respondToTile(caster, "c,4");
+      if (step2.done) throw new Error("expected confirmation");
+      if (step2.prompt.kind !== "selection") throw new Error("expected selection");
+      if (!("confirmObstruction" in step2.prompt) || !(step2.prompt as { confirmObstruction?: boolean }).confirmObstruction)
+        throw new Error("expected confirmObstruction");
+    });
+  }
+
+  it("offers obstruction tiles but requires confirmation to replace them", () => {
+    const caster = makeEntity({ num: "P1", name: "Alice", pos: [2, 2], team: 0 });
+    const ability = whittle();
+    caster.abilities = [ability];
+    const game = makeGame({ entities: [caster] });
+    game.map[2][3] = Terrain.Stone;
+    game.map[2][4] = Terrain.Lava;
+
+    const step = startAttack(game, caster, ability);
+    expect(step.done).toBe(false);
+    if (step.done) return;
+    expect(step.prompt.kind).toBe("tile");
+    if (step.prompt.kind !== "tile") return;
+    expect(step.prompt.candidates).toContain("c,4");
+    expect(step.prompt.candidates).toContain("c,5");
+
+    const step2 = respondToTile(caster, "c,4");
+    expect(step2.done).toBe(false);
+    if (step2.done) return;
+    expect(step2.prompt.kind).toBe("selection");
+    if (step2.prompt.kind !== "selection") return;
+    expect(step2.prompt.message).toContain("Stone");
+    expect(step2.prompt.message).toContain("c,4");
   });
 });
