@@ -21,6 +21,17 @@
       "modes": []
     },
     {
+      "name": "sprint",
+      "display": "Sprint",
+      "format": "txt",
+      "file": "sprint.txt",
+      "rows": 5,
+      "cols": 5,
+      "modes": [
+        "ntr"
+      ]
+    },
+    {
       "name": "diodes",
       "display": "Diodes",
       "format": "curated",
@@ -1419,14 +1430,6 @@
       "file": "curated.json",
       "rows": 4,
       "cols": 6
-    },
-    {
-      "name": "sprint",
-      "display": "Sprint",
-      "format": "curated",
-      "file": "curated.json",
-      "rows": 5,
-      "cols": 5
     },
     {
       "name": "steamvent",
