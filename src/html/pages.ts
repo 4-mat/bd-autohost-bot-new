@@ -1,6 +1,7 @@
 import {
   TERRAIN_COLORS,
   TERRAIN_NAMES,
+  Terrain,
   getCurrentEntity,
   getReachableTiles,
   getEffectiveMp,
@@ -8,7 +9,6 @@ import {
   inRange,
   dist,
   moveCost,
-  Terrain,
   DIRECTION_LABELS,
   parseFrequency,
   formatChatTime,
@@ -19,6 +19,7 @@ import {
 import { posToStr } from "../utils.js";
 import { eva43 } from "../game/resolve.js";
 import { getVersionData } from "../data/version43.js";
+import { classes, weapons } from "../data/index.js";
 import type { GameVersion } from "../data/index.js";
 import {
   runoffOptions,
@@ -614,6 +615,30 @@ function buildStatCell(entity: Entity, stat: string, base: number): string {
   return `<td style="padding:0px 8px"><i style="color:${color}">${value}</i></td>`;
 }
 
+// Tile column: name + terrain stat bonus summary (BD 4.4 Map glossary).
+function buildTileCell(game: Game, entity: Entity): string {
+  const tile = game.map[entity.pos[0]]?.[entity.pos[1]];
+  const name = TERRAIN_NAMES[tile] ?? "Normal";
+  let note = "";
+  if (tile === Terrain.Forest) note = " +5 PD / -1 EVA vs Phys";
+  else if (tile === Terrain.Water) note = " +5 MD / -1 EVA vs Mag";
+  else if (tile === Terrain.Lava) note = " 30 dmg end turn";
+  else if (tile === Terrain.Air) note = " -1 range through";
+  else if (tile === Terrain.Sticky) note = " +1 MP to enter";
+  else if (tile === Terrain.Boost) note = " -1 MP to enter";
+  const color = TERRAIN_COLORS[tile];
+  // Forest (#226622) and Water (#454FDF) backgrounds are dark; use light
+  // text there so the bonus note stays readable.
+  const fg =
+    tile === Terrain.Forest || tile === Terrain.Water ? "color:#fff" : "";
+  const style = color
+    ? `style="background:${color};${fg};padding:0px 8px"`
+    : "padding:0px 8px";
+  const title = note.trim();
+  const noteStyle = fg ? "color:#ccc" : "color:#888";
+  return `<td ${style} title="${esc(title)}">${esc(name)}${note ? ` <i style="color:${noteStyle};font-size:10px">${esc(note)}</i>` : ""}</td>`;
+}
+
 function buildBuffSuffix(entity: Entity): string {
   const parts: string[] = [];
   for (const b of entity.buffs) {
@@ -651,6 +676,8 @@ function buildPlayerDataTable(game: Game): string {
 <col width="22">
 <col width="22">
 <col width="22">
+<col width="22">
+<col width="22">
 </colgroup>
 <tbody>
 `;
@@ -670,6 +697,7 @@ function buildPlayerDataTable(game: Game): string {
     "MD",
     is43 ? "PE/ME" : "EVA",
     "MP",
+    "Tile",
   ];
 
   for (const h of headers) {
@@ -716,6 +744,7 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
       html += buildStatCell(e, "eva", e.eva);
     }
     html += buildStatCell(e, "mp", e.mp);
+    html += buildTileCell(game, e);
 
     html += `</tr>`;
   }
@@ -731,7 +760,7 @@ ${esc(e.className)}(${e.classLevel})/${esc(e.weaponName)}(${e.weaponLevel})
 
   html += `
 <tr style="min-height:22px">
-<td colspan="10" style="text-align:center">
+<td colspan="11" style="text-align:center">
 <b>
 Turn Order: ${turnParts.map(esc).join(", ")}
 </b>
