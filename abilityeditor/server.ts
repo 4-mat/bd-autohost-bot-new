@@ -466,6 +466,46 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       send(res, 200, { ok: true });
       return;
     }
+
+    if (p === "/api/replace") {
+      // Full state restore (undo/redo in server mode): rebuild every Map from
+      // a snapshot() payload so the client can push a restored history state
+      // back without fetchData clobbering it.
+      const { classes: cls, weapons: wpn, customClasses: cc, customWeapons: cw } = body;
+      classes.clear();
+      weapons.clear();
+      branches.clear();
+      sourceNames.clear();
+      customClassIds.clear();
+      customWeaponIds.clear();
+      if (Array.isArray(cls)) {
+        for (const c of cls) {
+          if (c && typeof c.name === "string" && c.name.trim()) {
+            classes.set(toId(c.name), defaultClass(c.name, c));
+          }
+        }
+      }
+      if (Array.isArray(wpn)) {
+        for (const w of wpn) {
+          if (w && typeof w.name === "string" && w.name.trim()) {
+            weapons.set(toId(w.name), defaultWeapon(w.name, w));
+          }
+        }
+      }
+      // Rebuild the branch index from the restored weapons, mirroring
+      // loadBasicWeapons() so the client's branch list stays consistent.
+      for (const [, w] of weapons) {
+        const list = branches.get(toId(w.branch)) ?? [];
+        list.push(w.name);
+        branches.set(toId(w.branch), list);
+      }
+      for (const id of Array.isArray(cc) ? cc : []) customClassIds.add(String(id));
+      for (const id of Array.isArray(cw) ? cw : []) customWeaponIds.add(String(id));
+      touch();
+      saveCustoms();
+      send(res, 200, { ok: true });
+      return;
+    }
   } catch (e) {
     console.error("[ability-editor] request failed:", e);
     send(res, 500, { error: String(e) });

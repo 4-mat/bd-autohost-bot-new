@@ -62,6 +62,7 @@ import {
   pathState,
   reachPreview,
   dashMode,
+  gridHidden,
   clearMovementState,
   clearGameMovementState,
   movementKey,
@@ -85,6 +86,13 @@ import {
   tallyVotes,
   voteOptionsFor,
 } from "../data/gamemodes.js";
+import {
+  MSG_NO_GAME,
+  MSG_GAME_STARTED,
+  MSG_NO_ACTIVE_TURN,
+  MSG_NOT_YOUR_TURN,
+  MSG_NOT_IN_GAME,
+} from "../messages.js";
 
 type GameCmd = (
   game: Game | null,
@@ -98,7 +106,7 @@ function withGame(
   game: Game | null,
   user: User,
   fn: (g: Game) => void,
-  msg = "No active game in this room.",
+  msg = MSG_NO_GAME,
 ) {
   if (!game) return sendPm(user.name, msg);
   fn(game);
@@ -126,6 +134,7 @@ const GAME_CMDS: Record<string, GameCmd> = {
   endturn: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   next: (g, u) => withGame(g, u, (game) => handleAdvanceTurn(game, u)),
   back: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
+  undo: (g, u) => withGame(g, u, (game) => handleBack(game, u)),
   r: (_g, u, args) => handleRoll(u.name, args),
   roll: (_g, u, args) => handleRoll(u.name, args),
   dice: (_g, u, args) => handleRoll(u.name, args),
@@ -134,6 +143,18 @@ const GAME_CMDS: Record<string, GameCmd> = {
   premove: (g, u) => withGame(g, u, (game) => handlePremove(game, u)),
   passmove: (g, u) => withGame(g, u, (game) => handlePassMove(game, u)),
   pass: (g, u) => withGame(g, u, (game) => handlePassMove(game, u)),
+  pathstep: (g, u, _a, full) =>
+    withGame(g, u, (game) => handlePathStep(game, u, full)),
+  confirmmove: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleConfirmMove(game, u, full)),
+  cancelpath: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleCancelPath(game, u, full)),
+  viewreach: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleViewReach(game, u, full)),
+  dashmode: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleDashMode(game, u, full)),
+  grid: (g, u, _a, full) =>
+    withGame(g, u, (game) => handleGridToggle(game, u, full)),
   pl: (g, u) => withGame(g, u, (game) => sendPm(u.name, buildPlayerList(game))),
   log: (g, u, args) => withGame(g, u, (game) => handleLog(game, u, args)),
   to: (g, u) => withGame(g, u, (game) => sendPm(u.name, buildTurnOrder(game))),
@@ -148,17 +169,16 @@ const GAME_CMDS: Record<string, GameCmd> = {
   status: (g, u, _a, full) =>
     withGame(g, u, (game) => handleStatus(game, u, full)),
   regp: (g, u, _a, full) => withGame(g, u, (game) => handleRegp(game, u, full)),
-  pathstep: (g, u, _a, full) =>
-    withGame(g, u, (game) => handlePathStep(game, u, full)),
-  confirmmove: (g, u, _a, full) =>
-    withGame(g, u, (game) => handleConfirmMove(game, u, full)),
-  cancelpath: (g, u, _a, full) =>
-    withGame(g, u, (game) => handleCancelPath(game, u, full)),
-  viewreach: (g, u, _a, full) =>
-    withGame(g, u, (game) => handleViewReach(game, u, full)),
-  dashmode: (g, u) => withGame(g, u, (game) => handleDashMode(game, u)),
   dir: (g, u, args) =>
     withGame(g, u, (game) => handleDirChoice(game, u, args), "No active game."),
+  picktile: (g, u, _a, full) =>
+    withGame(
+      g,
+      u,
+      (game) => handleTileChoice(game, u, full),
+      "No active game.",
+    ),
+  // Legacy alias: pre-refactor tile-targeting used %tile.
   tile: (g, u, _a, full) =>
     withGame(
       g,
@@ -189,6 +209,7 @@ export function gameCommand(
   if (handler) {
     handler(game, user, args, full);
     return;
+
   }
   sendPm(user.name, `Game command ${cmd}: not yet implemented.`);
 }
@@ -224,49 +245,33 @@ function failAct(game: Game, entity: Entity, reason: string) {
   logEntry(game, entity, `${entity.num} (${entity.name}) idles (${reason})`);
 }
 
-/** Guard checks before a move/dash: stunned/rooted/already-moved/etc.
- * Fails the action and notifies the user when movement is not allowed. */
-function canMove(
-  game: Game,
-  user: User,
-  entity: Entity,
-  cmd: string,
-): boolean {
-  if (isStunned(entity)) {
-    failAct(game, entity, "Stunned");
-    sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
-    return false;
-  }
-  if (isRooted(entity)) {
-    failAct(game, entity, "Rooted");
-    sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
-    return false;
-  }
-  if (entity.movementUsed) {
-    failAct(game, entity, "already moved");
-    sendPm(user.name, `${entity.num} already moved this turn.`);
-    return false;
-  }
-  if (cmd === "dash" && entity.dashUsed) {
-    failAct(game, entity, "already dashed");
-    sendPm(user.name, `${entity.num} already dashed this turn.`);
-    return false;
-  }
-  if (cmd === "dash" && entity.standardUsed) {
-    failAct(game, entity, "Dash is a Full action");
-    sendPm(
-      user.name,
-      `${entity.num} already used their Standard — Dash is a Full action.`,
-    );
-    return false;
-  }
-  return true;
-}
-
 function handleMove(game: Game, user: User, cmd: string, args: string) {
   const { entity, rest: posStr } = resolveActor(game, user, args);
   if (!entity) return;
-  if (!canMove(game, user, entity, cmd)) return;
+
+  if (isStunned(entity)) {
+    failAct(game, entity, "Stunned");
+    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+  }
+  if (isRooted(entity)) {
+    failAct(game, entity, "Rooted");
+    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+  }
+  if (entity.movementUsed) {
+    failAct(game, entity, "already moved");
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+  if (cmd === "dash" && entity.dashUsed) {
+    failAct(game, entity, "already dashed");
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
+  if (cmd === "dash" && entity.standardUsed) {
+    failAct(game, entity, "Dash is a Full action");
+    return sendPm(
+      user.name,
+      `${entity.num} already used their Standard — Dash is a Full action.`,
+    );
+  }
 
   const pos = parsePos(posStr);
   if (!pos)
@@ -275,11 +280,15 @@ function handleMove(game: Game, user: User, cmd: string, args: string) {
   // Dash spends MP to move up to x1.5 tiles (rounded down). Full action.
   const dash = cmd === "dash";
   const mp = dash ? Math.floor(getEffectiveMp(entity) * 1.5) : entity.mp;
+  // Pass the mover for dash too so its own tile is never treated as an
+  // occupied foreign tile; the 1.5x dash budget avoids the effective-MP
+  // clamp by requesting clampToEffective=false.
   const reachable = getReachableTiles(
     game,
     entity.pos,
     mp,
-    dash ? undefined : entity,
+    entity,
+    !dash,
   );
   const key = posToStr(pos[0], pos[1]);
 
@@ -370,11 +379,11 @@ function resolveActor(
     entity = getCurrentEntity(game);
   }
   if (!entity) {
-    sendPm(user.name, "No active turn.");
+    sendPm(user.name, MSG_NO_ACTIVE_TURN);
     return null;
   }
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    sendPm(user.name, "It's not your turn.");
+    sendPm(user.name, MSG_NOT_YOUR_TURN);
     return null;
   }
 
@@ -565,9 +574,9 @@ function handleAttack(game: Game, user: User, cmd: string, args: string) {
 function handleConfirm(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!entity.pendingAction) {
     return sendPm(user.name, "No action pending. Select an ability first.");
@@ -581,9 +590,9 @@ function handleConfirm(game: Game, user: User) {
 function handleTarget(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %target <target>");
 
@@ -599,11 +608,24 @@ function handleTarget(game: Game, user: User, args: string) {
 function handleChoose(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!args) return sendPm(user.name, "Usage: %choose <option>");
+
+  // Replacing an obstruction tile requires host approval: players must
+  // ask the host rather than answer the confirmation themselves.
+  if (
+    !isHost &&
+    entity.pendingPrompt?.kind === "selection" &&
+    entity.pendingPrompt.confirmObstruction
+  ) {
+    return sendPm(
+      user.name,
+      "Only the host can approve replacing an obstruction.",
+    );
+  }
 
   pushSnapshot(game);
   try {
@@ -615,7 +637,7 @@ function handleChoose(game: Game, user: User, args: string) {
 }
 
 function handleVote(game: Game, user: User, args: string) {
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.voteOpen) {
     return sendPm(
       user.name,
@@ -628,7 +650,7 @@ function handleVote(game: Game, user: User, args: string) {
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
   if (!entity) {
-    return sendPm(user.name, "You're not in this game. Join first (%join).");
+    return sendPm(user.name, MSG_NOT_IN_GAME);
   }
 
   const arg = args.trim();
@@ -680,7 +702,7 @@ function handleVote(game: Game, user: User, args: string) {
 }
 
 function handleUnvote(game: Game, user: User) {
-  if (game.started) return sendPm(user.name, "Game already started.");
+  if (game.started) return sendPm(user.name, MSG_GAME_STARTED);
   if (!game.voteOpen) {
     return sendPm(user.name, "No gamemode vote is open right now.");
   }
@@ -689,7 +711,7 @@ function handleUnvote(game: Game, user: User) {
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
   if (!entity) {
-    return sendPm(user.name, "You're not in this game. Join first (%join).");
+    return sendPm(user.name, MSG_NOT_IN_GAME);
   }
 
   if (game.votes[entity.id] === undefined) {
@@ -717,7 +739,7 @@ function handleLeave(game: Game, user: User) {
     (e) => !e.isMonster && toId(e.name) === toId(user.name),
   );
   if (!entity) {
-    return sendPm(user.name, "You're not in this game. Join first (%join).");
+    return sendPm(user.name, MSG_NOT_IN_GAME);
   }
   removeEntity(game, entity);
   send(game.room, `**${entity.num} (${entity.name})** has left the game.`);
@@ -762,6 +784,15 @@ function handleVoteStatus(game: Game, user: User) {
   sendPm(user.name, buildVoteStatus(game));
 }
 
+function creditKills(game: Game, entity: Entity, step: AttackStep) {
+  if (step.done === false) return;
+  for (const death of step.result.deaths) {
+    if (death.num !== entity.num) {
+      game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
+    }
+  }
+}
+
 function finishStep(game: Game, entity: Entity, step: AttackStep) {
   if (step.done === false) {
     send(game.room, `${entity.num}: ${step.prompt.message}`);
@@ -772,20 +803,24 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
         `Use %target <target>. Options: ${step.prompt.candidates.map((e) => e.num).join(", ")}`,
       );
     } else if (step.prompt.kind === "selection") {
+      const hostOnly = step.prompt.confirmObstruction
+        ? "Only the host may approve. "
+        : "";
       send(
         game.room,
-        `Use %choose <option>. Options: ${step.prompt.options.map((o) => o.id).join(", ")}`,
+        `${hostOnly}Use %choose <option>. Options: ${step.prompt.options
+          .map((o) => o.id)
+          .join(", ")}`,
       );
     } else if (step.prompt.kind === "direction") {
-      const labels = step.prompt.candidateTargets ?? [];
-      const opts = step.prompt.candidates
-        .map((c, i) => `${c}${labels[i] ? ` (${labels[i]})` : ""}`)
-        .join(", ");
-      send(game.room, `Use %dir <direction>. Options: ${opts}`);
+      send(
+        game.room,
+        `Use %dir <direction>. Options: ${step.prompt.candidates.join(", ")}`,
+      );
     } else if (step.prompt.kind === "tile") {
       send(
         game.room,
-        `Use %tile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
+        `Use %picktile <tile>. Options: ${step.prompt.candidates.join(", ")}`,
       );
     }
     return;
@@ -794,6 +829,8 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
   for (const msg of step.result.messages) {
     send(game.room, msg);
   }
+
+  creditKills(game, entity, step);
 
   logEntry(game, entity, summarizeResult(game, entity, step.result.messages));
 
@@ -812,9 +849,9 @@ function finishStep(game: Game, entity: Entity, step: AttackStep) {
 function handleCancel(game: Game, user: User) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!entity.pendingAction) {
     return sendPm(user.name, "No action pending.");
@@ -831,37 +868,25 @@ function handleCancel(game: Game, user: User) {
   entity.pendingAction = null;
   entity.pendingResolution = undefined;
   entity.pendingPromptKind = undefined;
-  clearMovementState(game, entity);
   send(game.room, `/me ${entity.num} cancels ${ability.name}`);
   broadcastPages(game);
 }
 
 function handleAdvanceTurn(game: Game, user: User) {
-  if (toId(user.name) !== toId(game.host)) {
-    return sendPm(user.name, "Only the host can advance turns.");
-  }
-
   const entity = getCurrentEntity(game);
-  if (!entity) return;
+  const phase = game.phase;
+  if (!entity || phase !== "playing")
+    return sendPm(user.name, MSG_NO_ACTIVE_TURN);
+
+  const guard = advanceTurnGuard(game, user, entity);
+  if (guard) return sendPm(user.name, guard);
 
   pushSnapshot(game);
 
-  let acted = "";
 
-  // Stunned entities can't act — skip their action and clear pending
-  if (isStunned(entity)) {
-    if (entity.pendingAction) {
-      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
-      entity.pendingAction = null;
-    } else {
-      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
-    }
-  } else if (entity.pendingAction) {
+  const acted = resolveTurnActions(game, user, entity);
+  if (acted === null) return; // prompt needs an answer — turn not advanced
 
-    const done = resolvePendingAction(game, user, entity);
-    if (done === null) return; // prompt needs an answer — turn not advanced
-    acted = done;
-  }
 
   if (
     acted ||
@@ -874,27 +899,69 @@ function handleAdvanceTurn(game: Game, user: User) {
     );
   }
 
+  // Any in-progress movement path/reach preview ends only once the turn
+  // actually advances (not when a pending action still needs input). Iterates
+  // store keys so entities removed during resolution are cleared too.
+  clearGameMovementState(game);
 
   // If the actor died mid-turn (recoil/confusion), removeEntity already
   // repositioned turnIndex onto the next entity; tell nextTurn so it does
   // not advance past it a second time.
   const actorDied = entity.curhp <= 0 || !game.entities.includes(entity);
   const result = nextTurn(game, { actorDied });
-
-  // Any in-progress movement path/reach preview ends only once the turn
-  // actually advances (not when a pending action still needs input).
-  clearGameMovementState(game);
   for (const msg of result.messages) {
     send(game.room, msg);
   }
 
   if (result.died || !result.entity) {
-
     if (handleTurnDeath(game, result)) return;
   }
 
   send(game.room, `**${result.entity.num}'s turn!** (${result.entity.name})`);
   broadcastPages(game);
+}
+
+/**
+ * Authorization guard for advancing the turn. Returns an error message to
+ * send back to the user, or null when the advance is permitted. Extracted
+ * from handleAdvanceTurn to keep its cyclomatic complexity under the limit.
+ */
+function advanceTurnGuard(game: Game, user: User, entity: Entity): string | null {
+  const isHost = toId(user.name) === toId(game.host);
+  const isSelf = toId(entity.name) === toId(user.name);
+
+  if (isHost) return null;
+  if (!isSelf) return MSG_NOT_YOUR_TURN;
+  if (!game.playersIdle) return "The host hasn't enabled this option";
+  return null;
+}
+
+/**
+ * Advance a single entity's action: skip if stunned, resolve a pending
+ * action, or pass. Returns null when the turn must NOT advance (a prompt
+ * answer is needed), otherwise the acted-summary string (possibly empty when
+ * the entity passed its turn). Extracted from handleAdvanceTurn.
+ */
+function resolveTurnActions(
+  game: Game,
+  user: User,
+  entity: Entity,
+): string | null {
+  // Stunned entities can't act — skip their action and clear pending
+  if (isStunned(entity)) {
+    if (entity.pendingAction) {
+      send(game.room, `${entity.num} is **Stunned** — action wasted!`);
+      entity.pendingAction = null;
+    } else {
+      send(game.room, `${entity.num} is **Stunned** — turn skipped.`);
+    }
+    return "";
+  }
+
+  if (!entity.pendingAction) return "";
+  const done = resolvePendingAction(game, user, entity);
+  if (done === null) return null;
+  return done;
 }
 
 /** Handle a death at turn advance: game over, or skip to the next living
@@ -905,6 +972,7 @@ function handleTurnDeath(
 ): boolean {
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
+    clearGameMovementState(game);
     announceGameOver(game, winner);
     return true;
   }
@@ -916,6 +984,7 @@ function handleTurnDeath(
     }
     if (!retry.entity) {
       const winner = checkGameOver(game);
+      clearGameMovementState(game);
       announceGameOver(game, winner);
       return true;
     }
@@ -949,15 +1018,23 @@ function resolvePendingAction(
 
   const acted = summarizeResult(game, entity, step.result.messages);
 
-  for (const _ of step.result.deaths) {
+  // Credit kills on the confirm path, excluding self-deaths (recoil /
+  // confusion kills are not kills the entity scored).
+  for (const death of step.result.deaths) {
+    if (death.num === entity.num) continue;
     game.kills[entity.num] = (game.kills[entity.num] ?? 0) + 1;
   }
 
   const winner = checkGameOver(game);
   if (game.phase === "ended") {
+    clearGameMovementState(game);
     announceGameOver(game, winner);
     return null;
   }
+
+  // The action resolved and the turn advanced — clear the pending action
+  // so it isn't re-run on a later turn.
+  entity.pendingAction = null;
 
   return acted;
 }
@@ -1061,9 +1138,9 @@ function handlePremove(game: Game, user: User) {
 
   const entity = getCurrentEntity(game);
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, "You already moved this turn.");
@@ -1085,9 +1162,9 @@ function handlePremove(game: Game, user: User) {
 function handleDirChoice(game: Game, user: User, dir: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (!dir) return sendPm(user.name, "Usage: %dir <direction>");
 
@@ -1104,11 +1181,11 @@ function handleDirChoice(game: Game, user: User, dir: string) {
 function handleTileChoice(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
   const entity = getCurrentEntity(game);
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
-  if (!args) return sendPm(user.name, "Usage: %tile <tile>");
+  if (!args) return sendPm(user.name, "Usage: %picktile <tile>");
 
   pushSnapshot(game);
   try {
@@ -1124,9 +1201,9 @@ function handlePassMove(game: Game, user: User) {
 
   const entity = getCurrentEntity(game);
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, "You already moved this turn.");
@@ -1142,53 +1219,6 @@ function handlePassMove(game: Game, user: User) {
 }
 
 // -- Interactive movement path handlers ----------------------------------------
-
-/** Resolve the movement actor from args (host may name one; otherwise the
- * current-turn entity) and run the stunned/rooted/already-moved guards.
- * Returns the entity, or null after sending the failure message. */
-function resolveMoveActor(
-  game: Game,
-  user: User,
-  name: string,
-  checkDashUsed: boolean,
-): Entity | null {
-  const isHost = toId(user.name) === toId(game.host);
-  let entity: Entity | null = null;
-  if (name && isHost) {
-    entity = getEntity(game, name);
-    if (!entity) {
-      sendPm(user.name, `Unknown entity: ${name}`);
-      return null;
-    }
-  } else {
-    entity = getCurrentEntity(game);
-  }
-  if (!entity) {
-    sendPm(user.name, "No active turn.");
-    return null;
-  }
-  if (!isHost && toId(entity.name) !== toId(user.name)) {
-    sendPm(user.name, "It's not your turn.");
-    return null;
-  }
-  if (isStunned(entity)) {
-    sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
-    return null;
-  }
-  if (isRooted(entity)) {
-    sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
-    return null;
-  }
-  if (entity.movementUsed) {
-    sendPm(user.name, `${entity.num} already moved this turn.`);
-    return null;
-  }
-  if (checkDashUsed && entity.dashUsed) {
-    sendPm(user.name, `${entity.num} already dashed this turn.`);
-    return null;
-  }
-  return entity;
-}
 
 function handlePathStep(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
@@ -1206,13 +1236,47 @@ function handlePathStep(game: Game, user: User, args: string) {
     posStr = parts.slice(0, -1).join(",");
   }
 
-  const entity = resolveMoveActor(game, user, entityName, true);
-  if (!entity) return;
+  let entity: Entity | null = null;
+  if (entityName && isHost) {
+    entity = getEntity(game, entityName);
+    if (!entity) return sendPm(user.name, `Unknown entity: ${entityName}`);
+  } else {
+    entity = getCurrentEntity(game);
+  }
+
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
+  }
+  if (isStunned(entity)) {
+    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+  }
+  if (isRooted(entity)) {
+    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
+  if (entity.dashUsed) {
+    return sendPm(user.name, `${entity.num} already dashed this turn.`);
+  }
 
   const pos = parsePos(posStr);
   if (!pos)
     return sendPm(user.name, "Invalid tile. Use: %pathstep e4[,entity]");
-  if (!isValidPathStep(game, user, entity, pos)) return;
+
+  const rows = game.map.length;
+  const cols = game.map[0]?.length ?? 0;
+  if (pos[0] < 0 || pos[0] >= rows || pos[1] < 0 || pos[1] >= cols) {
+    return sendPm(user.name, "That tile is off the map.");
+  }
+  if (!isStandable(game.map[pos[0]][pos[1]])) {
+    return sendPm(user.name, "That tile cannot be moved onto.");
+  }
+  const occupied = game.entities.some(
+    (e) => e !== entity && e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
+  );
+  if (occupied) return sendPm(user.name, "That tile is occupied.");
 
   const mk = movementKey(game, entity);
   const path = pathState.get(mk) ?? [];
@@ -1223,7 +1287,8 @@ function handlePathStep(game: Game, user: User, args: string) {
   // adjacency. Otherwise it must be adjacent to the current tip to be appended
   // as the next step.
   if (idx >= 0) {
-    pathState.set(mk, path.slice(0, idx + 1));
+    const candidate = path.slice(0, idx + 1);
+    pathState.set(mk, candidate);
     broadcastPages(game);
     return;
   }
@@ -1244,40 +1309,30 @@ function handlePathStep(game: Game, user: User, args: string) {
   broadcastPages(game);
 }
 
-/** Validate that pos is an on-map, unoccupied, standable tile, sending the
- * failure message and returning false when invalid. */
-function isValidPathStep(
-  game: Game,
-  user: User,
-  entity: Entity,
-  pos: [number, number],
-): boolean {
-  const rows = game.map.length;
-  const cols = game.map[0]?.length ?? 0;
-  if (pos[0] < 0 || pos[0] >= rows || pos[1] < 0 || pos[1] >= cols) {
-    sendPm(user.name, "That tile is off the map.");
-    return false;
-  }
-  if (!isStandable(game.map[pos[0]][pos[1]])) {
-    sendPm(user.name, "That tile cannot be moved onto.");
-    return false;
-  }
-  const occupied = game.entities.some(
-    (e) => e.curhp > 0 && e.pos[0] === pos[0] && e.pos[1] === pos[1],
-  );
-  if (occupied) {
-    sendPm(user.name, "That tile is occupied.");
-    return false;
-  }
-  return true;
-}
-
 function handleConfirmMove(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+
+  let entity = getCurrentEntity(game);
   const name = args.trim();
-  // resolveMoveActor resolves the host-named entity or the current-turn
-  // entity and runs the movement guards.
-  const entity = resolveMoveActor(game, user, name, false);
-  if (!entity) return;
+  if (isHost && name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    entity = named;
+  }
+
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
+  if (!isHost && toId(entity.name) !== toId(user.name)) {
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
+  }
+  if (isStunned(entity)) {
+    return sendPm(user.name, `${entity.num} is Stunned and cannot move.`);
+  }
+  if (isRooted(entity)) {
+    return sendPm(user.name, `${entity.num} is Rooted and cannot move.`);
+  }
+  if (entity.movementUsed) {
+    return sendPm(user.name, `${entity.num} already moved this turn.`);
+  }
 
   const mk = movementKey(game, entity);
   const path = pathState.get(mk);
@@ -1342,9 +1397,9 @@ function handleCancelPath(game: Game, user: User, args: string) {
     entity = named;
   }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
 
   const key = movementKey(game, entity);
@@ -1366,7 +1421,7 @@ function handleViewReach(game: Game, user: User, args: string) {
     viewer = getCurrentEntity(game);
   }
 
-  if (!viewer) return sendPm(user.name, "No active turn.");
+  if (!viewer) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (
     toId(viewer.name) !== toId(user.name) &&
     toId(user.name) !== toId(game.host)
@@ -1392,13 +1447,22 @@ function handleViewReach(game: Game, user: User, args: string) {
   broadcastPages(game);
 }
 
-function handleDashMode(game: Game, user: User) {
+function handleDashMode(game: Game, user: User, args: string) {
   const isHost = toId(user.name) === toId(game.host);
-  const entity = getCurrentEntity(game);
+  let entity = getCurrentEntity(game);
+  const name = args.trim();
+  // Host may toggle dash mode for a named entity (the GUI button emits
+  // %dashmode <name>); fall back to the current entity like other movement
+  // commands.
+  if (isHost && name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    entity = named;
+  }
 
-  if (!entity) return sendPm(user.name, "No active turn.");
+  if (!entity) return sendPm(user.name, MSG_NO_ACTIVE_TURN);
   if (!isHost && toId(entity.name) !== toId(user.name)) {
-    return sendPm(user.name, "It's not your turn.");
+    return sendPm(user.name, MSG_NOT_YOUR_TURN);
   }
   if (entity.movementUsed) {
     return sendPm(user.name, `${entity.num} already moved this turn.`);
@@ -1421,6 +1485,40 @@ function handleDashMode(game: Game, user: User) {
     pathState.delete(key);
     dashMode.add(key);
     send(game.room, `/me ${entity.num} entering dash mode`);
+  }
+  broadcastPages(game);
+}
+
+// %grid toggles the map gridlines (tile/table borders) for one viewer. It's a
+// display preference, not a gameplay action: no turn/movement checks. The GUI
+// button emits %grid <entity name>; the host may also pass a name to toggle
+// another player's view. Without a name, players toggle their own entity's
+// view and the host toggles the host-page view.
+function handleGridToggle(game: Game, user: User, args: string) {
+  const isHost = toId(user.name) === toId(game.host);
+  const name = args.trim();
+  let entity: Entity | null = null;
+
+  if (name) {
+    const named = getEntity(game, name);
+    if (!named) return sendPm(user.name, `Unknown entity: ${name}`);
+    if (!isHost && toId(named.name) !== toId(user.name)) {
+      return sendPm(user.name, "You can only toggle your own map grid.");
+    }
+    entity = named;
+  } else if (!isHost) {
+    // No name: non-host players toggle their own view even outside their turn.
+    entity = getEntity(game, user.name);
+    if (!entity) return sendPm(user.name, "No entity found for you.");
+  }
+
+  const key = entity ? movementKey(game, entity) : `${game.id}:host`;
+  if (gridHidden.has(key)) {
+    gridHidden.delete(key);
+    sendPm(user.name, "Map grid: on");
+  } else {
+    gridHidden.add(key);
+    sendPm(user.name, "Map grid: off");
   }
   broadcastPages(game);
 }
@@ -1512,7 +1610,6 @@ function handleHp(game: Game, user: User, args: string) {
 
     const winner = checkGameOver(game);
     if (game.phase === "ended") {
-      clearGameMovementState(game);
       announceGameOver(game, winner);
       return;
     }
