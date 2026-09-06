@@ -19,6 +19,11 @@ const MAX_SEND_QUEUE = 2000;
 const sendQueue: Array<{ room: string; msg: string }> = [];
 let sending = false;
 let drainTimer: ReturnType<typeof setTimeout> | null = null;
+// Pre-authentication pause: a fresh connection must not transmit queued
+// messages until /trn confirms the login. `send()` skips the auto-drain
+// while paused; `resumeSending()` (called by the updateuser handler after
+// a successful login) clears the pause and drains.
+let authPaused = false;
 // True when resumeSending() ran while a send was still in flight (the
 // socket reconnected during the send). The error callback uses it to
 // restart the drain, because the resumeSending() call itself was a no-op
@@ -41,7 +46,7 @@ export function send(room: string, msg: string) {
     sendQueue.splice(sendInFlight ? 1 : 0, excess);
   }
   sendQueue.push({ room, msg });
-  if (!sending) drain();
+  if (!authPaused && !sending) drain();
 }
 
 function drain() {
@@ -87,14 +92,43 @@ function drain() {
   }
 }
 
-/** Resume draining the outbound queue once the WebSocket (re)opens. */
+/**
+ * Pause the outbound queue (pre-authentication). Queued messages stay put
+ * until `resumeSending()` is called after the login /trn is confirmed.
+ */
+export function pauseSending() {
+  authPaused = true;
+}
+
+/**
+ * Resume draining the outbound queue. Clears the pre-authentication pause
+ * (called by the updateuser handler after a successful login) and restarts
+ * the drain when the WebSocket (re)opens.
+ */
 export function resumeSending() {
+  authPaused = false;
   if (!sending) {
     drain();
   } else {
     // A send is in flight; remember that the socket (re)opened so the
     // error callback can restart the drain after this send completes.
     resumeWhileSending = true;
+  }
+}
+
+/**
+ * Send a message immediately, bypassing the queue. Used for /trn during
+ * login. A synchronous throw OR an asynchronous send-callback error both
+ * fall back to the retained queue so the message (/trn) is never lost.
+ */
+export function sendImmediate(msg: string) {
+  try {
+    ws!.send(`|${msg}`, (err?: Error) => {
+      if (err) send("", msg);
+    });
+  } catch {
+    // ws not available — fall back to queue so the message isn't lost.
+    send("", msg);
   }
 }
 
@@ -109,6 +143,7 @@ export function resetSendQueueForTests() {
   sending = false;
   resumeWhileSending = false;
   sendInFlight = false;
+  authPaused = false;
 }
 
 /** Test-only: expose the current queue so tests can assert the cap. */
@@ -120,22 +155,42 @@ export function sendPm(user: string, msg: string) {
   send(`pm-${toId(user)}`, `|/pm ${user}, ${msg}`);
 }
 
-const PM_CHUNK_LIMIT = 900;
-export function sendPmChunks(user: string, msg: string) {
-  if (msg.length <= PM_CHUNK_LIMIT) {
-    sendPm(user, msg);
-    return;
-  }
+// Showdown caps a single message at 1000 chars (server MAX_MESSAGE_LENGTH).
+// Chunk well under it so the "/pm user, " command never pushes a chunk over
+// the limit; older Showdown forks used 300, so the size is overridable via
+// PM_CHUNK_LIMIT. The value is clamped to a finite positive number so a
+// non-finite environment value (e.g. Infinity) cannot disable chunking.
+const PM_CHUNK_LIMIT = Math.min(
+  950,
+  Math.max(1, Math.trunc(Number(process.env.PM_CHUNK_LIMIT)) || 950),
+);
+export function splitPmChunks(msg: string, limit = PM_CHUNK_LIMIT): string[] {
+  if (msg.length === 0) return [];
+  // Validate direct arguments: limit must be a finite positive integer.
+  // Reject invalid values before entering the loop and fall back to the
+  // module limit so chunking can never loop forever on a bad argument.
+  if (!Number.isFinite(limit) || limit < 1) limit = PM_CHUNK_LIMIT;
+  limit = Math.trunc(limit);
+  if (msg.length <= limit) return [msg];
+  const chunks: string[] = [];
   let start = 0;
   while (start < msg.length) {
-    let end = start + PM_CHUNK_LIMIT;
+    let end = start + limit;
     if (end < msg.length) {
-      const newline = msg.lastIndexOf("\n", end);
-      if (newline > start) end = newline + 1;
+      // Prefer breaking at a line boundary, then a space, so words are never
+      // split mid-chunk. Fall back to a hard cut for unbroken long runs.
+      let cut = msg.lastIndexOf("\n", end);
+      if (cut <= start) cut = msg.lastIndexOf(" ", end);
+      if (cut > start) end = cut + 1;
     }
-    sendPm(user, msg.slice(start, end).trim());
+    const chunk = msg.slice(start, end).trim();
+    if (chunk) chunks.push(chunk);
     start = end;
   }
+  return chunks;
+}
+export function sendPmChunks(user: string, msg: string) {
+  for (const chunk of splitPmChunks(msg)) sendPm(user, chunk);
 }
 
 export function splitMessage(msg: string) {
@@ -181,15 +236,24 @@ export function natList(arr: string[]): string {
 }
 
 /** Roll an XdY+Z dice formula and return the total plus the per-die breakdown. */
-export function rollDice(formula: string): {
+export function rollDice(formula: string, diceMod = 0, facesMod = 0): {
   total: number;
   rolls: number[];
   base: number;
 } {
   const match = formula.match(/^(\d+)d(\d+)([+-]\d+)?$/);
   if (!match) return { total: 0, rolls: [], base: 0 };
-  const count = parseInt(match[1]);
-  const sides = parseInt(match[2]);
+  // "dice" buffs/debuffs add/remove dice ("+1 dice" -> 2d6 becomes 3d6);
+  // "dice faces" buffs/debuffs shift the die size (d4 + 4 faces -> d8),
+  // faces round up per the data ("dice faces round up"), min d2.
+  const count = Math.max(1, parseInt(match[1]) + Math.round(diceMod));
+  const baseSides = parseInt(match[2]);
+  // Only clamp to d2 when a faces mod was actually applied: an unmodified
+  // "1d1+0" must stay one-sided, otherwise it rolls 1 or 2.
+  const sides =
+    facesMod === 0
+      ? baseSides
+      : Math.max(2, baseSides + Math.ceil(facesMod));
   const mod = match[3] ? parseInt(match[3]) : 0;
   const rolls: number[] = [];
   for (let i = 0; i < count; i++) {
@@ -200,6 +264,24 @@ export function rollDice(formula: string): {
 }
 
 let ws: { send: (msg: string, cb?: (err?: Error) => void) => void };
-export function setWs(w: { send: (msg: string, cb?: (err?: Error) => void) => void }) {
+export function setWs(w: {
+  send: (msg: string, cb?: (err?: Error) => void) => void;
+}) {
   ws = w;
+}
+
+// Registered by connection.ts: reports whether a given connection generation
+// is still the active one. login.ts uses it to discard a stale /trn
+// assertion when the socket was superseded mid-request. Kept in utils.ts
+// (not connection.ts) so login.ts can query it without an import cycle.
+let currentGenerationChecker: ((gen: number) => boolean) | null = null;
+
+/** Register the connection-generation checker (called from connection.ts). */
+export function setGenerationChecker(fn: (gen: number) => boolean) {
+  currentGenerationChecker = fn;
+}
+
+/** True when the given connection generation is still the active one. */
+export function isConnectionCurrent(gen: number): boolean {
+  return currentGenerationChecker ? currentGenerationChecker(gen) : true;
 }

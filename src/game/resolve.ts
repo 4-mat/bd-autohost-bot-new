@@ -36,6 +36,8 @@ import {
   getDirectionCandidates,
   DIRECTION_LABELS,
   placeTerrain,
+  isObstruction,
+  Terrain,
   TERRAIN_NAMES,
 } from "./state.js";
 import { modeIdFor } from "../data/gamemodes.js";
@@ -45,8 +47,13 @@ import {
   applyEffects,
   applyEffectStream,
   extractCombatMetadata,
+  getCombatMetadataForEffect,
   type CombatMetadata,
+  type Effect,
   type EffectChoosePrompt,
+  type PhaseTiming,
+  type TileEffect,
+  parseTilePlacement,
 } from "./effects.js";
 import { rollDice, toId, posToStr } from "../utils.js";
 
@@ -70,13 +77,18 @@ function defensiveStat(entity: Entity, damageType: string): number {
 }
 
 // BD 4.3 evasion: physical uses PE (PD/10), magical uses ME (MD/10), max 9.
+// EVA buffs raise PE/ME; poison applies -2 on top.
 export function eva43(entity: Entity, damageType: string): number {
   const base =
     damageType === "Physical"
       ? getEffectiveStat(entity, "pd")
       : getEffectiveStat(entity, "md");
+  const bonus = entity.buffs
+    .filter((b) => b.stat === "eva")
+    .reduce((sum, b) => sum + b.amount, 0);
   const pen = hasStatus(entity, "poison") ? -2 : 0;
-  return Math.max(0, Math.min(9, Math.floor(base / 10) + pen));
+  const capped = Math.min(9, Math.floor(base / 10) + bonus);
+  return Math.max(0, capped + pen);
 }
 
 export function getEffectiveStat(entity: Entity, stat: string): number {
@@ -121,6 +133,8 @@ export type AttackPrompt =
       kind: "selection";
       message: string;
       options: SelectionOption[];
+      /** Replacing an obstruction tile: only the host may answer this. */
+      confirmObstruction?: boolean;
     }
   | {
       kind: "target";
@@ -289,8 +303,78 @@ function* resolveDirection(
   return yield {
     kind: "direction",
     message: `Choose a direction for ${ability.name}`,
-    candidates: getDirectionCandidates(),
+    // Line/Pierce can fire diagonally (X/2 rounded up); Cone/Beam cardinal-only.
+    candidates: getDirectionCandidates(active),
   };
+}
+
+/**
+ * Tile-targeting flow for terrain-placement abilities (Whittle, etc.):
+ * prompt for a map tile within range, require host confirmation before
+ * replacing an obstruction tile (Stop/Bone/Ice/Stone/Hearth), then write
+ * the chosen terrain. Returns false (message already pushed) when the
+ * placement is cancelled or invalid.
+ */
+function* resolveTilePlacement(
+  game: Game,
+  user: Entity,
+  ability: AbilityData,
+  placement: TileEffect,
+  result: ResolutionResult,
+): Generator<AttackPrompt, boolean, PromptResponse> {
+  const tileRef = (yield {
+    kind: "tile",
+    message: `Choose a tile for ${ability.name}.`,
+    candidates: getTileCandidates(game, user, ability),
+  }) as string;
+
+  const parsed = parseTileRef(tileRef);
+  if (!parsed) {
+    result.messages.push(
+      `${user.num} cancels ${ability.name}: invalid tile ${tileRef}.`,
+    );
+    return false;
+  }
+  const [r, c] = parsed;
+  if (r < 0 || r >= game.map.length || c < 0 || c >= game.map[0].length) {
+    result.messages.push(
+      `${user.num} cancels ${ability.name}: ${tileRef} is off the map.`,
+    );
+    return false;
+  }
+
+  const current = game.map[r][c];
+  if (isObstruction(current)) {
+    const tileName = TERRAIN_NAMES[current] ?? "obstruction";
+    const approve = (yield {
+      kind: "selection",
+      message: `Replace the ${tileName} obstruction at ${posToStr(
+        r,
+        c,
+      )}? Only the host may approve.`,
+      options: [
+        { id: "yes", label: "Yes, replace it" },
+        { id: "no", label: "No, cancel" },
+      ],
+      confirmObstruction: true,
+    }) as string;
+    if (approve !== "yes") {
+      result.messages.push(
+        `${user.num} cancels replacing the ${tileName} obstruction at ${posToStr(
+          r,
+          c,
+        )}.`,
+      );
+      return false;
+    }
+  }
+
+  const tileName = TERRAIN_NAMES[placement.terrain] ?? "Normal";
+  placeTerrain(game.map, [r, c], placement.terrain);
+  result.messages.push(
+    `  ${user.num} creates a ${tileName} tile at ${posToStr(r, c)}.`,
+  );
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +382,69 @@ function* resolveDirection(
 // Declare -> Selection/Costs -> Target -> Before Acc -> Acc -> Before Damage
 // -> Damage -> On Hit/On Miss -> Regardless -> After Resolving
 // ---------------------------------------------------------------------------
+
+/** Roll a damage/heal formula applying the attacker's dice-count and
+ * dice-faces buffs (e.g. Kinetic Impact's "+1 dice", Final Hour's "+4 dice
+ * faces"). rollDice takes the dice-count modifier before the die-face
+ * modifier, so the count bonus must be passed first. */
+function rollWithUserBuffs(user: Entity, formula: string) {
+  return rollDice(
+    formula,
+    getStatBonus(user, "dice"),
+    getStatBonus(user, "dice faces"),
+  );
+}
+
+/**
+ * Flips subject "self" -> "target" on every stat mod in the subtree,
+ * recursing through wrapper effects (conditional/thirst/apex/choose).
+ * Used for exclusively-friendly groups so gated ally buffs ("If origin
+ * has more MAG: gain +4 MAG/1") land on each ally, not the user.
+ */
+function rerouteSelfToTarget(effects: Effect[]): void {
+  for (const e of effects) {
+    if (e.type === "buff" || e.type === "debuff") {
+      if (e.subject === "self") e.subject = "target";
+      continue;
+    }
+    if (e.type === "conditional") {
+      rerouteSelfToTarget(e.thenEffects);
+      if (e.elseEffects) rerouteSelfToTarget(e.elseEffects);
+    } else if (e.type === "thirst" || e.type === "apex") {
+      rerouteSelfToTarget(e.effects);
+    } else if (e.type === "choose") {
+      for (const opts of e.options) rerouteSelfToTarget(opts);
+    }
+  }
+}
+
+/**
+ * True when the ability targets an exclusively-friendly group (allies/ally
+ * but never foe). Only such groups get "gain +N STAT" clauses rerouted
+ * from the user onto each target.
+ */
+function isFriendlyOnlyGroup(targetGroup: string): boolean {
+  return (
+    !/(^| )foe/i.test(targetGroup) &&
+    /(^| )(allies|ally)/i.test(targetGroup)
+  );
+}
+
+/**
+ * Fold the attacker's persistent outgoing-damage buffs/debuffs (a "-25%
+ * damage" debuff from Sandstorm, a "gain +50% damage/2" self-buff from a
+ * previous turn) into this attack's combat metadata. The ability's own
+ * text clauses are already folded by extractCombatMetadata; entity.buffs
+ * carry the round-limited persistent ones. Percent-marked dmg buffs are
+ * percentages; plain "dmg" buffs are flat amounts (CodeRabbit L1435).
+ */
+function foldDamageBuffs(user: Entity, combat: CombatMetadata): void {
+  for (const b of user.buffs) {
+    if (b.stat !== "dmg") continue;
+    if (b.percent) combat.damagePercent += b.amount;
+    else combat.flatDamage += b.amount;
+  }
+}
 
 function* resolveAttackFlow(
   game: Game,
@@ -331,14 +478,41 @@ function* resolveAttackFlow(
   if (!active) return result;
 
   // --- Direction prompt for AoE abilities ---
+
   const dir = yield* resolveDirection(user, ability, active);
+
+  // --- Tile-targeting abilities (place terrain on a chosen map tile) ---
+  // Restored from the pre-refactor flow (PR #301 / #237): abilities whose
+  // effect places terrain (e.g. Whittle's "create ... tile on target")
+  // prompt for a map tile instead of an entity, ask for host confirmation
+  // before replacing an obstruction tile (Stop/Bone/Ice/Stone/Hearth), then
+  // write the tile. Pure tile placement has no entity targets, so the
+  // placement result is the whole resolution.
+  const tilePlacement = parseTilePlacement(active.effect ?? "");
+  if (tilePlacement) {
+    const placed = yield* resolveTilePlacement(
+      game,
+      user,
+      active,
+      tilePlacement,
+      result,
+    );
+    // Rare hybrid abilities may still select entities after placing; only
+    // fall through when a valid entity target exists for the group.
+    if (
+      !game.entities.some((e) => isValidTarget(user, e, active.targetGroup))
+    ) {
+      return result;
+    }
+    void placed;
+  }
 
   // --- Target (attack may not continue if nothing can be chosen) ---
   const {
     hits: hitCount,
     isAoE,
     targets: autoTargets,
-  } = prepareTargeting(game, user, active);
+  } = prepareTargeting(game, user, active, dir);
   let targets = autoTargets;
   if (targets.length === 0) {
     const chosen = yield* chooseTargets(
@@ -370,9 +544,26 @@ function* resolveAttackFlow(
   // parseMultiHit(); meta.additionalHits adds the effect-driven extra hits
   // on top. We take the max so a "+Double Hit" roll + a "Multi-Hit: 4"
   // effect still rolls the highest of the two.
+  // parseEffects / getCombatMetadataForEffect are memoised by effect text, so
+  // this is a cache hit after the first use of the ability — no re-parse and
+  // no repeated tree walk per attack.
   const effects = parseEffects(active.effect);
-  const combat = extractCombatMetadata(effects);
+  const combat = getCombatMetadataForEffect(active.effect);
+
+  foldDamageBuffs(user, combat);
   const effectiveHitCount = Math.max(hitCount, 1 + combat.additionalHits);
+
+  // Ally-targeted abilities (Rising Hope, Primadonna, Crusade, Flower
+  // Crown, Windmill, ...): a "gain +N STAT" clause is a buff FOR EACH
+  // TARGET, not a self-buff for the user -- parseStatMods defaults "gain"
+  // to subject "self" because it has no ability context, so re-route it
+  // here. Foe-targeted abilities keep the user as the "gain" recipient
+  // (Blitz, Point-in-Line, ...). Only exclusively-friendly groups reroute:
+  // "Any" / "Foe or Ally" / "Self, Foes, Allies" can select a foe, and a
+  // foe would then receive the buff instead of the user.
+  if (isFriendlyOnlyGroup(ability.targetGroup)) {
+    rerouteSelfToTarget(effects);
+  }
 
   for (const target of targets) {
     const userDefeated = yield* resolveTargetAction(
@@ -381,6 +572,7 @@ function* resolveAttackFlow(
       active,
       target,
       combat,
+      effects,
       effectiveHitCount,
       isAttack,
       isHeal,
@@ -433,6 +625,7 @@ function* resolveTargetAction(
   active: AbilityData,
   target: Entity,
   combat: CombatMetadata,
+  effects: Effect[],
   effectiveHitCount: number,
   isAttack: boolean,
   isHeal: boolean,
@@ -450,6 +643,7 @@ function* resolveTargetAction(
         active,
         target,
         combat,
+        effects,
         label,
         confusionApplied,
       );
@@ -459,6 +653,12 @@ function* resolveTargetAction(
       // If the attacker was defeated by recoil or confusion, stop remaining hits
       if (singleResult.deaths.some((d) => d.num === user.num)) {
         return true;
+      }
+
+      // The target died on this hit: stop swinging at the corpse. Later
+      // hits only re-roll against a dead entity and re-announce the defeat.
+      if (target.curhp <= 0 || !game.entities.includes(target)) {
+        break;
       }
 
       if (!confusionApplied && singleResult.confusionTriggered) {
@@ -481,6 +681,7 @@ function* resolveTargetAction(
       user,
       active,
       target,
+      effects,
     );
     result.messages.push(...statusResult.messages);
     result.deaths.push(...statusResult.deaths);
@@ -545,9 +746,9 @@ export function respondToDir(user: Entity, dir: string): AttackStep {
   return respondToPromptOfKind(user, "direction", dir, "%dir");
 }
 
-// %tile <tileRef> -- only valid while a "tile" prompt is pending.
+// %picktile <tileRef> -- only valid while a "tile" prompt is pending.
 export function respondToTile(user: Entity, tileRef: string): AttackStep {
-  return respondToPromptOfKind(user, "tile", tileRef, "%tile");
+  return respondToPromptOfKind(user, "tile", tileRef, "%picktile");
 }
 
 function respondToPromptOfKind(
@@ -567,7 +768,7 @@ function respondToPromptOfKind(
       selection: "%choose",
       target: "%target",
       direction: "%dir",
-      tile: "%tile",
+      tile: "%picktile",
     };
     const wants = kindMap[user.pendingPromptKind ?? ""] ?? "%target";
     throw new Error(
@@ -725,8 +926,9 @@ function parseTileRef(ref: string): [number, number] | null {
     const c = parseInt(parts[1]);
     if (!isNaN(r) && !isNaN(c)) return [r, c];
   }
-  // Letter-number format: A1, B3, etc.
-  const match = ref.match(/^([a-zA-Z])\s*(\d+)$/);
+  // Letter-number format: A1, B3, a,4 etc. (the comma form is what the map
+  // UI emits via posToStr).
+  const match = ref.match(/^([a-zA-Z])\s*,?\s*(\d+)$/);
   if (match) {
     const r = match[1].toUpperCase().charCodeAt(0) - 65;
     const c = parseInt(match[2]) - 1;
@@ -743,6 +945,7 @@ function prepareTargeting(
   game: Game,
   user: Entity,
   ability: AbilityData,
+  dir?: string,
 ): { hits: number; isAoE: boolean; targets: Entity[] } {
   const hits = parseMultiHit(ability);
   const range = ability.range.toLowerCase().trim();
@@ -757,7 +960,13 @@ function prepareTargeting(
 
   let targets: Entity[] = [];
   if (isAoE) {
-    targets = getAoETargets(game, user, ability.range, ability.targetGroup);
+    targets = getAoETargets(
+      game,
+      user,
+      ability.range,
+      ability.targetGroup,
+      dir,
+    );
   }
   return { hits, isAoE, targets };
 }
@@ -809,22 +1018,83 @@ export function isValidTarget(
   return matchesTargetGroup(user, target, group.toLowerCase());
 }
 
+/** Filter effects array to those matching a specific phase. */
+function filterByPhase(effects: Effect[], phase: PhaseTiming): Effect[] {
+  return effects.filter((e) => e.type === "phaseEffect" && e.phase === phase);
+}
+
+/** Returns effects that fire on hit (all non-PhaseEffect effects). PhaseEffect wrappers are applied at their specific timing points. */
+function filterNonPhase(effects: Effect[]): Effect[] {
+  return effects.filter((e) => e.type !== "phaseEffect");
+}
+
+/**
+ * Defensive terrain modifiers for a defender standing on a map tile (PR
+ * #301): Forest hardens vs Physical (+5 PD, -1 EVA); Water hardens vs
+ * Magical (+5 MD, -1 EVA). Other terrain grants nothing. The evasion part
+ * is applied on top of the normal evasion floor so a penalty can actually
+ * make the defender easier to hit.
+ */
+function terrainStatBonus(
+  game: Game,
+  entity: Entity,
+  damageType: string,
+): { def: number; eva: number } {
+  const [r, c] = entity.pos;
+  if (
+    r < 0 ||
+    r >= game.map.length ||
+    c < 0 ||
+    c >= game.map[0].length
+  ) {
+    return { def: 0, eva: 0 };
+  }
+  const tile = game.map[r][c];
+  if (damageType === "Physical" && tile === Terrain.Forest) {
+    return { def: 5, eva: -1 };
+  }
+  if (damageType === "Magical" && tile === Terrain.Water) {
+    return { def: 5, eva: -1 };
+  }
+  return { def: 0, eva: 0 };
+}
+
 function* resolveSingleTarget(
   game: Game,
   user: Entity,
   ability: AbilityData,
   target: Entity,
   combat: CombatMetadata,
+  effects: Effect[],
   hitLabel = "",
   confusionAlreadyApplied = false,
 ): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
 
+  // Parse effects once, before any phase hooks.
+  const allEffects = parseEffects(ability.effect);
+
+  // --- Before Accuracy ---
+  const beforeAccEffects = filterByPhase(allEffects, "before-acc");
+  if (beforeAccEffects.length > 0) {
+    const accMsgs = yield* runEffectStream(
+      applyEffectStream(game, user, target, beforeAccEffects, ability),
+    );
+    result.messages.push(...accMsgs);
+  }
+
   const userAccBonus = getStatBonus(user, "acc");
+  const terrain = terrainStatBonus(game, target, ability.damageType);
   const targetEva =
-    game.version === "4.3"
+    (game.version === "4.3"
       ? eva43(target, ability.damageType)
-      : getEffectiveStat(target, "eva");
+      : getEffectiveStat(target, "eva")) + terrain.eva;
+  const evaLabel =
+    game.version === "4.3"
+      ? ability.damageType === "Physical"
+        ? "PE"
+        : "ME"
+      : "EVA";
   const {
     hit,
     roll: accRoll,
@@ -832,7 +1102,7 @@ function* resolveSingleTarget(
   } = rollAccuracy(ability.mr, targetEva, userAccBonus);
 
   result.messages.push(
-    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + EVA ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
+    `  **Accuracy${hitLabel}**: ${user.num} rolls **${accRoll}** vs MR ${ability.mr} + ${evaLabel} ${targetEva} = ${ability.mr + targetEva} -> ${hit ? "**HIT**" : "**MISS**"}${crit ? " (CRIT!)" : ""}`,
   );
 
   // --- Hit resolves first (damage to target first) ---
@@ -862,6 +1132,7 @@ function* resolveSingleTarget(
         result.messages.push(...missMsgs);
       }
     }
+
   }
 
   // --- Confusion triggers after the hit resolves (regardless of hit/miss) ---
@@ -895,7 +1166,8 @@ function* resolveHitDamage(
     ? 0
     : offensiveStat(user, ability.damageType);
   const targetDef = applyIgnoreToDefense(
-    defensiveStat(target, ability.damageType),
+    defensiveStat(target, ability.damageType) +
+      terrainStatBonus(game, target, ability.damageType).def,
     combat.ignore,
   );
 
@@ -1199,7 +1471,7 @@ function resolveHeal(
   const result = newResult();
 
   if (ability.roll) {
-    const healRoll = rollDice(ability.roll);
+    const healRoll = rollWithUserBuffs(user, ability.roll);
     let healAmount = healRoll.total;
 
     const effect = ability.effect.toLowerCase();
@@ -1231,9 +1503,9 @@ function* resolveNonDamaging(
   user: Entity,
   ability: AbilityData,
   target: Entity,
+  effects: Effect[],
 ): Generator<AttackPrompt, ResolutionResult, string> {
   const result = newResult();
-  const effects = parseEffects(ability.effect);
   const effectMsgs: string[] = yield* runEffectStream(
     applyEffectStream(game, user, target, effects, ability),
   );
@@ -1279,12 +1551,15 @@ function resolveSplash(
   result.messages.push(`  **Splash ${radius}**: hits ${names}`);
 
   for (const target of splashTargets) {
-    const damageRoll = rollDice(ability.roll);
+    const damageRoll = rollWithUserBuffs(user, ability.roll);
     const half = (v: number) => Math.floor(v / 2);
     // Splash halves defense by default per the home page ("half target
     // DEF on Splash"). Apply ignore clauses AFTER halving: an "Ignores
     // DEF" on the parent ability should still wipe the remaining half.
-    const rawDef = half(defensiveStat(target, ability.damageType));
+    const rawDef = half(
+      defensiveStat(target, ability.damageType) +
+        terrainStatBonus(game, target, ability.damageType).def,
+    );
     const targetDef = applyIgnoreToDefense(rawDef, combat.ignore);
     const userOff = combat.ignore.atkMag
       ? 0

@@ -1,0 +1,10 @@
+# Modes: ntr
+# Battle Dome volunteer map — made with the map editor
+name: sprint
+display: Sprint
+modes: ntr
+..r..
+.....
+.w+w.
+.....
+..r..
