@@ -268,27 +268,13 @@
       <div id="content"><p class="muted">Loading maps…</p></div>
     </div>
 
+    <script src="../../src/game/terrain-colors.cjs"></script>
     <script src="../../mapeditor/mapcore.cjs"></script>
     <script>
       "use strict";
       const MC = window.MapCore;
-
-      /* The classic in-game palette (normal #99e599, boost lilac #c8a2c8). */
-      const COLORS = {
-        normal: "#99e599",
-        stop: "#a9a9a9",
-        water: "#454fdf",
-        forest: "#226622",
-        ice: "#33e9e9",
-        air: "#b8d3de",
-        sticky: "#cccc00",
-        lava: "#8b0000",
-        broken: "#000000",
-        bone: "#ccccaa",
-        stone: "#888888",
-        hearth: "#ff6633",
-        boost: "#A855F7",
-      };
+      // Terrain colors come from the shared palette (terrain-colors.cjs) via
+      // MC.TERRAINS — see thumbHTML/tableHTML below.
       const rowLabel = (i) => String.fromCharCode(65 + i);
 
       let manifest = []; // {name, display, format, file, rows, cols}
@@ -754,9 +740,9 @@
               "px;width:" +
               cell +
               "px;height:" +
-              cell +
-              "px;background:" +
-              (COLORS[t] || COLORS.normal) +
+              cell +              "px;background:"
+              +
+              (MC.TERRAINS[t] || MC.TERRAINS.normal).color +
               '" title="' +
               esc(rowLabel(r)) +
               (c + 1) +
@@ -791,7 +777,7 @@
             const t = map.tiles[r][c] || "normal";
             h +=
               '<td class="tile" style="background:' +
-              (COLORS[t] || COLORS.normal) +
+              (MC.TERRAINS[t] || MC.TERRAINS.normal).color +
               '" title="' +
               esc(t) +
               '"></td>';

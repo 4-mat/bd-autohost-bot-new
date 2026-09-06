@@ -20,7 +20,7 @@ SCAN_EXIT=$?
 
 # If oxlint itself failed (config, resolution, etc.), report the failure
 # but exit 0 — this hook is warning-only and must never block a commit.
-if [ $SCAN_EXIT -ne 0 ]; then
+if [ "$SCAN_EXIT" -ne 0 ]; then
   echo ""
   echo "❌ oxlint scan failed (exit code $SCAN_EXIT):"
   echo "$RAW"
@@ -30,10 +30,20 @@ fi
 
 ISSUES=$(printf '%s' "$RAW" | grep -i "complexity" || true)
 
-if [ -n "$ISSUES" ]; then
+# Non-blocking: a parser failure warns and skips, but never blocks a commit.
+if [ "$PARSER_RC" -ne 0 ]; then
+  echo ""
+  echo "⚠️  Complexity parser failed (exit $PARSER_RC); skipping warnings (non-blocking)."
+  echo "$REPORT"
+  exit 0
+fi
+
+COUNT="$(MODE_ENV=json PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE" 2>/dev/null | python3 -c "import sys, json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)"
+
+if [ "$COUNT" -gt 0 ]; then
   echo ""
   echo "⚠️  Complexity warnings (non-blocking):"
-  echo "$ISSUES"
+  echo "$REPORT"
   echo ""
   echo "Consider refactoring high-complexity functions for readability."
   echo "These are warnings only — your commit will proceed."

@@ -23,15 +23,13 @@ REPORT=false
 for arg in "$@"; do
   case "$arg" in
     --json) MODE="json" ;;
-    --top=*) TOP="${arg#--top=}" ;;
-    --top)
-      shift
-      if [ $# -gt 0 ]; then TOP="$1"; fi
-      ;;
-    --path=*) SCAN_PATH="${arg#--path=}" ;;
+    --top=*) TOP="${1#--top=}" ;;
+    --top) shift; TOP="${1:-}" ;;
+    --path=*) SCAN_PATH="${1#--path=}" ;;
     --report) REPORT=true ;;
     *) ;;
   esac
+  shift
 done
 
 # Run oxlint, capture raw output and exit code.
@@ -52,6 +50,7 @@ printf '%s\n' "$RAW"
 TMP_FILE="$(mktemp)"
 printf '%s' "$RAW" > "$TMP_FILE"
 
+# Run parser to generate the report (text or json)
 MODE_ENV="$MODE" TOP_ENV="${TOP:-}" PYTHONIOENCODING=utf-8 python3 "$ROOT/scripts/_parse-complexity.py" "$TMP_FILE"
 
 rm -f "$TMP_FILE"
