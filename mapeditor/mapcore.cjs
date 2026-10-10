@@ -26,23 +26,21 @@
 }(typeof self !== 'undefined' ? self : this, function () {
 	'use strict';
 
-	// Colors are the exact TERRAIN_COLORS from src/game/state.ts.
+	// Terrain colors + metadata come from the single source of truth:
+	// src/game/terrain-colors.cjs (also imported by the game engine's
+	// TERRAIN_COLORS/TERRAIN_NAMES and loaded by the editor/gallery pages).
 	// `code` is the volunteer .txt character from src/data/parse-map-file.ts.
-	const TERRAINS = {
-		normal: { color: '#A9F5A9', label: 'Normal', code: '.', dark: false },
-		stop:   { color: '#A9A9A9', label: 'Stop',   code: 's', dark: true },
-		water:  { color: '#454FDF', label: 'Water',  code: 'w', dark: true },
-		forest: { color: '#226622', label: 'Forest', code: 'f', dark: true },
-		ice:    { color: '#33E9E9', label: 'Ice',    code: 'i', dark: false },
-		air:    { color: '#B8D3DE', label: 'Air',    code: 'a', dark: false },
-		sticky: { color: '#CCCC00', label: 'Sticky', code: 'x', dark: true },
-		lava:   { color: '#8B0000', label: 'Lava',   code: 'l', dark: true },
-		broken: { color: '#000000', label: 'Broken', code: 'r', dark: true },
-		bone:   { color: '#CCCCAA', label: 'Bone',   code: 'b', dark: false },
-		stone:  { color: '#888888', label: 'Stone',  code: 'o', dark: true },
-		hearth: { color: '#FF6633', label: 'Hearth', code: 'h', dark: true },
-		boost:  { color: '#A855F7', label: 'Boost',  code: '+', dark: true }
-	};
+	let TERRAIN_JSON;
+	if (typeof module === 'object' && module.exports) {
+		TERRAIN_JSON = require('../src/game/terrain-colors.cjs');
+	} else {
+		TERRAIN_JSON =
+			(typeof globalThis !== 'undefined' && globalThis.TERRAIN_COLORS) || null;
+	}
+	if (!TERRAIN_JSON) {
+		throw new Error('mapcore.cjs requires src/game/terrain-colors.cjs to be loaded first (add a <script> tag before this one)');
+	}
+	const TERRAINS = TERRAIN_JSON;
 
 	// Default token colors (P1 green / P2 blue are the classic ones).
 	const DEFAULT_TOKEN_COLORS = {

@@ -238,7 +238,8 @@ function buildMapTable(
 
     for (let c = 0; c < cols; c++) {
       const terrain = game.map[r][c];
-      const color = TERRAIN_COLORS[terrain] ?? "#99E599";
+      // Unknown terrain falls back to Normal's color from the shared palette.
+      const color = TERRAIN_COLORS[terrain] ?? TERRAIN_COLORS[0];
       const entity = game.entities.find(
         (e) => e.pos[0] === r && e.pos[1] === c,
       );
